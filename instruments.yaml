@@ -1,0 +1,40 @@
+# Danh sách instrument cần lấy giá cho "Bảng giá nhanh" và biểu đồ nến.
+# provider: yfinance (có sẵn, miễn phí) | manual_or_vendor (cần subscription
+# — xem ghi chú trong market_data.py)
+
+instruments:
+  - name: "WTI Crude Oil"
+    ticker: "CL=F"
+    provider: yfinance
+    group: energy
+    exchange: NYMEX
+
+  - name: "Brent Crude Oil"
+    ticker: "BZ=F"
+    provider: yfinance
+    group: energy
+    exchange: ICE
+
+  - name: "EUA Futures Dec'26"
+    ticker: "EUA_DEC26"
+    provider: manual_or_vendor
+    group: carbon
+    exchange: ICE
+
+  - name: "TTF Dutch Gas Calendar Month Futures"
+    ticker: "TTF_FRONT_MONTH"
+    provider: manual_or_vendor
+    group: energy
+    exchange: ICE
+
+  - name: "German Power Base Year Futures"
+    ticker: "DEBY1"
+    provider: manual_or_vendor
+    group: energy
+    exchange: EEX
+
+  - name: "NEWC Index (GlobalCOAL Newcastle)"
+    ticker: "NEWC_INDEX"
+    provider: manual_or_vendor
+    group: energy
+    exchange: GlobalCOAL

@@ -1,0 +1,340 @@
+
+sources:
+  # ===================== HẠNG A: dữ liệu sàn / cơ quan chính thức =====================
+  - domain: eia.gov
+    name: "U.S. Energy Information Administration"
+    tier: A
+    category: energy_official
+    type: html
+    listing_url: "https://www.eia.gov/todayinenergy/"
+
+  - domain: iea.org
+    name: "International Energy Agency"
+    tier: A
+    category: energy_official
+    type: html
+    listing_url: "https://www.iea.org/news"
+
+  - domain: ieta.org
+    name: "International Emissions Trading Association"
+    tier: A
+    category: carbon_official
+    type: html
+    listing_url: "https://www.ieta.org/resources/news/"
+
+  - domain: opec.org
+    name: "OPEC"
+    tier: A
+    category: energy_official
+    type: html
+    listing_url: "https://www.opec.org/opec_web/en/press_room/28.htm"
+
+  - domain: nasdaq.com
+    name: "Nasdaq"
+    tier: A
+    category: market_official
+    type: html
+    listing_url: "https://www.nasdaq.com/news-and-insights"
+
+  - domain: commission.europa.eu
+    name: "European Commission"
+    tier: A
+    category: policy_official
+    type: html
+    listing_url: "https://commission.europa.eu/news_en"
+
+  - domain: esma.europa.eu
+    name: "European Securities and Markets Authority"
+    tier: A
+    category: policy_official
+    type: html
+    listing_url: "https://www.esma.europa.eu/press-news/esma-news"
+
+  - domain: climateimpactx.com
+    name: "Climate Impact X"
+    tier: A
+    category: carbon_official
+    type: html
+    listing_url: "https://climateimpactx.com/insights"
+
+  - domain: acx.net
+    name: "AirCarbon Exchange"
+    tier: A
+    category: carbon_official
+    type: html
+    listing_url: "https://acx.net/news"
+
+  - domain: cmegroup.com
+    name: "CME Group"
+    tier: A
+    category: market_official
+    type: html
+    listing_url: "https://www.cmegroup.com/media-room.html"
+
+  - domain: ice.com
+    name: "Intercontinental Exchange"
+    tier: A
+    category: market_official
+    type: html
+    listing_url: "https://www.ice.com/index"
+
+  - domain: eex.com
+    name: "European Energy Exchange"
+    tier: A
+    category: market_official
+    type: html
+    listing_url: "https://www.eex.com/en/newsroom"
+
+  - domain: lme.com
+    name: "London Metal Exchange"
+    tier: A
+    category: market_official
+    type: html
+    listing_url: "https://www.lme.com/en/news-events/announcements"
+
+  - domain: climate.ec.europa.eu
+    name: "EU Climate Action"
+    tier: A
+    category: policy_official
+    type: html
+    listing_url: "https://climate.ec.europa.eu/news-other-reads/news_en"
+
+  # ===================== HẠNG B: báo chí tài chính, market intelligence =====================
+  - domain: tradingview.com
+    name: "TradingView"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.tradingview.com/news/"
+
+  - domain: barchart.com
+    name: "Barchart"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.barchart.com/news"
+
+  - domain: tradingeconomics.com
+    name: "Trading Economics"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://tradingeconomics.com/commodities"
+
+  - domain: markets.ft.com
+    name: "FT Markets"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://markets.ft.com/data"
+
+  - domain: bloomberg.com
+    name: "Bloomberg Asia"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.bloomberg.com/asia"
+
+  - domain: ft.com
+    name: "Financial Times"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.ft.com/"
+
+  - domain: fastmarkets.com
+    name: "Fastmarkets"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.fastmarkets.com/newsgated/"
+
+  - domain: spglobal.com
+    name: "S&P Global"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.spglobal.com/en/news-insights"
+
+  - domain: reuters.com
+    name: "Reuters Carbon Markets"
+    tier: B
+    category: carbon_news
+    type: html
+    listing_url: "https://www.reuters.com/markets/carbon/"
+
+  - domain: opis.com
+    name: "OPIS"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.opis.com/news"
+
+  - domain: lseg.com
+    name: "London Stock Exchange Group"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.lseg.com/en/insights"
+
+  - domain: carbon-pulse.com
+    name: "Carbon Pulse"
+    tier: B
+    category: carbon_news
+    type: html
+    listing_url: "https://carbon-pulse.com/"
+
+  - domain: carboncredits.com
+    name: "Carbon Credits"
+    tier: B
+    category: carbon_news
+    type: html
+    listing_url: "https://carboncredits.com/news/"
+
+  - domain: ember-energy.org
+    name: "Ember"
+    tier: B
+    category: energy_research
+    type: html
+    listing_url: "https://ember-energy.org/latest-updates/"
+
+  - domain: carbon-direct.com
+    name: "Carbon Direct"
+    tier: B
+    category: carbon_news
+    type: html
+    listing_url: "https://www.carbon-direct.com/insights"
+
+  - domain: carbonherald.com
+    name: "Carbon Herald"
+    tier: B
+    category: carbon_news
+    type: html
+    listing_url: "https://carbonherald.com/"
+
+  - domain: icvcm.org
+    name: "Integrity Council for the Voluntary Carbon Market"
+    tier: B
+    category: carbon_policy
+    type: html
+    listing_url: "https://icvcm.org/news/"
+
+  - domain: esgdive.com
+    name: "ESG Dive"
+    tier: B
+    category: esg_news
+    type: html
+    listing_url: "https://www.esgdive.com/"
+
+  - domain: ecosystemmarketplace.com
+    name: "Ecosystem Marketplace"
+    tier: B
+    category: carbon_news
+    type: html
+    listing_url: "https://www.ecosystemmarketplace.com/articles/"
+
+  - domain: esgtoday.com
+    name: "ESG Today"
+    tier: B
+    category: esg_news
+    type: html
+    listing_url: "https://www.esgtoday.com/category/esg-news/"
+
+  - domain: climatechangenews.com
+    name: "Climate Change News"
+    tier: B
+    category: climate_policy
+    type: html
+    listing_url: "https://www.climatechangenews.com/"
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief"
+    tier: B
+    category: climate_policy
+    type: html
+    listing_url: "https://www.carbonbrief.org/"
+
+  - domain: argusmedia.com
+    name: "Argus Media"
+    tier: B
+    category: market_intel
+    type: html
+    listing_url: "https://www.argusmedia.com/en/news"
+
+  - domain: verra.org
+    name: "Verra"
+    tier: B
+    category: carbon_registry
+    type: html
+    listing_url: "https://verra.org/news/"
+
+  - domain: goldstandard.org
+    name: "Gold Standard"
+    tier: B
+    category: carbon_registry
+    type: html
+    listing_url: "https://www.goldstandard.org/news"
+
+  # ===================== Thị trường Việt Nam (Hạng B) =====================
+  - domain: vneconomy.vn
+    name: "VnEconomy"
+    tier: B
+    category: vn_market
+    type: html
+    listing_url: "https://vneconomy.vn/"
+
+  - domain: baochinhphu.vn
+    name: "Báo Chính phủ"
+    tier: B
+    category: vn_policy
+    type: html
+    listing_url: "https://baochinhphu.vn/"
+
+  - domain: dcc.mae.gov.vn
+    name: "Cục Biến đổi khí hậu"
+    tier: B
+    category: vn_policy
+    type: html
+    listing_url: "https://dcc.mae.gov.vn/"
+
+  - domain: moitruong.net.vn
+    name: "Môi trường & Cuộc sống"
+    tier: B
+    category: vn_policy
+    type: html
+    listing_url: "https://moitruong.net.vn/"
+
+  - domain: tapchimoitruong.vn
+    name: "Tạp chí Môi trường"
+    tier: B
+    category: vn_policy
+    type: html
+    listing_url: "https://tapchimoitruong.vn/"
+
+  - domain: vnexpress.net
+    name: "VnExpress Kinh doanh"
+    tier: B
+    category: vn_market
+    type: rss
+    rss_url: "https://vnexpress.net/rss/kinh-doanh.rss"
+
+  - domain: thoibaotaichinhvietnam.vn
+    name: "Thời báo Tài chính Việt Nam"
+    tier: B
+    category: vn_market
+    type: html
+    listing_url: "https://thoibaotaichinhvietnam.vn/"
+
+  - domain: cafef.vn
+    name: "CafeF"
+    tier: B
+    category: vn_market
+    type: html
+    listing_url: "https://cafef.vn/"
+
+  # ===================== HẠNG C: social / blog cá nhân =====================
+  # JD không liệt kê URL cụ thể cho Hạng C (chỉ nói chung "YouTube, social,
+  # blog cá nhân"). Các nguồn này cần cơ chế crawl khác hẳn (YouTube Data
+  # API, X/Twitter API...) và nên tách thành module riêng, KHÔNG dùng chung
+  # news_crawler.py này. Bổ sung danh sách kênh/tài khoản cụ thể khi công ty
+  # xác định rõ nên theo dõi ai.

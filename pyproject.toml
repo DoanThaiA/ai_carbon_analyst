@@ -1,0 +1,18 @@
+[project]
+name = "ai-cabon-analyst"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.69.0",
+    "asyncpg>=0.30.0",
+    "feedparser>=6.0.11",
+    "httpx>=0.27.0",
+    "pydantic>=2.7.0",
+    "python-dotenv>=1.0.1",
+    "pyyaml>=6.0.1",
+    "selectolax>=0.3.21",
+    "trafilatura>=1.12.2",
+    "yfinance>=0.2.40",
+]
