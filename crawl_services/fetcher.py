@@ -13,11 +13,11 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "CarbonIntelligenceBot/1.0 (+internal research desk; contact: admin@company.com)"
-REQUEST_TIMEOUT = 20.0
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+REQUEST_TIMEOUT = 20.0  
 MAX_RETRIES = 2
-PER_DOMAIN_CONCURRENCY = 2  # tối đa 2 request đồng thời / domain
-PER_DOMAIN_DELAY_SECONDS = 1.0  # khoảng cách tối thiểu giữa 2 request cùng domain
+PER_DOMAIN_CONCURRENCY = 2
+PER_DOMAIN_DELAY_SECONDS = 1.0
 
 
 class PoliteFetcher:

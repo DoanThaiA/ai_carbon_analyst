@@ -7,6 +7,7 @@ from enum import Enum
 from typing import List, Literal, Optional
 
 Tier = Literal["A", "B", "C"]
+DateConfidence = Literal["metadata", "url", "unknown"]
 
 
 @dataclass
@@ -14,7 +15,7 @@ class SourceConfig:
     domain: str
     name: str
     tier: Tier
-    category: str  # ví dụ: energy_official, carbon_news, vn_market...
+    category: str  # ví dụ: energy_official, eu_climate_policy, carbon_market_voluntary...
     type: Literal["rss", "html"] = "html"
     rss_url: Optional[str] = None
     listing_url: Optional[str] = None
@@ -24,6 +25,11 @@ class SourceConfig:
             "/contact", "/login", "/search", "/page/",
         ]
     )
+    # Metadata bổ sung từ sources.yaml (dùng để lọc/log, không ảnh hưởng crawl)
+    group: List[int] = field(default_factory=list)       # nhóm chủ đề [1, 2, 3]
+    confidence: str = ""                                  # high / medium / low (độ tin cậy URL)
+    note: str = ""                                        # ghi chú ngắn về nguồn
+    link_pattern: Optional[str] = None                    # regex khớp URL bài viết (None = dùng heuristic)
 
 
 @dataclass
@@ -64,6 +70,7 @@ class ExtractedArticle:
     title: Optional[str]
     text: str
     published_at: Optional[datetime]
+    date_confidence: DateConfidence
     extracted_at: datetime
 
 
@@ -82,7 +89,7 @@ PipelineStatus = Literal[
 class PipelineResult:
     url: str
     status: PipelineStatus
-    news_id: Optional[int] = None
+    article_id: Optional[int] = None
     category: Optional[NewsCategory] = None
     confidence: Optional[float] = None
     content_hash: Optional[str] = None

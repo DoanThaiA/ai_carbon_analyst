@@ -16,7 +16,7 @@ mất bài mới của những nguồn này. Để lọc chặt hơn sau khi ngu
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from carbon_analyst.models import ExtractedArticle
+from schemas.crawl_models import ExtractedArticle
 
 
 def is_today(article: ExtractedArticle, crawl_date: Optional[date] = None, fallback_keep: bool = True) -> bool:
@@ -26,7 +26,7 @@ def is_today(article: ExtractedArticle, crawl_date: Optional[date] = None, fallb
     - fallback_keep=True: giữ bài nếu không parse được ngày (an toàn).
     - fallback_keep=False: bỏ bài nếu không parse được ngày (strict).
     """
-    target = crawl_date or date.today()
+    target = crawl_date or datetime.now(timezone.utc).date()
 
     if article.published_at is None:
         return fallback_keep

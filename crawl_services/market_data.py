@@ -14,7 +14,7 @@ from typing import List, Optional
 
 import yfinance as yf
 
-from carbon_analyst.models import PriceQuote
+from schemas.crawl_models import PriceQuote
 
 logger = logging.getLogger(__name__)
 

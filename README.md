@@ -21,10 +21,18 @@ CLASSIFIER_MODEL=claude-haiku-4-5   # mặc định, có thể đổi
 CLASSIFY_CONCURRENCY=5
 ```
 
-Cần một Postgres đang chạy — cho local/test có thể dùng Docker:
+Cần một Postgres có extension `pgvector` (dùng cho bảng `chunks`) — cho
+local/test dùng `docker-compose.yml` sẵn trong repo (image `pgvector/pgvector:pg16`):
 
 ```bash
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+docker compose up -d
+```
+
+Sau đó chạy migration (Alembic) — bắt buộc trước khi chạy bất kỳ script nào,
+DB sẽ chưa có bảng nào nếu bỏ qua bước này:
+
+```bash
+alembic upgrade head
 ```
 
 ## Test từng link trước khi chạy cả loạt
@@ -42,7 +50,7 @@ python -m scripts.test_url "https://www.iea.org/news/<slug>" --domain iea.org --
 
 Script in ra: độ dài HTML fetch được, title/ngày đăng/preview nội dung trích
 xuất được, content hash, kết quả kiểm tra trùng lặp, category + confidence từ
-Claude, và trạng thái lưu DB.
+Claude, số chunk sinh ra, và trạng thái lưu DB (bảng `articles` + `chunks`).
 
 ## Chạy crawl hằng ngày
 
@@ -61,17 +69,20 @@ instrument lấy được (hiện tại chỉ WTI/Brent có dữ liệu thật q
 
 | Path | Vai trò |
 |---|---|
-| `carbon_analyst/models.py` | Dataclass/enum dùng chung: `SourceConfig`, `CrawledItem`, `ExtractedArticle`, `NewsCategory`, `PipelineResult`... |
-| `carbon_analyst/config.py` | `Settings` đọc từ biến môi trường (`.env`) |
-| `carbon_analyst/fetcher.py` | HTTP fetch lịch sự: giới hạn tốc độ theo domain, retry, bỏ qua 403/404 |
-| `carbon_analyst/crawler.py` | Crawl RSS (feedparser) hoặc HTML listing (selectolax) tuỳ theo config nguồn — chỉ trả về HTML thô |
-| `carbon_analyst/extraction.py` | Trích xuất content + metadata (title, ngày đăng) bằng trafilatura |
-| `carbon_analyst/dedupe.py` | `Fingerprinter` — SHA-256 content hash (MVP), interface sẵn sàng cắm embedding dedupe sau |
-| `carbon_analyst/classification.py` | Phân loại 3 category bằng Claude API (structured output) |
-| `carbon_analyst/storage.py` | asyncpg — lưu vào bảng `news`, dedupe atomic qua unique constraint |
-| `carbon_analyst/pipeline.py` | Orchestrator: crawl → extract → dedupe → classify → store |
-| `carbon_analyst/market_data.py` | Lấy giá instrument — yfinance cho WTI/Brent, interface chờ cắm vendor thật cho EUA/TTF/... |
-| `db/schema.sql` | DDL bảng `news` (nguồn chân lý cho migration production) |
+| `crawl_services/models.py` | Dataclass/enum dùng chung: `SourceConfig`, `CrawledItem`, `ExtractedArticle`, `NewsCategory`, `PipelineResult`... |
+| `crawl_services/config.py` | `Settings` đọc từ biến môi trường (`.env`) |
+| `crawl_services/fetcher.py` | HTTP fetch lịch sự: giới hạn tốc độ theo domain, retry, bỏ qua 403/404 |
+| `crawl_services/crawler.py` | Crawl RSS (feedparser) hoặc HTML listing (selectolax) tuỳ theo config nguồn — chỉ trả về HTML thô |
+| `crawl_services/extraction.py` | Trích xuất content + metadata (title, ngày đăng) bằng trafilatura |
+| `crawl_services/dedupe.py` | `Fingerprinter` — SHA-256 content hash (MVP), interface sẵn sàng cắm embedding dedupe sau |
+| `crawl_services/classification.py` | Phân loại 3 category bằng Claude API (structured output) |
+| `crawl_services/chunking.py` | Chia nội dung bài viết thành chunk (~1000 ký tự) trước khi embedding |
+| `crawl_services/embedding.py` | `Embedder` — sinh vector 384 chiều cho chunk (mặc định fastembed/MiniLM, local, không tốn tiền API) |
+| `crawl_services/storage.py` | Data-access layer của pipeline tin tức (SQLAlchemy async) — lưu bài vào `articles`, chunk+embedding vào `chunks`, dedupe atomic qua unique constraint |
+| `crawl_services/pipeline.py` | Orchestrator: crawl → extract → dedupe → classify → store → chunk + embed |
+| `crawl_services/market_data.py` | Lấy giá instrument — yfinance cho WTI/Brent, interface chờ cắm vendor thật cho EUA/TTF/... |
+| `db/` | **Package riêng, dùng chung cho cả dự án** (không nằm trong `crawl_services/`) — engine/session SQLAlchemy async (`db/session.py`) + ORM model `Article`/`Chunk` (`db/models.py`) |
+| `alembic/`, `alembic.ini` | Migration schema (Alembic) — nguồn chân lý cho DDL, chạy `alembic upgrade head` để tạo/cập nhật bảng |
 | `sources.yaml` | Danh mục ~47 nguồn từ JD, đã gắn tier A/B/C |
 | `instruments.yaml` | Danh sách 6 instrument cần theo dõi giá |
 | `scripts/test_url.py` | Test pipeline trên 1 URL, dry-run mặc định |
@@ -115,7 +126,7 @@ giờ mở cửa).
 ## Giới hạn hiện tại — cần biết trước khi chạy thật
 
 1. **Heuristic tìm link bài viết** (`_extract_article_links` trong
-   `carbon_analyst/crawler.py`) hoạt động tốt với site dạng blog/WordPress
+   `crawl_services/crawler.py`) hoạt động tốt với site dạng blog/WordPress
    phổ biến, nhưng ~47 nguồn trong JD có cấu trúc rất khác nhau. Sau lần chạy
    đầu, xem log nguồn nào trả về 0 bài rồi bổ sung `link_pattern` riêng cho
    nguồn đó (chưa implement field này — cần thêm nếu heuristic chung không
@@ -145,3 +156,28 @@ giờ mở cửa).
 6. **Dedupe bằng content hash** chỉ bắt được trùng chính xác/gần chính xác
    (khác whitespace, khác case). Không bắt được bài paraphrase/rewrite giữa
    các nguồn — cắm `EmbeddingFingerprinter` trong `dedupe.py` khi cần.
+
+7. **`is_relevant`/`category` trong bảng `articles`**: classifier hiện tại
+   luôn ép bài vào đúng 1 trong 3 category (không có khái niệm "không liên
+   quan"), nên pipeline luôn set `is_relevant=true` và `category` là mảng 1
+   phần tử. Schema đã để sẵn `is_relevant` (boolean) và `category` (TEXT[])
+   cho việc mở rộng đa nhãn/lọc-không-liên-quan sau này mà không cần đổi
+   schema lần nữa.
+
+8. **Chunk + embedding (`crawl_services/chunking.py`, `embedding.py`)** chạy
+   SAU khi bài đã insert vào `articles` — nếu bước này lỗi (model chưa tải
+   được, DB tạm gián đoạn...), bài viết vẫn được lưu nhưng KHÔNG có chunk.
+   Do dedupe check chạy trên `articles`, lần crawl sau sẽ coi bài này là
+   trùng và không tự retry chunk/embed — cần chạy lại thủ công (script
+   backfill chunk cho các `articles.id` chưa có `chunks` tương ứng) nếu gặp
+   trường hợp này trên diện rộng.
+
+9. **`FastEmbedEmbedder`** tải model `sentence-transformers/all-MiniLM-L6-v2`
+   (384 chiều, khớp `Vector(384)` khai báo ở `db/models.py::Chunk.embedding`) từ
+   HuggingFace ở lần chạy đầu — cần mạng để tải lần đầu, sau đó cache local.
+
+10. **Schema do Alembic quản lý, không tự tạo lúc chạy** — khác với bản cũ
+    (`ensure_schema()` gọi mỗi lần chạy script), giờ phải chạy
+    `alembic upgrade head` thủ công (1 lần khi setup, và mỗi khi
+    `db/models.py` đổi + có migration mới). Script sẽ lỗi rõ ràng (bảng/cột
+    không tồn tại) nếu quên bước này — đây là chủ đích, không phải bug.

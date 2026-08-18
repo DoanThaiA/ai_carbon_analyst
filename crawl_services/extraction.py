@@ -10,7 +10,7 @@ from typing import Optional
 
 import trafilatura
 
-from carbon_analyst.models import CrawledItem, ExtractedArticle
+from schemas.crawl_models import CrawledItem, DateConfidence, ExtractedArticle
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,9 @@ def extract_article(item: CrawledItem) -> Optional[ExtractedArticle]:
 
     title = parsed.get("title") or item.title
     published_at = _parse_date(parsed.get("date"))
+    # 'url' chưa được implement (chưa có logic đoán ngày từ path URL) — chỉ
+    # phân biệt 'metadata' (trafilatura đọc được date) vs 'unknown'.
+    date_confidence: DateConfidence = "metadata" if published_at is not None else "unknown"
 
     return ExtractedArticle(
         url=item.url,
@@ -53,6 +56,7 @@ def extract_article(item: CrawledItem) -> Optional[ExtractedArticle]:
         title=title,
         text=text,
         published_at=published_at,
+        date_confidence=date_confidence,
         extracted_at=datetime.now(timezone.utc),
     )
 

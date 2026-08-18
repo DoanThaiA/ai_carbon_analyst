@@ -9,6 +9,7 @@ classification.py / pipeline.py) - tách riêng để 2 phần có thể test v�
 """
 import logging
 import re
+from base64 import urlsafe_b64decode
 from datetime import datetime, timezone
 from typing import List, Set
 from urllib.parse import urljoin, urlparse
@@ -16,8 +17,8 @@ from urllib.parse import urljoin, urlparse
 import feedparser
 from selectolax.parser import HTMLParser
 
-from carbon_analyst.fetcher import PoliteFetcher
-from carbon_analyst.models import CrawledItem, SourceConfig
+from crawl_services.fetcher import PoliteFetcher
+from schemas.crawl_models import CrawledItem, SourceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,22 @@ async def _crawl_rss(
 
     parsed = feedparser.parse(raw_feed)
     items = []
-    for entry in parsed.entries:
+    for entry in parsed.entries[:MAX_LINKS_PER_LISTING_PAGE]:
         url = entry.get("link")
         if not url or url in seen_urls:
+            continue
+
+        # Google News RSS: follow redirect để lấy URL bài gốc thật sự.
+        # (field summary cũng chỉ chứa Google URL, không phải URL bài)
+        if "news.google.com" in url:
+            real_url = await _resolve_gnews_url(url, fetcher)
+            if real_url:
+                url = real_url
+            else:
+                logger.warning("[GNews] Không resolve được URL: %.80s", url)
+                continue
+
+        if url in seen_urls:
             continue
 
         html = await fetcher.fetch(url)
@@ -96,7 +110,7 @@ async def _crawl_html_listing(
                 url=url,
                 source_domain=source.domain,
                 tier=source.tier,
-                title=None,  # lấy chính xác hơn ở bước extraction.py (trafilatura)
+                title=None,
                 raw_html=html,
                 discovered_at=datetime.now(timezone.utc),
             )
@@ -108,19 +122,57 @@ async def _crawl_html_listing(
     return items
 
 
+async def _resolve_gnews_url(google_url: str, fetcher: "PoliteFetcher") -> str | None:
+    """
+    Resolve URL redirect của Google News để lấy URL bài viết gốc.
+
+    Cách hoạt động:
+    1. Gửi HEAD request đến Google News URL.
+    2. httpx follow redirect tự động đến URL cuối cùng.
+    3. Nếu URL cuối không phải của Google → đó là URL bài gốc.
+
+    Dùng HEAD (không tải body) để tiết kiệm bandwidth. Body sẽ được GET
+    sau bởi fetcher.fetch() bình thường.
+    """
+    try:
+        resp = await fetcher._client.head(google_url, follow_redirects=True)
+        final_url = str(resp.url)
+        if "google.com" not in final_url:
+            logger.debug("[GNews] resolve: %s", final_url)
+            return final_url
+        # Nếu vẫn ở lại Google (Google dùng JS redirect), thử GET một lần
+        # và lấy Location header nếu có
+        if "Location" in resp.headers:
+            loc = resp.headers["Location"]
+            if "google.com" not in loc:
+                return loc
+    except Exception as e:
+        logger.warning("[GNews] Lỗi resolve %s: %s", google_url[:60], e)
+    return None
+
+
+def _extract_gnews_article_url(entry: dict) -> str | None:
+    """
+    [DEPRECATED] - summary cũng chứa Google URL, không dùng được.
+    Dùng _resolve_gnews_url() thay thế.
+    """
+    return None
+
+
+def _decode_google_news_url(url: str) -> str:
+    """
+    [DEPRECATED] - không dùng nữa.
+    """
+    return url
+
+
 def _extract_article_links(listing_html: str, source: SourceConfig) -> List[str]:
     """
-    Heuristic tìm link bài viết trên trang listing:
-    - Cùng domain với nguồn
-    - Không nằm trong path bị loại trừ (tag, category, author...)
-    - Path có dạng giống bài viết (>=2 cấp, slug đủ dài)
+    Hếu lọ tìm link bài viết trên trang listing.
 
-    Đây là heuristic DÙNG CHUNG cho ~50 nguồn khác nhau trong danh mục JD,
-    hoạt động ổn với cấu trúc WordPress/blog phổ biến. Với site có cấu trúc
-    đặc thù (ví dụ Bloomberg, FT cần đăng nhập, hoặc site dùng SPA/JS render),
-    heuristic này sẽ trả về ít hoặc không có link - cần bổ sung field
-    `link_pattern` (regex riêng) cho nguồn đó trong sources.yaml, hoặc dùng
-    Playwright thay vì httpx cho các site cần JS render.
+    Nếu source có `link_pattern` (regex) thì dùng regex đó thay hếu lọ chung.
+    Hếu lọ chung yêu cầu path >=3 cấp (giảm bắt nhầm trang data/section có 2 cấp
+    như /petroleum/gasdiesel/ hay /consumption/residential/).
     """
     tree = HTMLParser(listing_html)
     base_url = f"https://{source.domain}"
@@ -141,7 +193,13 @@ def _extract_article_links(listing_html: str, source: SourceConfig) -> List[str]
             continue
         if full_url in seen_in_page:
             continue
-        if _looks_like_article_path(parsed.path):
+
+        # Dùng regex riêng của nguồn nếu có, ngược lại dùng heuristic chung
+        if source.link_pattern:
+            if re.search(source.link_pattern, parsed.path, re.IGNORECASE):
+                found.append(full_url)
+                seen_in_page.add(full_url)
+        elif _looks_like_article_path(parsed.path):
             found.append(full_url)
             seen_in_page.add(full_url)
 
@@ -149,9 +207,13 @@ def _extract_article_links(listing_html: str, source: SourceConfig) -> List[str]
 
 
 def _looks_like_article_path(path: str) -> bool:
-    """Bài viết thường có path >=2 cấp và slug cuối chứa chữ/số đủ dài (không phải trang tĩnh)."""
+    """
+    Bài viết thường có path >=3 cấp và slug cuối chứa chữ/số đủ dài.
+    Yêu cầu >=3 cấp (đã tăng từ 2) để tránh bắt nhầm trang section/data
+    có cấu trúc /category/subcategory/ như EIA, IEA.
+    """
     segments = [s for s in path.split("/") if s]
-    if len(segments) < 2:
+    if len(segments) < 3:
         return False
     last_segment = segments[-1]
     return bool(re.search(r"[a-z0-9\-]{8,}", last_segment, re.IGNORECASE))

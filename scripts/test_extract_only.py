@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-from carbon_analyst.extraction import extract_article
-from carbon_analyst.fetcher import PoliteFetcher
-from carbon_analyst.models import CrawledItem
+from crawl_services.extraction import extract_article
+from crawl_services.fetcher import PoliteFetcher
+from schemas.crawl_models import CrawledItem
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 

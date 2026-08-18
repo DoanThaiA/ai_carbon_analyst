@@ -1,7 +1,7 @@
 """
 Entry point chạy crawl + xử lý tin tức hằng ngày. Thay thế run_crawl.py cũ
 (chỉ crawl HTML thô) bằng luồng đầy đủ: crawl -> extract -> dedupe ->
-classify -> store, dùng carbon_analyst.pipeline.
+classify -> store, dùng pipeline.crawl_pipeline.
 
 Chạy độc lập để test: python -m scripts.run_daily_crawl
 Khi lên production: wrap hàm main() trong Celery task (xem README.md).
@@ -17,14 +17,15 @@ from typing import List, Optional
 
 import yaml
 
-from carbon_analyst import storage
-from carbon_analyst.classification import AnthropicClassifier
-from carbon_analyst.config import Settings
-from carbon_analyst.dedupe import Sha256Fingerprinter
-from carbon_analyst.fetcher import PoliteFetcher
-from carbon_analyst.market_data import fetch_all_quotes
-from carbon_analyst.models import SourceConfig
-from carbon_analyst.pipeline import PipelineContext, process_source
+from crawl_services.classification import AnthropicClassifier
+from core.config import Settings
+from crawl_services.dedupe import Sha256Fingerprinter
+from services.embedding import CohereEmbedder
+from crawl_services.fetcher import PoliteFetcher
+from crawl_services.market_data import fetch_all_quotes
+from schemas.crawl_models import SourceConfig
+from pipeline.crawl_pipeline import PipelineContext, process_source
+from db.session import build_sessionmaker, create_engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -76,8 +77,7 @@ async def main() -> None:
     tickers = load_instrument_tickers(args.instruments_file)
 
     fetcher = PoliteFetcher()
-    pool = await storage.create_pool(settings.database_url)
-    await storage.ensure_schema(pool)
+    engine = create_engine(settings.database_url)
     ctx = PipelineContext(
         fetcher=fetcher,
         classifier=AnthropicClassifier(
@@ -86,7 +86,8 @@ async def main() -> None:
             concurrency=settings.classify_concurrency,
         ),
         fingerprinter=Sha256Fingerprinter(),
-        pool=pool,
+        embedder=CohereEmbedder(),
+        session_factory=build_sessionmaker(engine),
     )
 
     try:
@@ -108,7 +109,7 @@ async def main() -> None:
             logger.info("  %s: %.2f (%+.2f%%)", q.instrument, q.price, q.change_pct_day or 0)
     finally:
         await fetcher.close()
-        await pool.close()
+        await engine.dispose()
 
 
 if __name__ == "__main__":

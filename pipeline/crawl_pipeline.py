@@ -1,24 +1,21 @@
-"""
-Orchestrator: crawl -> extract -> date filter -> dedupe (fingerprint) -> classify -> store.
 
-Thứ tự bước được sắp xếp để tiết kiệm chi phí:
-  1. date filter (loại bài cũ ngay, không tốn request DB hay LLM)
-  2. dedupe check (rẻ, chỉ query DB) luôn chạy TRƯỚC classify
-  3. classify (tốn tiền gọi LLM) — chỉ chạy cho bài mới, chưa có trong DB
-"""
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from carbon_analyst import storage
-from carbon_analyst.classification import Classifier, ClassificationError
-from carbon_analyst.crawler import crawl_source
-from carbon_analyst.date_filter import filter_today
-from carbon_analyst.dedupe import Fingerprinter
-from carbon_analyst.extraction import extract_article
-from carbon_analyst.fetcher import PoliteFetcher
-from carbon_analyst.models import CrawledItem, ExtractedArticle, PipelineResult, SourceConfig, Tier
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from services import storage
+from services.chunking import chunk_text
+from crawl_services.classification import Classifier, ClassificationError
+from crawl_services.crawler import crawl_source
+from crawl_services.date_filter import filter_today
+from crawl_services.dedupe import Fingerprinter
+from services.embedding import Embedder
+from crawl_services.extraction import extract_article
+from crawl_services.fetcher import PoliteFetcher
+from schemas.crawl_models import CrawledItem, ExtractedArticle, PipelineResult, SourceConfig, Tier
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +25,8 @@ class PipelineContext:
     fetcher: PoliteFetcher
     classifier: Classifier
     fingerprinter: Fingerprinter
-    pool: object  # asyncpg.Pool — kept loosely typed to avoid importing asyncpg here
+    embedder: Embedder
+    session_factory: async_sessionmaker[AsyncSession]
 
 
 async def process_url(
@@ -95,7 +93,8 @@ async def process_source(
         extracted = kept
 
     if not extracted:
-        logger.info("[SKIP] %s: không có bài mới trong ngày, bỏ qua.", source.domain)
+        reason = "không extract được nội dung nào" if not today_only else "không có bài mới trong ngày"
+        logger.info("[SKIP] %s: %s, bỏ qua.", source.domain, reason)
         return results
 
     if limit is not None:
@@ -109,11 +108,15 @@ async def process_source(
 
 async def _dedupe_classify_store(ctx: PipelineContext, article: ExtractedArticle) -> PipelineResult:
     """Phần chung sau khi đã có content trích xuất: fingerprint -> dedupe
-    check -> classify (LLM) -> lưu DB. Dedupe check luôn chạy trước classify
-    để không tốn tiền gọi Claude cho bài đã lưu."""
+    check -> classify (LLM) -> lưu DB -> chunk + embedding cho RAG. Dedupe
+    check luôn chạy trước classify để không tốn tiền gọi Claude cho bài đã
+    lưu. Mở session riêng cho từng bước DB (thay vì giữ 1 session xuyên suốt
+    cả lúc gọi Claude) để không giữ connection rảnh trong lúc chờ LLM."""
     content_hash = ctx.fingerprinter.fingerprint(article.text)
 
-    if await storage.exists(ctx.pool, url=article.url, content_hash=content_hash):
+    async with ctx.session_factory() as session:
+        is_duplicate = await storage.exists(session, url=article.url, content_hash=content_hash)
+    if is_duplicate:
         return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
 
     try:
@@ -124,26 +127,53 @@ async def _dedupe_classify_store(ctx: PipelineContext, article: ExtractedArticle
             url=article.url, status="classification_failed", content_hash=content_hash, detail=str(e),
         )
 
-    news_id = await storage.insert_news(
-        ctx.pool,
-        url=article.url,
-        source_domain=article.source_domain,
-        tier=article.tier,
-        title=article.title,
-        content=article.text,
-        content_hash=content_hash,
-        published_at=article.published_at,
-        category=classification.category,
-        category_confidence=classification.confidence,
-    )
-    if news_id is None:
-        return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
+    async with ctx.session_factory() as session:
+        article_id = await storage.insert_article(
+            session,
+            url=article.url,
+            source_domain=article.source_domain,
+            tier=article.tier,
+            title=article.title,
+            content=article.text,
+            content_hash=content_hash,
+            published_at=article.published_at,
+            date_confidence=article.date_confidence,
+            is_relevant=True,
+            category=[classification.category],
+        )
+        if article_id is None:
+            return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
+
+        await _chunk_and_embed(ctx, session, article_id, article.text)
 
     return PipelineResult(
         url=article.url,
         status="stored",
-        news_id=news_id,
+        article_id=article_id,
         category=classification.category,
         confidence=classification.confidence,
         content_hash=content_hash,
     )
+
+
+async def _chunk_and_embed(ctx: PipelineContext, session: AsyncSession, article_id: int, text: str) -> None:
+    """Chia bài viết thành chunk + sinh embedding, lưu vào bảng chunks phục
+    vụ hybrid search cho RAG. Lỗi ở bước này KHÔNG làm mất bài viết đã lưu
+    (article đã commit ở insert_article) — chỉ log, rollback riêng phần
+    chunk và bỏ qua, vì chunks là dữ liệu bổ trợ (search), không phải dữ
+    liệu gốc."""
+    chunks = chunk_text(text)
+    if not chunks:
+        return
+    try:
+        embeddings = await ctx.embedder.embed(chunks)
+        await storage.insert_chunks(
+            session,
+            source_type="article",
+            source_id=article_id,
+            chunks=chunks,
+            embeddings=embeddings,
+        )
+    except Exception as e:  # noqa: BLE001 — lỗi embedding không được làm hỏng pipeline chính
+        await session.rollback()
+        logger.warning("[CHUNK-EMBED-FAIL] article_id=%s: %s", article_id, e)

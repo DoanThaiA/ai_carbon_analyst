@@ -33,19 +33,39 @@ python -m scripts.run_daily_crawl --source-domain <domain> --limit 5   # test on
 python -m py_compile <file>.py
 ```
 
+```bash
+# Apply DB migrations — REQUIRED before running any script the first time,
+# and after pulling changes that touch db/models.py
+alembic upgrade head
+```
+
 Requires `DATABASE_URL` and `ANTHROPIC_API_KEY` in the environment (`.env` is loaded
-automatically via `python-dotenv` — copy `.env.example` to start). There is no test
-suite, linter, or CI config in this repo yet. `main.py` is an unrelated uv-scaffold
-placeholder ("Hello from ai-cabon-analyst!") — the real entry points are under
-`scripts/`.
+automatically via `python-dotenv` — copy `.env.example` to start). The Postgres
+instance must support the `pgvector` extension (`chunks.embedding` is
+`VECTOR(384)`) — `docker-compose.yml` provisions this locally via the
+`pgvector/pgvector:pg16` image; migration `0001` runs
+`CREATE EXTENSION IF NOT EXISTS vector` itself, but the extension binary must exist
+in the Postgres image. There is no test suite, linter, or CI config in this repo
+yet. `main.py` is a demo/ad-hoc runner (not the original uv-scaffold
+placeholder anymore) that duplicates most of `scripts/run_daily_crawl.py` —
+runs every source in `sources.yaml` with no `--limit`; prefer
+`scripts/run_daily_crawl.py` for anything beyond a full local demo run.
 
 ## Architecture
 
-Everything lives in the `carbon_analyst/` package; `scripts/` holds thin CLI entry
-points. Async throughout (httpx, asyncpg, the Anthropic SDK), matching the original
-crawler's asyncio-first design.
+Pipeline logic lives in the `crawl_services/` package; `scripts/` holds thin CLI
+entry points. `db/` is a **separate, top-level package** (sibling to
+`crawl_services/`, not nested inside it) — it's the shared SQLAlchemy
+engine/session/ORM-model layer for the whole project's Postgres database, not
+something private to the news pipeline. Anything else added to this repo later
+(a report generator, a RAG query service, ...) that needs the DB imports `db`
+directly, not through `crawl_services`. `crawl_services/storage.py` is the news
+pipeline's own data-access layer built on top of `db` — it knows about
+`ExtractedArticle`/`NewsCategory`, `db.models` does not. Async throughout (httpx,
+SQLAlchemy's asyncio engine on top of asyncpg, the Anthropic SDK), matching the
+original crawler's asyncio-first design.
 
-**Pipeline** (`carbon_analyst/pipeline.py::process_url` / `process_source`), in a
+**Pipeline** (`crawl_services/pipeline.py::process_url` / `process_source`), in a
 deliberately cost-conscious order — dedupe check runs *before* the LLM call so a
 duplicate never costs an API call:
 
@@ -59,11 +79,11 @@ duplicate never costs an API call:
    pipeline stops here) if the extracted text is too short — usually means the site
    blocked the bot or the page isn't an article.
 3. **Dedupe (fingerprint)** — `dedupe.py::Fingerprinter` ABC; `Sha256Fingerprinter` is
-   the MVP implementation (normalize text, SHA-256). `storage.exists()` checks the DB
-   for that hash *before* classification runs. `EmbeddingFingerprinter` is a stubbed
-   `NotImplementedError` placeholder for later semantic (paraphrase-catching) dedupe —
-   same "raise clearly instead of silently wrong" pattern as `market_data.py`'s
-   `ManualOrVendorProvider`.
+   the MVP implementation (normalize text, SHA-256). `storage.exists()` (a `SELECT`
+   via SQLAlchemy) checks the DB for that hash *before* classification runs.
+   `EmbeddingFingerprinter` is a stubbed `NotImplementedError` placeholder for later
+   semantic (paraphrase-catching) dedupe — same "raise clearly instead of silently
+   wrong" pattern as `market_data.py`'s `ManualOrVendorProvider`.
 4. **Classify** — `classification.py::AnthropicClassifier` calls Claude (default
    `claude-haiku-4-5`, overridable via `CLASSIFIER_MODEL` env var) via
    `client.messages.parse(..., output_format=CategoryClassification)` — a Pydantic
@@ -71,23 +91,69 @@ duplicate never costs an API call:
    SDK's own retries, raises `ClassificationError`; the pipeline logs it and skips
    storing — the article is simply picked up again on the next crawl since nothing
    was written.
-5. **Store** — `storage.py::insert_news()` does `INSERT ... ON CONFLICT (url) DO
-   NOTHING RETURNING id`, plus a caught `UniqueViolationError` on the separate
-   `content_hash` unique index (covers same-content-different-URL races). This is the
-   second, atomic line of defense beyond the pre-classification `exists()` check —
-   needed because multiple crawl runs could race.
+5. **Store** — `storage.py::insert_article()` builds a Postgres-dialect
+   `insert(Article)...on_conflict_do_nothing(index_elements=["url"]).returning(Article.id)`
+   (SQLAlchemy Core), plus a caught `IntegrityError` on the separate `content_hash`
+   unique constraint (covers same-content-different-URL races). This is the second,
+   atomic line of defense beyond the pre-classification `exists()` check — needed
+   because multiple crawl runs could race. Since the classifier always forces an
+   article into exactly one of the 3 categories (no "irrelevant" verdict exists yet),
+   the pipeline always writes `is_relevant=true` and `category` as a single-element
+   array — both columns exist ahead of time so a future multi-label/irrelevance
+   classifier doesn't need another migration.
+6. **Chunk + embed** — `chunking.py::chunk_text()` splits the stored article text
+   into ~1000-char chunks (paragraph-aware, falls back to sentence splitting for long
+   paragraphs); `embedding.py::Embedder` (default `FastEmbedEmbedder`, local
+   `sentence-transformers/all-MiniLM-L6-v2`, 384 dims — must match `Vector(384)` in
+   `db/models.py` if ever changed) embeds each chunk; `storage.py::insert_chunks()`
+   bulk-inserts them into `chunks` with `source_type='article'` and
+   `source_id=articles.id`. Runs *after* the article is already committed (same
+   `AsyncSession`, separate `on_conflict_do_nothing`), so a failure here (model not
+   downloaded yet, transient DB error) is caught, the session is rolled back, and
+   it's logged — not raised — leaving the article row intact but without chunks.
+   Because dedupe checks `articles`, a retried crawl will see the URL/hash as a
+   duplicate and skip re-chunking, so a backfill script would be needed to catch up
+   any articles left without chunks.
 
-**Category enum** (`models.py::NewsCategory`, also the Postgres `CHECK` constraint in
-`db/schema.sql`): `energy_fossil_fuels` (Năng lượng & nhiên liệu hóa thạch),
-`carbon_credits` (Hạn ngạch & Tín chỉ carbon), `policy` (Chính sách).
+**Category enum** (`crawl_services/models.py::NewsCategory`, also the Postgres
+`CHECK` constraint on `Article.category` in `db/models.py`): `energy_fossil_fuels`
+(Năng lượng & nhiên liệu hóa thạch), `carbon_credits` (Hạn ngạch & Tín chỉ carbon),
+`policy` (Chính sách).
 
 **`PipelineContext`** (`pipeline.py`) bundles one `PoliteFetcher`, one `Classifier`,
-one `Fingerprinter`, and one `asyncpg.Pool` — constructed once per script run and
-passed through, rather than using module-level singletons.
+one `Fingerprinter`, one `Embedder`, and one
+`async_sessionmaker[AsyncSession]` (`session_factory`) — constructed once per
+script run and passed through, rather than using module-level singletons. Each DB
+operation opens its own short-lived session (`async with ctx.session_factory() as
+session:`) rather than holding one open for the whole `_dedupe_classify_store` call,
+so a connection isn't held idle while awaiting the Claude API.
 
-**Schema**: `db/schema.sql` is the source of truth for production migrations;
-`storage.py::ensure_schema()` runs the identical DDL idempotently
-(`CREATE TABLE/INDEX IF NOT EXISTS`) so dev/test can self-initialize.
+**`db/` package** (top-level, shared across the project — see Architecture intro):
+- `db/base.py` — the single `Base(DeclarativeBase)` every model inherits from.
+- `db/models.py` — `Article` and `Chunk` ORM models. `Chunk.embedding` uses
+  `pgvector.sqlalchemy.Vector(384)`; `Chunk.content_tsv` is a `Computed(...)`
+  generated column (`to_tsvector('english', content)`), matching the `chunks` table's
+  hybrid-search design (`VECTOR` for semantic search + `TSVECTOR`/GIN for full-text).
+  Two tables: `articles` (1 row = 1 full article, dedup key + source of truth for
+  reports/audits) and `chunks` (many rows per article, for hybrid semantic/full-text
+  search over RAG — `source_type`/`source_id` let the same table later hold chunks
+  from a `daily_reports`-style table too, not just articles).
+- `db/session.py` — `create_engine()` builds the async engine (`postgresql+asyncpg`,
+  `pool_pre_ping=True`, recycled every 30 min) and registers the pgvector codec via a
+  SQLAlchemy `connect` event on `engine.sync_engine` (`pgvector.asyncpg.register_vector`
+  needs the raw asyncpg connection, which is why it's wired at the `sync_engine`
+  level, not the async one). `build_sessionmaker()` returns an
+  `async_sessionmaker[AsyncSession]` with `expire_on_commit=False`.
+- **Migrations are Alembic, not `Base.metadata.create_all()`** — `alembic/env.py`
+  reads `DATABASE_URL` from `core.config.Settings` (same `.env`, not
+  duplicated in `alembic.ini`) and runs migrations through the async engine.
+  `alembic/versions/0001_initial.py` creates the `vector` extension + both tables +
+  all indexes (partial index on `published_at`, `hnsw`/`vector_cosine_ops` on
+  `embedding`, `gin` on `content_tsv`). Run `alembic upgrade head` before running any
+  script for the first time, and after any change to `db/models.py` (create a new
+  revision with `alembic revision -m "..."`, don't hand-edit `0001`). Nothing in
+  `crawl_services/` or `scripts/` creates tables at runtime anymore — a missing
+  table/column is a signal migrations haven't been applied, not a bug to code around.
 
 **Market data**: unchanged from the original crawler — `market_data.py` defines a
 `PriceProvider` ABC with `YFinanceProvider` (real data, WTI/Brent only) and
@@ -116,3 +182,12 @@ not wired up).
 - Content-hash dedupe only catches exact/near-exact duplicates (whitespace/case
   differences) — it does not catch the same story paraphrased across sources. That's
   what `dedupe.py::EmbeddingFingerprinter` is reserved for.
+- Chunk/embed failures after an article is already stored are swallowed (logged,
+  not raised — see step 6 above), and a subsequent crawl won't retry them because
+  dedupe matches on the already-stored `articles` row. If chunk/embed failures show
+  up in logs, a one-off backfill (find `articles.id` with no matching `chunks.source_id`)
+  is needed to catch them up.
+- `FastEmbedEmbedder` (`embedding.py`) downloads
+  `sentence-transformers/all-MiniLM-L6-v2` from Hugging Face on first use and caches
+  it locally — the first run in a fresh environment (including CI) needs network
+  access for that.
