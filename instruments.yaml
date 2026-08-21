@@ -1,40 +1,80 @@
-# Danh sách instrument cần lấy giá cho "Bảng giá nhanh" và biểu đồ nến.
-# provider: yfinance (có sẵn, miễn phí) | manual_or_vendor (cần subscription
-# — xem ghi chú trong market_data.py)
+# Danh sách instrument cần lấy giá — tất cả crawl từ Barchart.
+# Nguồn: crawl_prices/crawl_barchart.py  (BarchartPriceCrawler)
+# Chạy hàng ngày lúc 07:00 ICT — lấy giá đóng cửa ngày hôm qua (giờ VN).
 
 instruments:
-  - name: "WTI Crude Oil"
-    ticker: "CL=F"
-    provider: yfinance
-    group: energy
-    exchange: NYMEX
-
-  - name: "Brent Crude Oil"
-    ticker: "BZ=F"
-    provider: yfinance
-    group: energy
-    exchange: ICE
-
-  - name: "EUA Futures Dec'26"
-    ticker: "EUA_DEC26"
-    provider: manual_or_vendor
+  # ── Carbon ──────────────────────────────────────────────────────────────
+  - name: "EUA Carbon Futures (Front Month)"
+    code: "EUA"
+    symbol_barchart: "CK*0"
+    provider: barchart
     group: carbon
     exchange: ICE
+    unit: "EUR/tCO2"
 
-  - name: "TTF Dutch Gas Calendar Month Futures"
-    ticker: "TTF_FRONT_MONTH"
-    provider: manual_or_vendor
-    group: energy
+  # ── Natural Gas ──────────────────────────────────────────────────────────
+  - name: "TTF Dutch Natural Gas"
+    code: "TTF"
+    symbol_barchart: "TG*0"
+    provider: barchart
+    group: gas
     exchange: ICE
+    unit: "EUR/MWh"
 
-  - name: "German Power Base Year Futures"
-    ticker: "DEBY1"
-    provider: manual_or_vendor
-    group: energy
+  - name: "German Power Baseload (Front Year)"
+    code: "DEBY1"
+    symbol_barchart: "C6IF27"
+    provider: barchart
+    group: power
     exchange: EEX
+    unit: "EUR/MWh"
 
-  - name: "NEWC Index (GlobalCOAL Newcastle)"
-    ticker: "NEWC_INDEX"
-    provider: manual_or_vendor
-    group: energy
-    exchange: GlobalCOAL
+  - name: "Henry Hub Natural Gas"
+    code: "NG"
+    symbol_barchart: "NG*0"
+    provider: barchart
+    group: gas
+    exchange: NYMEX
+    unit: "USD/MMBtu"
+
+  # ── Oil & Refined Products ───────────────────────────────────────────────
+  - name: "Brent Crude Oil"
+    code: "BRENT"
+    symbol_barchart: "CB*0"
+    provider: barchart
+    group: oil
+    exchange: ICE
+    unit: "USD/bbl"
+
+  - name: "WTI Crude Oil"
+    code: "WTI"
+    symbol_barchart: "CL*0"
+    provider: barchart
+    group: oil
+    exchange: NYMEX
+    unit: "USD/bbl"
+
+  - name: "ICE Gasoil (Gas Oil)"
+    code: "GASOIL"
+    symbol_barchart: "LF*0"
+    provider: barchart
+    group: oil
+    exchange: ICE
+    unit: "USD/MT"
+
+  # ── Coal ─────────────────────────────────────────────────────────────────
+  - name: "API2 Coal ARA"
+    code: "API2"
+    symbol_barchart: "ITF*1"
+    provider: barchart
+    group: coal
+    exchange: ICE
+    unit: "USD/MT"
+
+  - name: "API4 Coal Richards Bay"
+    code: "API4"
+    symbol_barchart: "LV*0"
+    provider: barchart
+    group: coal
+    exchange: ICE
+    unit: "USD/MT"

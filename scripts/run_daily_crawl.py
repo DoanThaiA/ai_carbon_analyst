@@ -17,12 +17,12 @@ from typing import List, Optional
 
 import yaml
 
-from crawl_services.classification import AnthropicClassifier
+from crawl_news.classification import AnthropicClassifier
 from core.config import Settings
-from crawl_services.dedupe import Sha256Fingerprinter
+from crawl_news.dedupe import Sha256Fingerprinter
 from services.embedding import CohereEmbedder
-from crawl_services.fetcher import PoliteFetcher
-from crawl_services.market_data import fetch_all_quotes
+from crawl_news.fetcher import PoliteFetcher
+from crawl_news.market_data import fetch_all_quotes
 from schemas.crawl_models import SourceConfig
 from pipeline.crawl_pipeline import PipelineContext, process_source
 from db.session import build_sessionmaker, create_engine
@@ -101,7 +101,8 @@ async def main() -> None:
         by_status: dict = {}
         for r in all_results:
             by_status[r.status] = by_status.get(r.status, 0) + 1
-        logger.info("=== Xử lý xong %d bài viết: %s ===", len(all_results), by_status)
+        hot_news_count = sum(1 for r in all_results if r.is_hot_news)
+        logger.info("=== Xử lý xong %d bài viết: %s (hot_news=%d) ===", len(all_results), by_status, hot_news_count)
 
         logger.info("=== Lấy giá cho %d instrument ===", len(tickers))
         quotes = fetch_all_quotes(tickers)

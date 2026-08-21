@@ -8,12 +8,11 @@ import logging
 import time
 from collections import defaultdict
 from typing import Optional
+from urllib.parse import urlparse
 
-import httpx
+from curl_cffi import requests as curl_requests
 
 logger = logging.getLogger(__name__)
-
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
 REQUEST_TIMEOUT = 20.0  
 MAX_RETRIES = 2
 PER_DOMAIN_CONCURRENCY = 2
@@ -31,18 +30,21 @@ class PoliteFetcher:
         self._domain_semaphores: dict = defaultdict(
             lambda: asyncio.Semaphore(PER_DOMAIN_CONCURRENCY)
         )
+        self._domain_locks: dict = defaultdict(asyncio.Lock)
         self._domain_last_request: dict = {}
-        self._client = httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT},
+        # curl_cffi tự giả lập TLS fingerprint của chrome, rất tốt để bypass firewall/Cloudflare
+        self._client = curl_requests.AsyncSession(
+            impersonate="chrome110",
             timeout=REQUEST_TIMEOUT,
-            follow_redirects=True,
+            verify=False, # fix eia.gov
         )
 
     async def close(self):
-        await self._client.aclose()
+        await self._client.close()
 
     def _domain_of(self, url: str) -> str:
-        return httpx.URL(url).host or url
+        parsed = urlparse(url)
+        return parsed.netloc or url
 
     async def fetch(self, url: str) -> Optional[str]:
         """Fetch 1 URL, trả về HTML string hoặc None nếu lỗi/không đọc được."""
@@ -53,7 +55,7 @@ class PoliteFetcher:
             await self._respect_delay(domain)
             for attempt in range(1, MAX_RETRIES + 2):
                 try:
-                    resp = await self._client.get(url)
+                    resp = await self._client.get(url, allow_redirects=True)
                     if resp.status_code == 200:
                         return resp.text
                     if resp.status_code in (403, 404):
@@ -63,7 +65,7 @@ class PoliteFetcher:
                         "[RETRY %d/%d] status=%s url=%s",
                         attempt, MAX_RETRIES + 1, resp.status_code, url,
                     )
-                except httpx.RequestError as e:
+                except Exception as e:
                     logger.warning(
                         "[RETRY %d/%d] error=%s url=%s", attempt, MAX_RETRIES + 1, e, url
                     )
@@ -73,10 +75,11 @@ class PoliteFetcher:
             return None
 
     async def _respect_delay(self, domain: str):
-        last = self._domain_last_request.get(domain)
-        now = time.monotonic()
-        if last is not None:
-            elapsed = now - last
-            if elapsed < PER_DOMAIN_DELAY_SECONDS:
-                await asyncio.sleep(PER_DOMAIN_DELAY_SECONDS - elapsed)
-        self._domain_last_request[domain] = time.monotonic()
+        async with self._domain_locks[domain]:
+            last = self._domain_last_request.get(domain)
+            now = time.monotonic()
+            if last is not None:
+                elapsed = now - last
+                if elapsed < PER_DOMAIN_DELAY_SECONDS:
+                    await asyncio.sleep(PER_DOMAIN_DELAY_SECONDS - elapsed)
+            self._domain_last_request[domain] = time.monotonic()

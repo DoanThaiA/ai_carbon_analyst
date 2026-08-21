@@ -15,12 +15,12 @@ from datetime import datetime, timezone
 
 from services import storage
 from services.chunking import chunk_text
-from crawl_services.classification import AnthropicClassifier
+from crawl_news.classification import AnthropicClassifier
 from core.config import Settings
-from crawl_services.dedupe import Sha256Fingerprinter
+from crawl_news.dedupe import Sha256Fingerprinter
 from services.embedding import CohereEmbedder
-from crawl_services.extraction import extract_article
-from crawl_services.fetcher import PoliteFetcher
+from crawl_news.extraction import extract_article
+from crawl_news.fetcher import PoliteFetcher
 from schemas.crawl_models import CrawledItem
 from db.session import build_sessionmaker, create_engine
 

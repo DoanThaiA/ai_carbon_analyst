@@ -31,17 +31,7 @@ def create_engine(
         pool_pre_ping=True,  # phát hiện connection chết (DB restart/timeout) trước khi dùng, thay vì fail giữa transaction
         pool_recycle=DEFAULT_POOL_RECYCLE_SECONDS,
     )
-    _register_vector_codec(engine)
     return engine
-
-
-def _register_vector_codec(engine: AsyncEngine) -> None:
-    from pgvector.asyncpg import register_vector
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _on_connect(dbapi_connection, connection_record):  # noqa: ANN001 — signature bắt buộc theo SQLAlchemy event
-        dbapi_connection.run_async(lambda connection: register_vector(connection))
-
 
 def build_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, expire_on_commit=False)

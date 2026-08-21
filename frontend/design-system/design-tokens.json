@@ -1,0 +1,108 @@
+{
+  "$meta": {
+    "source": "https://stavian.com/",
+    "extractedOn": "2026-08-17",
+    "method": "Fetched live HTML + theme CSS (wp-content/themes/gnws/style.css, font.css) and read actual utility-class values from the rendered homepage. Values are real extracted values unless noted as estimate in the accompanying .md files.",
+    "purpose": "Visual design-language reference for AI Carbon Analyst. Not a clone of Stavian's structure, content, or brand assets."
+  },
+  "colors": {
+    "primary": "#0D7870",
+    "primaryDark": "#0F5F5A",
+    "accent": "#5BEDD6",
+    "tint": "#F0FDFA",
+    "tintWashOnDark": "#F0FDFA1A",
+    "background": "#FFFFFF",
+    "surface": "#F6F6F6",
+    "surfaceAlt": "#F2F2F2",
+    "text": "#1A1A1A",
+    "textHeading": "#3D3D3D",
+    "textBody": "#5D5D5D",
+    "textLabel": "#333333",
+    "textInverse": "#F6F6F6",
+    "muted": "#B0B0B0",
+    "mutedLight": "#999999",
+    "border": "#E6E6E6",
+    "borderSoft": "#D1D1D1",
+    "borderOnDark": "#FFFFFF33",
+    "imageOverlay": "linear-gradient(0deg, rgba(0,0,0,0.6) 90%, rgba(0,0,0,0) 100%)"
+  },
+  "typography": {
+    "fontFamily": "Averta, sans-serif",
+    "headingFont": "Averta",
+    "bodyFont": "Averta",
+    "weights": {
+      "regular": 400,
+      "semibold": 600,
+      "bold": 700,
+      "extrabold": 800
+    },
+    "sizes": {
+      "heroHeadingDesktop": "80px",
+      "heroHeadingMobile": "36px",
+      "sectionHeadingDesktop": "60px",
+      "sectionHeadingMobile": "24px",
+      "featureTitle": "48px",
+      "statNumberDesktop": "48px",
+      "statNumberMobile": "24px",
+      "cardTitle": "18px",
+      "bodyLead": "18px",
+      "body": "16px",
+      "small": "14px"
+    },
+    "lineHeights": {
+      "tight": 1.1,
+      "snug": 1.2,
+      "relaxed": 1.3,
+      "base": 1.5
+    }
+  },
+  "spacing": {
+    "xs": "8px",
+    "sm": "16px",
+    "md": "24px",
+    "lg": "40px",
+    "xl": "64px",
+    "2xl": "102px",
+    "3xl": "151px",
+    "4xl": "244px",
+    "containerPaddingX": "16px",
+    "cardPadding": "16px",
+    "buttonPaddingDesktop": "15px 30px",
+    "buttonPaddingMobile": "10px 16px 10px 24px"
+  },
+  "radius": {
+    "sm": "4px",
+    "md": "6px",
+    "lg": "8px",
+    "xl": "12px",
+    "2xl": "16px",
+    "3xl": "24px",
+    "full": "9999px"
+  },
+  "shadows": {
+    "soft": "0 8px 12px 0 rgba(0,0,0,0.08)",
+    "medium": "0 4px 25px 0 rgba(0,0,0,0.1)",
+    "note": "Exact shadow color/opacity relies on Tailwind's --tw-shadow-color runtime variable in the source CSS; offsets/blur above are the confirmed real values, color/opacity is an estimate at typical Tailwind defaults."
+  },
+  "layout": {
+    "maxWidth": "1732px",
+    "containerSteps": ["600px", "728px", "984px", "1240px", "1460px", "1732px"],
+    "breakpoints": {
+      "sm": "640px",
+      "md": "768px",
+      "lg": "1024px",
+      "xl": "1280px",
+      "2xl": "1536px"
+    },
+    "navCollapseBreakpoint": "1280px"
+  },
+  "motion": {
+    "easing": "cubic-bezier(0.4, 0, 0.2, 1)",
+    "durations": {
+      "micro": "150ms",
+      "small": "300ms",
+      "structural": "500ms"
+    },
+    "hoverScale": 1.1
+  }
+}

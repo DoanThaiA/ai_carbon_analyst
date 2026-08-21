@@ -1,21 +1,27 @@
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from services import storage
 from services.chunking import chunk_text
-from crawl_services.classification import Classifier, ClassificationError
-from crawl_services.crawler import crawl_source
-from crawl_services.date_filter import filter_today
-from crawl_services.dedupe import Fingerprinter
+from services.hot_news_broadcast import notify_hot_news
+from crawl_news.classification import Classifier, ClassificationError
+from crawl_news.crawler import crawl_source
+
+from crawl_news.dedupe import Fingerprinter
 from services.embedding import Embedder
-from crawl_services.extraction import extract_article
-from crawl_services.fetcher import PoliteFetcher
+from crawl_news.extraction import extract_article
+from crawl_news.fetcher import PoliteFetcher
 from schemas.crawl_models import CrawledItem, ExtractedArticle, PipelineResult, SourceConfig, Tier
+
+if TYPE_CHECKING:
+    from crawl_news.playwright_fetcher import PlaywrightFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +33,8 @@ class PipelineContext:
     fingerprinter: Fingerprinter
     embedder: Embedder
     session_factory: async_sessionmaker[AsyncSession]
+    playwright_fetcher: Optional["PlaywrightFetcher"] = None  # None → không dùng Playwright
+    seen_hashes: Optional[set] = None  # In-memory deduplication
 
 
 async def process_url(
@@ -68,7 +76,7 @@ async def process_source(
     limit: cắt bớt số bài sau filter — dùng khi test để tiết kiệm gọi LLM.
     """
     seen_urls = seen_urls if seen_urls is not None else set()
-    items = await crawl_source(ctx.fetcher, source, seen_urls)
+    items = await crawl_source(ctx.fetcher, source, seen_urls, ctx.playwright_fetcher)
 
     # Bước extract trước để có published_at phục vụ date filter
     results: List[PipelineResult] = []
@@ -80,100 +88,147 @@ async def process_source(
         else:
             extracted.append(article)
 
-    # Date filter — chỉ giữ bài hôm nay
-    if today_only and extracted:
-        kept, skipped = filter_today(extracted)
-        if skipped:
-            logger.info(
-                "[DATE-FILTER] %s: bỏ %d bài cũ, giữ %d bài hôm nay",
-                source.domain, len(skipped), len(kept),
-            )
-        for art in skipped:
-            results.append(PipelineResult(url=art.url, status="skipped_old"))
-        extracted = kept
-
+    # Không dùng date_filter nữa, coi mọi bài mới tìm được là bài của hôm nay
     if not extracted:
-        reason = "không extract được nội dung nào" if not today_only else "không có bài mới trong ngày"
+        if len(items) == 0 and not results:
+            reason = "tất cả link ứng viên đã crawl trước đó hoặc fetch lỗi"
+        else:
+            reason = "không extract được nội dung nào (site chặn bot hoặc JS-rendered)"
         logger.info("[SKIP] %s: %s, bỏ qua.", source.domain, reason)
         return results
 
     if limit is not None:
         extracted = extracted[:limit]
 
-    for article in extracted:
-        results.append(await _dedupe_classify_store(ctx, article))
+    # OPT-2: classify song song — Semaphore(concurrency) trong Classifier giới hạn tốc độ
+    tasks = [_dedupe_classify_store(ctx, article) for article in extracted]
+    article_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for res in article_results:
+        if isinstance(res, Exception):
+            logger.error("[PIPELINE-ERROR] Exception không mong đợi: %s", res)
+        else:
+            results.append(res)
 
     return results
 
 
 async def _dedupe_classify_store(ctx: PipelineContext, article: ExtractedArticle) -> PipelineResult:
-    """Phần chung sau khi đã có content trích xuất: fingerprint -> dedupe
-    check -> classify (LLM) -> lưu DB -> chunk + embedding cho RAG. Dedupe
-    check luôn chạy trước classify để không tốn tiền gọi Claude cho bài đã
-    lưu. Mở session riêng cho từng bước DB (thay vì giữ 1 session xuyên suốt
-    cả lúc gọi Claude) để không giữ connection rảnh trong lúc chờ LLM."""
+    """Dedupe → Classify → Insert article + chunks trong 1 atomic transaction.
+
+    BUG-2 fix:
+    - Gọi embed() TRƯỚC khi mở DB transaction (tránh giữ connection trong lúc call API)
+    - Dùng session.begin() để bọc insert_article_no_commit + insert_chunks_no_commit
+      → nếu bất kỳ bước nào lỗi, toàn bộ rollback (article không tồn tại mà không có chunks)
+    - IntegrityError (content_hash duplicate) được bắt ngoài transaction → trả về "duplicate"
+    """
     content_hash = ctx.fingerprinter.fingerprint(article.text)
 
-    async with ctx.session_factory() as session:
-        is_duplicate = await storage.exists(session, url=article.url, content_hash=content_hash)
-    if is_duplicate:
+    # Bước 1: Quick check trùng lặp (in-memory, O(1))
+    if ctx.seen_hashes is not None and content_hash in ctx.seen_hashes:
         return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
+    
+    # Fallback kiểm tra DB nếu chưa init seen_hashes
+    if ctx.seen_hashes is None:
+        async with ctx.session_factory() as session:
+            is_duplicate = await storage.exists(session, url=article.url, content_hash=content_hash)
+        if is_duplicate:
+            return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
 
+    # Bước 2: Classify (external API call — ngoài transaction)
     try:
+        logger.debug("[CLASSIFY] Đang gọi LLM phân loại: %s", article.url)
         classification = await ctx.classifier.classify(article.title, article.text)
+        logger.debug("[CLASSIFY-OK] %s -> %s", article.url, [t.value for t in classification.topics])
     except ClassificationError as e:
         logger.warning("[CLASSIFY-FAIL] %s: %s", article.url, e)
         return PipelineResult(
             url=article.url, status="classification_failed", content_hash=content_hash, detail=str(e),
         )
 
-    async with ctx.session_factory() as session:
-        article_id = await storage.insert_article(
-            session,
-            url=article.url,
-            source_domain=article.source_domain,
-            tier=article.tier,
-            title=article.title,
-            content=article.text,
-            content_hash=content_hash,
-            published_at=article.published_at,
-            date_confidence=article.date_confidence,
-            is_relevant=True,
-            category=[classification.category],
+    # Hot news bypass: 1 bài có thể không khớp topic thị trường nào (is_relevant=false
+    # hoặc topics=[]) nhưng vẫn khớp tiêu chí HOT NEWS (vd: 1 nước lớn tuyên bố rút
+    # khỏi decarbonization) — vẫn phải lưu lại để lên chuông thông báo, không skip.
+    if not classification.is_hot_news and (not classification.is_relevant or not classification.topics):
+        status = "irrelevant" if not classification.is_relevant else "classification_failed"
+        detail = "Bài không liên quan energy/carbon" if not classification.is_relevant else "No topic found"
+        logger.info("[SKIP] %s bỏ qua: %s", article.url, detail)
+        return PipelineResult(
+            url=article.url, status=status, content_hash=content_hash, detail=detail
         )
-        if article_id is None:
-            return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
 
-        await _chunk_and_embed(ctx, session, article_id, article.text)
+
+    # Bước 3: Embed chunks (external API call — ngoài transaction, với retry)
+    chunks = chunk_text(article.text)
+    embeddings: list = []
+    if chunks:
+        try:
+            embeddings = await ctx.embedder.embed(chunks)
+        except Exception as e:
+            # Graceful degradation: vẫn lưu article nhưng không có chunk
+            # Article được đánh dấu là stored, có thể re-embed sau
+            logger.warning(
+                "[EMBED-FAIL] %s: %s — lưu article không có chunk/embedding", article.url, e
+            )
+            chunks = []
+
+    # Bước 4: Atomic insert — article + chunks trong 1 transaction
+    try:
+        async with ctx.session_factory() as session:
+            async with session.begin():
+                article_id = await storage.insert_article_no_commit(
+                    session,
+                    url=article.url,
+                    source_domain=article.source_domain,
+                    tier=article.tier,
+                    title=article.title,
+                    content=article.text,
+                    content_hash=content_hash,
+                    published_at=article.published_at,
+                    date_confidence=article.date_confidence,
+                    is_relevant=True,
+                    topics=classification.topics,
+                    is_hot_news=classification.is_hot_news,
+                    hot_news_reason=classification.hot_news_reason,
+                )
+                if article_id is None:
+                    # ON CONFLICT DO NOTHING — URL đã tồn tại
+                    return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
+
+                if chunks and embeddings:
+                    await storage.insert_chunks_no_commit(
+                        session,
+                        source_type="article",
+                        source_id=article_id,
+                        chunks=chunks,
+                        embeddings=embeddings,
+                    )
+
+                if classification.is_hot_news:
+                    # Bắn NOTIFY TRONG transaction — chỉ thực sự gửi đi nếu commit
+                    # thành công ở dưới, rollback thì tự huỷ theo (xem hot_news_broadcast.py).
+                    await notify_hot_news(session, article_id)
+            # session.begin() commit ở đây — atomic
+
+    except IntegrityError:
+        # content_hash unique constraint: URL khác nhưng nội dung giống
+        logger.info("[DUP] content_hash đã tồn tại (url khác), bỏ qua: %s", article.url)
+        return PipelineResult(url=article.url, status="duplicate", content_hash=content_hash)
+
+    # Cập nhật in-memory cache để các bài tiếp theo không bị trùng
+    if ctx.seen_hashes is not None:
+        ctx.seen_hashes.add(content_hash)
+
+    logger.info("[STORED] Đã lưu bài %s -> %s", article.url, [t.value for t in classification.topics])
+    if classification.is_hot_news:
+        logger.warning("[HOT-NEWS] %s — %s", article.url, classification.hot_news_reason)
 
     return PipelineResult(
         url=article.url,
         status="stored",
         article_id=article_id,
-        category=classification.category,
+        topics=classification.topics,
         confidence=classification.confidence,
         content_hash=content_hash,
+        is_hot_news=classification.is_hot_news,
     )
-
-
-async def _chunk_and_embed(ctx: PipelineContext, session: AsyncSession, article_id: int, text: str) -> None:
-    """Chia bài viết thành chunk + sinh embedding, lưu vào bảng chunks phục
-    vụ hybrid search cho RAG. Lỗi ở bước này KHÔNG làm mất bài viết đã lưu
-    (article đã commit ở insert_article) — chỉ log, rollback riêng phần
-    chunk và bỏ qua, vì chunks là dữ liệu bổ trợ (search), không phải dữ
-    liệu gốc."""
-    chunks = chunk_text(text)
-    if not chunks:
-        return
-    try:
-        embeddings = await ctx.embedder.embed(chunks)
-        await storage.insert_chunks(
-            session,
-            source_type="article",
-            source_id=article_id,
-            chunks=chunks,
-            embeddings=embeddings,
-        )
-    except Exception as e:  # noqa: BLE001 — lỗi embedding không được làm hỏng pipeline chính
-        await session.rollback()
-        logger.warning("[CHUNK-EMBED-FAIL] article_id=%s: %s", article_id, e)

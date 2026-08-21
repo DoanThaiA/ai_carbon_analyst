@@ -18,6 +18,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── Scheduler: chạy crawl_prices → crawl_news lúc 6:00 SA mỗi ngày ───────
+  crawler_scheduler:
+    build: .
+    container_name: carbon_analyst_scheduler
+    command: python scheduler.py
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app           # mount code để không cần rebuild khi sửa sources.yaml
+      - scheduler_logs:/app/logs
+    working_dir: /app
+
 volumes:
   pgdata:
+    driver: local
+  scheduler_logs:
     driver: local

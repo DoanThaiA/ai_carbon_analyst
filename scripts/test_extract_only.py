@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-from crawl_services.extraction import extract_article
-from crawl_services.fetcher import PoliteFetcher
+from crawl_news.extraction import extract_article
+from crawl_news.fetcher import PoliteFetcher
 from schemas.crawl_models import CrawledItem
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

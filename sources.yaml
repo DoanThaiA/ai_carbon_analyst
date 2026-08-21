@@ -1,4 +1,9 @@
+
 sources:
+
+  # ==========================================================
+  # 1. ENERGY & FOSSIL FUELS
+  # ==========================================================
 
   - domain: eia.gov
     name: "EIA – Today in Energy"
@@ -7,9 +12,9 @@ sources:
     group: [1]
     type: html
     listing_url: "https://www.eia.gov/todayinenergy/"
-    link_pattern: '/todayinenergy/detail\.php'
+    link_pattern: "/todayinenergy/detail\\.php"
     confidence: high
-    note: "Tin năng lượng hàng ngày (dầu, khí, điện, than) từ cơ quan thống kê năng lượng Mỹ."
+    note: "Tin năng lượng chính thức của EIA. Server government đôi khi phản hồi chậm, dùng retry."
 
   - domain: eia.gov
     name: "EIA – Weekly Petroleum Status Report"
@@ -17,10 +22,10 @@ sources:
     category: energy_official
     group: [1]
     type: html
-    listing_url: "https://www.eia.gov/petroleum/supply/weekly/"
-    link_pattern: '/petroleum/supply/weekly/archive/'
+    listing_url: "https://www.eia.gov/petroleum/supply/weekly/index.php"
+    link_pattern: "/petroleum/supply/weekly/"
     confidence: high
-    note: "Tồn kho dầu thô Mỹ, công bố thứ Tư hàng tuần — input trực tiếp cho WTI."
+    note: "Weekly Petroleum Status Report. Trang hiện tại có Previous Issues."
 
   - domain: eia.gov
     name: "EIA – Natural Gas Weekly Update"
@@ -29,148 +34,370 @@ sources:
     group: [1]
     type: html
     listing_url: "https://www.eia.gov/naturalgas/weekly/"
-    link_pattern: '/naturalgas/weekly/archive/'
+    link_pattern: "/naturalgas/weekly/"
     confidence: high
-    note: "Cung/cầu khí tự nhiên Mỹ — liên quan trực tiếp Henry Hub (NG)."
+    note: "Đã cập nhật URL thay cho /naturalgas/storage/weekly/ bị lỗi 404."
 
-  - domain: oilprice.com
-    name: "OilPrice.com – Energy News (RSS)"
-    tier: B
-    category: energy_media
-    group: [1, 2]
-    type: rss
-    rss_url: "https://oilprice.com/rss/main"
-    confidence: high
-    note: "RSS hoạt động tốt. Tin tổng hợp về dầu, khí, OPEC, IEA, giá thị trường năng lượng."
-
-  - domain: carbonbrief.org
-    name: "Carbon Brief – News (RSS)"
-    tier: B
-    category: eu_climate_policy
-    group: [2, 3]
-    type: rss
-    rss_url: "https://www.carbonbrief.org/feed"
-    confidence: high
-    note: "RSS hoạt động tốt. Phân tích chuyên sâu về chính sách khí hậu, carbon budget, EU ETS, CBAM."
-
-  - domain: cmegroup.com
-    name: "CME Group – Press Releases"
+  - domain: opec.org
+    name: "OPEC – Press Releases"
     tier: A
-    category: exchange_energy
+    category: energy_policy_body
     group: [1]
     type: html
-    listing_url: "https://www.cmegroup.com/media-room/press-releases.html"
+    listing_url: "https://www.opec.org/"
+    link_pattern: "/pr-detail/"
     confidence: medium
-    note: "Sàn niêm yết WTI (NYMEX CL). Đây là tin doanh nghiệp/thị trường, không phải feed giá real-time."
+    note: "Website OPEC mới dùng article URL dạng /pr-detail/NUMBER-DATE.html."
 
-  - domain: ice.com
-    name: "ICE – Newsroom"
-    tier: A
-    category: exchange_energy
-    group: [1, 2]
+  - domain: argusmedia.com
+    name: "Argus Media – Latest Market News"
+    tier: B
+    category: market_intelligence
+    group: [1]
     type: html
-    listing_url: "https://www.ice.com/newsroom"
-    confidence: low
-    note: "Sàn niêm yết Brent, ICE Gasoil/LSGO, EUA Futures (CKZ26) và TTF. Nếu link lỗi, thử ir.theice.com/press (trang IR của tập đoàn)."
+    use_playwright: true
+    listing_url: "https://www.argusmedia.com/en/news-and-insights/latest-market-news"
+    link_pattern: "/en/news-and-insights/latest-market-news/[0-9]+-[a-z0-9\\.\\-]+"
+    confidence: high
+    note: "Site Next.js (Sitecore JSS) — cần Playwright + domcontentloaded+3s sleep để render link. Article URL dạng /latest-market-news/NUMBERID-slug."
+
+  - domain: ember-energy.org
+    name: "Ember Energy – Latest Insights"
+    tier: B
+    category: research_nonprofit
+    group: [1]
+    type: html
+    listing_url: "https://ember-energy.org/latest-insights/"
+    link_pattern: "/latest-insights/"
+    confidence: high
+    note: "URL bài Ember hiện vẫn sử dụng /latest-insights/."
+
+  # ==========================================================
+  # 2. CARBON / ETS / VCM
+  # ==========================================================
+
+  - domain: ieta.org
+    name: "IETA – News & Views"
+    tier: B
+    category: carbon_industry_association
+    group: [2, 3]
+    type: html
+    listing_url: "https://www.ieta.org/news/"
+    link_pattern: "/news/"
+    confidence: high
+    note: "IETA News & Views."
+
+  - domain: esma.europa.eu
+    name: "ESMA – News"
+    tier: A
+    category: financial_regulator
+    group: [2, 3]
+    type: html
+    listing_url: "https://www.esma.europa.eu/press-news/esma-news"
+    link_pattern: "/press-news/"
+    confidence: high
+    note: "ESMA News listing hiện hoạt động."
 
   - domain: eex.com
     name: "EEX – Newsroom"
     tier: A
-    category: exchange_energy
-    group: [1]
+    category: exchange_official
+    group: [2]
     type: html
     listing_url: "https://www.eex.com/en/newsroom"
-    confidence: medium
-    note: "Sàn niêm yết hợp đồng điện Đức (German Power Base Year Futures / DEBY1)."
-
-  - domain: lme.com
-    name: "LME – News & Events"
-    tier: A
-    category: exchange_metals
-    group: [3]
-    type: html
-    listing_url: "https://www.lme.com/en/news-events/latest-news"
-    confidence: low
-    note: "Giá đồng (copper) — liên quan nhu cầu chuyển dịch năng lượng, EV, lưới điện trong mục chính sách Trung Quốc."
-
-  - domain: commission.europa.eu
-    name: "European Commission – News"
-    tier: A
-    category: eu_policy
-    group: [3]
-    type: html
-    listing_url: "https://commission.europa.eu/news_en"
-    confidence: medium
-    note: "Tin/thông cáo báo chí chung EC — theo dõi Fit-for-55, ETS, tiến trình chính sách khí hậu."
-
-  - domain: taxation-customs.ec.europa.eu
-    name: "European Commission – CBAM"
-    tier: A
-    category: eu_cbam
-    group: [3]
-    type: html
-    listing_url: "https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism_en"
-    confidence: medium
-    note: "QUAN TRỌNG NHẤT cho Nhóm 3: trang chính thức CBAM (lộ trình, ngành bổ sung, deadline nộp thuế phát thải)."
-
-  - domain: esma.europa.eu
-    name: "ESMA – Press News"
-    tier: A
-    category: eu_regulator
-    group: [2, 3]
-    type: html
-    listing_url: "https://www.esma.europa.eu/press-news/esma-news"
-    confidence: medium
-    note: "Giám sát thị trường tài chính EU — quy định phái sinh carbon, minh bạch giao dịch EUA."
-
-  - domain: climate.ec.europa.eu
-    name: "EU Climate Action – News"
-    tier: A
-    category: eu_climate_policy
-    group: [2, 3]
-    type: html
-    listing_url: "https://climate.ec.europa.eu/news-other-reads/news_en"
+    link_pattern: "/en/newsroom/"
     confidence: high
-    note: "Nguồn chính thức nhất cho EU ETS, MSR, Fit-for-55, Article 6 — đúng URL bạn đã cung cấp (mục 14)."
+    note: "EEX Newsroom."
 
-
-  - domain: ieta.org
-    name: "IETA – News & Resources"
-    tier: B
-    category: carbon_market_association
-    group: [2, 3]
-    type: html
-    listing_url: "https://www.ieta.org/resources/"
-    confidence: low
-    note: "Hiệp hội ngành carbon trading toàn cầu — cấu trúc mục tin cần kiểm tra lại trực tiếp."
-
-  - domain: climateimpactx.com
-    name: "Climate Impact X – Insights"
-    tier: B
-    category: carbon_market_voluntary
+  - domain: ice.com
+    name: "ICE – Media Center"
+    tier: A
+    category: exchange_official
     group: [2]
     type: html
-    listing_url: "https://www.climateimpactx.com/insights"
-    confidence: low
-    note: "Sàn tín chỉ carbon tự nguyện (Singapore) — theo dõi giá & tin VCM theo loại tín chỉ."
-
-  - domain: acx.net
-    name: "AirCarbon Exchange – News"
-    tier: B
-    category: carbon_market_voluntary
-    group: [2]
-    type: html
-    listing_url: "https://acx.net/news"
-    confidence: low
-    note: "Sàn tín chỉ carbon tự nguyện."
-
+    listing_url: "https://www.ice.com/media"
+    link_pattern: "/media"
+    confidence: high
+    note: "ICE Media Center hiện nằm ở /media."
 
   - domain: nasdaq.com
-    name: "Nasdaq – Commodities News (RSS)"
-    tier: C
-    category: financial_media
-    group: [1]
+    name: "Nasdaq – Newsroom"
+    tier: A
+    category: financial_press
+    group: [1, 2]
+    type: html
+    listing_url: "https://www.nasdaq.com/newsroom"
+    link_pattern: "/articles/[a-z0-9\\-]{8,}"
+    confidence: high
+    note: "Nasdaq Newsroom hiện là trang chính thức cho news/press releases."
+
+  - domain: carbonherald.com
+    name: "Carbon Herald"
+    tier: B
+    category: carbon_news_specialist
+    group: [2]
     type: rss
-    rss_url: "https://www.nasdaq.com/feed/rssoutbound?category=Commodities"
-    confidence: low
-    note: "Nasdaq KHÔNG phải sàn niêm yết TTF/EUA/Brent (ở ICE) hay WTI (ở CME) — chỉ hữu ích cho tin/bình luận thị trường chung, không phải dữ liệu giá gốc."
+    listing_url: "https://carbonherald.com/"
+    rss_url: "https://carbonherald.com/feed/"
+    link_pattern: null
+    confidence: high
+    note: "RSS chuẩn WordPress."
+
+  - domain: carboncredits.com
+    name: "Carbon Credits"
+    tier: B
+    category: carbon_news_specialist
+    group: [2]
+    type: rss
+    listing_url: "https://carboncredits.com/"
+    rss_url: "https://carboncredits.com/feed/"
+    link_pattern: null
+    confidence: high
+    note: "RSS chuẩn WordPress."
+
+  - domain: ecosystemmarketplace.com
+    name: "Ecosystem Marketplace – Articles"
+    tier: B
+    category: carbon_voluntary_market
+    group: [2]
+    type: html
+    listing_url: "https://www.ecosystemmarketplace.com/articles/"
+    link_pattern: "/articles/"
+    confidence: high
+    note: "Featured Articles Archive."
+
+  - domain: icvcm.org
+    name: "ICVCM – All News & Insights"
+    tier: B
+    category: carbon_voluntary_market
+    group: [2, 3]
+    type: html
+    listing_url: "https://icvcm.org/all-news-insights/"
+    link_pattern: "/(news|insights|all-news-insights)/"
+    confidence: high
+    note: "Thay cho /news/ cũ."
+
+  - domain: verra.org
+    name: "Verra – News"
+    tier: B
+    category: carbon_voluntary_market
+    group: [2]
+    type: html
+    listing_url: "https://verra.org/news/"
+    link_pattern: "/news/"
+    confidence: high
+    note: "Verra News."
+
+  - domain: goldstandard.org
+    name: "Gold Standard – News"
+    tier: B
+    category: carbon_voluntary_market
+    group: [2]
+    type: html
+    listing_url: "https://www.goldstandard.org/news"
+    link_pattern: "/news/"
+    confidence: high
+    note: "Gold Standard News."
+
+  - domain: carbon-direct.com
+    name: "Carbon Direct – Insights"
+    tier: B
+    category: carbon_voluntary_market
+    group: [2]
+    type: html
+    listing_url: "https://www.carbon-direct.com/insights"
+    link_pattern: "/insights/"
+    confidence: high
+    note: "Carbon Direct Insights."
+
+  - domain: lseg.com
+    name: "LSEG – Insights"
+    tier: B
+    category: market_intelligence
+    group: [2]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.lseg.com/en/insights"
+    link_pattern: "/en/insights/"
+    confidence: high
+    note: "LSEG Insights — dùng Playwright vì có JS lazy-loading."
+
+  - domain: fastmarkets.com
+    name: "Fastmarkets – Carbon Markets"
+    tier: B
+    category: market_intelligence
+    group: [2]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.fastmarkets.com/markets/carbon/"
+    link_pattern: "/markets/carbon/"
+    confidence: high
+    note: "Dùng Playwright — trang có JS lazy-load."
+
+  # ==========================================================
+  # 3. EU / POLICY
+  # ==========================================================
+
+  - domain: climate.ec.europa.eu
+    name: "EU Commission – Climate News"
+    tier: A
+    category: policy_official_eu
+    group: [3]
+    type: html
+    listing_url: "https://climate.ec.europa.eu/news-other-reads/news_en"
+    link_pattern: "/news/[a-z0-9\\-]+_en"
+    confidence: high
+    note: "Listing ở /news-other-reads/news_en, article URL ở /news/..._en."
+
+  - domain: taxation-customs.ec.europa.eu
+    name: "EU Commission – CBAM Communication & News"
+    tier: A
+    category: policy_official_eu
+    group: [3]
+    type: html
+    listing_url: "https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism/cbam-communication-and-news_en"
+    link_pattern: "/carbon-border-adjustment-mechanism/"
+    confidence: high
+    note: "Nguồn chuyên biệt cho CBAM developments/news."
+
+  - domain: esgdive.com
+    name: "ESG Dive"
+    tier: B
+    category: esg_news
+    group: [3]
+    type: rss
+    listing_url: "https://www.esgdive.com/"
+    rss_url: "https://www.esgdive.com/feeds/news/"
+    link_pattern: null
+    confidence: high
+    note: "Industry Dive RSS endpoint."
+
+  - domain: esgtoday.com
+    name: "ESG Today – Newsfeed"
+    tier: B
+    category: esg_news
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.esgtoday.com/newsfeed/"
+    link_pattern: "/[a-z0-9\\-]+/"
+    confidence: high
+    note: "Dùng Playwright vì trang dùng JS để load bài."
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/"
+    link_pattern: "/[a-z0-9\\-]+/"
+    confidence: high
+    note: "Dùng Playwright vì homepage load nội dung động."
+
+  - domain: ft.com
+    name: "Financial Times – Energy"
+    tier: B
+    category: financial_press
+    group: [1, 3]
+    type: html
+    listing_url: "https://www.ft.com/energy"
+    link_pattern: "/content/[a-f0-9\\-]{36}"
+    confidence: medium
+    note: "HTML listing load được nhưng nội dung bài là paywall. Chỉ crawl metadata/headline."
+
+
+  # ==========================================================
+  # 4. VIETNAM
+  # ==========================================================
+
+  - domain: dcc.mae.gov.vn
+    name: "Cục Biến đổi khí hậu – Tin tức"
+    tier: A
+    category: policy_official_vn
+    group: [3]
+    type: html
+    listing_url: "https://dcc.mae.gov.vn/"
+    link_pattern: "/"
+    confidence: medium
+    note: "Không nên hard-code /tin-tuc/; discover article links từ homepage/listing."
+
+  - domain: baochinhphu.vn
+    name: "Báo Chính phủ – Chính sách và cuộc sống"
+    tier: A
+    category: policy_official_vn
+    group: [3]
+    type: html
+    listing_url: "https://baochinhphu.vn/chinh-sach-va-cuoc-song.htm"
+    link_pattern: "/[a-z0-9\\-]+\\.htm"
+    confidence: high
+    note: "Thay cho /chinh-sach-moi.htm."
+
+  - domain: tapchimoitruong.vn
+    name: "Tạp chí Môi trường"
+    tier: B
+    category: vn_press
+    group: [3]
+    type: html
+    listing_url: "https://tapchimoitruong.vn/"
+    link_pattern: "/[a-z0-9\\-]+-[0-9]+\\.html"
+    confidence: medium
+    note: "Nên discover links từ DOM thay vì chỉ dựa regex."
+
+  - domain: moitruong.net.vn
+    name: "Môi trường & Cuộc sống"
+    tier: B
+    category: vn_press
+    group: [3]
+    type: html
+    listing_url: "https://moitruong.net.vn/"
+    link_pattern: "/[a-z0-9\\-]+-[0-9]+\\.html"
+    confidence: medium
+    note: "Có thể trùng nội dung với các nguồn VN khác."
+
+  - domain: vneconomy.vn
+    name: "VnEconomy – Doanh nghiệp"
+    tier: B
+    category: vn_press
+    group: [3]
+    type: html
+    listing_url: "https://vneconomy.vn/cong-ty-doanh-nghiep.htm"
+    link_pattern: "/[a-z0-9\\-]+\\.htm"
+    confidence: high
+    note: "Trang hiện tại là /cong-ty-doanh-nghiep.htm."
+
+  - domain: thoibaotaichinhvietnam.vn
+    name: "Thời báo Tài chính Việt Nam"
+    tier: B
+    category: vn_press
+    group: [3]
+    type: html
+    listing_url: "https://thoibaotaichinhvietnam.vn/"
+    link_pattern: "/[a-z0-9\\-]+/[a-z0-9\\-]+"
+    confidence: medium
+    note: "Nên discover link từ homepage/category."
+
+  - domain: vnexpress.net
+    name: "VnExpress – Kinh doanh"
+    tier: B
+    category: vn_press
+    group: [3]
+    type: rss
+    listing_url: "https://vnexpress.net/kinh-doanh"
+    rss_url: "https://vnexpress.net/rss/kinh-doanh.rss"
+    link_pattern: null
+    confidence: high
+    note: "RSS endpoint chính thức của VnExpress."
+
+  - domain: cafef.vn
+    name: "CafeF – Trang chủ"
+    tier: B
+    category: vn_press
+    group: [3]
+    type: rss
+    listing_url: "https://cafef.vn/"
+    rss_url: "https://cafef.vn/home.rss"
+    link_pattern: null
+    confidence: high
+    note: "Đã sửa từ /trang-chu.rss sang /home.rss."

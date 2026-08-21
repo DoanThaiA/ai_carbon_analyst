@@ -53,19 +53,19 @@ runs every source in `sources.yaml` with no `--limit`; prefer
 
 ## Architecture
 
-Pipeline logic lives in the `crawl_services/` package; `scripts/` holds thin CLI
+Pipeline logic lives in the `crawl_news/` package; `scripts/` holds thin CLI
 entry points. `db/` is a **separate, top-level package** (sibling to
-`crawl_services/`, not nested inside it) — it's the shared SQLAlchemy
+`crawl_news/`, not nested inside it) — it's the shared SQLAlchemy
 engine/session/ORM-model layer for the whole project's Postgres database, not
 something private to the news pipeline. Anything else added to this repo later
 (a report generator, a RAG query service, ...) that needs the DB imports `db`
-directly, not through `crawl_services`. `crawl_services/storage.py` is the news
+directly, not through `crawl_news`. `crawl_news/storage.py` is the news
 pipeline's own data-access layer built on top of `db` — it knows about
 `ExtractedArticle`/`NewsCategory`, `db.models` does not. Async throughout (httpx,
 SQLAlchemy's asyncio engine on top of asyncpg, the Anthropic SDK), matching the
 original crawler's asyncio-first design.
 
-**Pipeline** (`crawl_services/pipeline.py::process_url` / `process_source`), in a
+**Pipeline** (`crawl_news/pipeline.py::process_url` / `process_source`), in a
 deliberately cost-conscious order — dedupe check runs *before* the LLM call so a
 duplicate never costs an API call:
 
@@ -84,23 +84,22 @@ duplicate never costs an API call:
    `EmbeddingFingerprinter` is a stubbed `NotImplementedError` placeholder for later
    semantic (paraphrase-catching) dedupe — same "raise clearly instead of silently
    wrong" pattern as `market_data.py`'s `ManualOrVendorProvider`.
-4. **Classify** — `classification.py::AnthropicClassifier` calls Claude (default
-   `claude-haiku-4-5`, overridable via `CLASSIFIER_MODEL` env var) via
-   `client.messages.parse(..., output_format=CategoryClassification)` — a Pydantic
-   model, so no manual JSON parsing/retry loop. On any `anthropic.APIError` after the
-   SDK's own retries, raises `ClassificationError`; the pipeline logs it and skips
-   storing — the article is simply picked up again on the next crawl since nothing
-   was written.
+4. **Classify** — `classification.py::AnthropicClassifier` / `CohereClassifier` gọi LLM
+   (default `command-r-plus-08-2024` cho Cohere, `claude-haiku-4-5` cho Anthropic) qua
+   `client.messages.create`. Input text được cắt tại `MAX_TEXT_CHARS_FOR_CLASSIFICATION = 6000`
+   ký tự (tăng từ 4000 — đủ bắt được phần phân tích của bài dài). LLM trả về JSON gồm
+   `topics` (1–3 giá trị từ `NewsTopic`), `confidence` (0–1), và `is_relevant` (bool).
+   - `is_relevant=false`: LLM xác nhận bài không liên quan energy/carbon — pipeline
+     trả về `status="irrelevant"` và không lưu DB.
+   - Parse JSON lenient: strip/lowercase từng topic trước validate — topic sai
+     bị skip (log warning), không raise — tránh drop bài vì whitespace/casing.
+   - Lỗi API sau retry: raise `ClassificationError`; pipeline log và skip storing
+     (bài sẽ được pick up lại lần crawl sau).
 5. **Store** — `storage.py::insert_article()` builds a Postgres-dialect
    `insert(Article)...on_conflict_do_nothing(index_elements=["url"]).returning(Article.id)`
    (SQLAlchemy Core), plus a caught `IntegrityError` on the separate `content_hash`
-   unique constraint (covers same-content-different-URL races). This is the second,
-   atomic line of defense beyond the pre-classification `exists()` check — needed
-   because multiple crawl runs could race. Since the classifier always forces an
-   article into exactly one of the 3 categories (no "irrelevant" verdict exists yet),
-   the pipeline always writes `is_relevant=true` and `category` as a single-element
-   array — both columns exist ahead of time so a future multi-label/irrelevance
-   classifier doesn't need another migration.
+   unique constraint (covers same-content-different-URL races). Articles marked
+   `irrelevant` are NOT stored.
 6. **Chunk + embed** — `chunking.py::chunk_text()` splits the stored article text
    into ~1000-char chunks (paragraph-aware, falls back to sentence splitting for long
    paragraphs); `embedding.py::Embedder` (default `FastEmbedEmbedder`, local
@@ -115,7 +114,7 @@ duplicate never costs an API call:
    duplicate and skip re-chunking, so a backfill script would be needed to catch up
    any articles left without chunks.
 
-**Category enum** (`crawl_services/models.py::NewsCategory`, also the Postgres
+**Category enum** (`crawl_news/models.py::NewsCategory`, also the Postgres
 `CHECK` constraint on `Article.category` in `db/models.py`): `energy_fossil_fuels`
 (Năng lượng & nhiên liệu hóa thạch), `carbon_credits` (Hạn ngạch & Tín chỉ carbon),
 `policy` (Chính sách).
@@ -152,7 +151,7 @@ so a connection isn't held idle while awaiting the Claude API.
   `embedding`, `gin` on `content_tsv`). Run `alembic upgrade head` before running any
   script for the first time, and after any change to `db/models.py` (create a new
   revision with `alembic revision -m "..."`, don't hand-edit `0001`). Nothing in
-  `crawl_services/` or `scripts/` creates tables at runtime anymore — a missing
+  `crawl_news/` or `scripts/` creates tables at runtime anymore — a missing
   table/column is a signal migrations haven't been applied, not a bug to code around.
 
 **Market data**: unchanged from the original crawler — `market_data.py` defines a

@@ -69,19 +69,19 @@ instrument lấy được (hiện tại chỉ WTI/Brent có dữ liệu thật q
 
 | Path | Vai trò |
 |---|---|
-| `crawl_services/models.py` | Dataclass/enum dùng chung: `SourceConfig`, `CrawledItem`, `ExtractedArticle`, `NewsCategory`, `PipelineResult`... |
-| `crawl_services/config.py` | `Settings` đọc từ biến môi trường (`.env`) |
-| `crawl_services/fetcher.py` | HTTP fetch lịch sự: giới hạn tốc độ theo domain, retry, bỏ qua 403/404 |
-| `crawl_services/crawler.py` | Crawl RSS (feedparser) hoặc HTML listing (selectolax) tuỳ theo config nguồn — chỉ trả về HTML thô |
-| `crawl_services/extraction.py` | Trích xuất content + metadata (title, ngày đăng) bằng trafilatura |
-| `crawl_services/dedupe.py` | `Fingerprinter` — SHA-256 content hash (MVP), interface sẵn sàng cắm embedding dedupe sau |
-| `crawl_services/classification.py` | Phân loại 3 category bằng Claude API (structured output) |
-| `crawl_services/chunking.py` | Chia nội dung bài viết thành chunk (~1000 ký tự) trước khi embedding |
-| `crawl_services/embedding.py` | `Embedder` — sinh vector 384 chiều cho chunk (mặc định fastembed/MiniLM, local, không tốn tiền API) |
-| `crawl_services/storage.py` | Data-access layer của pipeline tin tức (SQLAlchemy async) — lưu bài vào `articles`, chunk+embedding vào `chunks`, dedupe atomic qua unique constraint |
-| `crawl_services/pipeline.py` | Orchestrator: crawl → extract → dedupe → classify → store → chunk + embed |
-| `crawl_services/market_data.py` | Lấy giá instrument — yfinance cho WTI/Brent, interface chờ cắm vendor thật cho EUA/TTF/... |
-| `db/` | **Package riêng, dùng chung cho cả dự án** (không nằm trong `crawl_services/`) — engine/session SQLAlchemy async (`db/session.py`) + ORM model `Article`/`Chunk` (`db/models.py`) |
+| `crawl_news/models.py` | Dataclass/enum dùng chung: `SourceConfig`, `CrawledItem`, `ExtractedArticle`, `NewsCategory`, `PipelineResult`... |
+| `crawl_news/config.py` | `Settings` đọc từ biến môi trường (`.env`) |
+| `crawl_news/fetcher.py` | HTTP fetch lịch sự: giới hạn tốc độ theo domain, retry, bỏ qua 403/404 |
+| `crawl_news/crawler.py` | Crawl RSS (feedparser) hoặc HTML listing (selectolax) tuỳ theo config nguồn — chỉ trả về HTML thô |
+| `crawl_news/extraction.py` | Trích xuất content + metadata (title, ngày đăng) bằng trafilatura |
+| `crawl_news/dedupe.py` | `Fingerprinter` — SHA-256 content hash (MVP), interface sẵn sàng cắm embedding dedupe sau |
+| `crawl_news/classification.py` | Phân loại 3 category bằng Claude API (structured output) |
+| `crawl_news/chunking.py` | Chia nội dung bài viết thành chunk (~1000 ký tự) trước khi embedding |
+| `crawl_news/embedding.py` | `Embedder` — sinh vector 384 chiều cho chunk (mặc định fastembed/MiniLM, local, không tốn tiền API) |
+| `crawl_news/storage.py` | Data-access layer của pipeline tin tức (SQLAlchemy async) — lưu bài vào `articles`, chunk+embedding vào `chunks`, dedupe atomic qua unique constraint |
+| `crawl_news/pipeline.py` | Orchestrator: crawl → extract → dedupe → classify → store → chunk + embed |
+| `crawl_news/market_data.py` | Lấy giá instrument — yfinance cho WTI/Brent, interface chờ cắm vendor thật cho EUA/TTF/... |
+| `db/` | **Package riêng, dùng chung cho cả dự án** (không nằm trong `crawl_news/`) — engine/session SQLAlchemy async (`db/session.py`) + ORM model `Article`/`Chunk` (`db/models.py`) |
 | `alembic/`, `alembic.ini` | Migration schema (Alembic) — nguồn chân lý cho DDL, chạy `alembic upgrade head` để tạo/cập nhật bảng |
 | `sources.yaml` | Danh mục ~47 nguồn từ JD, đã gắn tier A/B/C |
 | `instruments.yaml` | Danh sách 6 instrument cần theo dõi giá |
@@ -126,7 +126,7 @@ giờ mở cửa).
 ## Giới hạn hiện tại — cần biết trước khi chạy thật
 
 1. **Heuristic tìm link bài viết** (`_extract_article_links` trong
-   `crawl_services/crawler.py`) hoạt động tốt với site dạng blog/WordPress
+   `crawl_news/crawler.py`) hoạt động tốt với site dạng blog/WordPress
    phổ biến, nhưng ~47 nguồn trong JD có cấu trúc rất khác nhau. Sau lần chạy
    đầu, xem log nguồn nào trả về 0 bài rồi bổ sung `link_pattern` riêng cho
    nguồn đó (chưa implement field này — cần thêm nếu heuristic chung không
@@ -164,7 +164,7 @@ giờ mở cửa).
    cho việc mở rộng đa nhãn/lọc-không-liên-quan sau này mà không cần đổi
    schema lần nữa.
 
-8. **Chunk + embedding (`crawl_services/chunking.py`, `embedding.py`)** chạy
+8. **Chunk + embedding (`crawl_news/chunking.py`, `embedding.py`)** chạy
    SAU khi bài đã insert vào `articles` — nếu bước này lỗi (model chưa tải
    được, DB tạm gián đoạn...), bài viết vẫn được lưu nhưng KHÔNG có chunk.
    Do dedupe check chạy trên `articles`, lần crawl sau sẽ coi bài này là

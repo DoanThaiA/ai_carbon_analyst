@@ -1,0 +1,277 @@
+{
+  "1": {
+    "title": "Tóm tắt điều hành",
+    "bullets": [
+      "**EUA:** Giá đóng cửa EUA Futures Dec'26 ở mức 81.4400 EUR/tCO2, giảm 0.33% trong phiên và giảm 2.0% trong 30 ngày, với biên độ dao động 30 ngày từ 80.54 đến 84.50.",
+      "**Chính sách:** Không có tin chính sách EU mới nổi bật ảnh hưởng trực tiếp đến giá EUA trong kỳ báo cáo.",
+      "**Địa chính trị:** Ngắt quãng dòng chảy dầu thô qua Eo biển Hormuz tiếp tục gây biến động giá dầu, có thể gián tiếp ảnh hưởng đến chi phí năng lượng và nhu cầu EUA.",
+      "**Năng lượng:** Sản lượng khí đốt tự nhiên của Mỹ dự kiến đạt kỷ lục 122.5 Bcf/d năm 2026, có thể làm giảm nhu cầu than và gián tiếp hỗ trợ giá EUA.",
+      "**Khác:** Không có sự kiện nổi bật khác tác động đáng kể đến giá EUA trong kỳ báo cáo."
+    ]
+  },
+  "3": {
+    "title": "Phân tích năng lượng & tác động lên EUA",
+    "analysis_blocks": [
+      {
+        "heading": "Diễn biến chính",
+        "content": "Giá EUA Futures Dec'26 đóng cửa ở mức 81.4400 EUR/tCO2, giảm 0.33% trong ngày và -2.0% trong 30 ngày. Thị trường năng lượng châu Âu chứng kiến giá khí tự nhiên (TTF) ổn định, trong khi than (API2) giảm nhẹ. Điện Đức (DEBY1) tăng nhẹ do nhu cầu làm mát cuối mùa hè. Không có biến động lớn từ các nguồn năng lượng tái tạo (RES)."
+      },
+      {
+        "heading": "Yếu tố dẫn dắt",
+        "content": "1. **Fuel switching**: Giá gas ổn định, không kích hoạt chuyển đổi sang than, duy trì phát thải ở mức hiện tại. 2. **Năng lượng tái tạo**: RES ổn định, không tác động đáng kể đến dispatch than/gas. 3. **Chính sách**: Không có thông báo mới về MSR hoặc đấu giá EUA. 4. **Kinh tế vĩ mô**: Không có tín hiệu suy thoái hoặc tăng trưởng mạnh, nhu cầu điện ổn định."
+      },
+      {
+        "heading": "Quan điểm thị trường",
+        "content": "Không có quan điểm thị trường cụ thể. Các nhà phân tích vẫn theo dõi sát sao biến động gas và chính sách MSR."
+      },
+      {
+        "heading": "Cần theo dõi",
+        "content": "1. Báo cáo hàng tuần về trữ lượng gas châu Âu (Thứ Tư, 21:00 GMT+7). 2. Cuộc họp ECB về chính sách tiền tệ (Thứ Năm, 19:45 GMT+7)."
+      }
+    ],
+    "correlation_analysis": {
+      "gas_coal_power": "Giá gas ổn định, than giảm nhẹ, và điện Đức tăng nhẹ. Chuỗi logic: Gas ổn định → không kích hoạt fuel switching → phát thải ổn định → áp lực lên EUA trung lập. Than giảm nhẹ → chi phí phát điện than giảm → không kích thích tăng phát thải. Điện Đức tăng nhẹ → nhu cầu làm mát cuối mùa → không đủ để kích hoạt tăng phát thải đáng kể. Tổng hợp 3 yếu tố này tạo áp lực trung lập lên EUA.",
+      "eua_conclusion": "Tín hiệu hỗn hợp. Giá EUA có thể dao động trong phạm vi hẹp do thiếu yếu tố dẫn dắt mạnh. Điều kiện kích hoạt tăng: Gas tăng đột biến hoặc chính sách MSR siết chặt. Điều kiện kích hoạt giảm: RES tăng mạnh hoặc suy thoái kinh tế."
+    },
+    "trading_scenarios": [
+      {
+        "horizon": "ngắn hạn",
+        "condition": "Nếu giá gas TTF tăng đột biến do gián đoạn cung",
+        "market_pricing": "...thị trường định giá EUA theo hướng tăng do fuel switching sang than.",
+        "key_risk": "Rủi ro chính là biến động thời tiết bất ngờ làm giảm nhu cầu gas.",
+        "action_plan": "Theo dõi sát sao báo cáo trữ lượng gas và dự báo thời tiết."
+      },
+      {
+        "horizon": "trung hạn",
+        "condition": "Nếu MSR công bố rút thêm cap",
+        "market_pricing": "...thị trường định giá EUA tăng do cung giảm.",
+        "key_risk": "Rủi ro chính là phản ứng quá mức của thị trường dẫn đến can thiệp MSR.",
+        "action_plan": "Đánh giá tác động của MSR lên cân bằng cung-cầu EUA."
+      },
+      {
+        "horizon": "dài hạn",
+        "condition": "Nếu RES đạt mốc tăng trưởng 20% so với năm ngoái",
+        "market_pricing": "...thị trường định giá EUA giảm do phát thải từ than/gas giảm.",
+        "key_risk": "Rủi ro chính là chậm triển khai dự án RES do rào cản kỹ thuật.",
+        "action_plan": "Theo dõi tiến độ các dự án RES lớn tại châu Âu."
+      }
+    ]
+  },
+  "4": {
+    "title": "Cập nhật tín chỉ carbon & CBAM",
+    "bullets": [
+      "[i] Không có diễn biến trọng yếu",
+      "[ii] Không có diễn biến trọng yếu",
+      "[iii] Không có diễn biến trọng yếu",
+      "[iv] Không có diễn biến trọng yếu"
+    ]
+  },
+  "5": {
+    "title": "Tín hiệu liên thị trường",
+    "text": "Không có tín hiệu liên thị trường mới."
+  },
+  "7": {
+    "title": "Quan điểm trái chiều đáng chú ý",
+    "has_content": false,
+    "text": "Không có quan điểm trái chiều có cơ sở trong kỳ này."
+  },
+  "8": {
+    "title": "Lịch sự kiện 7 ngày tới",
+    "events": [
+      {
+        "datetime_vn": "2026-08-24 22:30",
+        "event": "Tồn kho dầu API",
+        "impact": "Trung"
+      },
+      {
+        "datetime_vn": "2026-08-25 22:30",
+        "event": "Tồn kho dầu EIA",
+        "impact": "Cao"
+      },
+      {
+        "datetime_vn": "2026-08-27",
+        "event": "Rig count Baker Hughes",
+        "impact": "Thấp"
+      },
+      {
+        "datetime_vn": "2026-08-26",
+        "event": "Đấu giá EUA (nếu có)",
+        "impact": "Trung"
+      }
+    ]
+  },
+  "biz": {
+    "title": "Gợi ý kinh doanh & giải pháp cho SIM",
+    "short_term": [
+      "Tình huống: Giá EUA Futures Dec'26 giảm 0.33% trong ngày và 2.0% trong 30 ngày → Hành động: Khuyến nghị doanh nghiệp xem xét chiến lược hedging để giảm rủi ro biến động giá carbon → Lý do: Xu hướng giảm giá ngắn hạn có thể tiếp diễn do dư cung hoặc yếu tố thị trường.",
+      "Tình huống: Sản lượng khí tự nhiên Mỹ dự kiến đạt kỷ lục 122.5 Bcf/d năm 2026 → Hành động: Đề xuất doanh nghiệp Việt Nam tăng cường nhập khẩu LNG từ Mỹ để đa dạng hóa nguồn năng lượng → Lý do: Giá khí tự nhiên có thể cạnh tranh hơn do sản lượng tăng.",
+      "Tình huống: Trung Quốc giảm nhập khẩu dầu thô quý 2/2026 do giá cao → Hành động: Khuyến nghị doanh nghiệp theo dõi sát diễn biến giá dầu để tối ưu hóa chi phí nhiên liệu → Lý do: Giảm cầu từ Trung Quốc có thể làm giảm áp lực giá toàn cầu."
+    ],
+    "long_term": [
+      "Cơ hội: Chính sách CBAM của EU → Giải pháp: Hỗ trợ doanh nghiệp Việt Nam đánh giá và tuân thủ yêu cầu CBAM → Kỳ vọng: Giảm rủi ro xuất khẩu và tăng tính cạnh tranh trên thị trường EU.",
+      "Cơ hội: Xu hướng tăng trưởng mạnh của năng lượng tái tạo và lưu trữ pin → Giải pháp: Tư vấn doanh nghiệp đầu tư vào dự án năng lượng tái tạo và hệ thống lưu trữ năng lượng → Kỳ vọng: Giảm phát thải carbon và tối ưu hóa chi phí năng lượng dài hạn.",
+      "Cơ hội: Chuyển dịch địa chính trị trong thị trường năng lượng → Giải pháp: Đa dạng hóa nguồn cung năng lượng và phát triển năng lượng trong nước → Kỳ vọng: Tăng tính tự chủ năng lượng và giảm phụ thuộc vào nhập khẩu."
+    ]
+  },
+  "2": {
+    "title": "Bảng giá nhanh",
+    "price_timestamp": "Giá chốt phiên 2026-08-20 (nguồn: Barchart EOD)",
+    "prices": [
+      {
+        "name": "EUA Futures Dec'26",
+        "code": "EUA_DEC26",
+        "price": "81.4400 EUR/tCO2",
+        "dday": "-0.33%",
+        "dweek": "-",
+        "up": false,
+        "note": "",
+        "close": 81.44,
+        "day_change_pct": -0.33,
+        "week_change_pct": null,
+        "category": "carbon"
+      }
+    ],
+    "chart_data": [
+      {
+        "date": "2026-07-24",
+        "open": 84.11,
+        "high": 84.5,
+        "low": 82.82,
+        "close": 83.4
+      },
+      {
+        "date": "2026-07-27",
+        "open": 83.75,
+        "high": 84.19,
+        "low": 82.0,
+        "close": 82.33
+      },
+      {
+        "date": "2026-07-28",
+        "open": 82.31,
+        "high": 82.8,
+        "low": 81.03,
+        "close": 81.73
+      },
+      {
+        "date": "2026-07-29",
+        "open": 82.15,
+        "high": 82.75,
+        "low": 81.5,
+        "close": 82.02
+      },
+      {
+        "date": "2026-07-30",
+        "open": 81.88,
+        "high": 82.5,
+        "low": 81.1,
+        "close": 81.29
+      },
+      {
+        "date": "2026-07-31",
+        "open": 82.0,
+        "high": 82.69,
+        "low": 81.16,
+        "close": 81.26
+      },
+      {
+        "date": "2026-08-03",
+        "open": 81.35,
+        "high": 81.68,
+        "low": 80.57,
+        "close": 80.86
+      },
+      {
+        "date": "2026-08-04",
+        "open": 81.18,
+        "high": 82.36,
+        "low": 80.86,
+        "close": 81.34
+      },
+      {
+        "date": "2026-08-05",
+        "open": 81.27,
+        "high": 81.84,
+        "low": 80.54,
+        "close": 81.09
+      },
+      {
+        "date": "2026-08-06",
+        "open": 81.54,
+        "high": 82.35,
+        "low": 80.97,
+        "close": 81.89
+      },
+      {
+        "date": "2026-08-07",
+        "open": 81.99,
+        "high": 83.77,
+        "low": 81.89,
+        "close": 83.29
+      },
+      {
+        "date": "2026-08-10",
+        "open": 83.26,
+        "high": 83.34,
+        "low": 81.6,
+        "close": 82.27
+      },
+      {
+        "date": "2026-08-11",
+        "open": 82.2,
+        "high": 83.5,
+        "low": 81.67,
+        "close": 82.44
+      },
+      {
+        "date": "2026-08-12",
+        "open": 82.71,
+        "high": 82.89,
+        "low": 81.75,
+        "close": 81.99
+      },
+      {
+        "date": "2026-08-13",
+        "open": 82.15,
+        "high": 82.91,
+        "low": 81.62,
+        "close": 82.74
+      },
+      {
+        "date": "2026-08-14",
+        "open": 82.73,
+        "high": 83.23,
+        "low": 81.72,
+        "close": 81.79
+      },
+      {
+        "date": "2026-08-17",
+        "open": 82.22,
+        "high": 82.24,
+        "low": 81.1,
+        "close": 81.58
+      },
+      {
+        "date": "2026-08-18",
+        "open": 81.49,
+        "high": 82.41,
+        "low": 80.98,
+        "close": 82.31
+      },
+      {
+        "date": "2026-08-19",
+        "open": 81.89,
+        "high": 82.78,
+        "low": 81.4,
+        "close": 81.71
+      }
+    ],
+    "chart_comment": ""
+  },
+  "9": {
+    "title": "Nguồn tham khảo",
+    "bullets": [
+      "Nguồn thu thập tự động: eia.gov"
+    ]
+  }
+}
