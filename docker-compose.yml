@@ -56,15 +56,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://sim.mcv.network
     container_name: carbon_analyst_frontend
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
     env_file:
       - .env
-    environment:
-      # Frontend cần biết đường dẫn API public (được Nginx cấu hình map ra ngoài)
-      NEXT_PUBLIC_API_URL: https://sim.mcv.network
     depends_on:
       - api
 
