@@ -1,4 +1,3 @@
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -18,24 +17,57 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Scheduler: chạy crawl_prices → crawl_news lúc 6:00 SA mỗi ngày ───────
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: carbon_analyst_api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Ghi đè URL kết nối DB bằng tên của container 'postgres' thay vì localhost
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/carbon_analyst
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   crawler_scheduler:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend
     container_name: carbon_analyst_scheduler
     command: python scheduler.py
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/carbon_analyst
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - .:/app           # mount code để không cần rebuild khi sửa sources.yaml
+      # Mount thư mục để lưu log
       - scheduler_logs:/app/logs
-    working_dir: /app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: carbon_analyst_frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    environment:
+      # Frontend cần biết đường dẫn API public (được Nginx cấu hình map ra ngoài)
+      NEXT_PUBLIC_API_URL: https://sim.mcv.network
+    depends_on:
+      - api
 
 volumes:
   pgdata:
-    driver: local
   scheduler_logs:
-    driver: local

@@ -1,0 +1,25 @@
+# Dùng base image Playwright chính thức từ Microsoft (đã có Python và mọi thư viện C++ cần thiết)
+FROM mcr.microsoft.com/playwright/python:v1.45.0-jammy
+
+WORKDIR /app
+
+# Biến môi trường
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# Cài đặt thư viện Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Cài đặt Playwright browser (chỉ cần chromium cho web scraping)
+RUN playwright install chromium
+
+# Copy toàn bộ mã nguồn
+COPY . /app/
+
+# Expose port (dành cho API server)
+EXPOSE 8000
+
+# Lệnh khởi động mặc định (FastAPI)
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
