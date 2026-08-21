@@ -131,6 +131,10 @@ class CohereClassifier(Classifier):
         except Exception as e:
             raise ClassificationError(f"Lỗi gọi Cohere API: {e}") from e
 
+        # Cohere Free Tier: giới hạn 40 requests/phút. 
+        # Thêm sleep 1.5s sau mỗi request để đảm bảo không bao giờ vượt 40req/min.
+        await asyncio.sleep(1.5)
+
         raw_text = response.message.content[0].text.strip()
         return _parse_json_response(raw_text)
 
