@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, TYPE_CHECKING
 
 from sqlalchemy.exc import IntegrityError
@@ -67,12 +67,13 @@ async def process_source(
     limit: Optional[int] = None,
     today_only: bool = True,
 ) -> List[PipelineResult]:
-    """Crawl 1 nguồn, lọc bài hôm nay, rồi chạy pipeline đầy đủ.
+    """Crawl 1 nguồn, lọc bài trong 24h qua, rồi chạy pipeline đầy đủ.
 
-    today_only=True (mặc định): chỉ xử lý bài đăng trong ngày crawl.
-      - Bài có published_at khác hôm nay → status "skipped_old".
-      - Bài không parse được ngày (published_at=None) → GIỮ LẠI an toàn.
-    today_only=False: xử lý tất cả bài (dùng khi backfill / test).
+    Quy tắc lọc ngày:
+      - Bài có published_at và cũ hơn 24h tính từ thời điểm crawl → bỏ qua (skipped_old).
+      - Bài KHÔNG có published_at (None) → GIỮ LẠI, xử lý bình thường.
+        Nếu bài đó bị trùng lặp, lần crawl sau sẽ bị loại tự động qua dedup hash.
+    today_only=False: bỏ qua filter 24h (dùng khi backfill / test).
     limit: cắt bớt số bài sau filter — dùng khi test để tiết kiệm gọi LLM.
     """
     seen_urls = seen_urls if seen_urls is not None else set()
@@ -81,19 +82,36 @@ async def process_source(
     # Bước extract trước để có published_at phục vụ date filter
     results: List[PipelineResult] = []
     extracted = []
+    crawl_time = datetime.now(timezone.utc)
+    # Lọc theo ngày: chỉ giữ bài đăng từ ngày hôm qua trở đi
+    # (crawl_date - 1). Bài cũ hơn → loại.
+    cutoff_date = (crawl_time - timedelta(days=1)).date()
+
     for item in items:
         article = extract_article(item)
         if article is None:
             results.append(PipelineResult(url=item.url, status="extraction_failed"))
         else:
+            # Lọc ngày: chỉ áp dụng khi bài có published_at VÀ today_only=True
+            if today_only and article.published_at is not None:
+                pub = article.published_at
+                if pub.tzinfo is None:
+                    pub = pub.replace(tzinfo=timezone.utc)
+                pub_date = pub.date()
+                if pub_date < cutoff_date:
+                    logger.debug(
+                        "[DATE-FILTER] Bỏ qua bài cũ hơn ngày hôm qua: %s (published=%s, cutoff=%s)",
+                        article.url, pub_date, cutoff_date,
+                    )
+                    results.append(PipelineResult(url=article.url, status="skipped_old"))
+                    continue
             extracted.append(article)
 
-    # Không dùng date_filter nữa, coi mọi bài mới tìm được là bài của hôm nay
     if not extracted:
         if len(items) == 0 and not results:
             reason = "tất cả link ứng viên đã crawl trước đó hoặc fetch lỗi"
         else:
-            reason = "không extract được nội dung nào (site chặn bot hoặc JS-rendered)"
+            reason = "không có bài nào trong 24h qua hoặc không extract được nội dung"
         logger.info("[SKIP] %s: %s, bỏ qua.", source.domain, reason)
         return results
 
