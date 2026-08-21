@@ -78,6 +78,10 @@ class CohereEmbedder(Embedder):
                     model=self.model_name,
                     input_type=input_type,
                 )
+                
+                # Tránh lỗi rate limit của bản Free (40 calls/min)
+                await asyncio.sleep(1.5)
+                
                 return response.embeddings
 
             except (cohere.TooManyRequestsError, cohere.ServiceUnavailableError) as e:
