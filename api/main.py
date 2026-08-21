@@ -27,7 +27,10 @@ app = FastAPI(title="Carbon Analyst API", lifespan=lifespan)
 # là bắt buộc để trình duyệt gửi/nhận cookie session (access_token) cross-port.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://sim.mcv.network",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
