@@ -58,10 +58,10 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_URL: https://sim.mcv.network
-    container_name: carbon_analyst_frontend
+    container_name: carbon_analyst_frontend_v3
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3003:3000"
+      - "127.0.0.1:3004:3000"
     env_file:
       - .env
     depends_on:
