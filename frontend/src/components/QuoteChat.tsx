@@ -168,7 +168,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
 
       {activeQuote && (
         <div className="fixed inset-0 z-[60] flex justify-end">
-          <div className="absolute inset-0 bg-black/20" onClick={() => messages.length === 0 && closeChat()} />
+          <div className="absolute inset-0 bg-black/20" onClick={() => closeChat()} />
           <div className="relative w-full sm:w-[420px] h-full bg-background border-l border-border shadow-[var(--shadow-medium)] flex flex-col">
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-border shrink-0">
               <div className="flex items-center gap-2 text-label font-semibold text-sm">
@@ -176,10 +176,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 Hỏi đáp về đoạn trích
               </div>
               <button 
-                onClick={() => {
-                  if (messages.length > 0 && !window.confirm("Đóng phiên chat này? Bạn sẽ không thể xem lại đoạn hội thoại này từ giao diện.")) return;
-                  closeChat();
-                }} 
+                onClick={() => closeChat()} 
                 className="text-muted-light hover:text-foreground transition-colors"
               >
                 <X size={18} />

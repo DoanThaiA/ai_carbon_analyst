@@ -23,8 +23,6 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Carbon Analyst API", lifespan=lifespan)
 
-# Allow CORS for Next.js frontend (default port 3000). allow_credentials=True
-# là bắt buộc để trình duyệt gửi/nhận cookie session (access_token) cross-port.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
