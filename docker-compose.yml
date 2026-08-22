@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: carbon_analyst
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: Doanthai288@
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
@@ -29,7 +29,7 @@ services:
       - .env
     environment:
       # Ghi đè URL kết nối DB bằng tên của container 'postgres' thay vì localhost
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/carbon_analyst
+      DATABASE_URL: postgresql+asyncpg://postgres:Doanthai288%40@postgres:5432/carbon_analyst
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,7 +44,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/carbon_analyst
+      DATABASE_URL: postgresql+asyncpg://postgres:Doanthai288%40@postgres:5432/carbon_analyst
     depends_on:
       postgres:
         condition: service_healthy
