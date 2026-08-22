@@ -357,22 +357,28 @@ def _format_prev_events(events: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-async def _call_llm(prompt: str) -> Optional[str]:
+async def _call_llm(prompt: str, max_retries: int = 3) -> Optional[str]:
     """Gọi Cohere async và trả về text thô, hoặc None nếu lỗi.
 
     Dùng AsyncClientV2 để không block asyncio event loop trong lúc
     chờ Cohere trả kết quả.
     """
-    try:
-        response = await _get_cohere_client().chat(
-            model="command-a-03-2025",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.15,
-        )
-        return response.message.content[0].text
-    except Exception as e:
-        logger.error(f"Lỗi Cohere: {e}")
-        return None
+    for attempt in range(max_retries):
+        try:
+            response = await _get_cohere_client().chat(
+                model="command-a-03-2025",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.15,
+            )
+            return response.message.content[0].text
+        except Exception as e:
+            logger.error(f"Lỗi Cohere (lần {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                # Đợi một lúc rồi thử lại do Rate Limit (429 Too Many Requests)
+                await asyncio.sleep(10 * (attempt + 1))
+            else:
+                return None
+    return None
 
 
 def _escape_bare_control_chars_in_json_strings(text: str) -> str:
@@ -730,11 +736,13 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         "biz": {"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [], "long_term": []},
     }
 
-    sem = asyncio.Semaphore(3)
+    sem = asyncio.Semaphore(1)
 
     async def _process_section(sec_key: str, s_prompt: str):
         async with sem:
             logger.info(f"[REPORT] Đang sinh mục {sec_key}...")
+            # Tạo khoảng trễ giữa các request liên tiếp để giảm tải rate limit
+            await asyncio.sleep(3)
             raw = await _call_llm(s_prompt)
             parsed = _extract_json(raw) if raw else None
 
