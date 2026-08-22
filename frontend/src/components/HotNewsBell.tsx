@@ -30,6 +30,8 @@ export function HotNewsBell() {
   const [open, setOpen] = useState(false);
   const [lastSeenAt, setLastSeenAt] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; right: number }>({ top: 0, right: 16 });
 
   useEffect(() => {
     try {
@@ -93,6 +95,14 @@ export function HotNewsBell() {
     setOpen((prev) => {
       const next = !prev;
       if (next) {
+        // Tính vị trí dropdown theo viewport để dùng position:fixed
+        if (buttonRef.current) {
+          const rect = buttonRef.current.getBoundingClientRect();
+          setDropdownPos({
+            top: rect.bottom + 8,
+            right: window.innerWidth - rect.right,
+          });
+        }
         const now = Date.now();
         setLastSeenAt(now);
         try {
@@ -112,6 +122,7 @@ export function HotNewsBell() {
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={buttonRef}
         onClick={toggleOpen}
         className="relative text-white/80 hover:text-white flex items-center justify-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
         title="Hot News"
@@ -125,7 +136,10 @@ export function HotNewsBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-1rem)] max-h-[70vh] overflow-y-auto bg-background border border-border rounded-xl shadow-[var(--shadow-medium)] z-50">
+        <div
+          style={{ top: dropdownPos.top, right: dropdownPos.right }}
+          className="fixed w-[min(360px,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto bg-background border border-border rounded-xl shadow-[var(--shadow-medium)] z-[9999]"
+        >
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border sticky top-0 bg-background">
             <Flame size={15} className="text-down" />
             <span className="font-semibold text-sm text-label">Hot News</span>
