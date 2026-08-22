@@ -125,7 +125,7 @@ export function HotNewsBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[360px] max-h-[70vh] overflow-y-auto bg-background border border-border rounded-xl shadow-[var(--shadow-medium)] z-50">
+        <div className="absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-1rem)] max-h-[70vh] overflow-y-auto bg-background border border-border rounded-xl shadow-[var(--shadow-medium)] z-50">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border sticky top-0 bg-background">
             <Flame size={15} className="text-down" />
             <span className="font-semibold text-sm text-label">Hot News</span>
