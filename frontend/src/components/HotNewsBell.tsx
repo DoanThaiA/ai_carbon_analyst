@@ -29,9 +29,8 @@ export function HotNewsBell() {
   const [items, setItems] = useState<HotNewsItem[]>([]);
   const [open, setOpen] = useState(false);
   const [lastSeenAt, setLastSeenAt] = useState(0);
+  const [headerBottom, setHeaderBottom] = useState(64);
   const containerRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; right: number }>({ top: 0, right: 16 });
 
   useEffect(() => {
     try {
@@ -81,6 +80,17 @@ export function HotNewsBell() {
     return () => source.close();
   }, []);
 
+  // Đo chiều cao thực tế của header để dropdown fixed hiển thị đúng bên dưới
+  useEffect(() => {
+    function measureHeader() {
+      const header = document.querySelector("header");
+      if (header) setHeaderBottom(header.getBoundingClientRect().bottom);
+    }
+    measureHeader();
+    window.addEventListener("resize", measureHeader);
+    return () => window.removeEventListener("resize", measureHeader);
+  }, []);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
@@ -95,14 +105,6 @@ export function HotNewsBell() {
     setOpen((prev) => {
       const next = !prev;
       if (next) {
-        // Tính vị trí dropdown theo viewport để dùng position:fixed
-        if (buttonRef.current) {
-          const rect = buttonRef.current.getBoundingClientRect();
-          setDropdownPos({
-            top: rect.bottom + 8,
-            right: window.innerWidth - rect.right,
-          });
-        }
         const now = Date.now();
         setLastSeenAt(now);
         try {
@@ -122,7 +124,6 @@ export function HotNewsBell() {
   return (
     <div ref={containerRef} className="relative">
       <button
-        ref={buttonRef}
         onClick={toggleOpen}
         className="relative text-white/80 hover:text-white flex items-center justify-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
         title="Hot News"
@@ -137,8 +138,8 @@ export function HotNewsBell() {
 
       {open && (
         <div
-          style={{ top: dropdownPos.top, right: dropdownPos.right }}
-          className="fixed w-[min(360px,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto bg-background border border-border rounded-xl shadow-[var(--shadow-medium)] z-[9999]"
+          style={{ top: headerBottom + 8 }}
+          className="fixed left-2 right-2 sm:left-auto sm:right-4 sm:w-[360px] max-h-[70vh] overflow-y-auto bg-background border border-border rounded-xl shadow-[var(--shadow-medium)] z-[9999]"
         >
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border sticky top-0 bg-background">
             <Flame size={15} className="text-down" />
