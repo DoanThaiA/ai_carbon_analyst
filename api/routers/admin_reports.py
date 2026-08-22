@@ -4,6 +4,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm import defer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_admin, get_db
@@ -24,7 +25,7 @@ class ReportUpdate(BaseModel):
 @router.get("")
 async def list_all_reports(session: AsyncSession = Depends(get_db)):
     """Danh sách toàn bộ báo cáo (cả draft lẫn published) — dùng cho hàng đợi duyệt."""
-    stmt = select(Report).order_by(Report.report_date.desc())
+    stmt = select(Report).options(defer(Report.content)).order_by(Report.report_date.desc())
     result = await session.execute(stmt)
     reports = result.scalars().all()
 

@@ -36,8 +36,25 @@ def create_access_token(subject: str, role: Role, settings: Settings) -> str:
     payload = {
         "sub": subject,
         "role": role,
+        "type": "access",
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def create_refresh_token(subject: str, role: Role, settings: Settings) -> str:
+    if not settings.jwt_secret:
+        raise RuntimeError(
+            "JWT_SECRET chưa được set trong .env — cần thiết để phát hành session token."
+        )
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": subject,
+        "role": role,
+        "type": "refresh",
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.jwt_refresh_expire_minutes),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
@@ -48,4 +65,18 @@ def decode_access_token(token: str, settings: Settings) -> dict:
         raise RuntimeError(
             "JWT_SECRET chưa được set trong .env — cần thiết để xác thực session token."
         )
-    return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    if payload.get("type", "access") != "access": # support old tokens with no type as access
+        raise jwt.InvalidTokenError("Không phải là access token.")
+    return payload
+
+
+def decode_refresh_token(token: str, settings: Settings) -> dict:
+    if not settings.jwt_secret:
+        raise RuntimeError(
+            "JWT_SECRET chưa được set trong .env — cần thiết để xác thực session token."
+        )
+    payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    if payload.get("type") != "refresh":
+        raise jwt.InvalidTokenError("Không phải là refresh token.")
+    return payload

@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-
+import asyncio
 import cohere
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc
@@ -730,18 +730,27 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         "biz": {"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [], "long_term": []},
     }
 
-    for section_key, prompt in SECTIONS:
-        logger.info(f"[REPORT] Đang sinh mục {section_key}...")
-        raw = await _call_llm(prompt)  # async — không block event loop
-        parsed = _extract_json(raw) if raw else None
+    sem = asyncio.Semaphore(3)
 
-        if parsed and section_key in parsed:
-            section_data = parsed[section_key]
-            logger.info(f"[REPORT] Mục {section_key} OK.")
-        else:
-            logger.warning(f"[REPORT] Mục {section_key} thất bại, dùng fallback. Raw: {raw[:200] if raw else 'None'}")
-            section_data = FALLBACKS[section_key]
+    async def _process_section(sec_key: str, s_prompt: str):
+        async with sem:
+            logger.info(f"[REPORT] Đang sinh mục {sec_key}...")
+            raw = await _call_llm(s_prompt)
+            parsed = _extract_json(raw) if raw else None
 
+            if parsed and sec_key in parsed:
+                sec_data = parsed[sec_key]
+                logger.info(f"[REPORT] Mục {sec_key} OK.")
+            else:
+                logger.warning(f"[REPORT] Mục {sec_key} thất bại, dùng fallback. Raw: {raw[:200] if raw else 'None'}")
+                sec_data = FALLBACKS[sec_key]
+            
+            return sec_key, sec_data
+
+    tasks = [_process_section(k, p) for k, p in SECTIONS]
+    results = await asyncio.gather(*tasks)
+
+    for section_key, section_data in results:
         if section_key == "7":
             # Mục 7 ĐƯỢC PHÉP BỎ khi không có quan điểm trái chiều có cơ sở —
             # không set content["7"] thay vì luôn hiện placeholder rỗng.

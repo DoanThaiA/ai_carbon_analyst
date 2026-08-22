@@ -30,6 +30,7 @@ class Settings:
     jwt_secret: str
     jwt_algorithm: str
     jwt_expire_minutes: int
+    jwt_refresh_expire_minutes: int
     admin_username: str
     admin_password_hash: str
     cookie_secure: bool
@@ -83,6 +84,7 @@ class Settings:
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),
             jwt_expire_minutes=int(os.environ.get("JWT_EXPIRE_MINUTES", str(60 * 24 * 7))),
+            jwt_refresh_expire_minutes=int(os.environ.get("JWT_REFRESH_EXPIRE_MINUTES", str(60 * 24 * 30))),
             admin_username=os.environ.get("ADMIN_USERNAME", ""),
             admin_password_hash=os.environ.get("ADMIN_PASSWORD_HASH", ""),
             cookie_secure=os.environ.get("COOKIE_SECURE", "false").lower() == "true",

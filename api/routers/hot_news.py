@@ -14,6 +14,7 @@ import logging
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy import desc, select
+from sqlalchemy.orm import defer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import async_session_maker, get_current_user, get_db
@@ -51,6 +52,7 @@ async def get_hot_news(
     limit = max(1, min(limit, MAX_LIMIT))
     stmt = (
         select(Article)
+        .options(defer(Article.content), defer(Article.content_hash))
         .where(Article.is_hot_news.is_(True))
         .order_by(desc(Article.crawled_at))
         .limit(limit)
