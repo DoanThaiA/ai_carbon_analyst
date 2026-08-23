@@ -105,9 +105,9 @@ sources:
     group: [2]
     type: html
     listing_url: "https://www.eex.com/en/newsroom"
-    link_pattern: "/en/newsroom/"
+    link_pattern: "/en/newsroom/detail"
     confidence: high
-    note: "EEX Newsroom."
+    note: "EEX Newsroom detail pages."
 
   - domain: ice.com
     name: "ICE – Media Center"
@@ -117,9 +117,9 @@ sources:
     type: html
     use_playwright: true
     listing_url: "https://www.ice.com/media"
-    link_pattern: "/media"
+    link_pattern: "/press/news-details/"
     confidence: high
-    note: "ICE Media Center hiện nằm ở /media."
+    note: "ICE Media Center press releases."
 
   - domain: nasdaq.com
     name: "Nasdaq – Newsroom"
@@ -174,10 +174,10 @@ sources:
     category: carbon_voluntary_market
     group: [2, 3]
     type: html
-    listing_url: "https://icvcm.org/all-news-insights/"
-    link_pattern: "/(news|insights|all-news-insights)/"
+    listing_url: "https://icvcm.org/news-insights/"
+    link_pattern: "^/[a-z0-9\\-]{35,}/?$"
     confidence: high
-    note: "Thay cho /news/ cũ."
+    note: "Dùng regex >35 ký tự để bắt slug dài (bài báo), loại trừ /about-us/, /core-carbon-principles/."
 
   - domain: verra.org
     name: "Verra – News"
@@ -405,9 +405,9 @@ sources:
     group: [3]
     type: html
     listing_url: "https://dcc.mae.gov.vn/"
-    link_pattern: "/"
-    confidence: medium
-    note: "Không nên hard-code /tin-tuc/; discover article links từ homepage/listing."
+    link_pattern: "-[0-9]+\\.htm"
+    confidence: high
+    note: "Bài viết luôn kết thúc bằng ID, ví dụ: -3990.htm."
 
   - domain: baochinhphu.vn
     name: "Báo Chính phủ – Chính sách và cuộc sống"
@@ -416,9 +416,9 @@ sources:
     group: [3]
     type: html
     listing_url: "https://baochinhphu.vn/chinh-sach-va-cuoc-song.htm"
-    link_pattern: "/[a-z0-9\\-]+\\.htm"
+    link_pattern: "-[0-9]+\\.htm$"
     confidence: high
-    note: "Thay cho /chinh-sach-moi.htm."
+    note: "Bài viết luôn kết thúc bằng ID, ví dụ: -102260822164252237.htm, giúp loại bỏ trang chuyên mục."
 
   - domain: tapchimoitruong.vn
     name: "Tạp chí Môi trường"

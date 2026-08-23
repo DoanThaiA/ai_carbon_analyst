@@ -155,6 +155,24 @@ class PlaywrightFetcher:
                 #   DOM có sẵn để JS framework (React/Next.js) render, rồi chờ thêm vài giây.
                 try:
                     await page.goto(url, wait_until="domcontentloaded")
+                    
+                    # Auto-accept / dismiss cookie banners
+                    cookie_selectors = [
+                        "#onetrust-accept-btn-handler", # OneTrust
+                        ".cc-btn.cc-allow",             # Cookie Consent
+                        "button:has-text('Accept All')",
+                        "button:has-text('Accept Cookies')",
+                        "button:has-text('I Accept')",
+                        "button:has-text('Agree')",
+                    ]
+                    for selector in cookie_selectors:
+                        try:
+                            # Try to click if it appears within a very short timeout
+                            await page.click(selector, timeout=1000)
+                            logger.debug("[Playwright] Đã tự động click Cookie Banner: %s", selector)
+                        except PlaywrightTimeoutError:
+                            pass
+                    
                     # Chờ JS framework render xong content (article links)
                     await asyncio.sleep(PLAYWRIGHT_JS_SETTLE_SECONDS)
                 except PlaywrightTimeoutError:
