@@ -115,6 +115,7 @@ sources:
     category: exchange_official
     group: [2]
     type: html
+    use_playwright: true
     listing_url: "https://www.ice.com/media"
     link_pattern: "/media"
     confidence: high
@@ -126,6 +127,7 @@ sources:
     category: financial_press
     group: [1, 2]
     type: html
+    use_playwright: true
     listing_url: "https://www.nasdaq.com/newsroom"
     link_pattern: "/articles/[a-z0-9\\-]{8,}"
     confidence: high
@@ -136,12 +138,12 @@ sources:
     tier: B
     category: carbon_news_specialist
     group: [2]
-    type: rss
+    type: html
+    use_playwright: true
     listing_url: "https://carbonherald.com/"
-    rss_url: "https://carbonherald.com/feed/"
     link_pattern: null
     confidence: high
-    note: "RSS chuẩn WordPress."
+    note: "Dùng Playwright thay RSS vì bị Cloudflare chặn bot."
 
   - domain: carboncredits.com
     name: "Carbon Credits"
@@ -285,16 +287,100 @@ sources:
     note: "Dùng Playwright vì trang dùng JS để load bài."
 
   - domain: carbonbrief.org
-    name: "Carbon Brief"
+    name: "Carbon Brief - Trang chủ"
     tier: B
     category: carbon_news_specialist
     group: [3]
     type: html
     use_playwright: true
     listing_url: "https://www.carbonbrief.org/"
-    link_pattern: "/[a-z0-9\\-]+/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
     confidence: high
     note: "Dùng Playwright vì homepage load nội dung động."
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief - China Policy"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/topics/china-policy/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
+    confidence: high
+    note: "Chuyên đề China Policy"
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief - EU Policy"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/topics/eu-policy/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
+    confidence: high
+    note: "Chuyên đề EU Policy"
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief - International Policy"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/topics/international-policy/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
+    confidence: high
+    note: "Chuyên đề International Policy"
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief - National Policy"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/topics/national-policy/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
+    confidence: high
+    note: "Chuyên đề National Policy"
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief - UK Policy"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/topics/uk-policy/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
+    confidence: high
+    note: "Chuyên đề UK Policy"
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief - UN Climate Talks"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/topics/un-climate-talks/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
+    confidence: high
+    note: "Chuyên đề UN Climate Talks"
+
+  - domain: carbonbrief.org
+    name: "Carbon Brief - US Policy"
+    tier: B
+    category: carbon_news_specialist
+    group: [3]
+    type: html
+    use_playwright: true
+    listing_url: "https://www.carbonbrief.org/topics/us-policy/"
+    link_pattern: "^/[a-z0-9\\-]+/?$"
+    confidence: high
+    note: "Chuyên đề US Policy"
 
   - domain: ft.com
     name: "Financial Times – Energy"

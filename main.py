@@ -158,7 +158,7 @@ async def main() -> None:
         for source in demo_sources:
             logger.info(">>> Đang xử lý nguồn: %s (%s)", source.name, source.domain)
             try:
-                res = await process_source(ctx, source, seen_urls=seen_urls, limit=None, today_only=False)
+                res = await process_source(ctx, source, seen_urls=seen_urls, limit=None, today_only=True)
                 all_results.append(res)
             except Exception as e:
                 logger.error("[ERROR] Nguồn %s thất bại: %s", source.name, e)
