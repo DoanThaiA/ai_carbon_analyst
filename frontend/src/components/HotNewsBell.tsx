@@ -30,6 +30,7 @@ export function HotNewsBell() {
   const [open, setOpen] = useState(false);
   const [lastSeenAt, setLastSeenAt] = useState(0);
   const [headerBottom, setHeaderBottom] = useState(64);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,7 +48,10 @@ export function HotNewsBell() {
     (async () => {
       try {
         const res = await api.get(`/api/news/hot?limit=${MAX_ITEMS}`);
-        if (!cancelled) setItems(res.data.items || []);
+        if (!cancelled) {
+          setItems(res.data.items || []);
+          setIsAuthReady(true);
+        }
       } catch {
         // Im lặng bỏ qua (chưa đăng nhập, mất mạng...) — chuông chỉ là tiện ích phụ, không nên làm hỏng trang.
       }
@@ -59,14 +63,17 @@ export function HotNewsBell() {
 
   // Giữ 1 kết nối SSE — chỉ nhận event khi crawl pipeline thực sự lưu 1 bài hot
   // news mới (không phải hẹn giờ). withCredentials để trình duyệt gửi kèm cookie
-  // session (access_token) cho endpoint yêu cầu đăng nhập. Trình duyệt tự động
-  // reconnect nếu kết nối rớt (theo chuẩn SSE), không cần tự viết retry.
+  // Session (access_token) cho endpoint yêu cầu đăng nhập. Chờ isAuthReady
+  // (sau khi gọi Axios xong) để đảm bảo interceptor đã refresh token nếu cần.
   useEffect(() => {
+    if (!isAuthReady) return;
+
     const source = new EventSource(`${API_BASE_URL}/api/news/hot/stream`, { withCredentials: true });
 
-    source.addEventListener("hot_news", (e: MessageEvent) => {
+    source.addEventListener("hot_news", (e: Event) => {
       try {
-        const item: HotNewsItem = JSON.parse(e.data);
+        const msgEvent = e as MessageEvent;
+        const item: HotNewsItem = JSON.parse(msgEvent.data);
         setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)].slice(0, MAX_ITEMS));
       } catch {
         // bỏ qua payload lỗi định dạng
@@ -78,7 +85,7 @@ export function HotNewsBell() {
     };
 
     return () => source.close();
-  }, []);
+  }, [isAuthReady]);
 
   // Đo chiều cao thực tế của header để dropdown fixed hiển thị đúng bên dưới
   useEffect(() => {
