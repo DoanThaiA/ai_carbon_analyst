@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +39,17 @@ async def list_users(session: AsyncSession = Depends(get_db)):
 
 @router.post("")
 async def create_user(body: UserCreate, session: AsyncSession = Depends(get_db)):
-    row = User(email=body.email.strip().lower())
+    email = body.email.strip().lower()
+    
+    # Chỉ cho phép email thuộc tên miền @stavian
+    if not email.split('@')[-1].startswith('stavian'):
+        raise HTTPException(status_code=400, detail="Chỉ cho phép thêm email có đuôi @stavian.")
+
+    user_count = (await session.execute(select(func.count(User.id)))).scalar()
+    if user_count >= 4:
+        raise HTTPException(status_code=400, detail="Hệ thống đã đạt giới hạn 4 người dùng. Vui lòng xoá user cũ để thêm mới.")
+
+    row = User(email=email)
     session.add(row)
     try:
         await session.commit()
