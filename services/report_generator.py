@@ -677,15 +677,17 @@ B. "correlation_analysis": object PHẢI có đủ các trường sau — đây 
    - "eua_conclusion": nhận định riêng, độc lập, dứt khoát về hướng đi của giá EUA dựa trên toàn bộ phân tích ở mục A và B.
      Áp dụng quy tắc: kết luận chiều giá chỉ khi ≥2 yếu tố cùng hướng; nếu mâu thuẫn → ghi "tín hiệu hỗn hợp" + nêu rõ 2 chiều + điều kiện kích hoạt mỗi chiều.
 
-C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn" (không được bỏ trống horizon nào), mỗi kịch bản gồm:
+C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn" (không được bỏ trống horizon nào). ĐÂY LÀ PHẦN NHẬN ĐỊNH CHIẾN LƯỢC QUAN TRỌNG NHẤT BÁO CÁO — viết theo đúng văn phong 1 note chiến lược của bàn giao dịch tổ chức (institutional trading desk), CHUYÊN NGHIỆP, THỰC TẾ, có số liệu cụ thể — TUYỆT ĐỐI KHÔNG viết chung chung, sáo rỗng, hay lặp lại nguyên văn câu ở mục A/B. Mỗi kịch bản gồm:
    - "horizon": "ngắn hạn" (1–2 tuần) / "trung hạn" (1–3 tháng) / "dài hạn" (>3 tháng)
-   - "condition": "Nếu [X cụ thể, gắn với driver đã nêu ở mục A/B] xảy ra..."
-   - "market_pricing": "...thị trường định giá theo hướng [Y], vùng giá tham chiếu dựa trên xu hướng 30 ngày/biên độ phiên đã cho ở trên nếu phù hợp..."
-   - "key_risk": kịch bản rủi ro cụ thể — "Rủi ro chính là [Z, gắn sự kiện/ngưỡng cụ thể]."
-   - "action_plan": kế hoạch hành động cụ thể để quản trị rủi ro/theo dõi (ví dụ: mốc cần theo dõi, ngưỡng cảnh báo, dữ liệu cần cập nhật) — TUYỆT ĐỐI KHÔNG có câu lệnh mua/bán trực tiếp như "nên long/short".
+   - "probability": xác suất kịch bản này xảy ra — CHỈ 1 trong 3 giá trị "Cao" / "Trung bình" / "Thấp", dựa trên driver ở mục A/B đã được dữ liệu/tin tức xác nhận rõ (probability cao hơn) hay mới chỉ là suy đoán/tin đồn (probability thấp hơn).
+   - "condition": "Nếu [X cụ thể — gắn thẳng với 1 driver đã nêu ở mục A/B, có số liệu/ngưỡng/ngày tháng cụ thể] xảy ra..." — KHÔNG viết mơ hồ kiểu "nếu thị trường biến động mạnh".
+   - "price_zone": vùng giá EUA tham chiếu CỤ THỂ bằng EUR/tCO2 cho kịch bản này (vùng hỗ trợ gần nhất / vùng kháng cự gần nhất) — PHẢI neo vào đúng số liệu 30-ngày-cao, 30-ngày-thấp, giá đóng cửa, biên độ phiên liền trước đã cung cấp ở trên, TUYỆT ĐỐI KHÔNG bịa con số không có căn cứ từ dữ liệu đã cho.
+   - "market_pricing": nhận định hướng đi giá (tăng/giảm/đi ngang) KÈM lý do thị trường sẽ định giá theo hướng đó — viết như 1 nhận định phân tích thực sự có lập luận, không phải câu mẫu lặp lại.
+   - "key_risk": kịch bản rủi ro CỤ THỂ — gắn với 1 sự kiện/ngưỡng/mốc thời gian rõ ràng (KHÔNG viết chung chung "rủi ro là biến động thị trường"), nêu rõ nếu rủi ro này xảy ra thì có thể đẩy giá lệch khỏi "price_zone" theo hướng nào, mức độ bao nhiêu.
+   - "action_plan": kế hoạch hành động THỰC TẾ theo đúng quy trình quản trị rủi ro của 1 bàn giao dịch (mốc/ngưỡng giá cụ thể cần theo dõi để đánh giá lại kịch bản, tần suất cập nhật, chỉ báo/dữ liệu cần bổ sung theo dõi) — TUYỆT ĐỐI KHÔNG có câu lệnh mua/bán trực tiếp như "nên long/short", "nên mua/bán".
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "correlation_analysis": {{"gas_comment": "...", "coal_comment": "...", "power_comment": "...", "fuel_switching_chain": "...", "eua_conclusion": "..."}}, "trading_scenarios": [{{"horizon": "...", "condition": "...", "market_pricing": "...", "key_risk": "...", "action_plan": "..."}}]}}}}"""
+{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "correlation_analysis": {{"gas_comment": "...", "coal_comment": "...", "power_comment": "...", "fuel_switching_chain": "...", "eua_conclusion": "..."}}, "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "condition": "...", "price_zone": "...", "market_pricing": "...", "key_risk": "...", "action_plan": "..."}}]}}}}"""
 
 
 def _prompt_section4(news_text: str, target_date: str) -> str:

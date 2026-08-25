@@ -280,7 +280,18 @@ export function ReportDocument({ report }: { report: Report }) {
                   {report.content["3"].trading_scenarios.map((sc: any, i: number) => (
                     <div key={i} className="bg-surface border border-border rounded-lg p-3.5">
                       <span className="font-mono text-[10px] uppercase tracking-wider text-label bg-surface-alt border border-border-soft rounded px-1.5 py-0.5 mr-2">{sc.horizon}</span>
+                      {sc.probability && (
+                        <span className={clsx(
+                          "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border",
+                          sc.probability === "Cao" ? "text-up border-up/30 bg-up/10" :
+                          sc.probability === "Thấp" ? "text-muted-light border-border" :
+                          "text-warn border-warn/30 bg-warn-tint"
+                        )}>Xác suất: {sc.probability}</span>
+                      )}
                       <p className="mt-2 text-[13.5px] text-body"><b className="text-label">Điều kiện:</b> <RichText text={sc.condition} /></p>
+                      {sc.price_zone && (
+                        <p className="mt-1 text-[13.5px] text-body"><b className="text-label">Vùng giá tham chiếu:</b> <RichText text={sc.price_zone} /></p>
+                      )}
                       <p className="mt-1 text-[13.5px] text-body"><b className="text-label">Định giá thị trường:</b> <RichText text={sc.market_pricing} /></p>
                       <p className="mt-1 text-[13.5px] text-down"><b>Rủi ro:</b> <RichText text={sc.key_risk} /></p>
                       <p className="mt-1 text-[13.5px] text-body"><b className="text-label">Kế hoạch hành động:</b> <RichText text={sc.action_plan} /></p>
