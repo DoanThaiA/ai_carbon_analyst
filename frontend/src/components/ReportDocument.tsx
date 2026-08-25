@@ -123,19 +123,22 @@ export function ReportDocument({ report }: { report: Report }) {
   return (
     <div className="bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
-      {/* Masthead — nền riêng (brand dark) để tách rõ khỏi phần nội dung trắng bên dưới */}
+      {/* Masthead — nền riêng (brand dark) để tách rõ khỏi phần nội dung trắng bên dưới.
+          Ngày báo cáo được cân bằng thị giác với title bên trái: cùng cỡ chữ/độ đậm,
+          chỉ khác màu (accent) để nổi bật và dễ nhận diện ngay lập tức. */}
       <div className="bg-primary-dark px-6 sm:px-10 pt-6 pb-6">
         <div className="flex justify-between items-center flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <Image src="/stavian_logo.png" alt="Stavian" width={337} height={191} className="h-9 w-auto block" />
             <div className="w-[1px] h-7 bg-white/25" />
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-none">
               Daily Carbon <span className="text-accent">Intelligence</span>
             </div>
           </div>
-          <div className="font-mono text-xs text-white/70 text-right">
-            <div className="text-[13px] text-white mb-0.5">{report.report_date}</div>
-            <div>Giá chốt 18:00 CET · Cập nhật 06:30 ICT</div>
+          <div className="text-right">
+            <div className="font-mono text-[10px] font-semibold uppercase tracking-widest text-white/50 mb-1">Báo cáo ngày</div>
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-accent leading-none">{report.report_date}</div>
+            <div className="font-mono text-[11px] text-white/60 mt-1.5">Giá chốt 18:00 CET · Cập nhật 06:30 ICT</div>
           </div>
         </div>
       </div>

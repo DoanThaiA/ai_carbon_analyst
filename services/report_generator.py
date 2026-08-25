@@ -32,7 +32,9 @@ def _get_cohere_client() -> cohere.AsyncClientV2:
 SECTION_TOPICS: Dict[str, List[str]] = {
     "1": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "geopolitics", "eu_policy", "cbam"],
     "2": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "geopolitics", "eu_policy", "cbam"],
-    "3": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "energy_renewable", "geopolitics", "eu_policy", "cbam"],
+    "3": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "energy_renewable",
+          "energy_hydrogen", "geopolitics", "eu_policy", "cbam", "vcm", "global_carbon_market",
+          "vietnam_carbon_policy"],
     "4": ["cbam", "vcm", "global_carbon_market", "vietnam_carbon_policy"],
     "5": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_renewable", "geopolitics", "cbam"],
     "7": ["eua_ets", "geopolitics"],
@@ -89,14 +91,40 @@ Chỉ nêu khi có dữ liệu / tin tức thực sự hỗ trợ. KHÔNG suy di
    GDP / sản xuất CN↑ → nhu cầu điện & phát thải↑ → EUA↑
    Suy thoái kinh tế → phát thải↓ → EUA↓
 
-B. 7 NHÓM YẾU TỐ CHÍNH TÁC ĐỘNG GIÁ EUA:
-1. Giá năng lượng & fuel switching (Gas/Coal/Power → merit order → phát thải)
-2. Chính sách & quy định (cap lộ trình, MSR, lịch đấu giá, phân bổ miễn phí, CBAM)
-3. Năng lượng tái tạo & thời tiết (RES↑→EUA↓; nắng nóng/rét→nhu cầu↑→EUA↑)
-4. Tài chính & đầu cơ (dòng vốn tài chính, thanh khoản — tác động ngắn hạn)
-5. Kinh tế vĩ mô & chu kỳ (GDP, sản xuất CN, nhu cầu điện)
-6. Địa chính trị (gián đoạn chuỗi cung ứng NL → fuel switching → EUA)
-7. Compliance cycle (deadline nộp thuế ETS, mùa báo cáo phát thải → cầu EUA theo mùa)
+B. DANH MỤC THEO DÕI (phạm vi "liên quan trực tiếp đến giá EUA" — CHỈ nội dung khớp
+danh mục này mới được đưa vào phân tích Mục 3/5; tin ngoài phạm vi này bỏ qua):
+
+NHÓM 1 — NĂNG LƯỢNG & NHIÊN LIỆU HÓA THẠCH:
+- Khí tự nhiên: Henry Hub (NG), TTF châu Âu (Dutch TTF Natural Gas Calendar Month Futures — TT1!)
+- Điện Đức: German Power Base Year Futures (DEBY1)
+- Dầu thô: WTI (NYMEX CL), Brent (ICE B)
+- Sản phẩm lọc dầu: ICE Gasoil/LSGO khi có tín hiệu crack spread đáng chú ý
+- Than nhiệt: NEWC Index (GlobalCOAL Newcastle), API 5/API 2/API 4 Index; xu hướng đầu tư & khai thác mỏ than nhiệt
+- Coking coal: chỉ số than cốc & tương tự; xu hướng giá, tiêu dùng, đầu tư & khai thác mỏ than cốc
+- Khí Hydrogen: dùng khử oxy trong sản xuất thép xanh
+- Năng lượng tái tạo: quy mô sản xuất & dự báo tăng trưởng
+- Khủng hoảng năng lượng / gián đoạn nguồn cung (xung đột quốc tế, xung đột thương mại...)
+- Yếu tố dẫn dắt cần bám: OPEC+, tồn kho EIA/API (thứ Tư hàng tuần), rig count Baker Hughes (thứ Sáu), địa chính trị Trung Đông/Nga/Mỹ/Trung Quốc, nhu cầu Trung Quốc–Ấn Độ, thời tiết (mùa bão Mỹ, mùa đông châu Âu)
+
+NHÓM 2 — HẠN NGẠCH & TÍN CHỈ CARBON:
+- EUA Futures Dec'26 (CKZ26); dự báo giá carbon từ Refinitiv (Reuters), BloombergNEF, ICIS, Enerdata, PIK, CAKE/KOBiZE, FastMarket
+- Thị trường tuân thủ: EU ETS (EUA futures ICE), UK ETS, California Cap-and-Trade, CORSIA
+- Thị trường tự nguyện (VCM): xu hướng giá theo loại tín chỉ (nature-based, tech-based), chuẩn Verra/Gold Standard/ACR/CAR
+- Market Stability Reserve (MSR)
+- Xu hướng dòng vốn đầu tư & hoạt động đầu cơ vào EUA
+- Động thái mua/bán của big players: RWE, EDF, Enel, Uniper, PGE, EnBW, Macquarie, Morgan Stanley, Citigroup, BNP Paribas, Société Générale, UniCredit, BOA; trading houses: Trafigura, Vitol, Glencore, Mercuria, Gunvor
+
+NHÓM 3 — CHÍNH SÁCH (QUAN TRỌNG HƠN TIN GIÁ — xem QUY TẮC ƯU TIÊN bên dưới):
+- CBAM của EU (đặc biệt quan trọng — ảnh hưởng trực tiếp DN xuất khẩu Việt Nam ngành thép, nhôm, xi măng, phân bón, khí hydro, điện), CBAM của UK, lộ trình tương tự ở nước khác, Article 6 Paris Agreement
+- "Fit-for-55", chính sách đánh thuế phát thải (tiến trình & tốc độ), ngành bổ sung vào CBAM/ETS, deadline nộp thuế phát thải
+- Chính sách thị trường tự nguyện VCM: dự án mới, methodology mới
+- Chính sách/quy định pháp luật mới về hạn ngạch phát thải, tín chỉ carbon tại thị trường Việt Nam
+- Chính sách năng lượng tái tạo, khí gas, khí Hydrogen, than & các nhiên liệu hóa thạch, chính sách khí hậu
+- Chính sách hạ tầng & bất động sản Trung Quốc, nhu cầu chuyển dịch năng lượng (đồng cho EV và lưới điện)
+
+QUY TẮC ƯU TIÊN: NHÓM 3 (CHÍNH SÁCH) quan trọng hơn tin giá ở NHÓM 1/2 — 1 thay đổi quy
+định CBAM có giá trị hơn 10 bài bình luận giá EUA. Khi cả tin chính sách và tin giá cùng
+xuất hiện trong ngày, PHẢI ưu tiên nêu bật tin chính sách trước.
 
 C. QUY TẮC NHẬN ĐỊNH BẮT BUỘC:
 - Luôn bắt đầu bằng số liệu thực tế (giá đóng cửa, % thay đổi) TRƯỚC khi phân tích nguyên nhân.
@@ -654,7 +682,7 @@ GASOIL CRACK SPREAD (số liệu đã tính sẵn — PHẢI dùng đúng con s�
 XU HƯỚNG EUA 30 NGÀY:
 {eua_trend}
 
-TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, energy_renewable, geopolitics, eu_policy, cbam):
+TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, energy_renewable, energy_hydrogen, geopolitics, eu_policy, cbam, vcm, global_carbon_market, vietnam_carbon_policy):
 {news_text}
 
 YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH CÁC YẾU TỐ NĂNG LƯỢNG TƯƠNG QUAN, CHÍNH SÁCH ẢNH HƯỞNG ĐẾN GIÁ EUA.
@@ -662,10 +690,13 @@ YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH CÁC YẾU TỐ NĂNG LƯỢNG TƯƠN
 
 A. "analysis_blocks": mảng ĐÚNG 4 object, mỗi object gồm "heading" và "content" (3–5 câu, đủ ý, không viết chung chung):
    1. heading="Diễn biến chính" — bắt đầu bằng số liệu giá thực tế (EUA đóng cửa + biên độ phiên, TTF, Gas, Coal, Power Đức) trước; phân tích nguyên nhân sau. Fact trước, diễn giải sau.
-   2. heading="Yếu tố dẫn dắt" — TỔNG HỢP TẤT CẢ thông tin liên quan trực tiếp đến giá EUA, trình bày dưới dạng ĐÚNG 7 DÒNG RIÊNG BIỆT, mỗi dòng 1 trong 7 NHÓM YẾU TỐ ở KHUNG PHÂN TÍCH (theo đúng thứ tự: 1. Giá năng lượng & fuel switching, 2. Chính sách & quy định, 3. Năng lượng tái tạo & thời tiết, 4. Tài chính & đầu cơ, 5. Kinh tế vĩ mô & chu kỳ, 6. Địa chính trị, 7. Compliance cycle).
-      QUAN TRỌNG VỀ ĐỊNH DẠNG: "content" là 1 chuỗi string, nhưng PHẢI chèn ký tự xuống dòng thật (\\n) giữa dòng 1 và dòng 2, giữa dòng 2 và dòng 3, ... giữa dòng 6 và dòng 7 — TUYỆT ĐỐI KHÔNG viết liền 7 nhóm thành 1 đoạn văn dài không xuống dòng. Mỗi dòng bắt đầu bằng "N. Tên nhóm: " rồi tới nội dung (driver cụ thể nếu có dữ liệu/tin hỗ trợ + chiều tác động tăng/giảm lên EUA; nếu nhóm đó không có thông tin mới trong TIN TỨC/DỮ LIỆU GIÁ ở trên, ghi ngắn gọn "Không có thông tin mới").
-      Ví dụ format (chỉ minh hoạ cấu trúc, không copy nội dung mẫu):
-      "1. Giá năng lượng & fuel switching: TTF tăng 3.7%, có thể thúc đẩy fuel switching sang than → EUA↑.\\n2. Chính sách & quy định: Không có thông tin mới.\\n3. Năng lượng tái tạo & thời tiết: ...\\n4. Tài chính & đầu cơ: ...\\n5. Kinh tế vĩ mô & chu kỳ: ...\\n6. Địa chính trị: ...\\n7. Compliance cycle: ..."
+   2. heading="Yếu tố dẫn dắt" — CHỈ tổng hợp thông tin nằm trong phạm vi "B. DANH MỤC THEO DÕI" (NHÓM 1 — Năng lượng & nhiên liệu hóa thạch, NHÓM 2 — Hạn ngạch & tín chỉ carbon, NHÓM 3 — Chính sách) ở KHUNG PHÂN TÍCH trên. TIN/DỮ LIỆU KHÔNG khớp danh mục này → bỏ qua, không đưa vào.
+      QUAN TRỌNG — CHỈ LIỆT KÊ NHÓM CÓ THÔNG TIN THẬT: với mỗi nhóm trong 3 NHÓM trên, CHỈ viết 1 dòng cho nhóm đó NẾU trong TIN TỨC/DỮ LIỆU GIÁ ở trên THỰC SỰ có nội dung khớp danh mục của nhóm đó. Nhóm nào KHÔNG có thông tin khớp → BỎ QUA HOÀN TOÀN, KHÔNG viết dòng "Không có thông tin mới" cho nhóm đó nữa (khác với yêu cầu trước đây). Vì vậy "content" có thể chỉ có 1 dòng, 2 dòng, hoặc đủ 3 dòng tuỳ ngày — không cố định số dòng.
+      THỨ TỰ ƯU TIÊN: nếu NHÓM 3 (Chính sách) có thông tin, PHẢI đặt lên dòng đầu tiên (chính sách quan trọng hơn tin giá — theo đúng QUY TẮC ƯU TIÊN ở KHUNG PHÂN TÍCH). Sau đó tới NHÓM 2, cuối cùng NHÓM 1.
+      ĐỊNH DẠNG: "content" là 1 chuỗi string; nếu có từ 2 dòng trở lên, PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng — TUYỆT ĐỐI KHÔNG viết liền thành 1 đoạn văn dài không xuống dòng. Mỗi dòng bắt đầu bằng "Tên nhóm: " (vd "Chính sách: ...", "Hạn ngạch & tín chỉ carbon: ...", "Năng lượng & nhiên liệu hóa thạch: ...") rồi tới nội dung cụ thể (driver + chiều tác động tăng/giảm lên EUA).
+      Nếu CẢ 3 nhóm đều không có thông tin khớp danh mục: "content" = "Không có thông tin mới liên quan trực tiếp đến giá EUA."
+      Ví dụ format khi có 2/3 nhóm có tin (chỉ minh hoạ cấu trúc, không copy nội dung mẫu):
+      "Chính sách: EU công bố siết lịch đấu giá EUA quý 4, giảm nguồn cung ngắn hạn → EUA↑.\\nNăng lượng & nhiên liệu hóa thạch: TTF tăng 3.7%, có thể thúc đẩy fuel switching sang than → EUA↑."
    3. heading="Quan điểm thị trường" — nêu cả consensus view VÀ contrarian view (kèm nguồn cụ thể: tên tổ chức/nhà phân tích/báo cáo). Nếu không có: ghi "Không có quan điểm thị trường cụ thể."
    4. heading="Cần theo dõi" — liệt kê sự kiện/mốc/số liệu công bố sắp tới kèm ngày giờ Việt Nam cụ thể (nếu tin tức có đề cập), và vì sao mốc đó quan trọng với EUA. MỖI sự kiện là 1 DÒNG RIÊNG, đánh số "1.", "2.", "3."... — PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng, TUYỆT ĐỐI KHÔNG viết liền các sự kiện thành 1 đoạn văn dài không xuống dòng (áp dụng đúng quy tắc định dạng như "Yếu tố dẫn dắt" ở trên).
 
