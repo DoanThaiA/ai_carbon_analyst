@@ -734,18 +734,16 @@ TIN TỨC LIÊN QUAN (cbam, vcm, global_carbon_market, vietnam_carbon_policy):
 YÊU CẦU: Viết MỤC 4 — CẬP NHẬT TÍN CHỈ CARBON & CBAM.
 Mục này gồm 4 cấu phần bắt buộc (khi có tin). Nếu không có tin cho cấu phần đó, ghi rõ "Không có diễn biến trọng yếu":
   (i)   VCM quốc tế: thông báo từ tổ chức xác minh (Verra, Gold Standard, ACR, CAR, Article 6...).
-  (ii)  VCM ngoài EU: quy định, chính sách thị trường tín chỉ tự nguyện ngoài EU.
-  (iii) Dự án carbon gắn thép xanh / kim loại xanh.
-  (iv)  Diễn biến CBAM: EU CBAM, UK CBAM, lộ trình của các nước.
+  (ii)  Dự án carbon gắn thép xanh / kim loại xanh.
+  (iii) Diễn biến CBAM: EU CBAM, UK CBAM, lộ trình của các nước.
 
-Mỗi cấu phần là 1 gạch đầu dòng, BẮT ĐẦU bằng ĐÚNG TÊN ĐẦY ĐỦ của cấu phần đó in đậm bằng markdown "**Tên cấu phần:**" — TUYỆT ĐỐI KHÔNG dùng ký hiệu La Mã "[i]", "[ii]", "[iii]", "[iv]" nữa. Tên đầy đủ 4 cấu phần PHẢI dùng ĐÚNG NGUYÊN VĂN như sau:
+Mỗi cấu phần là 1 gạch đầu dòng, BẮT ĐẦU bằng ĐÚNG TÊN ĐẦY ĐỦ của cấu phần đó in đậm bằng markdown "**Tên cấu phần:**" — TUYỆT ĐỐI KHÔNG dùng ký hiệu La Mã "[i]", "[ii]", "[iii]", "[iv]" nữa. Tên đầy đủ 3 cấu phần PHẢI dùng ĐÚNG NGUYÊN VĂN như sau:
   "**VCM quốc tế:** ..."
-  "**VCM ngoài EU:** ..."
   "**Dự án carbon gắn thép xanh / kim loại xanh:** ..."
   "**Diễn biến CBAM:** ..."
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"4": {{"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["**VCM quốc tế:** ...", "**VCM ngoài EU:** ...", "**Dự án carbon gắn thép xanh / kim loại xanh:** ...", "**Diễn biến CBAM:** ..."]}}}}"""
+{{"4": {{"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["**VCM quốc tế:** ...", "**Dự án carbon gắn thép xanh / kim loại xanh:** ...", "**Diễn biến CBAM:** ..."]}}}}"""
 
 
 def _prompt_section5(news_text: str, prices_text: str, gasoil_crack_spread: str, target_date: str) -> str:
