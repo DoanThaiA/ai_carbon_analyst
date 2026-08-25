@@ -229,15 +229,20 @@ class OtpCode(Base):
 
 
 class Report(Base):
+    """status='generating': job nền đang chạy (content=None); 'failed': job nền
+    lỗi (error_message giữ lại chi tiết); 'draft'/'published' như trước —
+    xem POST /api/admin/reports/generate."""
+
     __tablename__ = "reports"
     __table_args__ = (
-        CheckConstraint("status IN ('draft', 'published')", name="ck_reports_status"),
+        CheckConstraint("status IN ('draft', 'published', 'generating', 'failed')", name="ck_reports_status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     report_date: Mapped[str] = mapped_column(Text, unique=True, nullable=False) # format YYYY-MM-DD
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
-    content: Mapped[dict] = mapped_column(JSONB, nullable=False) # Chứa cục JSON 9 section
+    content: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True) # Chứa cục JSON 9 section — None khi đang generating
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

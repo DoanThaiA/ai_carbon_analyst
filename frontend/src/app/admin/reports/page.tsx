@@ -2,11 +2,40 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Clock, CheckCircle2, ChevronRight, PlusCircle, AlertCircle } from "lucide-react";
+import { FileText, Clock, CheckCircle2, ChevronRight, PlusCircle, AlertCircle, Loader2, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { ReportSummary } from "@/lib/types";
+
+const POLL_INTERVAL_MS = 5000;
+
+const STATUS_STYLES: Record<ReportSummary["status"], { label: string; icon: React.ReactNode; badge: string; iconWrap: string }> = {
+  published: {
+    label: "Published",
+    icon: <CheckCircle2 size={14} />,
+    badge: "bg-tint text-primary-dark border border-primary/20",
+    iconWrap: "bg-tint text-primary-dark",
+  },
+  draft: {
+    label: "Draft",
+    icon: <Clock size={14} />,
+    badge: "bg-warn-tint text-warn border border-warn/20",
+    iconWrap: "bg-warn-tint text-warn",
+  },
+  generating: {
+    label: "Đang sinh...",
+    icon: <Loader2 size={14} className="animate-spin" />,
+    badge: "bg-surface-alt text-muted-light border border-border",
+    iconWrap: "bg-surface-alt text-muted-light",
+  },
+  failed: {
+    label: "Lỗi",
+    icon: <XCircle size={14} />,
+    badge: "bg-red-50 text-down border border-red-200",
+    iconWrap: "bg-red-50 text-down",
+  },
+};
 
 export default function AdminReportsPage() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
@@ -14,13 +43,15 @@ export default function AdminReportsPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
 
-  const fetchReports = async () => {
+  const fetchReports = async (): Promise<ReportSummary[]> => {
     try {
       const res = await api.get("/api/admin/reports");
       setReports(res.data);
+      return res.data;
     } catch (err) {
       console.error(err);
       setError("Không thể tải danh sách báo cáo.");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -29,6 +60,14 @@ export default function AdminReportsPage() {
   useEffect(() => {
     fetchReports();
   }, []);
+
+  // /generate giờ chạy nền (trả response ngay) — poll lại danh sách mỗi
+  // POLL_INTERVAL_MS khi còn báo cáo nào đang "generating", tự dừng khi hết.
+  useEffect(() => {
+    if (!reports.some(r => r.status === "generating")) return;
+    const timer = setTimeout(fetchReports, POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [reports]);
 
   const handleGenerateToday = async () => {
     setGenerating(true);
@@ -95,25 +134,25 @@ export default function AdminReportsPage() {
             >
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
-                  <div className={clsx(
-                    "p-2 rounded-lg",
-                    report.status === 'published' ? "bg-tint text-primary-dark" : "bg-warn-tint text-warn"
-                  )}>
+                  <div className={clsx("p-2 rounded-lg", STATUS_STYLES[report.status].iconWrap)}>
                     <FileText size={20} />
                   </div>
                   <h3 className="text-lg font-bold text-label">Báo cáo ngày {report.report_date}</h3>
                 </div>
                 <div className={clsx(
                   "px-2.5 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5",
-                  report.status === 'published' ? "bg-tint text-primary-dark border border-primary/20" : "bg-warn-tint text-warn border border-warn/20"
+                  STATUS_STYLES[report.status].badge
                 )}>
-                  {report.status === 'published' ? (
-                    <><CheckCircle2 size={14} /> Published</>
-                  ) : (
-                    <><Clock size={14} /> Draft</>
-                  )}
+                  {STATUS_STYLES[report.status].icon}
+                  {STATUS_STYLES[report.status].label}
                 </div>
               </div>
+
+              {report.status === 'failed' && report.error_message && (
+                <p className="text-xs text-down bg-red-50 border border-red-200 rounded-md px-2.5 py-1.5 mb-3 line-clamp-2">
+                  {report.error_message}
+                </p>
+              )}
 
               <div className="flex justify-between items-center text-sm text-body mt-6 pt-4 border-t border-border">
                 <span>Tạo lúc: {format(new Date(report.created_at), "HH:mm dd/MM/yyyy")}</span>

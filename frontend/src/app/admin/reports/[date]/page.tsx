@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save } from "lucide-react";
+import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
+
+const POLL_INTERVAL_MS = 5000;
 
 export default function AdminReportReview() {
   const params = useParams();
@@ -18,26 +20,47 @@ export default function AdminReportReview() {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState("");
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const fetchReport = async () => {
-      try {
-        const res = await api.get(`/api/admin/reports/${date}`);
-        setReport(res.data);
-      } catch (err: any) {
-        setError(err.response?.status === 404 ? "Không tìm thấy báo cáo cho ngày này." : "Lỗi kết nối đến server.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (date) fetchReport();
+  const fetchReport = useCallback(async () => {
+    try {
+      const res = await api.get(`/api/admin/reports/${date}`);
+      setReport(res.data);
+    } catch (err: any) {
+      setError(err.response?.status === 404 ? "Không tìm thấy báo cáo cho ngày này." : "Lỗi kết nối đến server.");
+    } finally {
+      setLoading(false);
+    }
   }, [date]);
+
+  useEffect(() => {
+    if (date) fetchReport();
+  }, [date, fetchReport]);
+
+  // /generate chạy nền — trong lúc report.status === 'generating', poll lại
+  // mỗi POLL_INTERVAL_MS để tự cập nhật khi job xong (hoặc lỗi).
+  useEffect(() => {
+    if (report?.status !== "generating") return;
+    const timer = setTimeout(fetchReport, POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [report, fetchReport]);
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await api.post(`/api/admin/reports/generate?date=${date}`);
+      await fetchReport();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Lỗi khi thử sinh lại báo cáo");
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const handlePublish = async () => {
     if (!confirm("Sau khi duyệt, báo cáo sẽ hiện ra cho user xem và không thể chỉnh sửa lại. Bạn có chắc chắn?")) return;
@@ -125,12 +148,29 @@ export default function AdminReportReview() {
         <div className="flex items-center gap-3">
           <div className={clsx(
             "px-2.5 py-1 text-xs font-mono font-semibold rounded flex items-center gap-2",
-            report.status === 'published' ? "bg-tint text-primary-dark border border-primary/20" : "bg-warn-tint text-warn border border-warn/20"
+            report.status === 'published' ? "bg-tint text-primary-dark border border-primary/20" :
+            report.status === 'generating' ? "bg-surface-alt text-muted-light border border-border" :
+            report.status === 'failed' ? "bg-red-50 text-down border border-red-200" :
+            "bg-warn-tint text-warn border border-warn/20"
           )}>
-            {report.status === 'published' ? <CheckCircle2 size={14} /> : <FileText size={14} />}
+            {report.status === 'published' ? <CheckCircle2 size={14} /> :
+             report.status === 'generating' ? <Loader2 size={14} className="animate-spin" /> :
+             report.status === 'failed' ? <AlertCircle size={14} /> :
+             <FileText size={14} />}
             {report.status.toUpperCase()}
           </div>
-          
+
+          {report.status === 'failed' && (
+            <button
+              onClick={handleRetry}
+              disabled={retrying}
+              className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-3 py-1.5 rounded-md font-medium text-sm transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={retrying ? "animate-spin" : ""} />
+              {retrying ? "Đang thử lại..." : "Thử sinh lại"}
+            </button>
+          )}
+
           <button
             onClick={handleDelete}
             disabled={deleting}
@@ -193,6 +233,26 @@ export default function AdminReportReview() {
             onChange={(e) => setEditContent(e.target.value)}
             className="w-full h-[600px] font-mono text-sm p-4 bg-surface border border-border rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y"
           />
+        </div>
+      ) : report.status === 'generating' ? (
+        <div className="text-center py-20 bg-background border border-border rounded-2xl shadow-[var(--shadow-soft)]">
+          <Loader2 size={40} className="mx-auto text-primary animate-spin mb-4" />
+          <h2 className="text-lg font-bold text-heading mb-2">Đang sinh báo cáo...</h2>
+          <p className="text-body">Quá trình này có thể mất vài phút. Trang sẽ tự cập nhật khi xong, không cần tải lại.</p>
+        </div>
+      ) : report.status === 'failed' ? (
+        <div className="text-center py-20 bg-background border border-red-200 rounded-2xl shadow-[var(--shadow-soft)]">
+          <AlertCircle size={40} className="mx-auto text-red-500 mb-4" />
+          <h2 className="text-lg font-bold text-heading mb-2">Sinh báo cáo thất bại</h2>
+          <p className="text-red-600 mb-6 max-w-xl mx-auto">{report.error_message || "Không rõ nguyên nhân."}</p>
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-full font-semibold text-sm transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={retrying ? "animate-spin" : ""} />
+            {retrying ? "Đang thử lại..." : "Thử sinh lại"}
+          </button>
         </div>
       ) : (
         <ReportDocument report={report} />

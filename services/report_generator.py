@@ -488,13 +488,16 @@ async def get_previous_report_events(session: AsyncSession, target_date_str: str
     8 hôm nay có thể cập nhật lại kết quả thực tế của các sự kiện kỳ trước đã qua."""
     stmt = (
         select(Report)
-        .where(Report.report_date < target_date_str)
+        .where(
+            Report.report_date < target_date_str,
+            Report.status.in_(["draft", "published"]),  # bỏ qua report đang 'generating'/'failed' — content=None
+        )
         .order_by(desc(Report.report_date))
         .limit(1)
     )
     result = await session.execute(stmt)
     prev_report = result.scalars().first()
-    if not prev_report:
+    if not prev_report or not prev_report.content:
         return []
     return prev_report.content.get("8", {}).get("events", [])
 
@@ -735,10 +738,14 @@ Mục này gồm 4 cấu phần bắt buộc (khi có tin). Nếu không có tin
   (iii) Dự án carbon gắn thép xanh / kim loại xanh.
   (iv)  Diễn biến CBAM: EU CBAM, UK CBAM, lộ trình của các nước.
 
-Mỗi cấu phần là 1 gạch đầu dòng với prefix "[i]", "[ii]", "[iii]", "[iv]".
+Mỗi cấu phần là 1 gạch đầu dòng, BẮT ĐẦU bằng ĐÚNG TÊN ĐẦY ĐỦ của cấu phần đó in đậm bằng markdown "**Tên cấu phần:**" — TUYỆT ĐỐI KHÔNG dùng ký hiệu La Mã "[i]", "[ii]", "[iii]", "[iv]" nữa. Tên đầy đủ 4 cấu phần PHẢI dùng ĐÚNG NGUYÊN VĂN như sau:
+  "**VCM quốc tế:** ..."
+  "**VCM ngoài EU:** ..."
+  "**Dự án carbon gắn thép xanh / kim loại xanh:** ..."
+  "**Diễn biến CBAM:** ..."
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"4": {{"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["[i] ...", "[ii] ...", "[iii] ...", "[iv] ..."]}}}}"""
+{{"4": {{"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["**VCM quốc tế:** ...", "**VCM ngoài EU:** ...", "**Dự án carbon gắn thép xanh / kim loại xanh:** ...", "**Diễn biến CBAM:** ..."]}}}}"""
 
 
 def _prompt_section5(news_text: str, prices_text: str, gasoil_crack_spread: str, target_date: str) -> str:

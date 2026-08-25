@@ -1,8 +1,11 @@
+export type ReportStatus = "draft" | "published" | "generating" | "failed";
+
 export interface Report {
   id: number;
   report_date: string;
-  status: "draft" | "published";
+  status: ReportStatus;
   content: any;
+  error_message?: string | null;
   created_at: string;
   published_at: string | null;
 }
@@ -10,7 +13,8 @@ export interface Report {
 export interface ReportSummary {
   id: number;
   report_date: string;
-  status: "draft" | "published";
+  status: ReportStatus;
+  error_message?: string | null;
   created_at: string;
   published_at: string | null;
 }
