@@ -249,6 +249,39 @@ def _filter_news_for_section(news_by_topic: Dict[str, List[Dict]], section_key: 
     return "\n".join(text_parts) if text_parts else "Không có tin tức liên quan."
 
 
+def _filter_news_with_index(
+    news_by_topic: Dict[str, List[Dict]], section_key: str, max_articles: int = 10
+) -> tuple[str, Dict[int, Dict]]:
+    """Giống _filter_news_for_section nhưng đánh số [N] cho từng bài (dedup theo
+    url) và trả kèm bảng tra N -> bài viết gốc — dùng cho các mục cần trích dẫn
+    nguồn có thể bấm link (Mục 7). LLM chỉ được chọn số thứ tự có sẵn, backend
+    tự map sang URL thật — tránh để LLM tự bịa URL không tồn tại.
+    """
+    relevant_topics = SECTION_TOPICS.get(section_key, [])
+    seen_urls: set = set()
+    numbered: List[Dict] = []
+    for topic in relevant_topics:
+        for art in news_by_topic.get(topic, []):
+            if art["url"] in seen_urls:
+                continue
+            seen_urls.add(art["url"])
+            numbered.append(art)
+            if len(numbered) >= max_articles:
+                break
+        if len(numbered) >= max_articles:
+            break
+
+    if not numbered:
+        return "Không có tin tức liên quan.", {}
+
+    index_lookup = {i + 1: art for i, art in enumerate(numbered)}
+    lines = [
+        f"[{i}] [{art['source']}] {art['title']}\n   Tóm tắt: {art['summary']}"
+        for i, art in index_lookup.items()
+    ]
+    return "\n".join(lines), index_lookup
+
+
 def _collect_cited_articles(news_by_topic: Dict[str, List[Dict]], limit: int = 40) -> List[Dict]:
     """Danh sách bài viết thật (title/source/url) đã đưa vào các prompt — dùng
     cho Mục 9 để trích dẫn URL cụ thể thay vì chỉ tên domain, dedup theo url."""
@@ -629,9 +662,12 @@ YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH CÁC YẾU TỐ NĂNG LƯỢNG TƯƠN
 
 A. "analysis_blocks": mảng ĐÚNG 4 object, mỗi object gồm "heading" và "content" (3–5 câu, đủ ý, không viết chung chung):
    1. heading="Diễn biến chính" — bắt đầu bằng số liệu giá thực tế (EUA đóng cửa + biên độ phiên, TTF, Gas, Coal, Power Đức) trước; phân tích nguyên nhân sau. Fact trước, diễn giải sau.
-   2. heading="Yếu tố dẫn dắt" — TỔNG HỢP TẤT CẢ thông tin liên quan trực tiếp đến giá EUA: chính sách EU ETS (MSR, lịch đấu giá, phân bổ miễn phí), chính trị châu Âu, địa chính trị, và diễn biến thị trường năng lượng châu Âu (gas/than/điện/dầu). Với mỗi driver nêu rõ nó thuộc nhóm nào trong 7 NHÓM YẾU TỐ ở KHUNG PHÂN TÍCH, và chiều tác động (tăng/giảm) lên EUA. Không liệt kê rời rạc — phải nối được thành mạch logic.
+   2. heading="Yếu tố dẫn dắt" — TỔNG HỢP TẤT CẢ thông tin liên quan trực tiếp đến giá EUA, trình bày dưới dạng ĐÚNG 7 DÒNG RIÊNG BIỆT, mỗi dòng 1 trong 7 NHÓM YẾU TỐ ở KHUNG PHÂN TÍCH (theo đúng thứ tự: 1. Giá năng lượng & fuel switching, 2. Chính sách & quy định, 3. Năng lượng tái tạo & thời tiết, 4. Tài chính & đầu cơ, 5. Kinh tế vĩ mô & chu kỳ, 6. Địa chính trị, 7. Compliance cycle).
+      QUAN TRỌNG VỀ ĐỊNH DẠNG: "content" là 1 chuỗi string, nhưng PHẢI chèn ký tự xuống dòng thật (\\n) giữa dòng 1 và dòng 2, giữa dòng 2 và dòng 3, ... giữa dòng 6 và dòng 7 — TUYỆT ĐỐI KHÔNG viết liền 7 nhóm thành 1 đoạn văn dài không xuống dòng. Mỗi dòng bắt đầu bằng "N. Tên nhóm: " rồi tới nội dung (driver cụ thể nếu có dữ liệu/tin hỗ trợ + chiều tác động tăng/giảm lên EUA; nếu nhóm đó không có thông tin mới trong TIN TỨC/DỮ LIỆU GIÁ ở trên, ghi ngắn gọn "Không có thông tin mới").
+      Ví dụ format (chỉ minh hoạ cấu trúc, không copy nội dung mẫu):
+      "1. Giá năng lượng & fuel switching: TTF tăng 3.7%, có thể thúc đẩy fuel switching sang than → EUA↑.\\n2. Chính sách & quy định: Không có thông tin mới.\\n3. Năng lượng tái tạo & thời tiết: ...\\n4. Tài chính & đầu cơ: ...\\n5. Kinh tế vĩ mô & chu kỳ: ...\\n6. Địa chính trị: ...\\n7. Compliance cycle: ..."
    3. heading="Quan điểm thị trường" — nêu cả consensus view VÀ contrarian view (kèm nguồn cụ thể: tên tổ chức/nhà phân tích/báo cáo). Nếu không có: ghi "Không có quan điểm thị trường cụ thể."
-   4. heading="Cần theo dõi" — liệt kê sự kiện/mốc/số liệu công bố sắp tới kèm ngày giờ Việt Nam cụ thể (nếu tin tức có đề cập), và vì sao mốc đó quan trọng với EUA.
+   4. heading="Cần theo dõi" — liệt kê sự kiện/mốc/số liệu công bố sắp tới kèm ngày giờ Việt Nam cụ thể (nếu tin tức có đề cập), và vì sao mốc đó quan trọng với EUA. MỖI sự kiện là 1 DÒNG RIÊNG, đánh số "1.", "2.", "3."... — PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng, TUYỆT ĐỐI KHÔNG viết liền các sự kiện thành 1 đoạn văn dài không xuống dòng (áp dụng đúng quy tắc định dạng như "Yếu tố dẫn dắt" ở trên).
 
 B. "correlation_analysis": object PHẢI có đủ các trường sau — đây là phần bắt buộc theo yêu cầu "nhận xét ĐỘC LẬP" từng yếu tố tương quan trước khi tổng hợp:
    - "gas_comment": nhận xét ĐỘC LẬP về biến động Gas (TTF) trong ngày — nêu %Δ cụ thể lấy từ DỮ LIỆU GIÁ ở trên, và ý nghĩa của mức tăng/giảm đó.
@@ -708,17 +744,20 @@ def _prompt_section7(news_text: str, target_date: str) -> str:
     return f"""Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.
 Ngày báo cáo: {target_date}
 
-TIN TỨC LIÊN QUAN (eua_ets, geopolitics):
+TIN TỨC LIÊN QUAN (đánh số [1], [2], ... — eua_ets, geopolitics):
 {news_text}
 
 YÊU CẦU: Viết MỤC 7 — QUAN ĐIỂM TRÁI CHIỀU ĐÁNG CHÚ Ý.
 Quy tắc:
-- CHỈ viết khi có quan điểm contrarian có cơ sở dữ liệu từ nguồn chuẩn (nhà phân tích, báo cáo, chuyên gia).
-- Kèm nguồn cụ thể và luận điểm chính.
-- Nếu không có: set "has_content" = false và "text" = "Không có quan điểm trái chiều có cơ sở trong kỳ này."
+- CHỈ viết khi có quan điểm contrarian có cơ sở dữ liệu, dựa ĐÚNG vào tin tức đã đánh số ở trên — TUYỆT ĐỐI KHÔNG bịa quan điểm hay nguồn không có trong danh sách.
+- Nếu có, trả về mảng "points" — MỖI quan điểm trái chiều là 1 phần tử RIÊNG, gồm:
+    - "viewpoint": phân tích ĐẦY ĐỦ, CHI TIẾT (5–8 câu, không viết ngắn/hời hợt): (1) quan điểm consensus — đa số thị trường/nhà phân tích đang nghĩ gì; (2) quan điểm contrarian khác biệt ra sao; (3) luận điểm/bằng chứng cụ thể mà nguồn đưa ra để bảo vệ quan điểm trái chiều đó; (4) điều kiện/kịch bản nào sẽ khiến quan điểm contrarian này đúng thay vì consensus.
+    - "source_index": số thứ tự [N] của tin tức ở trên đã dùng làm căn cứ — PHẢI là số có thật trong danh sách đã đánh số, KHÔNG được bịa số khác.
+  Nếu có nhiều quan điểm trái chiều đáng chú ý, liệt kê đủ thành nhiều phần tử trong "points" (không giới hạn 1 phần tử).
+- Nếu KHÔNG có quan điểm contrarian có cơ sở nào trong tin tức đã cho: "has_content" = false, "points" = [], "text" = "Không có quan điểm trái chiều có cơ sở trong kỳ này."
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"7": {{"title": "Quan điểm trái chiều đáng chú ý", "has_content": true/false, "text": "..."}}}}"""
+{{"7": {{"title": "Quan điểm trái chiều đáng chú ý", "has_content": true/false, "points": [{{"viewpoint": "...", "source_index": 1}}], "text": "..."}}}}"""
 
 
 def _prompt_section8(news_text: str, prev_events_text: str, target_date: str) -> str:
@@ -824,6 +863,10 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     else:
         eua_key_facts = "Không có dữ liệu giá EUA cho phiên này."
 
+    # Mục 7 cần trích dẫn nguồn có thể bấm link — đánh số tin tức trước, LLM chỉ
+    # được chọn số thứ tự, backend tự map số đó sang URL thật (tránh bịa link).
+    section7_news_text, section7_index_lookup = _filter_news_with_index(news_by_topic, "7")
+
     # ── 2. Gọi LLM từng mục song song (tuần tự để tránh rate limit) ──
     content: Dict[str, Any] = {}
 
@@ -849,7 +892,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
             prices_text, gasoil_crack_spread, target_date
         )),
         ("7", _prompt_section7(
-            _filter_news_for_section(news_by_topic, "7"),
+            section7_news_text,
             target_date
         )),
         ("8", _prompt_section8(
@@ -875,7 +918,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
               "trading_scenarios": []},
         "4": {"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["Không có diễn biến trọng yếu."]},
         "5": {"title": "Tín hiệu liên thị trường", "bullets": ["Không có tín hiệu liên thị trường mới."]},
-        "7": {"title": "Quan điểm trái chiều đáng chú ý", "has_content": False, "text": "Không có quan điểm trái chiều có cơ sở trong kỳ này."},
+        "7": {"title": "Quan điểm trái chiều đáng chú ý", "has_content": False, "points": [], "text": "Không có quan điểm trái chiều có cơ sở trong kỳ này."},
         "8": {"title": "Lịch sự kiện 7 ngày tới", "events": []},
         "biz": {"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [], "long_term": []},
     }
@@ -905,8 +948,16 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     section2_data: dict = FALLBACKS["2"]
     for section_key, section_data in results:
         if section_key == "7":
-            if section_data.get("has_content"):
-                content["7"] = section_data
+            if section_data.get("has_content") and section_data.get("points"):
+                resolved_points = []
+                for pt in section_data["points"]:
+                    src_art = section7_index_lookup.get(pt.get("source_index"))
+                    resolved_points.append({
+                        "viewpoint": pt.get("viewpoint", ""),
+                        "source_name": src_art["source"] if src_art else None,
+                        "source_url": src_art["url"] if src_art else None,
+                    })
+                content["7"] = {**section_data, "points": resolved_points}
         elif section_key == "2":
             section2_data = section_data
         else:
@@ -933,8 +984,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     cited_articles = _collect_cited_articles(news_by_topic)
     content["9"] = {
         "title": "Nguồn tham khảo",
-        "bullets": [f"[{a['source']}] {a['title']} — {a['url']}" for a in cited_articles]
-                   if cited_articles else ["Không có nguồn tin tức trong 48h qua."],
+        "items": [{"source": a["source"], "title": a["title"], "url": a["url"]} for a in cited_articles],
     }
 
     return content

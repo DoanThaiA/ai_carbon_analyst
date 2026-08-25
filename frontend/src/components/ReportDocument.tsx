@@ -242,7 +242,11 @@ export function ReportDocument({ report }: { report: Report }) {
             {report.content["3"].analysis_blocks?.map((block: any, i: number) => (
               <div key={i} className="mb-5">
                 <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
-                <p className="text-[14px] leading-relaxed text-body"><RichText text={block.content} /></p>
+                <div className="space-y-1.5">
+                  {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
+                    <p key={j} className="text-[14px] leading-relaxed text-body"><RichText text={line} /></p>
+                  ))}
+                </div>
               </div>
             ))}
 
@@ -250,15 +254,15 @@ export function ReportDocument({ report }: { report: Report }) {
               <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg pl-4 pr-4 py-3 my-5 space-y-2">
                 <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">Chuỗi Logic: Gas + Coal + Power → EUA</h4>
                 {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
-                  <div className="grid sm:grid-cols-3 gap-2 mb-1">
+                  <div className="space-y-2.5 mb-1">
                     {report.content["3"].correlation_analysis.gas_comment && (
-                      <p className="text-[13px] leading-relaxed text-body"><b className="text-label">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
+                      <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
                     )}
                     {report.content["3"].correlation_analysis.coal_comment && (
-                      <p className="text-[13px] leading-relaxed text-body"><b className="text-label">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
+                      <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
                     )}
                     {report.content["3"].correlation_analysis.power_comment && (
-                      <p className="text-[13px] leading-relaxed text-body"><b className="text-label">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
+                      <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
                     )}
                   </div>
                 )}
@@ -350,10 +354,26 @@ export function ReportDocument({ report }: { report: Report }) {
         {report.content["7"] && (
           <section className="py-9 border-b-2 border-border-soft">
             <SectionHeading number="07" title={report.content["7"].title} />
-            {report.content["7"].has_content === false ? (
-              <p className="text-[14px] text-muted-light italic">{report.content["7"].text}</p>
+            {report.content["7"].points?.length > 0 ? (
+              <div className="space-y-5">
+                {report.content["7"].points.map((pt: any, i: number) => (
+                  <div key={i} className="pb-5 border-b border-border-soft last:border-b-0 last:pb-0">
+                    <p className="text-[14px] leading-relaxed text-body"><RichText text={pt.viewpoint} /></p>
+                    {pt.source_url && (
+                      <a
+                        href={pt.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-block font-mono text-[11.5px] text-primary hover:underline"
+                      >
+                        Nguồn: {pt.source_name} ↗
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
             ) : (
-              <p className="text-[14px] leading-relaxed text-body"><RichText text={report.content["7"].text} /></p>
+              <p className="text-[14px] text-muted-light italic">{report.content["7"].text}</p>
             )}
           </section>
         )}
@@ -425,11 +445,25 @@ export function ReportDocument({ report }: { report: Report }) {
         {report.content["9"] && (
           <section className="py-9">
             <SectionHeading number="09" title={report.content["9"].title} />
-            <ul className="space-y-1">
-              {report.content["9"].bullets?.map((b: string, i: number) => (
-                <li key={i} className="font-mono text-[12px] text-muted-light">{b}</li>
-              ))}
-            </ul>
+            {report.content["9"].items?.length > 0 ? (
+              <ul className="space-y-1.5">
+                {report.content["9"].items.map((it: any, i: number) => (
+                  <li key={i} className="font-mono text-[12px] text-muted-light">
+                    [{it.source}]{" "}
+                    <a
+                      href={it.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {it.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="font-mono text-[12px] text-muted-light">Không có nguồn tin tức trong 48h qua.</p>
+            )}
           </section>
         )}
 
