@@ -1,7 +1,21 @@
+"use client";
+
+import { useState } from "react";
 import clsx from "clsx";
 import Image from "next/image";
 import { Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle, ListChecks } from "lucide-react";
 import type { Report } from "@/lib/types";
+
+// "YYYY-MM-DD" -> "dd/MM" (nhãn trục X) — tránh phụ thuộc date-fns chỉ cho 1 format đơn giản.
+function formatShortDate(dateStr: string) {
+  const parts = dateStr.split("-");
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateStr;
+}
+
+function formatFullDate(dateStr: string) {
+  const parts = dateStr.split("-");
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
+}
 
 const HORIZON_META: Record<string, { icon: typeof Clock; accent: string; iconBg: string }> = {
   "ngắn hạn": { icon: Clock, accent: "border-l-warn", iconBg: "bg-warn-tint text-warn" },
@@ -60,61 +74,125 @@ function SectionHeading({ number, title }: { number: string; title: string }) {
 function CandlestickChart({ report }: { report: Report }) {
   const rawData = report?.content["2"]?.chart_data;
   const candles = rawData && rawData.length > 0 ? rawData : [];
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   if (candles.length === 0) {
     return (
-      <div className="w-full h-[220px] flex items-center justify-center text-muted-light text-sm border border-border rounded-lg bg-background">
+      <div className="w-full h-[260px] flex items-center justify-center text-muted-light text-sm border border-border rounded-lg bg-background">
         Đang cập nhật dữ liệu...
       </div>
     );
   }
 
-  const W = 480, H = 220, padL = 34, padR = 8, padT = 10, padB = 20;
+  const W = 640, H = 260, padL = 48, padR = 12, padT = 12, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const allVals = candles.flatMap((c: any) => [c.high, c.low]);
   const min = Math.min(...allVals), max = Math.max(...allVals);
   const range = max - min || 1;
-  const pMin = min - range * 0.05;
-  const pMax = max + range * 0.05;
+  const pMin = min - range * 0.08;
+  const pMax = max + range * 0.08;
 
   const yScale = (v: number) => padT + plotH - ((v - pMin) / (pMax - pMin)) * plotH;
   const cw = plotW / candles.length;
+  // Nhãn ngày trên trục X: giãn cách để tối đa ~6 nhãn, tránh chữ chồng lên nhau với 30 nến.
+  const xLabelStep = Math.max(1, Math.ceil(candles.length / 6));
+
+  const handlePointer = (e: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const clientX = "touches" in e ? e.touches[0]?.clientX : e.clientX;
+    if (clientX === undefined) return;
+    const xInSvg = (clientX - rect.left) * (W / rect.width);
+    const idx = Math.min(candles.length - 1, Math.max(0, Math.floor((xInSvg - padL) / cw)));
+    setHoverIndex(idx);
+  };
+
+  const hovered = hoverIndex !== null ? candles[hoverIndex] : null;
+  const hoveredX = hoverIndex !== null ? padL + hoverIndex * cw + cw / 2 : 0;
+  // Lật tooltip sang trái khi nến được hover nằm ở nửa phải biểu đồ, tránh tràn ra ngoài.
+  const tooltipLeftPct = hoverIndex !== null ? (hoverIndex / candles.length) * 100 : 0;
+  const flipTooltip = tooltipLeftPct > 55;
 
   return (
-    <svg width="100%" height="220" viewBox="0 0 480 220" className="w-full">
-      {/* Gridlines */}
-      {[0, 1, 2, 3, 4].map(i => {
-        const y = padT + (plotH / 4) * i;
-        const val = pMax - ((pMax - pMin) / 4) * i;
-        return (
-          <g key={`grid-${i}`}>
-            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" strokeWidth="1" />
-            <text x={2} y={y + 3} className="font-mono text-[9px] fill-muted-light">
-              {val.toFixed(1)}
+    <div className="relative">
+      <svg
+        width="100%" height="260" viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair"
+        onMouseMove={handlePointer}
+        onMouseLeave={() => setHoverIndex(null)}
+        onTouchMove={handlePointer}
+        onTouchEnd={() => setHoverIndex(null)}
+      >
+        {/* Gridlines + trục giá (Y) */}
+        {[0, 1, 2, 3, 4].map(i => {
+          const y = padT + (plotH / 4) * i;
+          const val = pMax - ((pMax - pMin) / 4) * i;
+          return (
+            <g key={`grid-${i}`}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" strokeWidth="1" strokeDasharray={i === 4 ? undefined : "2,3"} />
+              <text x={padL - 6} y={y + 3} textAnchor="end" className="font-mono text-[9px] fill-muted-light">
+                {val.toFixed(2)}
+              </text>
+            </g>
+          );
+        })}
+        {/* Trục ngày (X) */}
+        {candles.map((c: any, i: number) => {
+          if (i % xLabelStep !== 0 && i !== candles.length - 1) return null;
+          const x = padL + i * cw + cw / 2;
+          return (
+            <text key={`xl-${i}`} x={x} y={H - 6} textAnchor="middle" className="font-mono text-[8.5px] fill-muted-light">
+              {formatShortDate(c.date)}
             </text>
-          </g>
-        );
-      })}
-      {/* Candles */}
-      {candles.map((c: any, i: number) => {
-        const x = padL + i * cw + cw / 2;
-        const isUp = c.close >= c.open;
-        const color = isUp ? "var(--color-up)" : "var(--color-down)";
-        const yHigh = yScale(c.high);
-        const yLow = yScale(c.low);
-        const yOpen = yScale(c.open);
-        const yClose = yScale(c.close);
-        const bodyTop = Math.min(yOpen, yClose);
-        const bodyH = Math.max(Math.abs(yClose - yOpen), 1.2);
+          );
+        })}
+        {/* Nến */}
+        {candles.map((c: any, i: number) => {
+          const x = padL + i * cw + cw / 2;
+          const isUp = c.close >= c.open;
+          const color = isUp ? "var(--color-up)" : "var(--color-down)";
+          const yHigh = yScale(c.high);
+          const yLow = yScale(c.low);
+          const yOpen = yScale(c.open);
+          const yClose = yScale(c.close);
+          const bodyTop = Math.min(yOpen, yClose);
+          const bodyH = Math.max(Math.abs(yClose - yOpen), 1.2);
+          const dimmed = hoverIndex !== null && hoverIndex !== i;
 
-        return (
-          <g key={`candle-${i}`}>
-            <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={color} strokeWidth="1" />
-            <rect x={x - cw * 0.32} y={bodyTop} width={cw * 0.64} height={bodyH} fill={color} />
-          </g>
-        );
-      })}
-    </svg>
+          return (
+            <g key={`candle-${i}`} opacity={dimmed ? 0.4 : 1}>
+              <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={color} strokeWidth="1.2" />
+              <rect x={x - cw * 0.32} y={bodyTop} width={cw * 0.64} height={bodyH} rx={0.6} fill={color} />
+            </g>
+          );
+        })}
+        {/* Crosshair khi hover */}
+        {hovered && (
+          <line x1={hoveredX} y1={padT} x2={hoveredX} y2={H - padB} stroke="var(--color-muted-light)" strokeWidth="1" strokeDasharray="3,3" />
+        )}
+      </svg>
+
+      {hovered && (
+        <div
+          className="absolute top-1 pointer-events-none bg-background border border-border rounded-md shadow-[var(--shadow-medium)] px-3 py-2 font-mono text-[11px] z-10 min-w-[128px]"
+          style={
+            flipTooltip
+              ? { right: `${100 - tooltipLeftPct}%`, marginRight: 8 }
+              : { left: `${tooltipLeftPct}%`, marginLeft: 8 }
+          }
+        >
+          <div className="text-label font-semibold mb-1.5 whitespace-nowrap">{formatFullDate(hovered.date)}</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+            <span className="text-muted-light">Mở</span><span className="text-foreground text-right">{hovered.open.toFixed(2)}</span>
+            <span className="text-muted-light">Cao</span><span className="text-foreground text-right">{hovered.high.toFixed(2)}</span>
+            <span className="text-muted-light">Thấp</span><span className="text-foreground text-right">{hovered.low.toFixed(2)}</span>
+            <span className="text-muted-light">Đóng</span>
+            <span className={clsx("text-right font-semibold", hovered.close >= hovered.open ? "text-up" : "text-down")}>
+              {hovered.close.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
