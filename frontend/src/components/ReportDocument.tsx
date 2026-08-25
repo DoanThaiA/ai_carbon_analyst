@@ -1,6 +1,19 @@
 import clsx from "clsx";
 import Image from "next/image";
+import { Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle, ListChecks } from "lucide-react";
 import type { Report } from "@/lib/types";
+
+const HORIZON_META: Record<string, { icon: typeof Clock; accent: string; iconBg: string }> = {
+  "ngắn hạn": { icon: Clock, accent: "border-l-warn", iconBg: "bg-warn-tint text-warn" },
+  "trung hạn": { icon: CalendarRange, accent: "border-l-primary", iconBg: "bg-tint text-primary-dark" },
+  "dài hạn": { icon: Compass, accent: "border-l-muted-light", iconBg: "bg-surface-alt text-muted-light" },
+};
+
+const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: string }> = {
+  "tăng": { icon: TrendingUp, className: "text-up border-up/30 bg-up/10" },
+  "giảm": { icon: TrendingDown, className: "text-down border-down/30 bg-red-50" },
+  "đi ngang": { icon: Minus, className: "text-muted-light border-border bg-surface-alt" },
+};
 
 // Nội dung từ backend đôi khi chứa markdown **bold** thô (đôi khi cả dấu ** lẻ, không cặp đôi)
 // — render thành <strong> và luôn dọn sạch mọi dấu * còn sót lại thay vì hiện literal.
@@ -229,10 +242,51 @@ export function ReportDocument({ report }: { report: Report }) {
               <p className="text-[13px] leading-relaxed text-body"><RichText text={report.content["2"].key_facts} /></p>
             </div>
           )}
-          {report.content["2"]?.chart_comment && (
-            <div className="mt-3">
-              <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-1">Nhận xét diễn biến</h4>
-              <p className="text-[13.5px] leading-relaxed text-body"><RichText text={report.content["2"].chart_comment} /></p>
+          {(report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0) && (
+            <div className="mt-4">
+              <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Động lực thị trường</h4>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="border border-up/25 bg-up/[0.04] rounded-lg overflow-hidden">
+                  <div className="bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
+                    ▲ Động lực tăng
+                  </div>
+                  <div className="p-3 space-y-3">
+                    {report.content["2"].market_drivers.bullish?.length > 0 ? (
+                      report.content["2"].market_drivers.bullish.map((d: any, i: number) => (
+                        <p key={i} className="text-[13px] leading-relaxed text-body">
+                          <span className={clsx(
+                            "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
+                            d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
+                          )}>{d.tag}</span>
+                          <RichText text={d.text} />
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-[12.5px] text-muted-light italic">Không có động lực tăng đáng chú ý.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="border border-down/25 bg-down/[0.04] rounded-lg overflow-hidden">
+                  <div className="bg-down/10 text-down font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-down/20">
+                    ▼ Động lực giảm
+                  </div>
+                  <div className="p-3 space-y-3">
+                    {report.content["2"].market_drivers.bearish?.length > 0 ? (
+                      report.content["2"].market_drivers.bearish.map((d: any, i: number) => (
+                        <p key={i} className="text-[13px] leading-relaxed text-body">
+                          <span className={clsx(
+                            "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
+                            d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
+                          )}>{d.tag}</span>
+                          <RichText text={d.text} />
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-[12.5px] text-muted-light italic">Không có động lực giảm đáng chú ý.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </section>
@@ -276,33 +330,92 @@ export function ReportDocument({ report }: { report: Report }) {
               </div>
             )}
 
-            {report.content["3"].trading_scenarios?.length > 0 && (
-              <div className="mt-5">
-                <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-label mb-3">Kịch bản chiến lược</h4>
-                <div className="space-y-3">
-                  {report.content["3"].trading_scenarios.map((sc: any, i: number) => (
-                    <div key={i} className="bg-surface border border-border rounded-lg p-3.5">
-                      <span className="font-mono text-[10px] uppercase tracking-wider text-label bg-surface-alt border border-border-soft rounded px-1.5 py-0.5 mr-2">{sc.horizon}</span>
-                      {sc.probability && (
-                        <span className={clsx(
-                          "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border",
-                          sc.probability === "Cao" ? "text-up border-up/30 bg-up/10" :
-                          sc.probability === "Thấp" ? "text-muted-light border-border" :
-                          "text-warn border-warn/30 bg-warn-tint"
-                        )}>Xác suất: {sc.probability}</span>
-                      )}
-                      <p className="mt-2 text-[13.5px] text-body"><b className="text-label">Điều kiện:</b> <RichText text={sc.condition} /></p>
-                      {sc.price_zone && (
-                        <p className="mt-1 text-[13.5px] text-body"><b className="text-label">Vùng giá tham chiếu:</b> <RichText text={sc.price_zone} /></p>
-                      )}
-                      <p className="mt-1 text-[13.5px] text-body"><b className="text-label">Định giá thị trường:</b> <RichText text={sc.market_pricing} /></p>
-                      <p className="mt-1 text-[13.5px] text-down"><b>Rủi ro:</b> <RichText text={sc.key_risk} /></p>
-                      <p className="mt-1 text-[13.5px] text-body"><b className="text-label">Kế hoạch hành động:</b> <RichText text={sc.action_plan} /></p>
-                    </div>
-                  ))}
+            {report.content["3"].trading_scenarios?.length > 0 && (() => {
+              const HORIZON_ORDER = ["ngắn hạn", "trung hạn", "dài hạn"];
+              const byHorizon: Record<string, any> = {};
+              report.content["3"].trading_scenarios.forEach((sc: any) => { byHorizon[sc.horizon] = sc; });
+              const columns = HORIZON_ORDER.filter(h => byHorizon[h]);
+              const ROWS: { label: string; icon?: typeof Target; render: (sc: any) => React.ReactNode }[] = [
+                {
+                  label: "Xác suất / Chiều giá",
+                  render: (sc) => {
+                    const dirMeta = DIRECTION_META[sc.direction];
+                    const DirIcon = dirMeta?.icon;
+                    return (
+                      <div className="flex flex-col gap-1.5 items-start">
+                        {sc.probability && (
+                          <span className={clsx(
+                            "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border",
+                            sc.probability === "Cao" ? "text-up border-up/30 bg-up/10" :
+                            sc.probability === "Thấp" ? "text-muted-light border-border" :
+                            "text-warn border-warn/30 bg-warn-tint"
+                          )}>Xác suất: {sc.probability}</span>
+                        )}
+                        {dirMeta && (
+                          <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border", dirMeta.className)}>
+                            <DirIcon size={11} /> {sc.direction}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  },
+                },
+                { label: "Điều kiện kích hoạt", render: (sc) => <RichText text={sc.condition} /> },
+                {
+                  label: "Vùng giá tham chiếu", icon: Target,
+                  render: (sc) => sc.price_zone ? <RichText text={sc.price_zone} /> : <span className="text-muted-light">—</span>,
+                },
+                { label: "Định giá thị trường", render: (sc) => <RichText text={sc.market_pricing} /> },
+                { label: "Rủi ro chính", icon: AlertTriangle, render: (sc) => <span className="text-down"><RichText text={sc.key_risk} /></span> },
+                { label: "Kế hoạch hành động", icon: ListChecks, render: (sc) => <RichText text={sc.action_plan} /> },
+              ];
+
+              return (
+                <div className="mt-5">
+                  <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-label mb-3">Kịch bản chiến lược</h4>
+                  <div className="overflow-x-auto border border-border rounded-lg">
+                    <table className="w-full border-collapse text-[13px]">
+                      <thead>
+                        <tr>
+                          <th className="text-left font-mono text-[10px] uppercase tracking-wider text-muted-light px-3 py-2.5 border-b border-r border-border bg-surface min-w-[130px]">Chỉ tiêu</th>
+                          {columns.map(h => {
+                            const meta = HORIZON_META[h];
+                            const Icon = meta.icon;
+                            return (
+                              <th key={h} className={clsx("text-left px-3 py-2.5 border-b border-border min-w-[220px]", meta.iconBg)}>
+                                <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider">
+                                  <Icon size={13} /> {h}
+                                </span>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {ROWS.map((row, ri) => {
+                          const RowIcon = row.icon;
+                          return (
+                            <tr key={ri} className="align-top">
+                              <td className="px-3 py-3 border-r border-border bg-surface font-semibold text-label text-[12.5px]">
+                                <span className="flex items-center gap-1.5">
+                                  {RowIcon && <RowIcon size={13} className="text-primary-dark shrink-0" />}
+                                  {row.label}
+                                </span>
+                              </td>
+                              {columns.map(h => (
+                                <td key={h} className="px-3 py-3 text-body leading-relaxed">
+                                  {byHorizon[h] ? row.render(byHorizon[h]) : <span className="text-muted-light">—</span>}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </section>
         )}
 
@@ -398,6 +511,11 @@ export function ReportDocument({ report }: { report: Report }) {
             <SectionHeading number="08" title={report.content["8"].title} />
             {report.content["8"].events?.length > 0 ? (
               <div className="space-y-2">
+                <div className="flex gap-4 items-center pb-2 border-b border-border-soft">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-light min-w-[140px]">Thời gian (VN)</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-light flex-1">Sự kiện</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-light">Tác động</span>
+                </div>
                 {report.content["8"].events.map((ev: any, i: number) => (
                   <div key={i} className="py-2.5 border-t border-border first:border-t-0">
                     <div className="flex gap-4 items-start">
