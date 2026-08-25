@@ -95,6 +95,7 @@ async def _crawl_rss(
                 title=entry.get("title"),
                 raw_html=html,
                 discovered_at=datetime.now(timezone.utc),
+                region=source.region,
             )
         )
         seen_urls.add(url)
@@ -149,6 +150,7 @@ async def _crawl_html_listing(
                 title=None,
                 raw_html=html,
                 discovered_at=datetime.now(timezone.utc),
+                region=source.region,
             )
         )
         seen_urls.add(url)

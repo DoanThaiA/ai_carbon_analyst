@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("url")
     parser.add_argument("--domain", required=True, help="source_domain, ví dụ: iea.org")
     parser.add_argument("--tier", default="B", choices=["A", "B", "C"])
+    parser.add_argument("--region", default="international", choices=["vietnam", "international"])
     parser.add_argument("--store", action="store_true", help="Ghi vào DB (mặc định chỉ dry-run)")
     return parser.parse_args()
 
@@ -64,6 +65,7 @@ async def main() -> None:
         item = CrawledItem(
             url=args.url, source_domain=args.domain, tier=args.tier,
             title=None, raw_html=html, discovered_at=datetime.now(timezone.utc),
+            region=args.region,
         )
         article = extract_article(item)
         if article is None:

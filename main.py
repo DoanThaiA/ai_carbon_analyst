@@ -46,6 +46,7 @@ def load_sources(yaml_path: Path) -> List[SourceConfig]:
                 name=entry["name"],
                 tier=entry["tier"],
                 category=entry["category"],
+                region=entry.get("region", "international"),
                 type=entry.get("type", "html"),
                 rss_url=entry.get("rss_url"),
                 listing_url=entry.get("listing_url"),

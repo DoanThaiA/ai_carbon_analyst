@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import Image from "next/image";
 import type { Report } from "@/lib/types";
 
 // Nội dung từ backend đôi khi chứa markdown **bold** thô (đôi khi cả dấu ** lẻ, không cặp đôi)
@@ -122,14 +123,18 @@ export function ReportDocument({ report }: { report: Report }) {
   return (
     <div className="bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
-      {/* Masthead */}
-      <div className="border-b border-border px-6 sm:px-10 pb-5 pt-7">
-        <div className="flex justify-between items-baseline flex-wrap gap-2">
-          <div className="text-3xl font-extrabold tracking-tight text-heading">
-            Daily Carbon <span className="text-primary">Intelligence</span>
+      {/* Masthead — nền riêng (brand dark) để tách rõ khỏi phần nội dung trắng bên dưới */}
+      <div className="bg-primary-dark px-6 sm:px-10 pt-6 pb-6">
+        <div className="flex justify-between items-center flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <Image src="/stavian_logo.png" alt="Stavian" width={337} height={191} className="h-9 w-auto block" />
+            <div className="w-[1px] h-7 bg-white/25" />
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+              Daily Carbon <span className="text-accent">Intelligence</span>
+            </div>
           </div>
-          <div className="font-mono text-xs text-muted-light text-right">
-            <div className="text-[13px] text-foreground mb-0.5">{report.report_date}</div>
+          <div className="font-mono text-xs text-white/70 text-right">
+            <div className="text-[13px] text-white mb-0.5">{report.report_date}</div>
             <div>Giá chốt 18:00 CET · Cập nhật 06:30 ICT</div>
           </div>
         </div>
@@ -215,8 +220,17 @@ export function ReportDocument({ report }: { report: Report }) {
               <CandlestickChart report={report} />
             </div>
           </div>
+          {report.content["2"]?.key_facts && (
+            <div className="mt-3 border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
+              <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
+              <p className="text-[13px] leading-relaxed text-body"><RichText text={report.content["2"].key_facts} /></p>
+            </div>
+          )}
           {report.content["2"]?.chart_comment && (
-            <p className="mt-3 font-mono text-[12px] text-body italic">{report.content["2"].chart_comment}</p>
+            <div className="mt-3">
+              <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-1">Nhận xét diễn biến</h4>
+              <p className="text-[13.5px] leading-relaxed text-body"><RichText text={report.content["2"].chart_comment} /></p>
+            </div>
           )}
         </section>
 
@@ -235,7 +249,22 @@ export function ReportDocument({ report }: { report: Report }) {
             {report.content["3"].correlation_analysis && (
               <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg pl-4 pr-4 py-3 my-5 space-y-2">
                 <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">Chuỗi Logic: Gas + Coal + Power → EUA</h4>
-                <p className="text-[14px] leading-relaxed text-body"><RichText text={report.content["3"].correlation_analysis.gas_coal_power} /></p>
+                {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
+                  <div className="grid sm:grid-cols-3 gap-2 mb-1">
+                    {report.content["3"].correlation_analysis.gas_comment && (
+                      <p className="text-[13px] leading-relaxed text-body"><b className="text-label">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
+                    )}
+                    {report.content["3"].correlation_analysis.coal_comment && (
+                      <p className="text-[13px] leading-relaxed text-body"><b className="text-label">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
+                    )}
+                    {report.content["3"].correlation_analysis.power_comment && (
+                      <p className="text-[13px] leading-relaxed text-body"><b className="text-label">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
+                    )}
+                  </div>
+                )}
+                <p className="text-[14px] leading-relaxed text-body">
+                  <RichText text={report.content["3"].correlation_analysis.fuel_switching_chain || report.content["3"].correlation_analysis.gas_coal_power} />
+                </p>
                 <p className="text-[14px] font-semibold text-primary-dark"><RichText text={report.content["3"].correlation_analysis.eua_conclusion} /></p>
               </div>
             )}
@@ -278,6 +307,44 @@ export function ReportDocument({ report }: { report: Report }) {
             </section>
           );
         })}
+
+        {/* SECTION 6 — Chi tiết các tin tức chính */}
+        {report.content["6"] && (
+          <section className="py-9 border-b-2 border-border-soft">
+            <SectionHeading number="06" title={report.content["6"].title} />
+            {[
+              { key: "international", label: "Quốc tế" },
+              { key: "vietnam", label: "Việt Nam" },
+            ].map(({ key, label }) => {
+              const items = report.content["6"][key];
+              return (
+                <div key={key} className="mb-6 last:mb-0">
+                  <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-3">{label}</h4>
+                  {items?.length > 0 ? (
+                    <div className="space-y-4">
+                      {items.map((art: any, i: number) => (
+                        <div key={i} className="pb-4 border-b border-border-soft last:border-b-0 last:pb-0">
+                          <p className="text-[14px] font-semibold text-label leading-snug">{i + 1}. {art.title}</p>
+                          <p className="mt-1 text-[13.5px] leading-relaxed text-body"><RichText text={art.summary} /></p>
+                          <a
+                            href={art.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 inline-block font-mono text-[11.5px] text-primary hover:underline"
+                          >
+                            Nguồn: {art.source} ↗
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[13.5px] text-muted-light italic">Không có tin tức {label.toLowerCase()} trong kỳ này.</p>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
 
         {/* SECTION 7 — Quan điểm trái chiều */}
         {report.content["7"] && (

@@ -45,6 +45,10 @@ class Article(Base):
             name="ck_articles_date_confidence",
         ),
         CheckConstraint(
+            "region IN ('vietnam', 'international')",
+            name="ck_articles_region",
+        ),
+        CheckConstraint(
             "topic <@ ARRAY["
             "'eua_ets','energy_gas','energy_power_eu','energy_coal','energy_oil',"
             "'energy_renewable','energy_hydrogen','geopolitics','eu_policy',"
@@ -76,6 +80,9 @@ class Article(Base):
     )
     is_relevant: Mapped[Optional[bool]] = mapped_column(Boolean)  # từ classify.py
     topic: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))  # 1–3 topic từ NewsTopic
+    # Phạm vi nguồn tin — 'vietnam' hay 'international', lấy từ SourceConfig.region
+    # (sources.yaml). Dùng để tách Mục 6 báo cáo thành 2 nhóm Quốc tế / Việt Nam.
+    region: Mapped[str] = mapped_column(Text, nullable=False, server_default="international")
     # Mục 8 HOT NEWS (xem crawl_news/classification.py) — đẩy lên chuông thông
     # báo trên header khi true. hot_news_reason: LLM giải thích ngắn khớp tiêu chí nào.
     is_hot_news: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))

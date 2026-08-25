@@ -67,6 +67,7 @@ async def insert_article_no_commit(
     topics: List[NewsTopic],
     is_hot_news: bool = False,
     hot_news_reason: Optional[str] = None,
+    region: str = "international",
 ) -> Optional[int]:
     """Insert 1 bài viết — KHÔNG tự commit/rollback, người gọi chịu trách nhiệm transaction.
 
@@ -91,6 +92,7 @@ async def insert_article_no_commit(
             topic=[t.value for t in topics],
             is_hot_news=is_hot_news,
             hot_news_reason=hot_news_reason,
+            region=region,
         )
         .on_conflict_do_nothing(index_elements=["url"])
         .returning(Article.id)
@@ -118,6 +120,7 @@ async def insert_article(
     topics: List[NewsTopic],
     is_hot_news: bool = False,
     hot_news_reason: Optional[str] = None,
+    region: str = "international",
 ) -> Optional[int]:
     """Insert 1 bài viết và tự commit.
 
@@ -139,6 +142,7 @@ async def insert_article(
             topics=topics,
             is_hot_news=is_hot_news,
             hot_news_reason=hot_news_reason,
+            region=region,
         )
         await session.commit()
         return article_id

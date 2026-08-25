@@ -9,6 +9,7 @@ sources:
     name: "EIA – Today in Energy"
     tier: A
     category: energy_official
+    region: international
     group: [1]
     type: html
     listing_url: "https://www.eia.gov/todayinenergy/"
@@ -20,6 +21,7 @@ sources:
     name: "EIA – Weekly Petroleum Status Report"
     tier: A
     category: energy_official
+    region: international
     group: [1]
     type: html
     listing_url: "https://www.eia.gov/petroleum/supply/weekly/index.php"
@@ -31,6 +33,7 @@ sources:
     name: "EIA – Natural Gas Weekly Update"
     tier: A
     category: energy_official
+    region: international
     group: [1]
     type: html
     listing_url: "https://www.eia.gov/naturalgas/weekly/"
@@ -42,6 +45,7 @@ sources:
     name: "OPEC – Press Releases"
     tier: A
     category: energy_policy_body
+    region: international
     group: [1]
     type: html
     listing_url: "https://www.opec.org/"
@@ -53,6 +57,7 @@ sources:
     name: "Argus Media – Latest Market News"
     tier: B
     category: market_intelligence
+    region: international
     group: [1]
     type: html
     use_playwright: true
@@ -65,6 +70,7 @@ sources:
     name: "Ember Energy – Latest Insights"
     tier: B
     category: research_nonprofit
+    region: international
     group: [1]
     type: html
     listing_url: "https://ember-energy.org/latest-insights/"
@@ -80,6 +86,7 @@ sources:
     name: "IETA – News & Views"
     tier: B
     category: carbon_industry_association
+    region: international
     group: [2, 3]
     type: html
     listing_url: "https://www.ieta.org/news/"
@@ -91,6 +98,7 @@ sources:
     name: "ESMA – News"
     tier: A
     category: financial_regulator
+    region: international
     group: [2, 3]
     type: html
     listing_url: "https://www.esma.europa.eu/press-news/esma-news"
@@ -102,6 +110,7 @@ sources:
     name: "EEX – Newsroom"
     tier: A
     category: exchange_official
+    region: international
     group: [2]
     type: html
     listing_url: "https://www.eex.com/en/newsroom"
@@ -113,6 +122,7 @@ sources:
     name: "ICE – Media Center"
     tier: A
     category: exchange_official
+    region: international
     group: [2]
     type: html
     use_playwright: true
@@ -125,6 +135,7 @@ sources:
     name: "Nasdaq – Newsroom"
     tier: A
     category: financial_press
+    region: international
     group: [1, 2]
     type: html
     use_playwright: true
@@ -137,6 +148,7 @@ sources:
     name: "Carbon Herald"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [2]
     type: rss
     listing_url: "https://carbonherald.com/"
@@ -149,6 +161,7 @@ sources:
     name: "Carbon Credits"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [2]
     type: rss
     listing_url: "https://carboncredits.com/"
@@ -161,6 +174,7 @@ sources:
     name: "Ecosystem Marketplace – Articles"
     tier: B
     category: carbon_voluntary_market
+    region: international
     group: [2]
     type: html
     listing_url: "https://www.ecosystemmarketplace.com/articles/"
@@ -172,6 +186,7 @@ sources:
     name: "ICVCM – All News & Insights"
     tier: B
     category: carbon_voluntary_market
+    region: international
     group: [2, 3]
     type: html
     listing_url: "https://icvcm.org/news-insights/"
@@ -183,6 +198,7 @@ sources:
     name: "Verra – News"
     tier: B
     category: carbon_voluntary_market
+    region: international
     group: [2]
     type: html
     listing_url: "https://verra.org/news/"
@@ -194,6 +210,7 @@ sources:
     name: "Gold Standard – News"
     tier: B
     category: carbon_voluntary_market
+    region: international
     group: [2]
     type: html
     listing_url: "https://www.goldstandard.org/news"
@@ -205,6 +222,7 @@ sources:
     name: "Carbon Direct – Insights"
     tier: B
     category: carbon_voluntary_market
+    region: international
     group: [2]
     type: html
     listing_url: "https://www.carbon-direct.com/insights"
@@ -216,6 +234,7 @@ sources:
     name: "LSEG – Insights"
     tier: B
     category: market_intelligence
+    region: international
     group: [2]
     type: html
     use_playwright: true
@@ -228,6 +247,7 @@ sources:
     name: "Fastmarkets – Carbon Markets"
     tier: B
     category: market_intelligence
+    region: international
     group: [2]
     type: html
     use_playwright: true
@@ -244,6 +264,7 @@ sources:
     name: "EU Commission – Climate News"
     tier: A
     category: policy_official_eu
+    region: international
     group: [3]
     type: html
     listing_url: "https://climate.ec.europa.eu/news-other-reads/news_en"
@@ -255,6 +276,7 @@ sources:
     name: "EU Commission – CBAM Communication & News"
     tier: A
     category: policy_official_eu
+    region: international
     group: [3]
     type: html
     listing_url: "https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism/cbam-communication-and-news_en"
@@ -266,6 +288,7 @@ sources:
     name: "ESG Dive"
     tier: B
     category: esg_news
+    region: international
     group: [3]
     type: rss
     listing_url: "https://www.esgdive.com/"
@@ -278,6 +301,7 @@ sources:
     name: "ESG Today – Newsfeed"
     tier: B
     category: esg_news
+    region: international
     group: [3]
     type: rss
     listing_url: "https://www.esgtoday.com/newsfeed/"
@@ -290,6 +314,7 @@ sources:
     name: "Carbon Brief - Trang chủ"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/"
@@ -301,6 +326,7 @@ sources:
     name: "Carbon Brief - China Policy"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/topics/china-policy/"
@@ -312,6 +338,7 @@ sources:
     name: "Carbon Brief - EU Policy"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/topics/eu-policy/"
@@ -323,6 +350,7 @@ sources:
     name: "Carbon Brief - International Policy"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/topics/international-policy/"
@@ -334,6 +362,7 @@ sources:
     name: "Carbon Brief - National Policy"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/topics/national-policy/"
@@ -345,6 +374,7 @@ sources:
     name: "Carbon Brief - UK Policy"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/topics/uk-policy/"
@@ -356,6 +386,7 @@ sources:
     name: "Carbon Brief - UN Climate Talks"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/topics/un-climate-talks/"
@@ -367,6 +398,7 @@ sources:
     name: "Carbon Brief - US Policy"
     tier: B
     category: carbon_news_specialist
+    region: international
     group: [3]
     type: html
     listing_url: "https://www.carbonbrief.org/topics/us-policy/"
@@ -378,6 +410,7 @@ sources:
     name: "Financial Times – Energy"
     tier: B
     category: financial_press
+    region: international
     group: [1, 3]
     type: html
     listing_url: "https://www.ft.com/energy"
@@ -389,6 +422,7 @@ sources:
     name: "EU Commission – General News"
     tier: A
     category: policy_official_eu
+    region: international
     group: [3]
     type: html
     listing_url: "https://commission.europa.eu/news_en"
@@ -404,6 +438,7 @@ sources:
     name: "Cục Biến đổi khí hậu – Tin tức"
     tier: A
     category: policy_official_vn
+    region: vietnam
     group: [3]
     type: html
     listing_url: "https://dcc.mae.gov.vn/"
@@ -415,6 +450,7 @@ sources:
     name: "Báo Chính phủ – Chính sách và cuộc sống"
     tier: A
     category: policy_official_vn
+    region: vietnam
     group: [3]
     type: html
     listing_url: "https://baochinhphu.vn/chinh-sach-va-cuoc-song.htm"
@@ -426,6 +462,7 @@ sources:
     name: "Tạp chí Môi trường"
     tier: B
     category: vn_press
+    region: vietnam
     group: [3]
     type: html
     listing_url: "https://tapchimoitruong.vn/"
@@ -437,6 +474,7 @@ sources:
     name: "Môi trường & Cuộc sống"
     tier: B
     category: vn_press
+    region: vietnam
     group: [3]
     type: html
     listing_url: "https://moitruong.net.vn/"
@@ -445,20 +483,22 @@ sources:
     note: "Có thể trùng nội dung với các nguồn VN khác."
 
   - domain: vneconomy.vn
-    name: "VnEconomy – Doanh nghiệp"
+    name: "VnEconomy – Kinh tế xanh"
     tier: B
     category: vn_press
+    region: vietnam
     group: [3]
     type: html
-    listing_url: "https://vneconomy.vn/cong-ty-doanh-nghiep.htm"
+    listing_url: "https://vneconomy.vn/kinh-te-xanh.htm"
     link_pattern: "/[a-z0-9\\-]+\\.htm"
     confidence: high
-    note: "Trang hiện tại là /cong-ty-doanh-nghiep.htm."
+    note: "Trang hiện tại là /kinh-te-xanh.htm."
 
   - domain: thoibaotaichinhvietnam.vn
     name: "Thời báo Tài chính Việt Nam"
     tier: B
     category: vn_press
+    region: vietnam
     group: [3]
     type: html
     listing_url: "https://thoibaotaichinhvietnam.vn/"
@@ -470,6 +510,7 @@ sources:
     name: "VnExpress – Kinh doanh"
     tier: B
     category: vn_press
+    region: vietnam
     group: [3]
     type: rss
     listing_url: "https://vnexpress.net/kinh-doanh"
@@ -482,6 +523,7 @@ sources:
     name: "CafeF – Trang chủ"
     tier: B
     category: vn_press
+    region: vietnam
     group: [3]
     type: rss
     listing_url: "https://cafef.vn/"

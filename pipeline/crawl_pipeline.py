@@ -38,7 +38,7 @@ class PipelineContext:
 
 
 async def process_url(
-    ctx: PipelineContext, url: str, source_domain: str, tier: Tier,
+    ctx: PipelineContext, url: str, source_domain: str, tier: Tier, region: str = "international",
 ) -> PipelineResult:
     """Fetch + chạy toàn bộ pipeline cho 1 URL. Dùng cho test_url.py."""
     html = await ctx.fetcher.fetch(url)
@@ -52,6 +52,7 @@ async def process_url(
         title=None,
         raw_html=html,
         discovered_at=datetime.now(timezone.utc),
+        region=region,
     )
     article = extract_article(item)
     if article is None:
@@ -208,6 +209,7 @@ async def _dedupe_classify_store(ctx: PipelineContext, article: ExtractedArticle
                     topics=classification.topics,
                     is_hot_news=classification.is_hot_news,
                     hot_news_reason=classification.hot_news_reason,
+                    region=article.region,
                 )
                 if article_id is None:
                     # ON CONFLICT DO NOTHING — URL đã tồn tại

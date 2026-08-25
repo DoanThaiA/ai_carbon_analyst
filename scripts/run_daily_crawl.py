@@ -51,6 +51,7 @@ def load_sources(path: str, only_domain: Optional[str] = None) -> List[SourceCon
             name=item["name"],
             tier=item["tier"],
             category=item["category"],
+            region=item.get("region", "international"),
             type=item.get("type", "html"),
             rss_url=item.get("rss_url"),
             listing_url=item.get("listing_url"),

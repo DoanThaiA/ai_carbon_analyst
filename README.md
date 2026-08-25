@@ -103,6 +103,7 @@ Thêm entry vào `sources.yaml`:
   name: "Tên nguồn"
   tier: B
   category: carbon_news
+  region: international   # hoặc "vietnam" — quyết định bài viết rơi vào nhóm nào ở Mục 6 báo cáo
   type: html          # hoặc "rss" nếu có feed
   listing_url: "https://example.com/news"   # dùng khi type: html
   # rss_url: "https://example.com/feed"     # dùng khi type: rss

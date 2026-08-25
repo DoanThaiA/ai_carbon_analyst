@@ -8,6 +8,7 @@ from typing import List, Literal, Optional
 
 Tier = Literal["A", "B", "C"]
 DateConfidence = Literal["metadata", "url", "unknown"]
+Region = Literal["vietnam", "international"]
 
 
 @dataclass
@@ -16,6 +17,7 @@ class SourceConfig:
     name: str
     tier: Tier
     category: str  # ví dụ: energy_official, eu_climate_policy, carbon_market_voluntary...
+    region: Region = "international"  # phân biệt nguồn Việt Nam / quốc tế — dùng cho Mục 6 báo cáo
     type: Literal["rss", "html"] = "html"
     rss_url: Optional[str] = None
     listing_url: Optional[str] = None
@@ -43,6 +45,7 @@ class CrawledItem:
     title: Optional[str]
     raw_html: str
     discovered_at: datetime
+    region: Region = "international"
 
 
 @dataclass
@@ -101,6 +104,7 @@ class ExtractedArticle:
     published_at: Optional[datetime]
     date_confidence: DateConfidence
     extracted_at: datetime
+    region: Region = "international"
 
 
 @dataclass

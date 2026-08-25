@@ -5,15 +5,13 @@ from typing import List, Dict, Any, Optional
 import asyncio
 import cohere
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc
+from sqlalchemy import select, and_, desc, func
 
 from db.models import Article, Price, Instrument, Report
 from core.config import Settings
 
 logger = logging.getLogger(__name__)
 
-# Lazy singleton — khởi tạo khi cần, không chạy lúc import module.
-# Tránh crash khi test / import thiếu .env.
 _cohere_client: cohere.AsyncClientV2 | None = None
 _settings: Settings | None = None
 
@@ -33,6 +31,7 @@ def _get_cohere_client() -> cohere.AsyncClientV2:
 
 SECTION_TOPICS: Dict[str, List[str]] = {
     "1": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "geopolitics", "eu_policy", "cbam"],
+    "2": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "geopolitics", "eu_policy", "cbam"],
     "3": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "energy_renewable", "geopolitics", "eu_policy", "cbam"],
     "4": ["cbam", "vcm", "global_carbon_market", "vietnam_carbon_policy"],
     "5": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_renewable", "geopolitics", "cbam"],
@@ -112,12 +111,19 @@ C. QUY TẮC NHẬN ĐỊNH BẮT BUỘC:
 # Data fetching
 # ─────────────────────────────────────────────────────────────────────
 
-async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> List[Dict]:
-    """Lấy dữ liệu giá của ngày target."""
+async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> tuple[List[Dict], str]:
+    """Lấy dữ liệu giá của ngày gần nhất có dữ liệu (<= target_date_str)."""
+    # Tìm ngày gần nhất có dữ liệu
+    max_date_stmt = select(func.max(Price.price_date)).where(Price.price_date <= target_date_str)
+    max_date = await session.scalar(max_date_stmt)
+
+    if not max_date:
+        return [], None
+
     stmt = (
         select(Price, Instrument)
         .join(Instrument, Price.instrument_id == Instrument.id)
-        .where(Price.price_date == target_date_str)
+        .where(Price.price_date == max_date)
     )
     result = await session.execute(stmt)
     rows = result.all()
@@ -140,7 +146,7 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             "week_change_pct": price.week_change_pct,
             "category": instrument.category,
         })
-    return prices
+    return prices, max_date
 
 
 async def get_historical_ohlc_for_report(session: AsyncSession, instrument_code: str, target_date_str: str) -> List[Dict]:
@@ -176,13 +182,26 @@ async def get_historical_ohlc_for_report(session: AsyncSession, instrument_code:
 
 
 async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tuple[Dict[str, List[Dict]], List[str]]:
-    """Lấy tin tức 48h qua, phân loại theo topic."""
+    """Lấy tin tức được crawl vào ngày hôm sau của ngày báo cáo (theo múi giờ Việt Nam UTC+7).
+    Ví dụ: Báo cáo ngày 23/08 sẽ lấy tin tức được quét vào sáng 24/08 để tổng kết trọn vẹn ngày 23.
+    """
     target_date = datetime.strptime(target_date_str, "%Y-%m-%d")
-    start_date = target_date - timedelta(days=2)
+    
+    # Ngày thực hiện crawl là ngày hôm sau của ngày báo cáo
+    crawl_date_vn = target_date + timedelta(days=1)
+    
+    # 00:00 ngày crawl_date_vn ở Việt Nam tương đương 17:00 ngày hôm trước theo UTC
+    start_utc = crawl_date_vn - timedelta(hours=7)
+    end_utc = start_utc + timedelta(days=1)
 
     stmt = (
         select(Article)
-        .where(Article.crawled_at >= start_date)
+        .where(
+            and_(
+                Article.crawled_at >= start_utc,
+                Article.crawled_at < end_utc
+            )
+        )
         .order_by(desc(Article.crawled_at))
         .limit(100)
     )
@@ -201,8 +220,10 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
             news_by_topic[topic].append({
                 "title": article.title,
                 "summary": article.content[:500] + "...",
+                "content_excerpt": article.content[:2000],
                 "source": article.source,
                 "url": article.url,
+                "region": article.region,
             })
 
     return news_by_topic, list(sources)
@@ -240,6 +261,76 @@ def _collect_cited_articles(news_by_topic: Dict[str, List[Dict]], limit: int = 4
             seen_urls.add(art["url"])
             articles.append(art)
     return articles[:limit]
+
+
+def _build_section6_news(news_by_topic: Dict[str, List[Dict]], limit_per_region: int = 30) -> Dict[str, List[Dict]]:
+    """Gom toàn bộ tin tức đã crawl trong ngày, dedup theo url, tách theo
+    region ('vietnam' / 'international') cho Mục 6 — mỗi tin giữ title/summary/
+    source/url để hiển thị dạng danh sách có thể bấm link tới bài gốc."""
+    articles = _collect_cited_articles(news_by_topic, limit=1000)
+    international = [a for a in articles if a.get("region") != "vietnam"][:limit_per_region]
+    vietnam = [a for a in articles if a.get("region") == "vietnam"][:limit_per_region]
+    return {"international": international, "vietnam": vietnam}
+
+
+def _prompt_section6_summary(article: Dict, target_date: str) -> str:
+    return f"""Bạn là chuyên gia phân tích thị trường carbon & năng lượng châu Âu.
+Ngày báo cáo: {target_date}
+
+BÀI VIẾT CẦN TÓM TẮT (CHỈ bài này, không liên quan bài nào khác):
+Nguồn: {article['source']}
+Tiêu đề: {article['title']}
+Nội dung (trích): {article.get('content_excerpt') or article['summary']}
+
+YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT (2–4 câu) CHO RIÊNG bài viết này:
+- 1–2 câu đầu: tóm tắt ĐÚNG nội dung chính của bài (fact, số liệu nếu bài có nêu) — TUYỆT ĐỐI KHÔNG bịa thêm thông tin ngoài nội dung đã cho, KHÔNG trộn với thông tin của bài viết khác.
+- Câu cuối: 1 nhận định ngắn gọn về ý nghĩa/tác động của tin này đối với thị trường carbon/năng lượng châu Âu hoặc giá EUA — chỉ viết câu này nếu có cơ sở hợp lý từ nội dung bài, nếu bài không liên quan thì bỏ qua, chỉ tóm tắt fact.
+- Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác: dịch ý sang tiếng Việt tự nhiên, không dịch máy móc từng từ.
+- Văn phong khách quan, súc tích. KHÔNG dùng markdown (không **, không gạch đầu dòng).
+
+CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
+{{"summary": "..."}}"""
+
+
+SECTION6_SUMMARY_CONCURRENCY = 4
+
+
+async def _summarize_section6_articles(
+    articles: List[Dict], target_date: str, concurrency: int = SECTION6_SUMMARY_CONCURRENCY
+) -> List[Dict]:
+    """Sinh tóm tắt bằng LLM CHO RIÊNG TỪNG bài đã lọt vào Mục 6 — mỗi bài 1
+    lần gọi LLM ĐỘC LẬP, prompt CHỈ chứa đúng 1 bài (không gộp nhiều bài vào
+    chung 1 prompt) để đảm bảo tóm tắt của bài nào chỉ dựa trên đúng nội dung
+    bài đó, không bị trộn/tổng hợp chéo với các bài khác. Các lệnh gọi này độc
+    lập với nhau nên chạy song song có giới hạn (Semaphore) thay vì tuần tự
+    từng bài — giảm đáng kể thời gian sinh báo cáo khi Mục 6 có tới 60 bài, mà
+    vẫn không vi phạm yêu cầu "mỗi bài 1 prompt riêng". Chỉ chạy cho các bài đã
+    lọt vào Mục 6 (không tóm tắt toàn bộ tin trong ngày — tốn kém không cần thiết).
+
+    Trả về danh sách bài MỚI (không mutate input gốc — các dict này còn được
+    share với news_by_topic dùng cho prompt các mục khác) với "summary" đã
+    thay bằng bản LLM viết riêng cho bài đó; bài nào LLM lỗi → fallback dùng
+    đúng đoạn cắt content gốc của chính bài đó, không ảnh hưởng các bài khác.
+    """
+    if not articles:
+        return []
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _summarize_one(art: Dict) -> Dict:
+        async with sem:
+            await asyncio.sleep(1)  # giãn nhịp nhẹ trong mỗi slot, tránh dồn request tức thời
+            raw = await _call_llm(_prompt_section6_summary(art, target_date))
+            parsed = _extract_json(raw) if raw else None
+            summary = (parsed.get("summary") or "").strip() if parsed else ""
+
+            if not summary:
+                logger.warning("[REPORT] Mục 6: tóm tắt LLM thất bại cho bài %s, dùng fallback.", art["url"])
+                summary = art["summary"]
+
+            return {**art, "summary": summary}
+
+    return list(await asyncio.gather(*[_summarize_one(art) for art in articles]))
 
 
 def _summarize_prices(prices: List[Dict]) -> str:
@@ -482,16 +573,47 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 {{"1": {{"title": "Tóm tắt điều hành", "bullets": ["..."]}}}}"""
 
 
+def _prompt_section2(
+    eua_key_facts: str, prices_text: str, news_text: str, target_date: str
+) -> str:
+    return f"""Bạn là chuyên gia phân tích thị trường carbon châu Âu.
+Ngày báo cáo: {target_date}
+
+SỐ LIỆU THẬT VỀ EUA (PHẢI dùng đúng các con số này, TUYỆT ĐỐI KHÔNG tự bịa hay tính lại số khác — các con số này đã hiển thị riêng trong bảng giá nên KHÔNG cần lặp lại nguyên văn, chỉ dùng để neo lập luận):
+{eua_key_facts}
+
+DỮ LIỆU GIÁ CÁC INSTRUMENT KHÁC TRONG PHIÊN:
+{prices_text}
+
+TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, geopolitics, eu_policy, cbam):
+{news_text}
+
+YÊU CẦU: Viết "chart_comment" — phần NHẬN XÉT PHÂN TÍCH về diễn biến giá EUA trong phiên liền trước, đặt ngay dưới bảng giá & biểu đồ nến ở Mục 2.
+Quy tắc BẮT BUỘC:
+- Đây là nhận xét PHÂN TÍCH, không phải nhắc lại số liệu (giá đóng cửa/biên độ/xu hướng 30 ngày đã hiển thị riêng ở bảng giá phía trên) — chỉ nhắc số liệu khi cần neo lập luận.
+- 4–6 câu, đủ ý, đi thẳng vào NGUYÊN NHÂN đứng sau biến động: driver nào (tin tức, giá năng lượng liên quan — gas/than/điện/dầu, chính sách EU ETS, địa chính trị) đã khiến EUA tăng/giảm/đi ngang trong phiên.
+- Nếu biến động trong phiên nhỏ và không có driver rõ ràng: nói rõ đây là phiên giằng co/thanh khoản thấp, không suy diễn nguyên nhân gượng ép.
+- Đối chiếu với xu hướng 30 ngày: phiên này đang củng cố, đảo chiều, hay tiếp diễn xu hướng đó — nêu rõ.
+- Kết câu bằng 1 câu nhận định ngắn gọn về tâm lý thị trường hiện tại (thận trọng/lạc quan/thận trọng chờ tin...).
+
+CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
+{{"2": {{"chart_comment": "..."}}}}"""
+
+
 def _prompt_section3(
-    news_text: str, prices_text: str, eua_trend: str, gasoil_crack_spread: str, target_date: str
+    news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
+    gasoil_crack_spread: str, target_date: str
 ) -> str:
     return f"""Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.
 Ngày báo cáo: {target_date}
 
 {EUA_ANALYSIS_FRAMEWORK}
 
-DỮ LIỆU GIÁ PHIÊN VỪA QUA (dùng số liệu này để xây dựng chuỗi nhân quả):
+DỮ LIỆU GIÁ PHIÊN VỪA QUA (dùng số liệu này để xây dựng chuỗi nhân quả, TUYỆT ĐỐI KHÔNG tự bịa số khác):
 {prices_text}
+
+BIÊN ĐỘ PHIÊN LIỀN TRƯỚC CỦA EUA:
+{eua_session_range}
 
 GASOIL CRACK SPREAD (số liệu đã tính sẵn — PHẢI dùng đúng con số này nếu nhắc đến crack spread, KHÔNG tự tính lại từ giá Gasoil/Brent thô vì khác đơn vị):
 {gasoil_crack_spread}
@@ -499,33 +621,35 @@ GASOIL CRACK SPREAD (số liệu đã tính sẵn — PHẢI dùng đúng con s�
 XU HƯỚNG EUA 30 NGÀY:
 {eua_trend}
 
-TIN TỨC LIÊN QUAN:
+TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, energy_renewable, geopolitics, eu_policy, cbam):
 {news_text}
 
-YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH NĂNG LƯỢNG & TÁC ĐỘNG LÊN EUA.
-Mục này gồm 3 phần con:
+YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH CÁC YẾU TỐ NĂNG LƯỢNG TƯƠNG QUAN, CHÍNH SÁCH ẢNH HƯỞNG ĐẾN GIÁ EUA.
+Đây là mục phân tích SÂU NHẤT của báo cáo — PHẢI đầy đủ, chi tiết, không được viết hời hợt hay bỏ trống bất kỳ phần nào bên dưới. Mục này gồm 3 phần con:
 
-A. "analysis_blocks": mảng 4 object, mỗi object gồm "heading" và "content" (2–4 câu):
-   1. heading="Diễn biến chính" — bắt đầu bằng số liệu giá thực tế (EUA, TTF, Gas, Coal, Power) trước; phân tích nguyên nhân sau.
-   2. heading="Yếu tố dẫn dắt" — liệt kê các driver chính hôm nay; áp dụng đúng các mối liên hệ trong KHUNG PHÂN TÍCH ở trên (fuel switching, crack spread, MSR, RES...). Kiểm tra từng yếu tố trong 7 nhóm.
-   3. heading="Quan điểm thị trường" — nêu cả consensus view VÀ contrarian view (kèm nguồn cụ thể). Nếu không có: ghi "Không có quan điểm thị trường cụ thể."
-   4. heading="Cần theo dõi" — nêu sự kiện/mốc quan trọng kèm ngày giờ Việt Nam cụ thể.
+A. "analysis_blocks": mảng ĐÚNG 4 object, mỗi object gồm "heading" và "content" (3–5 câu, đủ ý, không viết chung chung):
+   1. heading="Diễn biến chính" — bắt đầu bằng số liệu giá thực tế (EUA đóng cửa + biên độ phiên, TTF, Gas, Coal, Power Đức) trước; phân tích nguyên nhân sau. Fact trước, diễn giải sau.
+   2. heading="Yếu tố dẫn dắt" — TỔNG HỢP TẤT CẢ thông tin liên quan trực tiếp đến giá EUA: chính sách EU ETS (MSR, lịch đấu giá, phân bổ miễn phí), chính trị châu Âu, địa chính trị, và diễn biến thị trường năng lượng châu Âu (gas/than/điện/dầu). Với mỗi driver nêu rõ nó thuộc nhóm nào trong 7 NHÓM YẾU TỐ ở KHUNG PHÂN TÍCH, và chiều tác động (tăng/giảm) lên EUA. Không liệt kê rời rạc — phải nối được thành mạch logic.
+   3. heading="Quan điểm thị trường" — nêu cả consensus view VÀ contrarian view (kèm nguồn cụ thể: tên tổ chức/nhà phân tích/báo cáo). Nếu không có: ghi "Không có quan điểm thị trường cụ thể."
+   4. heading="Cần theo dõi" — liệt kê sự kiện/mốc/số liệu công bố sắp tới kèm ngày giờ Việt Nam cụ thể (nếu tin tức có đề cập), và vì sao mốc đó quan trọng với EUA.
 
-B. "correlation_analysis": object gồm:
-   - "gas_coal_power": phân tích độc lập mức tăng/giảm trong ngày của Gas (%Δ) + Coal (%Δ) + Điện Đức (%Δ). Xây dựng chuỗi logic đúng theo KHUNG: Gas+Coal+Power → fuel switching → phát điện → phát thải → EUA.
-     Kết luận bằng câu: tổng hợp 3 yếu tố này tạo áp lực [tăng/giảm/hỗn hợp] lên EUA.
-   - "eua_conclusion": nhận định riêng, độc lập về hướng đi của giá EUA dựa trên phân tích trên.
-     Áp dụng quy tắc: kết luận chiều giá chỉ khi ≥2 yếu tố cùng hướng; nếu mâu thuẫn → ghi "tín hiệu hỗn hợp" + nêu 2 chiều + điều kiện kích hoạt.
+B. "correlation_analysis": object PHẢI có đủ các trường sau — đây là phần bắt buộc theo yêu cầu "nhận xét ĐỘC LẬP" từng yếu tố tương quan trước khi tổng hợp:
+   - "gas_comment": nhận xét ĐỘC LẬP về biến động Gas (TTF) trong ngày — nêu %Δ cụ thể lấy từ DỮ LIỆU GIÁ ở trên, và ý nghĩa của mức tăng/giảm đó.
+   - "coal_comment": nhận xét ĐỘC LẬP về biến động than (Newcastle/API2 nếu có) trong ngày — %Δ cụ thể + ý nghĩa.
+   - "power_comment": nhận xét ĐỘC LẬP về biến động Điện Đức trong ngày — %Δ cụ thể; áp dụng mục A.1 trong KHUNG (đọc CÙNG gas/than/RES trước khi kết luận điện tăng/giảm là do fuel switching hay do carbon cost pass-through).
+   - "fuel_switching_chain": tổng hợp 3 nhận xét trên thành chuỗi logic đầy đủ theo đúng thứ tự Gas + Coal + Power → fuel switching → phát điện → phát thải → cầu EUA. Kết thúc bằng câu: "Tổng hợp 3 yếu tố này tạo áp lực [tăng/giảm/hỗn hợp] lên EUA."
+   - "eua_conclusion": nhận định riêng, độc lập, dứt khoát về hướng đi của giá EUA dựa trên toàn bộ phân tích ở mục A và B.
+     Áp dụng quy tắc: kết luận chiều giá chỉ khi ≥2 yếu tố cùng hướng; nếu mâu thuẫn → ghi "tín hiệu hỗn hợp" + nêu rõ 2 chiều + điều kiện kích hoạt mỗi chiều.
 
-C. "trading_scenarios": mảng tối đa 3 kịch bản, mỗi kịch bản gồm:
-   - "horizon": "ngắn hạn" / "trung hạn" / "dài hạn"
-   - "condition": "Nếu [X] xảy ra..."
-   - "market_pricing": "...thị trường định giá theo hướng [Y]..."
-   - "key_risk": "Rủi ro chính là [Z]."
-   - "action_plan": kế hoạch hành động (TUYỆT ĐỐI KHÔNG có câu lệnh mua/bán trực tiếp như "nên long/short").
+C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn" (không được bỏ trống horizon nào), mỗi kịch bản gồm:
+   - "horizon": "ngắn hạn" (1–2 tuần) / "trung hạn" (1–3 tháng) / "dài hạn" (>3 tháng)
+   - "condition": "Nếu [X cụ thể, gắn với driver đã nêu ở mục A/B] xảy ra..."
+   - "market_pricing": "...thị trường định giá theo hướng [Y], vùng giá tham chiếu dựa trên xu hướng 30 ngày/biên độ phiên đã cho ở trên nếu phù hợp..."
+   - "key_risk": kịch bản rủi ro cụ thể — "Rủi ro chính là [Z, gắn sự kiện/ngưỡng cụ thể]."
+   - "action_plan": kế hoạch hành động cụ thể để quản trị rủi ro/theo dõi (ví dụ: mốc cần theo dõi, ngưỡng cảnh báo, dữ liệu cần cập nhật) — TUYỆT ĐỐI KHÔNG có câu lệnh mua/bán trực tiếp như "nên long/short".
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"3": {{"title": "Phân tích năng lượng & tác động lên EUA", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "correlation_analysis": {{"gas_coal_power": "...", "eua_conclusion": "..."}}, "trading_scenarios": [{{"horizon": "...", "condition": "...", "market_pricing": "...", "key_risk": "...", "action_plan": "..."}}]}}}}"""
+{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "correlation_analysis": {{"gas_comment": "...", "coal_comment": "...", "power_comment": "...", "fuel_switching_chain": "...", "eua_conclusion": "..."}}, "trading_scenarios": [{{"horizon": "...", "condition": "...", "market_pricing": "...", "key_risk": "...", "action_plan": "..."}}]}}}}"""
 
 
 def _prompt_section4(news_text: str, target_date: str) -> str:
@@ -564,17 +688,20 @@ TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_
 {news_text}
 
 YÊU CẦU: Viết MỤC 5 — TÍN HIỆU LIÊN THỊ TRƯỜNG.
+Kết quả PHẢI là "bullets": một MẢNG các chuỗi, MỖI TÍN HIỆU LIÊN THỊ TRƯỜNG LÀ MỘT PHẦN TỬ RIÊNG (xuống dòng riêng khi hiển thị) — TUYỆT ĐỐI KHÔNG gộp nhiều tín hiệu vào chung một đoạn văn dài.
+
 Quy tắc BẮT BUỘC:
 - Mục này LUÔN XUẤT HIỆN trong báo cáo.
-- Dựa vào KHUNG PHÂN TÍCH bên trên, kiểm tra từng mối liên kết:
-    A Đầu tiên: quét dữ liệu giá để xác định nhóm nào có biến động đáng kể (>0.5% hoặc có tin tức hỗ trợ).
-    B Sau đó: kiểm tra xem biến động đó có tạo ra chuỗi lan truyền sang EUA không.
-    C. Nếu có tín hiệu LAN TRUYỀN: viết phân tích liên kết chéo có số liệu và chuỗi logic (lưu ý: không liệt kê chỉ đơn thuần, phải có kết luận chiều EUA).
-    D. Nếu tín hiệu mâu thuẫn nhau: ghi "tín hiệu hỗn hợp" + giải thích cụ thể.
-    E. Nếu không có biến động đáng kể: ghi đúng câu "Không có tín hiệu liên thị trường mới." — KHÔNG bịa liên kết gượng ép.
+- Dựa vào KHUNG PHÂN TÍCH bên trên, quét LẦN LƯỢT từng mối liên kết có thể áp dụng (fuel switching Gas/Coal/Power, Dầu & Gasoil crack spread, RES/thời tiết, CBAM & mở rộng ETS, Chính sách & MSR, Kim loại cơ bản nếu có số liệu, Macro nếu có số liệu):
+    A. Với mỗi nhóm: xác định xem có biến động đáng kể (>0.5% hoặc có tin tức hỗ trợ cụ thể) hay không.
+    B. Nếu có: kiểm tra xem biến động đó có tạo ra chuỗi lan truyền sang EUA không (theo đúng chuỗi nhân quả trong KHUNG).
+    C. Nếu có tín hiệu LAN TRUYỀN: viết THÀNH MỘT BULLET RIÊNG cho liên kết đó — bắt đầu bằng tag in đậm nêu rõ cặp liên kết (vd "**Gas → EUA:**", "**Dầu/Crack spread → EUA:**", "**Điện Đức → EUA:**", "**Địa chính trị → EUA:**", "**Chính sách/MSR → EUA:**"...), sau đó nêu số liệu cụ thể (%Δ, mức giá), chuỗi logic nhân quả, và KẾT LUẬN rõ ràng về chiều tác động lên EUA trong bullet đó (không liệt kê suông, phải chốt chiều tăng/giảm/trung lập).
+    D. Nếu tín hiệu của các nhóm mâu thuẫn nhau: thêm 1 bullet riêng ghi "**Tín hiệu hỗn hợp:**" + giải thích cụ thể 2 chiều đối lập và điều kiện nào sẽ khiến chiều nào thắng thế.
+    E. Nếu không nhóm nào có biến động đáng kể: "bullets" chỉ gồm đúng 1 phần tử là câu "Không có tín hiệu liên thị trường mới." — KHÔNG bịa liên kết gượng ép.
+- Nếu có từ 2 tín hiệu lan truyền trở lên: thêm 1 bullet CUỐI CÙNG bắt đầu bằng "**Tổng hợp:**" tóm tắt lại tất cả tín hiệu vừa nêu và kết luận áp lực chung (tăng/giảm/hỗn hợp) lên EUA trong phiên.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"5": {{"title": "Tín hiệu liên thị trường", "text": "..."}}}}"""
+{{"5": {{"title": "Tín hiệu liên thị trường", "bullets": ["**Gas → EUA:** ...", "**Dầu/Crack spread → EUA:** ...", "**Tổng hợp:** ..."]}}}}"""
 
 
 def _prompt_section7(news_text: str, target_date: str) -> str:
@@ -661,7 +788,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     Mỗi mục chỉ nhận đúng những topic tin tức liên quan.
     """
     # ── 1. Thu thập dữ liệu ──────────────────────────────────────────
-    prices = await get_prices_for_report(session, target_date)
+    prices, max_price_date = await get_prices_for_report(session, target_date)
     chart_data = await get_historical_ohlc_for_report(session, "EUA", target_date)
     news_by_topic, sources = await get_news_for_report(session, target_date)
 
@@ -673,21 +800,29 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     )
     prev_events_text = _format_prev_events(await get_previous_report_events(session, target_date))
 
-    # Nhận xét ngắn về biểu đồ EUA cho Mục 2
+    # Số liệu thật (tính sẵn bằng Python, không để LLM tự bịa) cho Mục 2:
+    # giá đóng cửa phiên liền trước, biến động trong phiên liền trước, xu hướng 30 ngày.
     eua_prices = [p for p in prices if p["code"] == "EUA"]
-    eua_chart_comment = ""
+    eua_key_facts = ""
     if eua_prices and chart_data:
         latest_close = eua_prices[0]["close"]
         prev_close = chart_data[-2]["close"] if len(chart_data) >= 2 else None
         if prev_close:
             delta = latest_close - prev_close
-            direction = "tăng" if delta > 0 else "giảm"
-            eua_chart_comment = (
-                f"EUA phiên {target_date}: đóng cửa {latest_close:.2f} EUR/tCO2, "
-                f"{direction} {abs(delta):.2f} so với phiên trước ({prev_close:.2f}). {eua_trend}"
+            delta_pct = (delta / prev_close * 100) if prev_close else 0
+            direction = "tăng" if delta > 0 else ("giảm" if delta < 0 else "đi ngang")
+            eua_key_facts = (
+                f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2, "
+                f"{direction} {abs(delta):.2f} ({delta_pct:+.1f}%) so với phiên trước đó ({prev_close:.2f}). "
+                f"{eua_session_range} {eua_trend}"
             )
         else:
-            eua_chart_comment = eua_trend
+            eua_key_facts = (
+                f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2. "
+                f"{eua_session_range} {eua_trend}"
+            )
+    else:
+        eua_key_facts = "Không có dữ liệu giá EUA cho phiên này."
 
     # ── 2. Gọi LLM từng mục song song (tuần tự để tránh rate limit) ──
     content: Dict[str, Any] = {}
@@ -697,9 +832,13 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
             _filter_news_for_section(news_by_topic, "1"),
             prices_text, eua_trend, eua_session_range, target_date
         )),
+        ("2", _prompt_section2(
+            eua_key_facts, prices_text,
+            _filter_news_for_section(news_by_topic, "2"), target_date
+        )),
         ("3", _prompt_section3(
             _filter_news_for_section(news_by_topic, "3"),
-            prices_text, eua_trend, gasoil_crack_spread, target_date
+            prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date
         )),
         ("4", _prompt_section4(
             _filter_news_for_section(news_by_topic, "4"),
@@ -725,12 +864,17 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
 
     FALLBACKS: Dict[str, dict] = {
         "1": {"title": "Tóm tắt điều hành", "bullets": ["Không thể sinh nội dung tự động."]},
-        "3": {"title": "Phân tích năng lượng & tác động lên EUA",
+        "2": {"chart_comment": eua_trend},
+        "3": {"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA",
               "analysis_blocks": [{"heading": "Diễn biến chính", "content": "Không có dữ liệu."}],
-              "correlation_analysis": {"gas_coal_power": "Không có dữ liệu.", "eua_conclusion": "Không có dữ liệu."},
+              "correlation_analysis": {
+                  "gas_comment": "Không có dữ liệu.", "coal_comment": "Không có dữ liệu.",
+                  "power_comment": "Không có dữ liệu.", "fuel_switching_chain": "Không có dữ liệu.",
+                  "eua_conclusion": "Không có dữ liệu.",
+              },
               "trading_scenarios": []},
         "4": {"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["Không có diễn biến trọng yếu."]},
-        "5": {"title": "Tín hiệu liên thị trường", "text": "Không có tín hiệu liên thị trường mới."},
+        "5": {"title": "Tín hiệu liên thị trường", "bullets": ["Không có tín hiệu liên thị trường mới."]},
         "7": {"title": "Quan điểm trái chiều đáng chú ý", "has_content": False, "text": "Không có quan điểm trái chiều có cơ sở trong kỳ này."},
         "8": {"title": "Lịch sự kiện 7 ngày tới", "events": []},
         "biz": {"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [], "long_term": []},
@@ -758,23 +902,32 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     tasks = [_process_section(k, p) for k, p in SECTIONS]
     results = await asyncio.gather(*tasks)
 
+    section2_data: dict = FALLBACKS["2"]
     for section_key, section_data in results:
         if section_key == "7":
-            # Mục 7 ĐƯỢC PHÉP BỎ khi không có quan điểm trái chiều có cơ sở —
-            # không set content["7"] thay vì luôn hiện placeholder rỗng.
-            # ReportDocument.tsx đã guard render bằng `report.content["7"] &&`.
             if section_data.get("has_content"):
                 content["7"] = section_data
+        elif section_key == "2":
+            section2_data = section_data
         else:
             content[section_key] = section_data
 
-    # ── 3. Bổ sung Mục 2 (Bảng giá + biểu đồ) ───────────────────────
     content["2"] = {
         "title": "Bảng giá nhanh",
-        "price_timestamp": f"Giá chốt phiên {target_date} (nguồn: Barchart EOD)",
+        "price_timestamp": f"Giá chốt phiên {max_price_date or target_date} (nguồn: Barchart EOD)",
+        "key_facts": eua_key_facts,
         "prices": prices,
         "chart_data": chart_data,
-        "chart_comment": eua_chart_comment,
+        "chart_comment": section2_data.get("chart_comment") or eua_key_facts,
+    }
+
+    section6_news = _build_section6_news(news_by_topic)
+    section6_international = await _summarize_section6_articles(section6_news["international"], target_date)
+    section6_vietnam = await _summarize_section6_articles(section6_news["vietnam"], target_date)
+    content["6"] = {
+        "title": "Chi tiết các tin tức chính",
+        "international": section6_international,
+        "vietnam": section6_vietnam,
     }
 
     cited_articles = _collect_cited_articles(news_by_topic)

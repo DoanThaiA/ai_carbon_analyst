@@ -58,6 +58,7 @@ def extract_article(item: CrawledItem) -> Optional[ExtractedArticle]:
         published_at=published_at,
         date_confidence=date_confidence,
         extracted_at=datetime.now(timezone.utc),
+        region=item.region,
     )
 
 
