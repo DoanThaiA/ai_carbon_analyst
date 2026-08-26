@@ -71,6 +71,66 @@ function SectionHeading({ number, title }: { number: string; title: string }) {
   );
 }
 
+// Bảng gợi ý kinh doanh (Mục SIM) — mỗi gợi ý là 1 hàng, cột theo đúng cấu trúc
+// nhân quả (kích hoạt → hành động → lý do / cơ hội → giải pháp → kỳ vọng) thay vì
+// gộp thành 1 đoạn văn dài, để dễ quét theo hàng như các bảng chuẩn khác trong báo cáo.
+function BizRecommendationTable({
+  heading,
+  accent,
+  rows,
+  columns,
+}: {
+  heading: string;
+  accent: string;
+  rows: Record<string, string>[] | undefined;
+  columns: { key: string; label: string }[];
+}) {
+  return (
+    <div>
+      <h4 className={clsx("font-mono text-[11.5px] font-bold uppercase tracking-widest mb-3", accent)}>{heading}</h4>
+      {rows && rows.length > 0 ? (
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr>
+                <th className="text-left font-mono text-[10px] uppercase tracking-wider text-muted-light px-3 py-2.5 border-b border-r border-border bg-surface w-[36px]">#</th>
+                {columns.map((col, i) => (
+                  <th
+                    key={col.key}
+                    className={clsx(
+                      "text-left font-mono text-[10px] uppercase tracking-wider text-muted-light px-3 py-2.5 border-b border-border bg-surface",
+                      i < columns.length - 1 && "border-r"
+                    )}
+                  >
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((row, ri) => (
+                <tr key={ri} className="align-top">
+                  <td className="px-3 py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">{ri + 1}</td>
+                  {columns.map((col, i) => (
+                    <td
+                      key={col.key}
+                      className={clsx("px-3 py-3 text-body leading-relaxed", i < columns.length - 1 && "border-r border-border")}
+                    >
+                      <RichText text={row[col.key] || ""} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-[13.5px] text-muted-light italic">Không có gợi ý nào đủ căn cứ trong kỳ này.</p>
+      )}
+    </div>
+  );
+}
+
 function CandlestickChart({ report }: { report: Report }) {
   const rawData = report?.content["2"]?.chart_data;
   const candles = rawData && rawData.length > 0 ? rawData : [];
@@ -626,27 +686,27 @@ export function ReportDocument({ report }: { report: Report }) {
         {report.content["biz"] && (
           <section className="py-9 border-b-2 border-border-soft">
             <SectionHeading number="SIM" title={report.content["biz"].title} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-label mb-3">Ngắn hạn</h4>
-                <ul className="space-y-2">
-                  {report.content["biz"].short_term?.map((b: string, i: number) => (
-                    <li key={i} className="flex gap-2 text-[13.5px] leading-relaxed text-body">
-                      <span className="text-primary mt-0.5">→</span><span><RichText text={b} /></span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-3">Dài hạn</h4>
-                <ul className="space-y-2">
-                  {report.content["biz"].long_term?.map((b: string, i: number) => (
-                    <li key={i} className="flex gap-2 text-[13.5px] leading-relaxed text-body">
-                      <span className="text-primary mt-0.5">→</span><span><RichText text={b} /></span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            <div className="flex flex-col gap-6">
+              <BizRecommendationTable
+                heading="Ngắn hạn"
+                accent="text-label"
+                rows={report.content["biz"].short_term}
+                columns={[
+                  { key: "trigger", label: "Tình huống kích hoạt" },
+                  { key: "action", label: "Hành động đề xuất" },
+                  { key: "reason", label: "Lý do" },
+                ]}
+              />
+              <BizRecommendationTable
+                heading="Dài hạn"
+                accent="text-primary"
+                rows={report.content["biz"].long_term}
+                columns={[
+                  { key: "opportunity", label: "Cơ hội" },
+                  { key: "solution", label: "Giải pháp đề xuất" },
+                  { key: "expectation", label: "Kỳ vọng" },
+                ]}
+              />
             </div>
           </section>
         )}

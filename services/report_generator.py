@@ -920,15 +920,22 @@ XU HƯỚNG EUA 30 NGÀY:
 TIN TỨC ĐA CHIỀU:
 {news_text}
 
-YÊU CẦU: Viết MỤC GỢI Ý KINH DOANH & GIẢI PHÁP CHO SIM.
-Gồm 2 phần:
-A. "short_term": mảng gạch đầu dòng, gợi ý ngắn hạn gắn TRỰC TIẾP với tin quan trọng/cập nhật mới nhất. Mỗi gạch nêu rõ: tình huống kích hoạt → hành động cụ thể → lý do.
-B. "long_term": mảng gạch đầu dòng, gợi ý dài hạn rút ra từ cơ hội phân tích (chính sách CBAM, VCM, chuyển dịch năng lượng...). Mỗi gạch nêu rõ: cơ hội → giải pháp đề xuất → kỳ vọng.
+YÊU CẦU: Viết MỤC GỢI Ý KINH DOANH & GIẢI PHÁP CHO SIM — trình bày dưới dạng BẢNG (mỗi gợi ý là 1 HÀNG với các CỘT tách bạch, KHÔNG viết gộp thành 1 câu văn dài).
+Gồm 2 bảng:
+A. "short_term": mảng object, gợi ý ngắn hạn gắn TRỰC TIẾP với tin quan trọng/cập nhật mới nhất trong ngày. Mỗi object gồm ĐÚNG 3 trường:
+   - "trigger": tình huống/tin tức cụ thể kích hoạt gợi ý này (nêu rõ số liệu/sự kiện, không viết chung chung).
+   - "action": hành động cụ thể SIM nên làm, khả thi và thực tế.
+   - "reason": lý do vì sao hành động này hợp lý, gắn với chuỗi nhân quả đã phân tích ở các mục trên.
+B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân tích (chính sách CBAM, VCM, chuyển dịch năng lượng...). Mỗi object gồm ĐÚNG 3 trường:
+   - "opportunity": cơ hội/xu hướng dài hạn cụ thể đã xác định được.
+   - "solution": giải pháp/hướng đi đề xuất cho SIM để tận dụng cơ hội đó.
+   - "expectation": kỳ vọng/kết quả nếu triển khai giải pháp này.
 
+QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng.
 Lưu ý: KHÔNG dùng câu lệnh mua/bán tài chính trực tiếp.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"biz": {{"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": ["..."], "long_term": ["..."]}}}}"""
+{{"biz": {{"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [{{"trigger": "...", "action": "...", "reason": "..."}}], "long_term": [{{"opportunity": "...", "solution": "...", "expectation": "..."}}]}}}}"""
 
 
 # ─────────────────────────────────────────────────────────────────────
