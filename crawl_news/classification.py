@@ -5,7 +5,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-import cohere
+import anthropic
 
 from schemas.crawl_models import ClassificationResult, NewsTopic
 
@@ -16,23 +16,34 @@ logger = logging.getLogger(__name__)
 MAX_TEXT_CHARS_FOR_CLASSIFICATION = 6000
 
 _SYSTEM_PROMPT = """\
-Bạn là Chuyên gia Phân tích Thị trường Năng lượng & Carbon Châu Âu cao cấp.
-Nhiệm vụ của bạn là đọc Tiêu đề và Nội dung bài viết, sau đó gắn 1 đến 3 topic (chủ đề) phù hợp nhất, mô tả chính xác TRỌNG TÂM của bài viết.
+Bạn là Chuyên gia Phân tích Thị trường Năng lượng & Carbon Châu Âu.
+
+Nhiệm vụ: đọc TITLE + ARTICLE CONTENT, xác định bài viết có liên quan hay không và gắn 1–3 topic phù hợp nhất.
+
+NGUYÊN TẮC PHÂN LOẠI
+Phân loại theo trọng tâm được phân tích, không theo keyword xuất hiện.
+Một topic chỉ được chọn khi nó là chủ đề chính hoặc được phân tích đáng kể.
+Không gắn topic chỉ vì topic đó được nhắc qua, dùng để so sánh hoặc là yếu tố phụ.
+Nếu có nhiều topic, xếp theo mức độ quan trọng giảm dần.
+Tối đa 3 topic.
+Không được tạo topic ngoài danh sách.
+QUY TẮC 30%
+Chỉ chọn topic phụ khi bài dành khoảng ≥30% nội dung phân tích cho chủ đề đó, hoặc chủ đề đó là yếu tố quyết định trực tiếp đến kết luận chính của bài.
 
 DANH SÁCH TOPIC BẮT BUỘC (Tuyệt đối không tự bịa ra topic khác):
-- eua_ets              : Biến động giá EUA, hoạt động giao dịch EU ETS, đấu giá (auction), open interest, Market Stability Reserve (MSR). Áp dụng khi EUA/EU ETS là CHỦ ĐỀ CHÍNH, không chỉ được nhắc lướt qua.
-- energy_gas           : Thị trường khí đốt tự nhiên, giá TTF, Henry Hub, LNG, cung cầu khí đốt toàn cầu.
-- energy_power_eu      : Thị trường điện châu Âu, giá điện Đức (DEBY1, baseload), merit order, năng lực phát điện.
-- energy_coal          : Thị trường than nhiệt (API2, API4, NEWC), than cốc, hoạt động khai thác than.
-- energy_oil           : Dầu thô và sản phẩm lọc dầu (WTI, Brent, Gasoil), quyết định của OPEC+, tồn kho dầu.
-- energy_renewable     : Năng lượng tái tạo (gió, mặt trời), thủy điện, tăng trưởng công suất xanh. KHÔNG dùng cho hydrogen — xem energy_hydrogen.
-- energy_hydrogen      : Hydrogen xanh/sạch (H2), thép xanh, sản xuất kim loại/công nghiệp xanh dùng hydrogen. Bài về hydrogen + RE → chọn energy_hydrogen (không phải energy_renewable).
-- geopolitics          : Địa chính trị ảnh hưởng đến năng lượng/carbon (chiến sự Nga-Ukraine, Trung Đông, bầu cử Mỹ, căng thẳng thương mại). KHÔNG dùng cho chính sách EU thuần túy — xem eu_policy.
-- eu_policy            : Chính sách vĩ mô của EU, Fit-for-55, quyết định từ EU Commission/ESMA, luật chuyển dịch năng lượng, ETS reform, MSR. KHÔNG bao gồm CBAM (xem cbam). KHÔNG dùng cho địa chính trị (xem geopolitics).
-- cbam                 : Thuế biên giới carbon (EU CBAM, UK CBAM), tác động đến xuất nhập khẩu, quy trình kê khai, lộ trình CBAM. Khi có CBAM → LUÔN chọn cbam thay vì eu_policy.
-- vcm                  : Thị trường carbon TỰ NGUYỆN (Voluntary Carbon Market): Verra, Gold Standard, ACR, CAR, tín chỉ tự nguyện, Article 6 Paris Agreement. KHÔNG dùng cho thị trường bắt buộc ngoài EU (xem global_carbon_market).
-- global_carbon_market : Các thị trường carbon TUÂN THỦ (bắt buộc) NGOÀI EU: Korea ETS, China ETS, California Cap-and-Trade, RGGI, Australia ERF, CORSIA hàng không. KHÔNG dùng nếu là tín chỉ tự nguyện (xem vcm).
-- vietnam_carbon_policy: Chính sách carbon tại Việt Nam, quy định kiểm kê khí nhà kính, định giá carbon nội địa (VETS), lộ trình thị trường carbon VN.
+- eua_ets              : Thị trường EU ETS bắt buộc của EU, tập trung vào EUA (EU Allowances) và cơ chế vận hành thị trường như giá EUA, giao dịch, futures, auction, supply/demand allowance, open interest, positioning và Market Stability Reserve (MSR).
+- energy_gas           : Thị trường khí tự nhiên và LNG, bao gồm giá gas (TTF, Henry Hub...), futures, cung cầu, tồn kho, sản xuất, nhập khẩu/xuất khẩu, dòng khí, đường ống và LNG.
+- energy_power_eu      : Thị trường điện châu Âu, bao gồm giá điện spot/futures, German power/DEBY1, baseload/peakload, cung cầu điện, cơ cấu phát điện, merit order, công suất phát điện và các yếu tố trực tiếp ảnh hưởng đến giá điện.
+- energy_coal          : Thị trường than và hoạt động của ngành than, bao gồm thermal coal, coking coal, API2/API4/API5/NEWC, giá và futures than, cung cầu, khai thác, xuất nhập khẩu và sử dụng than trong phát điện.
+- energy_oil           : Thị trường dầu thô và sản phẩm dầu, bao gồm Brent, WTI, Gasoil, futures, sản xuất, cung cầu, tồn kho, lọc dầu và các quyết định của OPEC/OPEC+.
+- energy_renewable     : Năng lượng tái tạo, bao gồm điện gió, điện mặt trời, thủy điện và sự phát triển của công suất/sản lượng, dự án, đầu tư và chi phí của các nguồn năng lượng tái tạo.
+- energy_hydrogen      : Thị trường và hệ sinh thái hydrogen, tập trung trực tiếp vào hydrogen xanh, hydrogen sạch, hydrogen carbon thấp, sản xuất H₂, electrolysis, lưu trữ, vận chuyển, hạ tầng, nhập khẩu/xuất khẩu, giá hydrogen và các dự án hydrogen. Không bao gồm green steel hoặc các ngành công nghiệp xanh khác nếu hydrogen không phải trọng tâm chính.
+- geopolitics          : Địa chính trị có tác động trực tiếp đến năng lượng hoặc carbon, bao gồm chiến tranh, xung đột, sanctions, căng thẳng giữa các quốc gia, tranh chấp nguồn cung và các sự kiện quốc tế làm thay đổi energy/carbon markets.
+- eu_policy            : Chính sách, luật và quy định của EU liên quan đến năng lượng, khí hậu và quá trình decarbonization, bao gồm Fit-for-55, EU ETS reform, cap/trajectory, MSR policy, energy transition legislation và các quyết định của EU institutions.
+- cbam                 : Cơ chế điều chỉnh carbon tại biên giới (Carbon Border Adjustment Mechanism), tập trung vào CBAM của EU/UK, nghĩa vụ khai báo, embedded emissions, CBAM certificates, compliance, phạm vi hàng hóa và tác động đến thương mại/xuất nhập khẩu.
+- vcm                  : Thị trường carbon tự nguyện (Voluntary Carbon Market), nơi doanh nghiệp/tổ chức tự nguyện mua, bán, phát hành hoặc retire carbon credits/offsets, bao gồm Verra, Gold Standard, ACR, CAR và các dự án/tín chỉ carbon tự nguyện.
+- global_carbon_market : Các thị trường carbon bắt buộc (compliance carbon markets) ngoài EU ETS, nơi doanh nghiệp phải tuân thủ giới hạn phát thải hoặc nghĩa vụ carbon theo pháp luật, như China ETS, Korea ETS, California Cap-and-Trade, RGGI, Australia và CORSIA.
+- vietnam_carbon_policy: Chính sách, quy định và thị trường carbon của Việt Nam, bao gồm Vietnam ETS/VETS, định giá carbon, kiểm kê khí nhà kính, nghĩa vụ báo cáo phát thải, carbon market roadmap và các quy định carbon trong nước.
 
 PHÂN BIỆT BẮT BUỘC — CÁC TRƯỜNG HỢP DỄ NHẦM:
 1. eua_ets vs eu_policy:
@@ -56,6 +67,7 @@ QUY TẮC PHÂN LOẠI NGHIÊM NGẶT:
 1. CHỈ CHỌN TRỌNG TÂM: Gắn topic khi bài dành ≥30% nội dung phân tích về chủ đề đó. KHÔNG gắn nếu từ khóa chỉ nhắc lướt qua để so sánh.
 2. TỐI ĐA 3 TOPIC: Xếp topic quan trọng/sát nhất lên đầu.
 3. BÀI KHÔNG LIÊN QUAN: Nếu bài không liên quan đến energy, carbon, climate, commodities, hay finance/policy ảnh hưởng đến các thị trường trên → trả về topics=[] và is_relevant=false.
+
 
 HOT NEWS — đánh giá ĐỘC LẬP với việc gắn topic ở trên, chỉ đánh dấu is_hot_news=true khi bài khớp ĐÚNG 1 trong 4 tiêu chí sau (nghiêm ngặt, KHÔNG suy diễn rộng ra ngoài định nghĩa):
 1. Đảo chiều giá EUA: bài xác nhận một sự đảo chiều xu hướng giá EUA (từ tăng sang giảm hoặc ngược lại), không phải biến động thông thường trong xu hướng đang có.
@@ -85,71 +97,15 @@ class Classifier(ABC):
         ...
 
 
-class CohereClassifier(Classifier):
-    """
-    Dùng Cohere command-r-plus để phân loại.
-    Dùng preamble (system prompt) + message, parse JSON từ response text.
-    """
-
-    def __init__(
-        self,
-        api_key: str,
-        model: str = "command-r-plus-08-2024",
-        concurrency: int = 5,
-    ):
-        if not api_key:
-            raise ValueError(
-                "COHERE_API_KEY chưa được set. Điền vào file .env trước khi chạy."
-            )
-        self._client = cohere.AsyncClientV2(api_key=api_key)
-        self._model = model
-        self._semaphore = asyncio.Semaphore(concurrency)
-
-    async def classify(self, title: Optional[str], text: str) -> ClassificationResult:
-        user_content = (
-            f"Tiêu đề: {title or '(không có tiêu đề)'}\n\n"
-            f"Nội dung:\n{text[:MAX_TEXT_CHARS_FOR_CLASSIFICATION]}"
-        )
-        try:
-            async with self._semaphore:
-                response = await self._client.chat(
-                    model=self._model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": _SYSTEM_PROMPT + _JSON_INSTRUCTION,
-                        },
-                        {"role": "user", "content": user_content},
-                    ],
-                )
-        except cohere.TooManyRequestsError as e:
-            raise ClassificationError(f"Cohere rate limit, thử lại sau: {e}") from e
-        except cohere.ServiceUnavailableError as e:
-            raise ClassificationError(f"Cohere service unavailable: {e}") from e
-        except cohere.BadRequestError as e:
-            raise ClassificationError(f"Cohere bad request (không retry): {e}") from e
-        except Exception as e:
-            raise ClassificationError(f"Lỗi gọi Cohere API: {e}") from e
-
-        # Cohere Free Tier: giới hạn 40 requests/phút. 
-        # Thêm sleep 1.5s sau mỗi request để đảm bảo không bao giờ vượt 40req/min.
-        await asyncio.sleep(1.5)
-
-        raw_text = response.message.content[0].text.strip()
-        return _parse_json_response(raw_text)
-
-
 class AnthropicClassifier(Classifier):
     """Dùng Claude (mặc định Haiku — rẻ/nhanh, đủ cho tác vụ phân loại)."""
 
     def __init__(self, api_key: str, model: str = "claude-haiku-4-5", concurrency: int = 5):
-        import anthropic  # import trễ để không yêu cầu anthropic khi dùng Cohere
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
         self._model = model
         self._semaphore = asyncio.Semaphore(concurrency)
 
     async def classify(self, title: Optional[str], text: str) -> ClassificationResult:
-        import anthropic
         user_content = (
             f"Tiêu đề: {title or '(không có tiêu đề)'}\n\n"
             f"Nội dung:\n{text[:MAX_TEXT_CHARS_FOR_CLASSIFICATION]}"
@@ -246,7 +202,6 @@ def _parse_json_response(raw_text: str) -> ClassificationResult:
 
 def build_classifier(
     backend: str,
-    cohere_api_key: str = "",
     anthropic_api_key: str = "",
     model: str = "",
     concurrency: int = 5,
@@ -255,13 +210,6 @@ def build_classifier(
     Factory function — tạo Classifier phù hợp theo backend.
     Dùng trong main.py để khởi tạo classifier mà không cần if/else rải rác.
     """
-    if backend == "cohere":
-        effective_model = model or "command-r-plus-08-2024"
-        return CohereClassifier(
-            api_key=cohere_api_key,
-            model=effective_model,
-            concurrency=concurrency,
-        )
     if backend == "anthropic":
         effective_model = model or "claude-haiku-4-5"
         return AnthropicClassifier(
@@ -270,5 +218,5 @@ def build_classifier(
             concurrency=concurrency,
         )
     raise ValueError(
-        f"CLASSIFIER_BACKEND không hợp lệ: '{backend}'. Dùng 'cohere' hoặc 'anthropic'."
+        f"CLASSIFIER_BACKEND không hợp lệ: '{backend}'. Chỉ hỗ trợ 'anthropic'."
     )

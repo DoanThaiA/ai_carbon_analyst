@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import asyncio
-import cohere
+import anthropic
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, func
 
@@ -12,7 +12,12 @@ from core.config import Settings
 
 logger = logging.getLogger(__name__)
 
-_cohere_client: cohere.AsyncClientV2 | None = None
+# Mục 1-5, 7, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Sonnet;
+# Mục 6 (tóm tắt ngắn từng bài) dùng Haiku — rẻ hơn nhiều, đủ cho việc tóm tắt.
+REPORT_MODEL_SONNET = "claude-sonnet-5"
+REPORT_MODEL_HAIKU = "claude-haiku-4-5"
+
+_anthropic_client: anthropic.AsyncAnthropic | None = None
 _settings: Settings | None = None
 
 
@@ -23,11 +28,11 @@ def _get_settings() -> Settings:
     return _settings
 
 
-def _get_cohere_client() -> cohere.AsyncClientV2:
-    global _cohere_client
-    if _cohere_client is None:
-        _cohere_client = cohere.AsyncClientV2(api_key=_get_settings().cohere_api_key)
-    return _cohere_client
+def _get_anthropic_client() -> anthropic.AsyncAnthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.AsyncAnthropic(api_key=_get_settings().anthropic_api_key)
+    return _anthropic_client
 
 SECTION_TOPICS: Dict[str, List[str]] = {
     "1": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "geopolitics", "eu_policy", "cbam"],
@@ -64,6 +69,11 @@ Chỉ nêu khi có dữ liệu / tin tức thực sự hỗ trợ. KHÔNG suy di
    c) BẮT BUỘC: khi điện Đức biến động, phải đọc CÙNG với gas/than/RES trong cùng phiên trước khi kết luận hướng EUA — điện tăng do RES thấp/nhu cầu cao nhưng cơ cấu phát điện không đổi thì tín hiệu lên EUA YẾU hơn nhiều so với điện tăng do huy động thêm than/gas.
    RES (gió/mặt trời)↑ → dispatch than/gas↓ → phát thải↓ → cầu EUA↓ → EUA↓
 
+   THỜI TIẾT: Nắng nóng kéo dài (nhu cầu làm mát) hoặc mùa đông lạnh (nhu cầu sưởi ấm) → huy động
+   thêm nhiệt điện than/gas → phát thải↑ → cầu EUA↑ → EUA↑ (RES cao đồng thời sẽ làm giảm bớt hiệu ứng này —
+   PHẢI đọc cùng RES trước khi kết luận). Gió/nắng yếu kéo dài (dù thời tiết ôn hòa) → thiếu hụt RES →
+   bù bằng than/gas → cùng chuỗi tác động lên EUA như trên.
+
 2. DẦU & GASOIL:
    Dầu↑ → chi phí vận tải & sản xuất công nghiệp↑ → biên LN ngành thâm dụng NL↓
    Dầu thường tương quan thuận Gas → nếu kéo Gas↑ mạnh → fuel switching than → EUA↑
@@ -76,20 +86,40 @@ Chỉ nêu khi có dữ liệu / tin tức thực sự hỗ trợ. KHÔNG suy di
 
 4. CBAM & MỞ RỘNG ETS:
    EUA↑ → CBAM certificate cost↑ → nhập khẩu thép/nhôm/xi măng vào EU đắt hơn → dịch chuyển cầu sang sản phẩm phát thải thấp
-   Bổ sung ngành vào ETS (hàng hải, hàng không, xây dựng) → nhu cầu EUA↑ → EUA↑
+   Bổ sung ngành vào ETS (hàng hải, hàng không, đường bộ, xây dựng) → nhu cầu EUA↑ → EUA↑
 
 5. CHÍNH SÁCH & MSR:
+   Trần phát thải (cap) & lộ trình giảm siết chặt hơn (giảm nhanh hơn) → kỳ vọng thiếu hụt allowance
+   tương lai → EUA↑. Giãn/nới lộ trình giảm cap → kỳ vọng dư cung tương lai → EUA↓.
    MSR rút thêm cap (tăng tỷ lệ rút vốn) → cung EUA↓ → EUA↑ (ngược lại nếu giải phóng MSR/giảm tỷ lệ rút)
    Lịch đấu giá EUA dồn/tăng khối lượng trong tháng/quý → cung ngắn hạn↑ → áp lực giảm giá; trì hoãn/rút khỏi lịch đấu giá → cung ngắn hạn↓ → áp lực tăng giá
    Giảm tỷ lệ phân bổ miễn phí (free allocation) → doanh nghiệp phải mua thêm EUA → cầu↑ → EUA↑
-   EUA↑ quá mạnh → thị trường tự điều chỉnh / MSR can thiệp → áp lực giảm
+   Deadline compliance cycle (nộp trả EUA hàng năm) → nhu cầu mua gom EUA tăng trước hạn → áp lực tăng giá ngắn hạn quanh mốc deadline
+   Cập nhật/công bố dữ liệu phát thải, báo cáo từ cơ quan quản lý hoặc đơn vị vận hành hệ thống → tín hiệu thị trường đang thắt chặt hay nới lỏng hơn dự kiến → thị trường điều chỉnh kỳ vọng giá theo tín hiệu đó
+   EUA↑ quá mạnh, quá nhanh → phản ứng tự vệ/chốt lời của thị trường hoặc MSR can thiệp → áp lực điều chỉnh giảm
    Giá EUA phản ánh KỲ VỌNG chính sách tương lai, không chỉ hiện tại — tin về sửa luật/bỏ phiếu/phán quyết tòa án dù chưa có hiệu lực vẫn có thể làm giá phản ứng sớm
 
-6. MACRO:
+6. ĐỊA CHÍNH TRỊ:
+   Xung đột quốc tế/xung đột thương mại gây gián đoạn nguồn cung nhiên liệu → hệ thống điện buộc
+   tăng huy động nguồn phát thải cao (than) để bù đắp → phát thải↑ → cầu EUA↑ → EUA↑.
+   Thay đổi chính phủ, định hướng chính sách khí hậu, hoặc quyết định thương mại quốc tế → tác động
+   GIÁN TIẾP qua kỳ vọng thị trường và hoạt động sản xuất công nghiệp — CHỈ nêu khi có tin cụ thể,
+   không suy diễn xu hướng giá EUA trực tiếp từ một sự kiện chính trị chung chung.
+
+7. TÀI CHÍNH & ĐẦU CƠ:
+   EUA được giao dịch như tài sản tài chính → dòng vốn đầu tư/đầu cơ, thanh khoản và kỳ vọng thị
+   trường có thể tạo biến động giá NGẮN HẠN theo cả hai chiều.
+   LƯU Ý: biến động do dòng vốn/đầu cơ thường CHỈ LÀ TẠM THỜI và không bền vững nếu KHÔNG đi kèm
+   thay đổi trong yếu tố cơ bản (cung/cầu, giá năng lượng, chính sách) — TUYỆT ĐỐI KHÔNG quy kết một
+   biến động giá rõ rệt hoàn toàn cho đầu cơ khi không có tin tức/số liệu xác nhận dòng vốn cụ thể.
+
+8. MACRO:
    USD↑ / Lãi suất thực↑ → áp lực giảm đồng thời vàng, dầu, kim loại cơ bản → có thể lan sang EUA.
    LƯU Ý: hệ thống KHÔNG theo dõi chỉ số USD/lãi suất theo dữ liệu giá — CHỈ được nêu liên kết này khi tin tức trích dẫn ở trên có SỐ LIỆU CỤ THỂ (vd DXY, lợi suất trái phiếu); TUYỆT ĐỐI KHÔNG tự suy đoán chiều USD/lãi suất khi không có số liệu.
-   GDP / sản xuất CN↑ → nhu cầu điện & phát thải↑ → EUA↑
+   GDP / sản xuất CN↑ → nhu cầu điện & phát thải (đặc biệt ngành thâm dụng phát thải: thép, xi măng, hóa chất)↑ → EUA↑
    Suy thoái kinh tế → phát thải↓ → EUA↓
+   LƯU Ý: tác động của chu kỳ kinh tế lên EUA đang dần suy yếu do quá trình chuyển dịch năng lượng và
+   cải thiện hiệu quả sử dụng năng lượng — không mặc định tăng trưởng kinh tế luôn kéo EUA tăng mạnh.
 
 B. DANH MỤC THEO DÕI (phạm vi "liên quan trực tiếp đến giá EUA" — CHỈ nội dung khớp
 danh mục này mới được đưa vào phân tích Mục 3/5; tin ngoài phạm vi này bỏ qua):
@@ -210,16 +240,21 @@ async def get_historical_ohlc_for_report(session: AsyncSession, instrument_code:
 
 
 async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tuple[Dict[str, List[Dict]], List[str]]:
-    """Lấy tin tức được crawl vào ngày hôm sau của ngày báo cáo (theo múi giờ Việt Nam UTC+7).
-    Ví dụ: Báo cáo ngày 23/08 sẽ lấy tin tức được quét vào sáng 24/08 để tổng kết trọn vẹn ngày 23.
+    """Lấy tin tức trong khung 07:00 (VN) ngày báo cáo → 07:00 (VN) ngày hôm sau.
+
+    Khớp với lịch tự động: news_crawl chạy 06:00 & 12:00 (VN) mỗi ngày, report cho
+    ngày T được auto-generate lúc 07:00 (VN) ngày T+1 — nên tin tức đưa vào báo cáo
+    ngày T là tin thu thập từ 07:00 (VN) ngày T đến 07:00 (VN) ngày T+1 (bao gồm cả
+    đợt crawl 06:00 của ngày T+1, chạy ngay trước khi report được sinh).
+    Ví dụ: báo cáo ngày 23/08 (sinh lúc 07:00 ngày 24/08) lấy tin từ 07:00 ngày 23/08
+    đến 07:00 ngày 24/08.
+
+    DB lưu UTC, VN = UTC+7 → 07:00 (VN) ngày T chính là 00:00 (UTC) ngày T.
     """
     target_date = datetime.strptime(target_date_str, "%Y-%m-%d")
-    
-    # Ngày thực hiện crawl là ngày hôm sau của ngày báo cáo
-    crawl_date_vn = target_date + timedelta(days=1)
-    
-    # 00:00 ngày crawl_date_vn ở Việt Nam tương đương 17:00 ngày hôm trước theo UTC
-    start_utc = crawl_date_vn - timedelta(hours=7)
+
+    # 07:00 (VN) ngày T == 00:00 (UTC) ngày T
+    start_utc = target_date
     end_utc = start_utc + timedelta(days=1)
 
     stmt = (
@@ -381,7 +416,11 @@ async def _summarize_section6_articles(
     async def _summarize_one(art: Dict) -> Dict:
         async with sem:
             await asyncio.sleep(1)  # giãn nhịp nhẹ trong mỗi slot, tránh dồn request tức thời
-            raw = await _call_llm(_prompt_section6_summary(art, target_date))
+            raw = await _call_llm(
+                _prompt_section6_summary(art, target_date),
+                model=REPORT_MODEL_HAIKU,
+                max_tokens=512,
+            )
             parsed = _extract_json(raw) if raw else None
             summary = (parsed.get("summary") or "").strip() if parsed else ""
 
@@ -512,27 +551,37 @@ def _format_prev_events(events: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-async def _call_llm(prompt: str, max_retries: int = 3) -> Optional[str]:
-    """Gọi Cohere async và trả về text thô, hoặc None nếu lỗi.
+async def _call_llm(
+    prompt: str,
+    model: str = REPORT_MODEL_SONNET,
+    max_tokens: int = 8192,
+    max_retries: int = 3,
+) -> Optional[str]:
+    """Gọi Claude (Anthropic) async và trả về text thô, hoặc None nếu lỗi.
 
-    Dùng AsyncClientV2 để không block asyncio event loop trong lúc
-    chờ Cohere trả kết quả.
+    model mặc định Sonnet cho các mục phân tích chuyên sâu (Mục 1-5, 7, 8, biz);
+    Mục 6 (tóm tắt từng bài) gọi với model=REPORT_MODEL_HAIKU — rẻ hơn, đủ dùng.
     """
+    client = _get_anthropic_client()
     for attempt in range(max_retries):
         try:
-            response = await _get_cohere_client().chat(
-                model="command-a-03-2025",
-                messages=[{"role": "user", "content": prompt}],
+            response = await client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
                 temperature=0.15,
+                messages=[{"role": "user", "content": prompt}],
             )
-            return response.message.content[0].text
-        except Exception as e:
-            logger.error(f"Lỗi Cohere (lần {attempt + 1}/{max_retries}): {e}")
+            return response.content[0].text
+        except (anthropic.RateLimitError, anthropic.APIStatusError, anthropic.APIError) as e:
+            logger.error(f"Lỗi Anthropic (lần {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 # Đợi một lúc rồi thử lại do Rate Limit (429 Too Many Requests)
                 await asyncio.sleep(10 * (attempt + 1))
             else:
                 return None
+        except Exception as e:
+            logger.error(f"Lỗi gọi Claude (lần {attempt + 1}/{max_retries}): {e}")
+            return None
     return None
 
 

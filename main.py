@@ -3,7 +3,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import yaml
 
@@ -96,14 +96,21 @@ def _print_summary(source_name: str, results: List[PipelineResult]) -> None:
             )
 
 
-async def main() -> None:
+async def main(domains: Optional[List[str]] = None) -> None:
+    """domains=None -> crawl toàn bộ nguồn trong sources.yaml (mặc định).
+    Truyền list domain -> chỉ crawl đúng các nguồn đó (dùng cho đợt crawl phụ
+    trong ngày chỉ cần chạy lại 1 nhóm nguồn nhất định, vd Tier A lúc 12:00)."""
     settings = Settings.from_env()
     logger.info("[CONFIG] Backend: %s | Model: %s", settings.classifier_backend, settings.classifier_model)
 
     # 1. Đọc danh sách nguồn
     sources_path = Path(__file__).parent / "sources.yaml"
     all_sources = load_sources(sources_path)
-    demo_sources = all_sources
+    demo_sources = (
+        [s for s in all_sources if s.domain in domains] if domains else all_sources
+    )
+    if domains and not demo_sources:
+        logger.warning("[CONFIG] Không tìm thấy nguồn nào khớp domains=%s trong sources.yaml", domains)
 
     has_playwright_sources = any(s.use_playwright for s in demo_sources)
     logger.info("📰 Demo với %d nguồn (%d dùng Playwright):",
@@ -126,7 +133,6 @@ async def main() -> None:
     fetcher = PoliteFetcher()
     classifier = build_classifier(
         backend=settings.classifier_backend,
-        cohere_api_key=settings.cohere_api_key,
         anthropic_api_key=settings.anthropic_api_key,
         model=settings.classifier_model,
         concurrency=settings.classify_concurrency,

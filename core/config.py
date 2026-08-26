@@ -52,16 +52,14 @@ class Settings:
                 "DATABASE_URL chưa được set. Copy .env.example -> .env và điền connection string."
             )
 
-        backend = os.environ.get("CLASSIFIER_BACKEND", "cohere").lower()
+        backend = os.environ.get("CLASSIFIER_BACKEND", "anthropic").lower()
 
         cohere_api_key = os.environ.get("COHERE_API_KEY", "")
         anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         eia_api_key = os.environ.get("EIA_API_KEY", "")
 
-        # Chọn model mặc định hợp lý theo backend
-        default_model = (
-            "command-a-03-2025" if backend == "cohere" else "claude-haiku-4-5"
-        )
+        # Haiku 4.5: siêu rẻ, siêu nhanh — đủ cho tác vụ phân loại JSON.
+        default_model = "claude-haiku-4-5"
 
         quote_chat_backend = os.environ.get("QUOTE_CHAT_BACKEND", "cohere").lower()
         default_quote_chat_model = (
