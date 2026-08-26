@@ -93,13 +93,13 @@ function BizRecommendationTable({
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                <th className="text-left font-mono text-[10px] uppercase tracking-wider text-muted-light px-3 py-2.5 border-b border-r border-border bg-surface w-[36px]">#</th>
+                <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[36px]">#</th>
                 {columns.map((col, i) => (
                   <th
                     key={col.key}
                     className={clsx(
-                      "text-left font-mono text-[10px] uppercase tracking-wider text-muted-light px-3 py-2.5 border-b border-border bg-surface",
-                      i < columns.length - 1 && "border-r"
+                      "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 bg-tint",
+                      i < columns.length - 1 && "border-r border-border"
                     )}
                   >
                     {col.label}
@@ -109,7 +109,7 @@ function BizRecommendationTable({
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row, ri) => (
-                <tr key={ri} className="align-top">
+                <tr key={ri} className="align-top even:bg-surface/60 hover:bg-tint/40 transition-colors">
                   <td className="px-3 py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">{ri + 1}</td>
                   {columns.map((col, i) => (
                     <td
@@ -346,16 +346,16 @@ export function ReportDocument({ report }: { report: Report }) {
             <table className="w-full border-collapse font-mono text-[12.5px]">
               <thead>
                 <tr>
-                  <th className="text-left text-muted-light font-medium text-[11px] uppercase tracking-wider px-2.5 pb-2 border-b border-border">Hợp đồng</th>
-                  <th className="text-left text-muted-light font-medium text-[11px] uppercase tracking-wider px-2.5 pb-2 border-b border-border">Giá</th>
-                  <th className="text-left text-muted-light font-medium text-[11px] uppercase tracking-wider px-2.5 pb-2 border-b border-border">Δ Ngày</th>
-                  <th className="text-left text-muted-light font-medium text-[11px] uppercase tracking-wider px-2.5 pb-2 border-b border-border">Δ Tuần</th>
-                  <th className="text-left text-muted-light font-medium text-[11px] uppercase tracking-wider px-2.5 pb-2 border-b border-border">Ghi chú</th>
+                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Hợp đồng</th>
+                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Giá</th>
+                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Ngày</th>
+                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Tuần</th>
+                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {priceRows.map((r: any, i: number) => (
-                  <tr key={i}>
+                  <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
                     <td className="p-2.5 font-sans font-semibold text-[13px] text-label">{r.name}</td>
                     <td className="p-2.5">{r.price}</td>
                     <td className={clsx("p-2.5", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
@@ -515,12 +515,12 @@ export function ReportDocument({ report }: { report: Report }) {
                     <table className="w-full border-collapse text-[13px]">
                       <thead>
                         <tr>
-                          <th className="text-left font-mono text-[10px] uppercase tracking-wider text-muted-light px-3 py-2.5 border-b border-r border-border bg-surface min-w-[130px]">Chỉ tiêu</th>
+                          <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint min-w-[130px]">Chỉ tiêu</th>
                           {columns.map(h => {
                             const meta = HORIZON_META[h];
                             const Icon = meta.icon;
                             return (
-                              <th key={h} className={clsx("text-left px-3 py-2.5 border-b border-border min-w-[220px]", meta.iconBg)}>
+                              <th key={h} className={clsx("text-left px-3 py-2.5 border-b-2 border-border min-w-[220px]", meta.iconBg)}>
                                 <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider">
                                   <Icon size={13} /> {h}
                                 </span>
@@ -533,7 +533,7 @@ export function ReportDocument({ report }: { report: Report }) {
                         {ROWS.map((row, ri) => {
                           const RowIcon = row.icon;
                           return (
-                            <tr key={ri} className="align-top">
+                            <tr key={ri} className="align-top even:bg-surface/60 hover:bg-tint/40 transition-colors">
                               <td className="px-3 py-3 border-r border-border bg-surface font-semibold text-label text-[12.5px]">
                                 <span className="flex items-center gap-1.5">
                                   {RowIcon && <RowIcon size={13} className="text-primary-dark shrink-0" />}
