@@ -579,6 +579,9 @@ async def _call_llm(
             response = await client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
+                thinking={"type": "disabled"},  # output là JSON có cấu trúc cố định — không cần
+                                                 # extended thinking, và tắt để dành trọn max_tokens
+                                                 # cho phần text thay vì bị thinking ăn bớt (gây cụt JSON).
                 messages=[{"role": "user", "content": prompt}],
             )
             return _extract_message_text(response)

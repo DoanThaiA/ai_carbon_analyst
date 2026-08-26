@@ -126,6 +126,8 @@ class AnthropicClassifier(Classifier):
                 response = await self._client.messages.create(
                     model=self._model,
                     max_tokens=384,  # tăng từ 256 — chừa chỗ cho hot_news_reason
+                    thinking={"type": "disabled"},  # output JSON ngắn, cố định — tắt thinking để
+                                                     # không bị ăn bớt max_tokens vốn đã eo hẹp
                     system=_SYSTEM_PROMPT + _JSON_INSTRUCTION,
                     messages=[{"role": "user", "content": user_content}],
                 )
