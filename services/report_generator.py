@@ -551,6 +551,17 @@ def _format_prev_events(events: List[Dict]) -> str:
     return "\n".join(lines)
 
 
+def _extract_message_text(message: "anthropic.types.Message") -> str:
+    """Ghép các TextBlock trong content, bỏ qua ThinkingBlock/các block khác.
+
+    Model có extended thinking có thể trả về 1 ThinkingBlock đứng TRƯỚC
+    TextBlock trong content — content[0] không còn chắc chắn là text nữa.
+    """
+    return "".join(
+        block.text for block in message.content if getattr(block, "type", None) == "text"
+    )
+
+
 async def _call_llm(
     prompt: str,
     model: str = REPORT_MODEL_SONNET,
@@ -570,7 +581,7 @@ async def _call_llm(
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.content[0].text
+            return _extract_message_text(response)
         except (anthropic.RateLimitError, anthropic.APIStatusError, anthropic.APIError) as e:
             logger.error(f"Lỗi Anthropic (lần {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:

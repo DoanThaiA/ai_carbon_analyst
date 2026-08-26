@@ -97,6 +97,17 @@ class Classifier(ABC):
         ...
 
 
+def _extract_message_text(message: "anthropic.types.Message") -> str:
+    """Ghép các TextBlock trong content, bỏ qua ThinkingBlock/các block khác.
+
+    Model có extended thinking có thể trả về 1 ThinkingBlock đứng TRƯỚC
+    TextBlock trong content — content[0] không còn chắc chắn là text nữa.
+    """
+    return "".join(
+        block.text for block in message.content if getattr(block, "type", None) == "text"
+    )
+
+
 class AnthropicClassifier(Classifier):
     """Dùng Claude (mặc định Haiku — rẻ/nhanh, đủ cho tác vụ phân loại)."""
 
@@ -125,7 +136,7 @@ class AnthropicClassifier(Classifier):
         except anthropic.APIError as e:
             raise ClassificationError(f"Lỗi gọi Anthropic API: {e}") from e
 
-        raw_text = response.content[0].text.strip()
+        raw_text = _extract_message_text(response).strip()
         return _parse_json_response(raw_text)
 
 
