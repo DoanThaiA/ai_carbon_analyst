@@ -568,7 +568,6 @@ async def _call_llm(
             response = await client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                temperature=0.15,
                 messages=[{"role": "user", "content": prompt}],
             )
             return response.content[0].text
