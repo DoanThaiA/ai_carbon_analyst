@@ -192,12 +192,18 @@ class RetrievalService:
         rrf_k: int = 60,
         report_date: Optional[str] = None,
         only_source_type: Optional[str] = None,
+        min_relevance_score: Optional[float] = None,
     ) -> List[RetrievedDocument]:
         """
         Thực hiện toàn bộ quá trình retrieval:
         1. Embed query
         2. Hybrid Search (Vector + FTS) với thuật toán RRF
         3. Rerank bằng Cohere
+        4. (Tuỳ chọn) Lọc theo ngưỡng relevance_score sau rerank — `top_k` chỉ
+           giới hạn SỐ LƯỢNG tối đa, không đảm bảo ĐỘ LIÊN QUAN; nếu không có
+           chunk nào thực sự khớp câu hỏi, rerank vẫn trả đủ top_k chunk có
+           điểm thấp nhất trong tập ứng viên — `min_relevance_score` cắt bỏ
+           những chunk đó thay vì nhét bừa vào "dữ liệu nền" cho LLM.
         """
         logger.info("[RETRIEVAL] Đang embed query...")
         # input_type="search_query" — bất đối xứng với "search_document" dùng lúc
@@ -227,5 +233,15 @@ class RetrievalService:
             query=query, documents=hybrid_results, top_k=top_k
         )
         logger.info("[RETRIEVAL] Rerank hoàn tất, giữ lại top %d chunks.", len(final_results))
+
+        if min_relevance_score is not None:
+            before = len(final_results)
+            final_results = [d for d in final_results if d.score >= min_relevance_score]
+            dropped = before - len(final_results)
+            if dropped:
+                logger.info(
+                    "[RETRIEVAL] Lọc ngưỡng relevance_score >= %.2f: loại %d/%d chunk không đủ liên quan.",
+                    min_relevance_score, dropped, before,
+                )
 
         return final_results

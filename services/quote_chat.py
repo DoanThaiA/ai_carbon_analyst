@@ -15,6 +15,16 @@ HYBRID_SEARCH_LIMIT = 20
 MAX_QUOTE_CHARS = 2000  # đủ cho 1 đoạn/gạch đầu dòng của báo cáo
 MAX_ANSWER_TOKENS = 700  # chặn cứng độ dài — bổ trợ cho rule ngắn gọn trong system prompt
 
+# Ngưỡng relevance_score (thang 0-1 của Cohere rerank) để 1 chunk được coi là
+# THẬT SỰ liên quan tới quote+câu hỏi — top_k chỉ giới hạn số lượng, không đảm
+# bảo độ liên quan (rerank vẫn trả đủ top_k chunk điểm thấp nếu không có chunk
+# nào thật sự khớp). Theo tài liệu Cohere: điểm ~>0.5 là liên quan mạnh, <0.1
+# gần như không liên quan — chọn 0.3 làm ngưỡng vừa phải: đủ để loại chunk lạc
+# đề, nhưng không quá gắt tới mức loại luôn cả chunk liên quan gián tiếp (tin
+# tức ít khi trùng khớp từ khoá 100% với câu hỏi tự do của người dùng). Tuỳ
+# chỉnh dựa trên log "[RETRIEVAL] Lọc ngưỡng relevance_score..." nếu cần.
+MIN_RERANK_SCORE = 0.3
+
 # Lazy singleton clients — tránh crash khi import module lúc chưa có .env (giống
 # pattern report_generator.py / embedding.py). Backend chọn qua QUOTE_CHAT_BACKEND
 # (mặc định "anthropic" — có web_search; đổi "cohere" nếu muốn dùng Cohere thay thế).
@@ -181,6 +191,7 @@ async def retrieve_context_for_quote(
         hybrid_limit=HYBRID_SEARCH_LIMIT,
         report_date=report_date,
         only_source_type="article",
+        min_relevance_score=MIN_RERANK_SCORE,
     )
 
 

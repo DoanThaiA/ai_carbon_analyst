@@ -31,6 +31,24 @@ interface DisplayMessage extends ChatTurn {
   sources?: ChatSource[];
 }
 
+// LLM hay tự chèn "**đậm**" để nhấn mạnh dù không được yêu cầu — bong bóng chat
+// render text thô (whitespace-pre-wrap) nên trước đây hiện nguyên dấu ** rất xấu.
+// Parse nhẹ, không phụ thuộc thư viện markdown ngoài: chỉ nhận cặp ** đã đóng đủ,
+// cặp ** chưa đóng (đang stream dở) giữ nguyên dạng chữ cho tới khi delta tiếp
+// theo mang theo dấu đóng — tự khớp lại ở lần render sau, không cần xử lý riêng.
+function renderInlineMarkdown(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*\n]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
+      <strong key={i} className="font-semibold">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+}
+
 /**
  * Bọc quanh nội dung báo cáo: người dùng bôi đen 1 đoạn -> hiện nút "Hỏi AI" nổi
  * cạnh vùng chọn -> mở panel chat neo vào đúng đoạn đó, có gợi ý câu hỏi phổ biến
@@ -361,7 +379,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                   >
                     {m.content ? (
                       <>
-                        {m.content}
+                        {renderInlineMarkdown(m.content)}
                         {m.streaming && <span className="inline-block w-1.5 h-3.5 bg-primary/60 ml-0.5 align-middle animate-pulse" />}
                       </>
                     ) : m.streaming ? (
