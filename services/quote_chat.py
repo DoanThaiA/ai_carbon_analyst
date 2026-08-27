@@ -1,20 +1,4 @@
-"""Quote Chat — hỏi đáp về 1 đoạn (quote) người dùng bôi đen trong báo cáo.
 
-Luồng xử lý:
-1. Ghép quote + câu hỏi hiện tại thành 1 query, đưa qua `RetrievalService`
-   (hybrid search + rerank Cohere trên bảng `chunks`) để lấy tối đa
-   `MAX_CONTEXT_CHUNKS` đoạn tin tức liên quan làm "dữ liệu nền".
-2. Nhét quote + dữ liệu nền vào system prompt, gọi Claude ở chế độ stream,
-   yield từng phần text (delta) — router lớp trên đóng gói lại thành SSE.
-3. Câu hỏi gợi ý (`suggest_questions`) dùng heuristic từ khoá thay vì gọi LLM,
-   để hiện ngay lập tức khi người dùng vừa bôi đen, không tốn round-trip.
-4. Backend Anthropic được cấp thêm server tool `web_search` (xem
-   `WEB_SEARCH_TOOL`) — Claude tự quyết định gọi khi câu hỏi cần thông tin
-   không có trong quote/dữ liệu nền/kiến thức nền tảng (xem mục E trong system
-   prompt). Tool chạy hoàn toàn phía Anthropic (không cần tool loop/execute ở
-   backend này) nên chỉ cần khai báo trong `tools`, kết quả tự chèn vào
-   `text_stream` như text bình thường. Chưa hỗ trợ cho backend Cohere.
-"""
 import logging
 import re
 from typing import AsyncIterator, List, Optional, Sequence
@@ -29,7 +13,7 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_CHUNKS = 8
 HYBRID_SEARCH_LIMIT = 20
 MAX_QUOTE_CHARS = 2000  # đủ cho 1 đoạn/gạch đầu dòng của báo cáo
-MAX_ANSWER_TOKENS = 2048
+MAX_ANSWER_TOKENS = 700  # chặn cứng độ dài — bổ trợ cho rule ngắn gọn trong system prompt
 
 # Lazy singleton clients — tránh crash khi import module lúc chưa có .env (giống
 # pattern report_generator.py / embedding.py). Backend chọn qua QUOTE_CHAT_BACKEND
@@ -153,23 +137,11 @@ def build_system_prompt(quote: str, report_date: str, context_block: str) -> str
 
 {_DOMAIN_KNOWLEDGE}
 
-NĂNG LỰC CỦA BẠN — bạn có thể và NÊN thực hiện khi người dùng yêu cầu:
-A. TRẢ LỜI THỰC TẾ: giải thích, tóm tắt, làm rõ nội dung đoạn trích dựa trên dữ liệu nền.
-B. PHÂN TÍCH GIẢ ĐỊNH (what-if): khi người dùng đặt câu hỏi giả định (VD "Nếu giá gas tăng 20% thì...", "Giả sử MSR rút thêm 24% thì..."), hãy:
-   - Xác định rõ đây là phân tích giả định, mở đầu bằng "Trong kịch bản giả định..."
-   - Xây dựng chuỗi nhân quả logic dựa trên KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên
-   - Trình bày các tác động theo chuỗi: nguyên nhân → hệ quả trực tiếp → hệ quả gián tiếp
-   - Nêu các yếu tố có thể khuếch đại hoặc giảm nhẹ tác động
-   - KHÔNG đưa ra con số giá cụ thể trong kịch bản giả định (vì không thể dự đoán chính xác), mà nêu HƯỚNG tác động và mức độ tương đối (mạnh/vừa/nhẹ)
-C. SUY LUẬN CHUYÊN SÂU: khi người dùng hỏi "tại sao", "cơ chế nào", "mối liên hệ giữa X và Y", hãy:
-   - Giải thích cơ chế truyền dẫn đầy đủ (VD: fuel switching mechanism, carbon cost pass-through, MSR intake/release logic)
-   - Nêu cả hai chiều tác động nếu có
-   - Phân biệt rõ tác động ngắn hạn vs dài hạn
-   - Nêu điều kiện kích hoạt (trigger conditions)
-D. SO SÁNH & ĐÁNH GIÁ: khi hỏi về ảnh hưởng đến doanh nghiệp, ngành, quốc gia:
-   - Phân tích tác động theo từng kênh truyền dẫn
-   - So sánh với trường hợp tương tự trong quá khứ nếu biết (dựa trên kiến thức nền)
-   - Nêu rõ mức độ không chắc chắn
+NĂNG LỰC CỦA BẠN — bạn có thể và NÊN thực hiện khi người dùng yêu cầu, nhưng LUÔN ở dạng CÔ ĐỌNG (xem QUY TẮC TRẢ LỜI mục 6 — độ dài luôn ưu tiên hơn độ đầy đủ):
+A. TRẢ LỜI THỰC TẾ: giải thích, tóm tắt, làm rõ nội dung đoạn trích dựa trên dữ liệu nền — thẳng vào ý chính, không diễn giải lan man.
+B. PHÂN TÍCH GIẢ ĐỊNH (what-if): khi người dùng đặt câu hỏi giả định (VD "Nếu giá gas tăng 20% thì..."), trả lời NGẮN GỌN theo đúng 1 mạch: mở đầu bằng "Trong kịch bản giả định..." rồi nêu chuỗi nhân quả cô đọng (2-3 bước chính, dựa trên KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên) và chốt HƯỚNG tác động (mạnh/vừa/nhẹ) — KHÔNG liệt kê tách riêng từng bước thành nhiều gạch đầu dòng, KHÔNG đưa con số giá cụ thể (không thể dự đoán chính xác). Chỉ khai triển dài hơn nếu người dùng chủ động yêu cầu "giải thích chi tiết"/"phân tích sâu hơn".
+C. SUY LUẬN CHUYÊN SÂU: khi người dùng hỏi "tại sao", "cơ chế nào", "mối liên hệ giữa X và Y", giải thích cơ chế truyền dẫn NGẮN GỌN, đủ hiểu bản chất — không cần liệt kê mọi khía cạnh (ngắn/dài hạn, điều kiện kích hoạt...) trừ khi câu hỏi hỏi rõ về khía cạnh đó.
+D. SO SÁNH & ĐÁNH GIÁ: khi hỏi về ảnh hưởng đến doanh nghiệp/ngành/quốc gia, nêu thẳng kênh tác động chính và mức độ chắc chắn trong 1 đoạn ngắn — không cần liệt kê đầy đủ mọi kênh truyền dẫn nếu không được hỏi.
 E. TRA CỨU WEB (chỉ khi thực sự cần, không lạm dụng): bạn có công cụ tìm kiếm web (web_search). CHỈ dùng khi ĐOẠN TRÍCH + DỮ LIỆU NỀN + KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên KHÔNG đủ để trả lời — ví dụ người dùng hỏi 1 số liệu/sự kiện/tổ chức cụ thể, hoặc tin tức rất mới không có trong DỮ LIỆU NỀN đã crawl. KHÔNG dùng web_search để tra lại thứ đã có sẵn ở trên, và KHÔNG dùng cho câu hỏi giả định/suy luận thuần (mục B, C) — những câu đó dùng kiến thức nền tảng, không cần tra cứu.
 
 QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
@@ -178,7 +150,7 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 3. KHÔNG BỊA SỐ LIỆU CỤ THỂ: tuyệt đối không bịa ngày tháng, tên tổ chức, mức giá, hay sự kiện cụ thể không xuất hiện trong đoạn trích/dữ liệu nền/kết quả web_search. Nhưng BẠN ĐƯỢC PHÉP suy luận logic dựa trên kiến thức chuyên môn — "Nếu TTF tăng mạnh, theo cơ chế fuel switching thì..." KHÔNG phải bịa đặt mà là phân tích.
 4. THÀNH THẬT VỀ GIỚI HẠN: nếu câu hỏi đòi hỏi dữ liệu không có trong context — (a) nếu là thông tin cụ thể có thể tra cứu được (số liệu/sự kiện/tổ chức, không phải suy đoán), dùng công cụ web_search để tìm rồi trả lời dựa trên kết quả đó; (b) nếu không tra được hoặc câu hỏi mang tính suy luận/giả định, nói rõ giới hạn dữ liệu (VD "Dữ liệu hiện có chưa đề cập chi tiết X") rồi PHÂN TÍCH DỰA TRÊN NHỮNG GÌ BIẾT ĐƯỢC thay vì chỉ nói "không biết" và dừng.
 5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
-6. CẤU TRÚC CÂU TRẢ LỜI: mở đầu bằng 1 đoạn ngắn (2-4 câu) trả lời thẳng câu hỏi. Sau đó có thể thêm phân tích chi tiết với gạch đầu dòng nếu câu hỏi đòi hỏi suy luận sâu. Với câu hỏi giả định, có thể dài hơn (5-8 gạch đầu dòng) để trình bày đầy đủ chuỗi nhân quả.
+6. NGẮN GỌN, TRẢ LỜI THẲNG VÀO TRỌNG TÂM (ưu tiên cao, áp dụng cho MỌI loại câu hỏi kể cả mục B/C/D ở trên): câu/ý ĐẦU TIÊN phải trả lời trực tiếp câu hỏi — KHÔNG mở bài, KHÔNG nhắc lại câu hỏi, KHÔNG dẫn nhập kiểu "Đây là...", "Về vấn đề này...". Toàn bộ câu trả lời tối đa 4-6 câu văn, HOẶC tối đa 4 gạch đầu dòng ngắn (mỗi gạch 1-2 câu) nếu thực sự cần liệt kê nhiều ý độc lập — KHÔNG dùng gạch đầu dòng cho câu trả lời đơn giản chỉ cần 1-2 câu. Đây là hội thoại chat nhanh, KHÔNG phải văn phong báo cáo dài — chỉ viết dài hơn mức này khi người dùng CHỦ ĐỘNG yêu cầu ("giải thích chi tiết hơn", "phân tích đầy đủ"...).
 7. TRUNG LẬP, KHÔNG KHUYẾN NGHỊ ĐẦU TƯ: giữ giọng văn chuyên gia; không đưa khuyến nghị mua/bán tài chính trực tiếp.
 8. ĐÚNG PHẠM VI: nếu câu hỏi ngoài phạm vi năng lượng/carbon/thị trường liên quan, lịch sự từ chối — kể cả khi có thể tra được bằng web_search, không đi lạc đề.
 9. NGÔN NGỮ: trả lời bằng tiếng Việt, trừ khi người dùng chủ động hỏi bằng ngôn ngữ khác."""
@@ -191,10 +163,24 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 async def retrieve_context_for_quote(
     retrieval_service: RetrievalService, quote: str, question: str, report_date: str
 ) -> List[RetrievedDocument]:
-    """Ghép quote + câu hỏi thành 1 query semantic để tìm dữ liệu nền liên quan."""
+    """Ghép quote + câu hỏi thành 1 query semantic để tìm dữ liệu nền liên quan.
+
+    `only_source_type="article"`: loại chunk `source_type='report'` (chunk của
+    chính báo cáo) khỏi kết quả — quote người dùng bôi đen đã trích NGUYÊN VĂN
+    từ 1 chunk report, nên chunk đó luôn khớp gần tuyệt đối và chiếm hết top-k
+    nếu không loại trừ, khiến "dữ liệu nền" toàn là báo cáo tự trích lại chính
+    nó (không có URL) thay vì bài báo thật — hệ quả là "Danh sách tin tức tham
+    khảo" ở FE luôn rỗng dù không có lỗi gì (chỉ router filter đúng chunk
+    article mới có URL để đưa vào "sources"). Nội dung quote đã có sẵn nguyên
+    văn trong system prompt nên không cần retrieve lại từ chunks.
+    """
     query = f"{_truncate(quote, MAX_QUOTE_CHARS)}\n\n{question}".strip()
     return await retrieval_service.retrieve(
-        query=query, top_k=MAX_CONTEXT_CHUNKS, hybrid_limit=HYBRID_SEARCH_LIMIT, report_date=report_date
+        query=query,
+        top_k=MAX_CONTEXT_CHUNKS,
+        hybrid_limit=HYBRID_SEARCH_LIMIT,
+        report_date=report_date,
+        only_source_type="article",
     )
 
 

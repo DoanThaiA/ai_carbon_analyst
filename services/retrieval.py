@@ -21,27 +21,50 @@ class RetrievalService:
         self.rerank_model = self.settings.rerank_model
 
     async def _hybrid_search(
-        self, query: str, query_embedding: List[float], limit: int = 20, rrf_k: int = 60, report_date: Optional[str] = None
+        self,
+        query: str,
+        query_embedding: List[float],
+        limit: int = 20,
+        rrf_k: int = 60,
+        report_date: Optional[str] = None,
+        only_source_type: Optional[str] = None,
     ) -> List[RetrievedDocument]:
-        """Thực hiện Hybrid Search bằng SQL CTE và tính điểm RRF."""
-        
+        """Thực hiện Hybrid Search bằng SQL CTE và tính điểm RRF.
+
+        `only_source_type` (vd "article"): giới hạn kết quả về đúng 1 loại
+        `chunks.source_type`, loại hẳn loại còn lại ra khỏi ứng viên NGAY TỪ
+        vòng hybrid search (trước rerank) — dùng cho Quote Chat vì đoạn quote
+        người dùng bôi đen vốn trích ĐÚNG NGUYÊN VĂN từ chunk của chính báo cáo
+        (`source_type='report'`), nên chunk đó gần như luôn khớp tuyệt đối và
+        chiếm hết top-k, đẩy chunk bài báo thật (`source_type='article'`, có
+        URL để trích nguồn) ra ngoài — trong khi nội dung quote đã có sẵn
+        nguyên văn trong system prompt nên retrieve lại chunk report là dư
+        thừa.
+        """
+
         # Nếu có report_date, chặn 2 đầu để lấy đúng tin tức đã crawl cho báo cáo ngày đó
         filter_cte = ""
-        filter_where = ""
+        conditions: List[str] = []
         params = {
             "query_embedding": f"[{','.join(str(f) for f in query_embedding)}]",
             "query_text": query,
             "limit": limit,
             "rrf_k": rrf_k,
         }
-        
+
         if report_date:
             from datetime import datetime, timedelta
             target_date = datetime.strptime(report_date, "%Y-%m-%d")
-            # Báo cáo ngày 20/08 -> crawl vào 21/08 -> start_date = 21/08, end_date = 22/08
-            start_date = target_date + timedelta(days=1)
-            end_date = target_date + timedelta(days=2)
-            
+            # PHẢI khớp đúng khung ngày dùng ở report_generator.py::get_news_for_report —
+            # đó là nguồn xác thực duy nhất cho "báo cáo ngày T dùng tin nào". Báo cáo
+            # ngày T lấy tin crawl trong [T 00:00 UTC, (T+1) 00:00 UTC) — tức 07:00 (VN)
+            # ngày T -> 07:00 (VN) ngày T+1 (DB lưu UTC, VN = UTC+7 nên 07:00 VN ngày T
+            # == 00:00 UTC ngày T). TRƯỚC ĐÂY code này lệch +1 ngày ([T+1, T+2)) khiến
+            # Quote Chat gần như luôn lọc sai khung ngày, tìm không ra bài báo thật của
+            # đúng report_date -> "Danh sách tin tức tham khảo" rỗng dù dữ liệu đã có sẵn.
+            start_date = target_date
+            end_date = target_date + timedelta(days=1)
+
             filter_cte = """
             article_filter AS (
                 SELECT id FROM articles WHERE crawled_at >= :start_date AND crawled_at < :end_date
@@ -50,21 +73,28 @@ class RetrievalService:
                 SELECT id FROM reports WHERE report_date = :report_date
             ),
             """
-            filter_where = """
-                WHERE ((source_type = 'article' AND source_id IN (SELECT id FROM article_filter))
-                   OR (source_type = 'report' AND source_id IN (SELECT id FROM report_filter)))
-            """
+            conditions.append(
+                "((source_type = 'article' AND source_id IN (SELECT id FROM article_filter))"
+                " OR (source_type = 'report' AND source_id IN (SELECT id FROM report_filter)))"
+            )
             params["start_date"] = start_date
             params["end_date"] = end_date
             params["report_date"] = report_date
-        
+
+        if only_source_type:
+            conditions.append("source_type = :only_source_type")
+            params["only_source_type"] = only_source_type
+
+        vector_where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        fts_extra_where = (" AND " + " AND ".join(conditions)) if conditions else ""
+
         sql = text(f'''
             WITH {filter_cte}
             vector_search AS (
                 SELECT chunk_id, source_type, source_id, content,
                        ROW_NUMBER() OVER (ORDER BY embedding <=> :query_embedding) as rank
                 FROM chunks
-                {filter_where}
+                {vector_where}
                 ORDER BY embedding <=> :query_embedding
                 LIMIT :limit
             ),
@@ -72,8 +102,7 @@ class RetrievalService:
                 SELECT chunk_id, source_type, source_id, content,
                        ROW_NUMBER() OVER (ORDER BY ts_rank_cd(content_tsv, query) DESC) as rank
                 FROM chunks, websearch_to_tsquery('english', :query_text) query
-                WHERE content_tsv @@ query
-                {filter_where.replace("WHERE", "AND") if filter_where else ""}
+                WHERE content_tsv @@ query{fts_extra_where}
                 ORDER BY ts_rank_cd(content_tsv, query) DESC
                 LIMIT :limit
             ),
@@ -156,7 +185,13 @@ class RetrievalService:
         return reranked_docs
 
     async def retrieve(
-        self, query: str, top_k: int = 5, hybrid_limit: int = 20, rrf_k: int = 60, report_date: Optional[str] = None
+        self,
+        query: str,
+        top_k: int = 5,
+        hybrid_limit: int = 20,
+        rrf_k: int = 60,
+        report_date: Optional[str] = None,
+        only_source_type: Optional[str] = None,
     ) -> List[RetrievedDocument]:
         """
         Thực hiện toàn bộ quá trình retrieval:
@@ -179,7 +214,8 @@ class RetrievalService:
             query_embedding=query_embedding,
             limit=hybrid_limit,
             rrf_k=rrf_k,
-            report_date=report_date
+            report_date=report_date,
+            only_source_type=only_source_type,
         )
         logger.info("[RETRIEVAL] Hybrid Search tìm thấy %d chunks.", len(hybrid_results))
 
