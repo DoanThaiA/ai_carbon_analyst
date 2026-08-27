@@ -10,12 +10,14 @@ import {
   History,
   ArrowLeft,
   MessagesSquare,
+  Newspaper,
+  ExternalLink,
 } from "lucide-react";
 import clsx from "clsx";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { api } from "@/lib/api";
-import type { ChatSessionSummary, ChatTurn } from "@/lib/types";
+import type { ChatSessionSummary, ChatSource, ChatTurn } from "@/lib/types";
 import { streamQuoteChat } from "@/lib/quoteChatStream";
 
 interface FloatingTrigger {
@@ -26,6 +28,7 @@ interface FloatingTrigger {
 
 interface DisplayMessage extends ChatTurn {
   streaming?: boolean;
+  sources?: ChatSource[];
 }
 
 /**
@@ -203,7 +206,17 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       sessionId,
       quote: sessionId ? undefined : activeQuote,
       signal: controller.signal,
-      onMeta: (meta) => setSessionId(meta.sessionId),
+      onMeta: (meta) => {
+        setSessionId(meta.sessionId);
+        if (meta.sources.length > 0) {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.role === "assistant") next[next.length - 1] = { ...last, sources: meta.sources };
+            return next;
+          });
+        }
+      },
       onDelta: appendDelta,
       onDone: () => {
         finish();
@@ -337,7 +350,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 <p className="text-[13px] text-muted-light">Đặt câu hỏi về đoạn trích trên, hoặc chọn gợi ý bên dưới.</p>
               )}
               {messages.map((m, i) => (
-                <div key={i} className={clsx("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+                <div key={i} className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
                   <div
                     className={clsx(
                       "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap",
@@ -355,6 +368,36 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                       <Loader2 size={14} className="animate-spin text-muted-light" />
                     ) : null}
                   </div>
+
+                  {m.role === "assistant" && !!m.sources?.length && (
+                    <div className="mt-1.5 max-w-[85%] w-full rounded-xl border border-border-soft bg-tint/30 px-3 py-2.5">
+                      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-label mb-1.5">
+                        <Newspaper size={12} className="text-primary" />
+                        Danh sách tin tức tham khảo
+                      </p>
+                      <ul className="space-y-1.5">
+                        {m.sources.map((s, si) => (
+                          <li key={si} className="flex items-start gap-1.5">
+                            <ExternalLink size={11} className="text-muted-light shrink-0 mt-[3px]" />
+                            <a
+                              href={s.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[12px] leading-snug text-primary-dark hover:text-primary hover:underline break-words"
+                            >
+                              {s.title || s.source_name || s.url}
+                              {s.published_at && (
+                                <span className="text-muted-light font-normal">
+                                  {" "}
+                                  ({format(new Date(s.published_at), "dd/MM/yyyy")})
+                                </span>
+                              )}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               ))}
               <div ref={messagesEndRef} />

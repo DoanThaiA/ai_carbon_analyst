@@ -162,6 +162,24 @@ C. QUY TẮC NHẬN ĐỊNH BẮT BUỘC:
 - Kết luận chiều giá EUA chỉ khi ≥2 yếu tố xác nhận cùng hướng.
 - Tín hiệu mâu thuẫn nhau → ghi "tín hiệu hỗn hợp" + nêu 2 chiều + điều kiện kích hoạt mỗi chiều.
 - Nếu không có liên kết chéo đáng chú ý: ghi "Không có tín hiệu liên thị trường mới" — KHÔNG bịa.
+
+D. KHUNG THỜI GIAN PHÂN TÍCH — BẮT BUỘC ĐỐI CHIẾU CẢ "Δ NGÀY" VÀ "Δ TUẦN" (để nhận định khách quan
+   nhất, không bị nhiễu/thổi phồng bởi biến động của riêng 1 phiên):
+1. GHI RÕ KHUNG THỜI GIAN: mọi số liệu %Δ trích dẫn PHẢI ghi rõ là "Δ ngày" (so với phiên liền trước)
+   hay "Δ tuần" (so với 7 ngày trước, lấy đúng trường "Δ tuần" trong DỮ LIỆU GIÁ) — TUYỆT ĐỐI KHÔNG
+   viết "%Δ" trống không rõ khung thời gian nào, và TUYỆT ĐỐI KHÔNG tự suy ra Δ tuần từ Δ ngày hay
+   ngược lại — chỉ dùng đúng 2 con số đã cho sẵn.
+2. ĐỐI CHIẾU TRƯỚC KHI KẾT LUẬN CHIỀU: trước khi kết luận chiều biến động của bất kỳ instrument nào
+   (EUA, Gas, Than, Điện Đức, Dầu, Gasoil...), PHẢI đối chiếu CẢ Δ ngày VÀ Δ tuần của chính instrument đó:
+   - CÙNG CHIỀU (Δ ngày và Δ tuần cùng tăng hoặc cùng giảm) → xu hướng nhất quán, có độ tin cậy CAO,
+     được phép kết luận dứt khoát và dùng làm căn cứ chính cho hướng giá EUA.
+   - TRÁI CHIỀU (vd Δ ngày tăng nhưng Δ tuần vẫn đang giảm, hoặc ngược lại) → đây là biến động của
+     RIÊNG 1 phiên, CHƯA đủ cơ sở kết luận đảo chiều xu hướng — PHẢI nêu rõ cả 2 con số và ghi nhận
+     dạng "biến động trong ngày đi ngược xu hướng tuần, cần thêm phiên xác nhận" thay vì khẳng định
+     đảo chiều ngay.
+3. ÁP DỤNG VÀO ĐỘ TIN CẬY: "probability" trong trading_scenarios và mức độ chắc chắn của "eua_conclusion"/
+   kết luận chiều giá PHẢI phản ánh đúng mức đồng thuận ngày/tuần nói trên — 1 driver có cả Δ ngày và
+   Δ tuần cùng chiều được xếp probability/độ tin cậy cao hơn 1 driver chỉ có tín hiệu của riêng 1 phiên.
 === KẾT THÚC KHUNG PHÂN TÍCH ===
 """
 
@@ -727,7 +745,7 @@ YÊU CẦU: Viết "market_drivers" — BẢNG ĐỘNG LỰC THỊ TRƯỜNG đ�
 
 Cấu trúc: object gồm 2 mảng "bullish" (▲ Động lực tăng giá EUA) và "bearish" (▼ Động lực giảm giá EUA). Mỗi phần tử là 1 object:
   - "tag": ĐÚNG 1 trong 2 giá trị "FACT" hoặc "NHẬN ĐỊNH".
-      + "FACT": BẮT ĐẦU bằng 1 SỐ LIỆU GIÁ CỤ THỂ lấy ĐÚNG từ "SỐ LIỆU THẬT VỀ EUA"/"DỮ LIỆU GIÁ" ở trên (tên instrument, mức giá, %Δ) — TUYỆT ĐỐI KHÔNG bịa số không có trong dữ liệu đã cho. Nếu muốn dùng 1 số liệu khác (vd giá vàng/bạc, số liệu vĩ mô) không có trong DỮ LIỆU GIÁ hệ thống, CHỈ được dùng khi con số đó xuất hiện RÕ RÀNG trong TIN TỨC ở trên — không tự suy đoán con số.
+      + "FACT": BẮT ĐẦU bằng 1 SỐ LIỆU GIÁ CỤ THỂ lấy ĐÚNG từ "SỐ LIỆU THẬT VỀ EUA"/"DỮ LIỆU GIÁ" ở trên (tên instrument, mức giá, Δ ngày — kèm Δ tuần nếu 2 khung thời gian XÁC NHẬN CÙNG CHIỀU hoặc TRÁI CHIỀU nhau, theo đúng "D. KHUNG THỜI GIAN PHÂN TÍCH" ở trên; TUYỆT ĐỐI KHÔNG viết "%Δ" mập mờ không rõ ngày hay tuần) — TUYỆT ĐỐI KHÔNG bịa số không có trong dữ liệu đã cho. Nếu muốn dùng 1 số liệu khác (vd giá vàng/bạc, số liệu vĩ mô) không có trong DỮ LIỆU GIÁ hệ thống, CHỈ được dùng khi con số đó xuất hiện RÕ RÀNG trong TIN TỨC ở trên — không tự suy đoán con số.
       + "NHẬN ĐỊNH": dựa trên tin tức định tính (chính sách, dòng vốn, thương mại, nghiên cứu, địa chính trị...) — không phải số liệu giá trực tiếp, nhưng phải có căn cứ rõ từ tin tức đã cho, KHÔNG suy diễn không có cơ sở.
   - "text": 1 câu nêu sự kiện/số liệu (đủ cụ thể để đứng độc lập), theo sau là 1–2 câu giải thích RÕ chuỗi nhân quả tới giá EUA — áp dụng ĐÚNG logic trong KHUNG PHÂN TÍCH (fuel switching, crack spread, carbon leakage/CBAM, dòng vốn đầu tư khí hậu, rủi ro vĩ mô/tâm lý an toàn, phân kỳ khu vực năng lượng, rào cản thương mại → sản lượng công nghiệp → cầu ETS...). KHÔNG liệt kê số liệu suông — PHẢI kết luận rõ hướng tác động lên EUA.
 
@@ -778,12 +796,12 @@ A. "analysis_blocks": mảng gồm "heading" và "content" (3–5 câu, đủ ý
    3. heading="Quan điểm thị trường" (TÙY CHỌN) — CHỈ đưa object này vào mảng "analysis_blocks" khi TIN TỨC ở trên THỰC SỰ có nêu quan điểm/nhận định cụ thể từ nguồn xác định (nhà phân tích, tổ chức, báo cáo) — nêu cả consensus view VÀ contrarian view nếu có, kèm tên nguồn cụ thể. NẾU KHÔNG CÓ tin nào nêu quan điểm thị trường cụ thể: KHÔNG thêm object heading="Quan điểm thị trường" vào mảng — bỏ qua hoàn toàn (không viết "Không có quan điểm thị trường cụ thể." nữa).
    4. heading="Cần theo dõi" — liệt kê sự kiện/mốc/số liệu công bố sắp tới kèm ngày giờ Việt Nam cụ thể (nếu tin tức có đề cập), và vì sao mốc đó quan trọng với EUA. MỖI sự kiện là 1 DÒNG RIÊNG, đánh số "1.", "2.", "3."... — PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng, TUYỆT ĐỐI KHÔNG viết liền các sự kiện thành 1 đoạn văn dài không xuống dòng (áp dụng đúng quy tắc định dạng như "Yếu tố dẫn dắt" ở trên).
 
-B. "correlation_analysis": object PHẢI có đủ các trường sau — đây là phần bắt buộc theo yêu cầu "nhận xét ĐỘC LẬP" từng yếu tố tương quan trước khi tổng hợp:
-   - "gas_comment": nhận xét ĐỘC LẬP về biến động Gas (TTF) trong ngày — nêu %Δ cụ thể lấy từ DỮ LIỆU GIÁ ở trên, và ý nghĩa của mức tăng/giảm đó.
-   - "coal_comment": nhận xét ĐỘC LẬP về biến động than (Newcastle/API2 nếu có) trong ngày — %Δ cụ thể + ý nghĩa.
-   - "power_comment": nhận xét ĐỘC LẬP về biến động Điện Đức trong ngày — %Δ cụ thể; áp dụng mục A.1 trong KHUNG (đọc CÙNG gas/than/RES trước khi kết luận điện tăng/giảm là do fuel switching hay do carbon cost pass-through).
-   - "fuel_switching_chain": tổng hợp 3 nhận xét trên (Gas, Than, Điện Đức) thành 1 đoạn phân tích liền mạch, viết bằng NGÔN NGỮ PHÂN TÍCH TỰ NHIÊN — trình bày đúng trình tự nhân quả: diễn biến Gas dẫn tới khả năng fuel switching sang than như thế nào, tác động của mức biến động Than tới xu hướng đó ra sao, và Điện Đức đóng vai trò gì (huy động thêm than/gas hay carbon cost pass-through) — dùng các từ nối phân tích như "dẫn đến", "kéo theo", "qua đó", "làm cho", "từ đó" thay vì liệt kê. TUYỆT ĐỐI KHÔNG dùng ký hiệu mũi tên "→" hay bất kỳ dạng sơ đồ/liệt kê chuỗi bước nào — phải là văn phân tích hoàn chỉnh, đúng ngữ pháp. Kết thúc bằng câu: "Tổng hợp 3 yếu tố này tạo áp lực [tăng/giảm/hỗn hợp] lên EUA."
-   - "eua_conclusion": nhận định riêng, độc lập, dứt khoát về hướng đi của giá EUA dựa trên toàn bộ phân tích ở mục A và B.
+B. "correlation_analysis": object PHẢI có đủ các trường sau — đây là phần bắt buộc theo yêu cầu "nhận xét ĐỘC LẬP" từng yếu tố tương quan trước khi tổng hợp. MỌI trường bên dưới PHẢI áp dụng ĐÚNG "D. KHUNG THỜI GIAN PHÂN TÍCH" ở trên: luôn nêu ĐỦ CẢ Δ ngày VÀ Δ tuần (lấy đúng từ DỮ LIỆU GIÁ, không chỉ dùng 1 trong 2), rồi mới kết luận — đây chính là cách đảm bảo nhận định khách quan, không bị 1 phiên biến động mạnh bất thường làm lệch kết luận xu hướng:
+   - "gas_comment": nhận xét ĐỘC LẬP về biến động Gas (TTF) — nêu ĐỦ CẢ Δ ngày và Δ tuần cụ thể lấy từ DỮ LIỆU GIÁ ở trên, đối chiếu xem 2 khung thời gian có đồng thuận (cùng chiều → tín hiệu mạnh) hay mâu thuẫn (trái chiều → biến động ngắn hạn, cần xác nhận thêm) trước khi nêu ý nghĩa của mức tăng/giảm đó.
+   - "coal_comment": nhận xét ĐỘC LẬP về biến động than (Newcastle/API2 nếu có) — nêu ĐỦ CẢ Δ ngày và Δ tuần cụ thể, đối chiếu đồng thuận/mâu thuẫn như trên rồi mới nêu ý nghĩa.
+   - "power_comment": nhận xét ĐỘC LẬP về biến động Điện Đức — nêu ĐỦ CẢ Δ ngày và Δ tuần cụ thể; áp dụng mục A.1 trong KHUNG (đọc CÙNG gas/than/RES trước khi kết luận điện tăng/giảm là do fuel switching hay do carbon cost pass-through), đồng thời đối chiếu Δ ngày/Δ tuần để tránh kết luận đảo chiều chỉ từ 1 phiên.
+   - "fuel_switching_chain": tổng hợp 3 nhận xét trên (Gas, Than, Điện Đức) thành 1 đoạn phân tích liền mạch, viết bằng NGÔN NGỮ PHÂN TÍCH TỰ NHIÊN — trình bày đúng trình tự nhân quả: diễn biến Gas dẫn tới khả năng fuel switching sang than như thế nào, tác động của mức biến động Than tới xu hướng đó ra sao, và Điện Đức đóng vai trò gì (huy động thêm than/gas hay carbon cost pass-through) — dùng các từ nối phân tích như "dẫn đến", "kéo theo", "qua đó", "làm cho", "từ đó" thay vì liệt kê. Nếu Δ ngày và Δ tuần của 1 trong 3 yếu tố mâu thuẫn nhau, PHẢI nêu rõ đây là điểm cần lưu ý trong chuỗi lập luận (không lờ đi). TUYỆT ĐỐI KHÔNG dùng ký hiệu mũi tên "→" hay bất kỳ dạng sơ đồ/liệt kê chuỗi bước nào — phải là văn phân tích hoàn chỉnh, đúng ngữ pháp. Kết thúc bằng câu: "Tổng hợp 3 yếu tố này tạo áp lực [tăng/giảm/hỗn hợp] lên EUA."
+   - "eua_conclusion": nhận định riêng, độc lập, dứt khoát về hướng đi của giá EUA dựa trên toàn bộ phân tích ở mục A và B. BẮT BUỘC mở đầu bằng việc đối chiếu Δ ngày và Δ tuần của chính EUA (lấy từ "SỐ LIỆU THẬT VỀ EUA" ở trên): nếu 2 khung thời gian cùng chiều → nêu rõ đây là xu hướng nhất quán, độ tin cậy cao; nếu trái chiều → nêu rõ đây là tín hiệu ngắn hạn/nhiễu trong xu hướng dài hơn, cần thận trọng.
      Áp dụng quy tắc: kết luận chiều giá chỉ khi ≥2 yếu tố cùng hướng; nếu mâu thuẫn → ghi "tín hiệu hỗn hợp" + nêu rõ 2 chiều + điều kiện kích hoạt mỗi chiều.
 
 C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn" (không được bỏ trống horizon nào). ĐÂY LÀ PHẦN CHIẾN LƯỢC QUAN TRỌNG NHẤT BÁO CÁO — viết bằng kiến thức chuyên môn thực sự của 1 chuyên gia chiến lược hàng hoá/carbon dày dạn (KHÔNG phải câu mẫu chung chung, sáo rỗng, hay lặp nguyên văn mục A/B). Mỗi kịch bản kể theo đúng mạch câu chuyện điều kiện: "Nếu [X] xảy ra, thị trường định giá theo hướng [Y]; rủi ro chính là [Z]" — rồi mới khai triển thêm kịch bản rủi ro cụ thể và kế hoạch hành động. Mỗi kịch bản gồm:
@@ -843,9 +861,9 @@ Kết quả PHẢI là "bullets": một MẢNG các chuỗi, MỖI TÍN HIỆU L
 Quy tắc BẮT BUỘC:
 - Mục này LUÔN XUẤT HIỆN trong báo cáo.
 - Dựa vào KHUNG PHÂN TÍCH bên trên, quét LẦN LƯỢT từng mối liên kết có thể áp dụng (fuel switching Gas/Coal/Power, Dầu & Gasoil crack spread, RES/thời tiết, CBAM & mở rộng ETS, Chính sách & MSR, Kim loại cơ bản nếu có số liệu, Macro nếu có số liệu):
-    A. Với mỗi nhóm: xác định xem có biến động đáng kể (>0.5% hoặc có tin tức hỗ trợ cụ thể) hay không.
+    A. Với mỗi nhóm: xác định xem có biến động đáng kể hay không — xét ĐỦ CẢ Δ ngày (>0.5%) VÀ Δ tuần lấy từ DỮ LIỆU GIÁ (Δ ngày và Δ tuần cùng chiều, rõ xu hướng → biến động đáng kể dù mức Δ ngày nhỏ; Δ ngày lớn nhưng Δ tuần đi ngược → hạ mức đáng tin cậy, coi là biến động phiên đơn lẻ) — hoặc có tin tức hỗ trợ cụ thể.
     B. Nếu có: kiểm tra xem biến động đó có tạo ra chuỗi lan truyền sang EUA không (theo đúng chuỗi nhân quả trong KHUNG).
-    C. Nếu có tín hiệu LAN TRUYỀN: viết THÀNH MỘT BULLET RIÊNG cho liên kết đó — bắt đầu bằng tag in đậm nêu rõ cặp liên kết (vd "**Gas → EUA:**", "**Dầu/Crack spread → EUA:**", "**Điện Đức → EUA:**", "**Địa chính trị → EUA:**", "**Chính sách/MSR → EUA:**"...), sau đó nêu số liệu cụ thể (%Δ, mức giá), chuỗi logic nhân quả, và KẾT LUẬN rõ ràng về chiều tác động lên EUA trong bullet đó (không liệt kê suông, phải chốt chiều tăng/giảm/trung lập).
+    C. Nếu có tín hiệu LAN TRUYỀN: viết THÀNH MỘT BULLET RIÊNG cho liên kết đó — bắt đầu bằng tag in đậm nêu rõ cặp liên kết (vd "**Gas → EUA:**", "**Dầu/Crack spread → EUA:**", "**Điện Đức → EUA:**", "**Địa chính trị → EUA:**", "**Chính sách/MSR → EUA:**"...), sau đó nêu số liệu cụ thể (Δ ngày VÀ Δ tuần — theo đúng "D. KHUNG THỜI GIAN PHÂN TÍCH" ở trên, không chỉ 1 trong 2), chuỗi logic nhân quả, và KẾT LUẬN rõ ràng về chiều tác động lên EUA trong bullet đó (không liệt kê suông, phải chốt chiều tăng/giảm/trung lập).
     D. Nếu tín hiệu của các nhóm mâu thuẫn nhau: thêm 1 bullet riêng ghi "**Tín hiệu hỗn hợp:**" + giải thích cụ thể 2 chiều đối lập và điều kiện nào sẽ khiến chiều nào thắng thế.
     E. Nếu không nhóm nào có biến động đáng kể: "bullets" chỉ gồm đúng 1 phần tử là câu "Không có tín hiệu liên thị trường mới." — KHÔNG bịa liên kết gượng ép.
 - Nếu có từ 2 tín hiệu lan truyền trở lên: thêm 1 bullet CUỐI CÙNG bắt đầu bằng "**Tổng hợp:**" tóm tắt lại tất cả tín hiệu vừa nêu và kết luận áp lực chung (tăng/giảm/hỗn hợp) lên EUA trong phiên.
@@ -966,19 +984,23 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     eua_key_facts = ""
     if eua_prices and chart_data:
         latest_close = eua_prices[0]["close"]
+        week_change_pct = eua_prices[0].get("week_change_pct")
+        week_change_str = f"{week_change_pct:+.2f}%" if week_change_pct is not None else "không có dữ liệu"
         prev_close = chart_data[-2]["close"] if len(chart_data) >= 2 else None
         if prev_close:
             delta = latest_close - prev_close
             delta_pct = (delta / prev_close * 100) if prev_close else 0
             direction = "tăng" if delta > 0 else ("giảm" if delta < 0 else "đi ngang")
             eua_key_facts = (
-                f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2, "
-                f"{direction} {abs(delta):.2f} ({delta_pct:+.1f}%) so với phiên trước đó ({prev_close:.2f}). "
+                f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2. "
+                f"Δ ngày: {direction} {abs(delta):.2f} ({delta_pct:+.1f}%) so với phiên trước đó ({prev_close:.2f}). "
+                f"Δ tuần: {week_change_str} so với 7 ngày trước. "
                 f"{eua_session_range} {eua_trend}"
             )
         else:
             eua_key_facts = (
                 f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2. "
+                f"Δ tuần: {week_change_str} so với 7 ngày trước. "
                 f"{eua_session_range} {eua_trend}"
             )
     else:

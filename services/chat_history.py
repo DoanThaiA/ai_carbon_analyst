@@ -7,6 +7,7 @@ LLM — đây là "bộ nhớ ngắn hạn": đủ để hội thoại mạch l�
 theo, nhưng không để prompt phình to vô hạn theo thời gian.
 """
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Sequence
 
 from sqlalchemy import func, select
@@ -16,6 +17,9 @@ from db.models import ChatMessage, ChatSession
 from schemas.chat_models import ChatTurn
 
 logger = logging.getLogger(__name__)
+
+# Việt Nam = UTC+7, không có DST — offset cố định là đủ, không cần zoneinfo.
+_VN_OFFSET = timedelta(hours=7)
 
 # Số tin nhắn gần nhất (user+assistant tính chung) nạp lại làm bộ nhớ ngắn hạn.
 SHORT_TERM_MEMORY_TURNS = 12
@@ -100,3 +104,30 @@ async def list_session_messages(session: AsyncSession, *, session_id: int) -> Se
     )
     result = await session.execute(stmt)
     return result.scalars().all()
+
+
+def start_of_today_vn_utc() -> datetime:
+    """Mốc 00:00 (giờ VN) của ngày hôm nay, quy đổi ra UTC — dùng làm mốc đầu
+    ngày để đếm quota hỏi đáp/ngày (xem `count_user_questions_since`)."""
+    vn_now = datetime.now(timezone.utc) + _VN_OFFSET
+    vn_midnight = vn_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return vn_midnight - _VN_OFFSET
+
+
+async def count_user_questions_since(session: AsyncSession, *, user_email: str, since: datetime) -> int:
+    """Đếm số câu hỏi (ChatMessage role='user') của 1 user trên TẤT CẢ phiên/báo
+    cáo kể từ mốc `since` — dùng áp giới hạn hỏi đáp/ngày cho Quote Chat
+    (xem QUOTE_CHAT_DAILY_LIMIT trong api/routers/quote_chat.py). Đếm theo
+    user_email toàn cục (không tách theo report_date/session) vì giới hạn là
+    cho cả tính năng, không phải cho riêng 1 báo cáo."""
+    stmt = (
+        select(func.count(ChatMessage.id))
+        .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+        .where(
+            ChatSession.user_email == user_email,
+            ChatMessage.role == "user",
+            ChatMessage.created_at >= since,
+        )
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one()

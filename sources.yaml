@@ -490,9 +490,9 @@ sources:
     group: [3]
     type: html
     listing_url: "https://vneconomy.vn/kinh-te-xanh.htm"
-    link_pattern: "/[a-z0-9\\-]+\\.htm"
+    link_pattern: "/[a-z0-9\\-]+-\\d{5,}\\.htm"
     confidence: high
-    note: "Trang hiện tại là /kinh-te-xanh.htm."
+    note: "Bài viết kết thúc bằng ID số (VD: -1300941.htm). Pattern yêu cầu >=5 chữ số cuối để tránh bắt nhầm trang section."
 
   - domain: thoibaotaichinhvietnam.vn
     name: "Thời báo Tài chính Việt Nam"

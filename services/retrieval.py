@@ -76,21 +76,31 @@ class RetrievalService:
                 {filter_where.replace("WHERE", "AND") if filter_where else ""}
                 ORDER BY ts_rank_cd(content_tsv, query) DESC
                 LIMIT :limit
+            ),
+            combined AS (
+                SELECT
+                    COALESCE(v.chunk_id, f.chunk_id) as chunk_id,
+                    COALESCE(v.source_type, f.source_type) as source_type,
+                    COALESCE(v.source_id, f.source_id) as source_id,
+                    COALESCE(v.content, f.content) as content,
+                    COALESCE(1.0 / (:rrf_k + v.rank), 0.0) + COALESCE(1.0 / (:rrf_k + f.rank), 0.0) as rrf_score
+                FROM vector_search v
+                FULL OUTER JOIN fts_search f ON v.chunk_id = f.chunk_id
             )
-            SELECT 
-                COALESCE(v.chunk_id, f.chunk_id) as chunk_id,
-                COALESCE(v.source_type, f.source_type) as source_type,
-                COALESCE(v.source_id, f.source_id) as source_id,
-                COALESCE(v.content, f.content) as content,
-                COALESCE(1.0 / (:rrf_k + v.rank), 0.0) + COALESCE(1.0 / (:rrf_k + f.rank), 0.0) as rrf_score
-            FROM vector_search v
-            FULL OUTER JOIN fts_search f ON v.chunk_id = f.chunk_id
-            ORDER BY rrf_score DESC
+            SELECT
+                c.chunk_id, c.source_type, c.source_id, c.content, c.rrf_score,
+                a.source as source_name,
+                a.published_at as published_at,
+                a.url as url,
+                a.title as title
+            FROM combined c
+            LEFT JOIN articles a ON c.source_type = 'article' AND a.id = c.source_id
+            ORDER BY c.rrf_score DESC
             LIMIT :limit;
         ''')
 
         result = await self.session.execute(sql, params)
-        
+
         docs = []
         for row in result.fetchall():
             docs.append(
@@ -100,6 +110,10 @@ class RetrievalService:
                     source_id=row.source_id,
                     content=row.content,
                     score=float(row.rrf_score),
+                    source_name=row.source_name,
+                    published_at=row.published_at,
+                    url=row.url,
+                    title=row.title,
                 )
             )
         return docs
@@ -132,6 +146,10 @@ class RetrievalService:
                     source_id=original_doc.source_id,
                     content=original_doc.content,
                     score=result.relevance_score,
+                    source_name=original_doc.source_name,
+                    published_at=original_doc.published_at,
+                    url=original_doc.url,
+                    title=original_doc.title,
                 )
             )
             

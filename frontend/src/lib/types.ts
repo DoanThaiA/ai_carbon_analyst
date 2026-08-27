@@ -24,6 +24,13 @@ export interface ChatTurn {
   content: string;
 }
 
+export interface ChatSource {
+  url: string;
+  title: string | null;
+  source_name: string | null;
+  published_at: string | null;
+}
+
 export interface ChatSessionSummary {
   id: number;
   quote: string;

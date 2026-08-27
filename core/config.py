@@ -61,7 +61,7 @@ class Settings:
         # Haiku 4.5: siêu rẻ, siêu nhanh — đủ cho tác vụ phân loại JSON.
         default_model = "claude-haiku-4-5"
 
-        quote_chat_backend = os.environ.get("QUOTE_CHAT_BACKEND", "cohere").lower()
+        quote_chat_backend = os.environ.get("QUOTE_CHAT_BACKEND", "anthropic").lower()
         default_quote_chat_model = (
             "command-a-03-2025" if quote_chat_backend == "cohere" else "claude-haiku-4-5"
         )

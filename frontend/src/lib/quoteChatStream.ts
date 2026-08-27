@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/api";
+import type { ChatSource } from "@/lib/types";
 
 interface QuoteChatStreamArgs {
   reportDate: string;
@@ -8,7 +9,7 @@ interface QuoteChatStreamArgs {
   // tự nạp lại từ Postgres (bộ nhớ ngắn hạn), không cần gửi lại.
   sessionId?: number | null;
   quote?: string;
-  onMeta: (meta: { sessionId: number; sources: unknown[] }) => void;
+  onMeta: (meta: { sessionId: number; sources: ChatSource[] }) => void;
   onDelta: (text: string) => void;
   onDone: () => void;
   onError: (message: string) => void;
@@ -43,7 +44,20 @@ export async function streamQuoteChat({
   }
 
   if (!res.ok || !res.body) {
-    onError(res.status === 401 ? "Phiên đăng nhập đã hết hạn." : "Đã xảy ra lỗi, vui lòng thử lại.");
+    if (res.status === 401) {
+      onError("Phiên đăng nhập đã hết hạn.");
+      return;
+    }
+    // 429 (hết quota/ngày) và các lỗi validate khác trả JSON { detail } — ưu
+    // tiên hiện đúng message đó thay vì câu chung chung.
+    let detail: string | undefined;
+    try {
+      const data = await res.json();
+      if (typeof data?.detail === "string") detail = data.detail;
+    } catch {
+      // không phải JSON hoặc body rỗng — bỏ qua, dùng fallback bên dưới
+    }
+    onError(detail || "Đã xảy ra lỗi, vui lòng thử lại.");
     return;
   }
 
@@ -78,7 +92,7 @@ export async function streamQuoteChat({
       }
 
       if (eventName === "meta") {
-        const m = payload as { session_id: number; sources: unknown[] };
+        const m = payload as { session_id: number; sources: ChatSource[] };
         onMeta({ sessionId: m.session_id, sources: m.sources ?? [] });
       } else if (eventName === "delta" && typeof payload === "string") {
         onDelta(payload);

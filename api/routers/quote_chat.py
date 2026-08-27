@@ -31,11 +31,13 @@ from schemas.chat_models import (
 )
 from services.chat_history import (
     append_turn,
+    count_user_questions_since,
     create_session,
     get_owned_session,
     list_session_messages,
     list_sessions,
     load_recent_turns,
+    start_of_today_vn_utc,
 )
 from services.embedding import CohereEmbedder
 from services.quote_chat import astream_quote_chat, retrieve_context_for_quote, suggest_questions
@@ -44,6 +46,12 @@ from services.retrieval import RetrievalService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reports/{date}/quote-chat", tags=["quote-chat"])
+
+# Giới hạn số câu hỏi/ngày cho mỗi user (theo ngày dương lịch giờ VN, xem
+# `start_of_today_vn_utc`) — chặn spam/chi phí LLM (đặc biệt với web_search
+# server tool có thể tốn thêm request). Tính chung cho cả tính năng Quote Chat
+# (mọi báo cáo/phiên của user), không phải riêng từng báo cáo.
+QUOTE_CHAT_DAILY_LIMIT = 10
 
 # Lazy singleton — embedder dùng chung cho mọi request, tránh tạo lại Cohere
 # client mỗi lần (giống pattern report_generator.py / embedding.py).
@@ -129,6 +137,20 @@ async def quote_chat_stream(
     await _ensure_report_published(date, session)
     user_email = payload["sub"]
 
+    # Chặn TRƯỚC khi tạo session mới/gọi LLM — tránh tạo session mồ côi khi user
+    # đã hết quota.
+    asked_today = await count_user_questions_since(
+        session, user_email=user_email, since=start_of_today_vn_utc()
+    )
+    if asked_today >= QUOTE_CHAT_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Bạn đã đạt giới hạn {QUOTE_CHAT_DAILY_LIMIT} câu hỏi/ngày cho tính năng "
+                "Hỏi đáp AI. Vui lòng quay lại vào ngày mai."
+            ),
+        )
+
     if body.session_id is not None:
         chat_session = await get_owned_session(
             session, session_id=body.session_id, user_email=user_email, report_date=date
@@ -152,11 +174,23 @@ async def quote_chat_stream(
         try:
             context_chunks = await retrieve_context_for_quote(retrieval_service, quote, body.question, date)
             # Gửi session_id + nguồn tham khảo trước khi bắt đầu stream câu trả
-            # lời, để FE lưu lại session_id cho các câu hỏi tiếp theo.
-            sources = [
-                {"chunk_id": c.chunk_id, "source_type": c.source_type, "source_id": c.source_id}
-                for c in context_chunks
-            ]
+            # lời, để FE lưu lại session_id cho các câu hỏi tiếp theo và render
+            # "Danh sách tin tức tham khảo" (link + ngày phát hành) dưới câu trả lời.
+            # Dedupe theo bài viết — 1 bài có thể góp nhiều chunk vào dữ liệu nền.
+            sources = []
+            seen_article_ids = set()
+            for c in context_chunks:
+                if c.source_type != "article" or not c.url or c.source_id in seen_article_ids:
+                    continue
+                seen_article_ids.add(c.source_id)
+                sources.append(
+                    {
+                        "url": c.url,
+                        "title": c.title,
+                        "source_name": c.source_name,
+                        "published_at": c.published_at.isoformat() if c.published_at else None,
+                    }
+                )
             yield _sse("meta", {"session_id": chat_session.id, "sources": sources})
 
             answer_parts: list[str] = []
