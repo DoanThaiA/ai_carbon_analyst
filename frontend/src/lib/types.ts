@@ -24,6 +24,20 @@ export interface ChatTurn {
   content: string;
 }
 
+export interface ChatSessionSummary {
+  id: number;
+  quote: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionDetail {
+  id: number;
+  quote: string;
+  created_at: string;
+  messages: ChatTurn[];
+}
+
 export interface HotNewsItem {
   id: number;
   title: string | null;

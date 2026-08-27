@@ -1,10 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircleQuestion, X, Send, Loader2, Quote as QuoteIcon } from "lucide-react";
+import {
+  MessageCircleQuestion,
+  X,
+  Send,
+  Loader2,
+  Quote as QuoteIcon,
+  History,
+  ArrowLeft,
+  MessagesSquare,
+} from "lucide-react";
 import clsx from "clsx";
+import { formatDistanceToNow } from "date-fns";
+import { vi } from "date-fns/locale";
 import { api } from "@/lib/api";
-import type { ChatTurn } from "@/lib/types";
+import type { ChatSessionSummary, ChatTurn } from "@/lib/types";
 import { streamQuoteChat } from "@/lib/quoteChatStream";
 
 interface FloatingTrigger {
@@ -35,6 +46,11 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
 
   // Phát hiện bôi đen văn bản bên trong nội dung báo cáo.
   useEffect(() => {
@@ -105,6 +121,49 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     setSuggestions([]);
     setInput("");
     setSending(false);
+    setHistoryOpen(false);
+  }
+
+  async function fetchSessions() {
+    setSessionsLoading(true);
+    try {
+      const res = await api.get(`/api/reports/${reportDate}/quote-chat/sessions`);
+      setSessions(res.data || []);
+      setSessionsLoaded(true);
+    } catch {
+      setSessions([]);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }
+
+  function toggleHistory() {
+    setHistoryOpen((open) => {
+      const next = !open;
+      if (next && !sessionsLoaded) fetchSessions();
+      return next;
+    });
+  }
+
+  async function selectSession(s: ChatSessionSummary) {
+    if (s.id === sessionId) {
+      setHistoryOpen(false);
+      return;
+    }
+    abortRef.current?.abort();
+    setSending(false);
+    try {
+      const res = await api.get(`/api/reports/${reportDate}/quote-chat/sessions/${s.id}`);
+      const detail = res.data as { id: number; quote: string; messages: ChatTurn[] };
+      setActiveQuote(detail.quote);
+      setSessionId(detail.id);
+      setMessages(detail.messages);
+      setSuggestions([]);
+      setInput("");
+      setHistoryOpen(false);
+    } catch {
+      // Bỏ qua — giữ nguyên phiên hiện tại nếu tải lỗi.
+    }
   }
 
   async function sendQuestion(question: string) {
@@ -146,7 +205,10 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       signal: controller.signal,
       onMeta: (meta) => setSessionId(meta.sessionId),
       onDelta: appendDelta,
-      onDone: () => finish(),
+      onDone: () => {
+        finish();
+        if (sessionsLoaded) fetchSessions(); // cập nhật lịch sử: phiên mới hoặc thời gian sửa gần nhất
+      },
       onError: (message) => finish(`⚠️ ${message}`),
     });
   }
@@ -169,19 +231,99 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       {activeQuote && (
         <div className="fixed inset-0 z-[60] flex justify-end">
           <div className="absolute inset-0 bg-black/20" onClick={() => closeChat()} />
-          <div className="relative w-full sm:w-[420px] h-full bg-background border-l border-border shadow-[var(--shadow-medium)] flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-border shrink-0">
-              <div className="flex items-center gap-2 text-label font-semibold text-sm">
-                <MessageCircleQuestion size={16} className="text-primary" />
-                Hỏi đáp về đoạn trích
+          <div className="relative h-full flex shadow-[var(--shadow-medium)]">
+            {/* Sidebar lịch sử chat — trên desktop hiện song song bên cạnh khung chat;
+                trên mobile thay thế khung chat (đỡ chật), quay lại bằng nút mũi tên. */}
+            <div
+              className={clsx(
+                "h-full bg-background border-border-soft flex-col shrink-0 overflow-hidden",
+                historyOpen ? "flex w-full sm:w-[280px] sm:border-r" : "hidden w-0"
+              )}
+            >
+              <div className="flex items-center gap-2 px-4 py-3.5 border-b border-border shrink-0">
+                <button
+                  onClick={() => setHistoryOpen(false)}
+                  className="text-muted-light hover:text-foreground transition-colors sm:hidden"
+                  aria-label="Quay lại khung chat"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <div className="flex items-center gap-2 text-label font-semibold text-sm">
+                  <History size={16} className="text-primary" />
+                  Lịch sử hỏi đáp
+                </div>
               </div>
-              <button 
-                onClick={() => closeChat()} 
-                className="text-muted-light hover:text-foreground transition-colors"
-              >
-                <X size={18} />
-              </button>
+
+              <div className="flex-1 overflow-y-auto">
+                {sessionsLoading ? (
+                  <div className="flex items-center justify-center py-10 text-muted-light">
+                    <Loader2 size={18} className="animate-spin" />
+                  </div>
+                ) : sessions.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <MessagesSquare size={28} className="mx-auto text-muted-light mb-2" />
+                    <p className="text-[12.5px] text-muted-light leading-relaxed">
+                      Chưa có lịch sử. Bôi đen một đoạn trong báo cáo để bắt đầu hỏi đáp.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="py-1.5">
+                    {sessions.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          onClick={() => selectSession(s)}
+                          className={clsx(
+                            "w-full text-left px-4 py-2.5 border-l-2 transition-colors",
+                            s.id === sessionId
+                              ? "border-primary bg-tint/50"
+                              : "border-transparent hover:bg-tint/30"
+                          )}
+                        >
+                          <p className="text-[12.5px] leading-snug text-body italic line-clamp-2">
+                            {s.quote}
+                          </p>
+                          <p className="text-[11px] text-muted-light mt-1">
+                            {formatDistanceToNow(new Date(s.updated_at), { addSuffix: true, locale: vi })}
+                          </p>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
+
+            <div
+              className={clsx(
+                "relative w-full sm:w-[420px] h-full bg-background border-l border-border flex-col",
+                historyOpen ? "hidden sm:flex" : "flex"
+              )}
+            >
+              <div className="flex items-center justify-between px-4 py-3.5 border-b border-border shrink-0">
+                <div className="flex items-center gap-2 text-label font-semibold text-sm">
+                  <MessageCircleQuestion size={16} className="text-primary" />
+                  Hỏi đáp về đoạn trích
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={toggleHistory}
+                    className={clsx(
+                      "transition-colors",
+                      historyOpen ? "text-primary" : "text-muted-light hover:text-foreground"
+                    )}
+                    aria-label="Lịch sử hỏi đáp"
+                    title="Lịch sử hỏi đáp"
+                  >
+                    <History size={17} />
+                  </button>
+                  <button
+                    onClick={() => closeChat()}
+                    className="text-muted-light hover:text-foreground transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
 
             <div className="px-4 py-3 border-b border-border-soft bg-tint/40 shrink-0">
               <div className="flex gap-2 items-start">
@@ -260,6 +402,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={15} />}
               </button>
             </form>
+            </div>
           </div>
         </div>
       )}
