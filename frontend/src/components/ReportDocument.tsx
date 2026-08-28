@@ -391,13 +391,25 @@ export function ReportDocument({ report }: { report: Report }) {
                   <div className="p-3 space-y-3">
                     {report.content["2"].market_drivers.bullish?.length > 0 ? (
                       report.content["2"].market_drivers.bullish.map((d: any, i: number) => (
-                        <p key={i} className="text-[13px] leading-relaxed text-body">
-                          <span className={clsx(
-                            "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                            d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
-                          )}>{d.tag}</span>
-                          <RichText text={d.text} />
-                        </p>
+                        <div key={i}>
+                          <p className="text-[13px] leading-relaxed text-body">
+                            <span className={clsx(
+                              "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
+                              d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
+                            )}>{d.tag}</span>
+                            <RichText text={d.text} />
+                          </p>
+                          {d.source_url && (
+                            <a
+                              href={d.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
+                            >
+                              Nguồn: {d.source_name} ↗
+                            </a>
+                          )}
+                        </div>
                       ))
                     ) : (
                       <p className="text-[12.5px] text-muted-light italic">Không có động lực tăng đáng chú ý.</p>
@@ -411,13 +423,25 @@ export function ReportDocument({ report }: { report: Report }) {
                   <div className="p-3 space-y-3">
                     {report.content["2"].market_drivers.bearish?.length > 0 ? (
                       report.content["2"].market_drivers.bearish.map((d: any, i: number) => (
-                        <p key={i} className="text-[13px] leading-relaxed text-body">
-                          <span className={clsx(
-                            "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                            d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
-                          )}>{d.tag}</span>
-                          <RichText text={d.text} />
-                        </p>
+                        <div key={i}>
+                          <p className="text-[13px] leading-relaxed text-body">
+                            <span className={clsx(
+                              "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
+                              d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
+                            )}>{d.tag}</span>
+                            <RichText text={d.text} />
+                          </p>
+                          {d.source_url && (
+                            <a
+                              href={d.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
+                            >
+                              Nguồn: {d.source_name} ↗
+                            </a>
+                          )}
+                        </div>
                       ))
                     ) : (
                       <p className="text-[12.5px] text-muted-light italic">Không có động lực giảm đáng chú ý.</p>

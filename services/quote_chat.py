@@ -7,6 +7,7 @@ from core.config import Settings
 from schemas.chat_models import ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services.retrieval import RetrievalService
+from services import eua_causal_chains as chains
 
 logger = logging.getLogger(__name__)
 
@@ -87,33 +88,31 @@ def _format_context(chunks: Sequence[RetrievedDocument], report_date: str) -> st
 # Chuyên môn nền tảng — tiêm vào system prompt để model suy luận
 # ─────────────────────────────────────────────────────────────────────
 
-_DOMAIN_KNOWLEDGE = """
+_DOMAIN_KNOWLEDGE = f"""
 === KIẾN THỨC CHUYÊN MÔN NỀN TẢNG (dùng khi suy luận / phân tích giả định) ===
+Đây là bản RÚT GỌN của KHUNG PHÂN TÍCH CHUẨN (dùng chung với báo cáo Mục 3/5) — PHẢI bám sát
+đúng chiều mũi tên, TUYỆT ĐỐI KHÔNG tự sinh thêm bước trung gian khác hay đảo chiều so với khung
+này. Mọi suy luận PHẢI đi tới kết luận cuối cùng về tác động lên CUNG/CẦU và GIÁ EUA — không dừng
+giữa chừng ở 1 thị trường trung gian (gas/dầu/điện...) mà không kết luận tác động lên EUA.
 
 A. CƠ CHẾ CỐT LÕI EU ETS & GIÁ EUA:
-• EU ETS cap-and-trade: trần phát thải hạ dần → kỳ vọng thiếu hụt EUA → giá EUA↑.
-• MSR (Market Stability Reserve): rút surplus EUA khi TNAC vượt ngưỡng → thắt chặt cung.
-• Compliance cycle: DN phải nộp trả EUA hàng năm trước hạn 30/09 → nhu cầu mua gom EUA tăng mạnh trước deadline.
-• Free allocation giảm dần → DN phải mua thêm EUA → cầu↑.
-• Đấu giá EUA: lịch dồn/tăng volume → cung ngắn hạn↑ → áp lực giảm giá; ngược lại nếu rút bớt.
+{chains.POLICY_MSR}
 
 B. FUEL SWITCHING — chuỗi logic quan trọng nhất:
-• Gas↑ → nhà máy điện chuyển sang than → phát thải↑ → cầu EUA↑ → EUA↑
-• Gas↓ hoặc Than↑ → chuyển ngược → phát thải↓ → EUA↓
-• RES (gió/mặt trời)↑ → dispatch than/gas↓ → phát thải↓ → EUA↓
-• Clean dark spread vs clean spark spread: xác định ngưỡng fuel switching point.
+{chains.FUEL_SWITCHING}
+{chains.RELATIVE_FUEL_ECONOMICS}
 
 C. LIÊN THỊ TRƯỜNG:
-• Điện Đức (DEBY1) ↔ EUA: quan hệ HAI CHIỀU (utility hedge + carbon cost pass-through).
-• Dầu/Gasoil: crack spread rộng → diesel↑ → vận tải/CN↑ → phát thải↑ → EUA↑.
+• {chains.POWER_EUA_TWO_WAY}
+{chains.WEATHER_POWER_SYSTEM}
+{chains.OIL_GASOIL}
 • Than (API2/NEWC): giá than ảnh hưởng fuel switching threshold.
-• CBAM: EUA↑ → certificate cost↑ → nhập khẩu thép/nhôm/xi măng vào EU đắt hơn.
+{chains.CBAM_ETS}
 • VCM vs compliance: tín chỉ tự nguyện (Verra/Gold Standard) không thay thế EUA trong EU ETS.
 
 D. CHÍNH SÁCH:
 • Fit-for-55: gói chính sách khí hậu EU, mục tiêu giảm 55% KNK vào 2030.
 • CBAM (EU & UK): thuế carbon biên giới — ảnh hưởng trực tiếp DN xuất khẩu VN ngành thép, nhôm, xi măng, phân bón, điện.
-• ETS mở rộng (ETS2): bổ sung vận tải đường bộ + tòa nhà từ 2027 → nhu cầu EUA↑.
 • Article 6 Paris Agreement: cơ chế trao đổi tín chỉ carbon giữa các quốc gia.
 • NDC: cam kết giảm phát thải quốc gia — VN mục tiêu net-zero 2050.
 
@@ -122,10 +121,13 @@ E. THỊ TRƯỜNG CARBON VIỆT NAM:
 • VETS (sàn giao dịch tín chỉ carbon VN): dự kiến vận hành thí điểm 2025, chính thức 2028.
 • DN VN chịu ảnh hưởng CBAM: ngành thép, nhôm, xi măng, phân bón xuất khẩu sang EU.
 
-F. ĐỊA CHÍNH TRỊ & MACRO:
-• Xung đột → gián đoạn nguồn cung nhiên liệu → huy động than → phát thải↑ → EUA↑.
-• USD↑/lãi suất↑ → áp lực giảm commodities bao gồm EUA.
-• GDP/CN↑ → phát thải↑ → EUA↑ (nhưng hiệu ứng đang suy yếu do chuyển dịch năng lượng).
+F. ĐỊA CHÍNH TRỊ:
+{chains.GEOPOLITICS_SUPPLY_CHAIN}
+
+G. TÀI CHÍNH & MACRO:
+{chains.FINANCE_SPECULATION}
+{chains.POSITIONING_TECHNICALS}
+{chains.MACRO}
 """
 
 
