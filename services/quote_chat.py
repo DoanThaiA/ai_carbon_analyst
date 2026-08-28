@@ -133,17 +133,17 @@ F. ĐỊA CHÍNH TRỊ & MACRO:
 # System prompt
 # ─────────────────────────────────────────────────────────────────────
 
-def build_system_prompt(quote: str, report_date: str, context_block: str) -> str:
-    """System prompt hỗ trợ cả hỏi đáp thực tế lẫn phân tích giả định / suy luận
-    chuyên sâu về thị trường năng lượng & carbon.
+def _build_static_instructions(report_date: str) -> str:
+    """Phần system prompt KHÔNG đổi giữa các câu hỏi/phiên/user (chỉ đổi 1
+    lần/ngày theo report_date) — role, kiến thức nền, năng lực, quy tắc. Tách
+    riêng khỏi `_build_dynamic_context()` để làm prefix `cache_control` ổn
+    định cho backend Anthropic (xem PROMPT CACHING trong `_stream_anthropic`):
+    nội dung này giống hệt nhau ở MỌI request trong cùng report_date, chiếm
+    phần lớn dung lượng prompt, nên cache được sẽ tiết kiệm đáng kể input
+    token — miễn là đủ dài hơn ngưỡng cache tối thiểu của model đang dùng
+    (xem comment ở nơi gọi).
     """
     return f"""Bạn là chuyên gia phân tích cao cấp của bàn giao dịch năng lượng & carbon (Daily Carbon Intelligence), có kiến thức sâu rộng về EU ETS, thị trường carbon, năng lượng, chính sách khí hậu, và các mối liên hệ liên thị trường. Nhiệm vụ của bạn là giúp người đọc hiểu sâu hơn một đoạn trích cụ thể mà họ vừa bôi đen trong báo cáo ngày {report_date}, thông qua hội thoại hỏi-đáp.
-
-=== ĐOẠN NGƯỜI DÙNG ĐANG BÔI ĐEN (điểm neo của toàn bộ hội thoại) ===
-\"\"\"{quote}\"\"\"
-
-=== DỮ LIỆU NỀN LIÊN QUAN (trích từ kho tin tức đã crawl, đánh số để trích dẫn) ===
-{context_block}
 
 {_DOMAIN_KNOWLEDGE}
 
@@ -152,7 +152,7 @@ A. TRẢ LỜI THỰC TẾ: giải thích, tóm tắt, làm rõ nội dung đo�
 B. PHÂN TÍCH GIẢ ĐỊNH (what-if): khi người dùng đặt câu hỏi giả định (VD "Nếu giá gas tăng 20% thì..."), trả lời NGẮN GỌN theo đúng 1 mạch: mở đầu bằng "Trong kịch bản giả định..." rồi nêu chuỗi nhân quả cô đọng (2-3 bước chính, dựa trên KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên) và chốt HƯỚNG tác động (mạnh/vừa/nhẹ) — KHÔNG liệt kê tách riêng từng bước thành nhiều gạch đầu dòng, KHÔNG đưa con số giá cụ thể (không thể dự đoán chính xác). Chỉ khai triển dài hơn nếu người dùng chủ động yêu cầu "giải thích chi tiết"/"phân tích sâu hơn".
 C. SUY LUẬN CHUYÊN SÂU: khi người dùng hỏi "tại sao", "cơ chế nào", "mối liên hệ giữa X và Y", giải thích cơ chế truyền dẫn NGẮN GỌN, đủ hiểu bản chất — không cần liệt kê mọi khía cạnh (ngắn/dài hạn, điều kiện kích hoạt...) trừ khi câu hỏi hỏi rõ về khía cạnh đó.
 D. SO SÁNH & ĐÁNH GIÁ: khi hỏi về ảnh hưởng đến doanh nghiệp/ngành/quốc gia, nêu thẳng kênh tác động chính và mức độ chắc chắn trong 1 đoạn ngắn — không cần liệt kê đầy đủ mọi kênh truyền dẫn nếu không được hỏi.
-E. TRA CỨU WEB (chỉ khi thực sự cần, không lạm dụng): bạn có công cụ tìm kiếm web (web_search). CHỈ dùng khi ĐOẠN TRÍCH + DỮ LIỆU NỀN + KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên KHÔNG đủ để trả lời — ví dụ người dùng hỏi 1 số liệu/sự kiện/tổ chức cụ thể, hoặc tin tức rất mới không có trong DỮ LIỆU NỀN đã crawl. KHÔNG dùng web_search để tra lại thứ đã có sẵn ở trên, và KHÔNG dùng cho câu hỏi giả định/suy luận thuần (mục B, C) — những câu đó dùng kiến thức nền tảng, không cần tra cứu.
+E. TRA CỨU WEB (chỉ khi thực sự cần, không lạm dụng): bạn có công cụ tìm kiếm web (web_search). CHỈ dùng khi ĐOẠN TRÍCH + DỮ LIỆU NỀN (đưa ra ngay bên dưới các quy tắc này) + KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên KHÔNG đủ để trả lời — ví dụ người dùng hỏi 1 số liệu/sự kiện/tổ chức cụ thể, hoặc tin tức rất mới không có trong DỮ LIỆU NỀN đã crawl. KHÔNG dùng web_search để tra lại thứ đã có sẵn, và KHÔNG dùng cho câu hỏi giả định/suy luận thuần (mục B, C) — những câu đó dùng kiến thức nền tảng, không cần tra cứu.
 
 QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 1. NEO VÀO ĐOẠN TRÍCH: mọi câu trả lời đều phải xoay quanh và nhất quán với nội dung đoạn trích. Đây là bối cảnh cố định của cả cuộc hội thoại.
@@ -164,6 +164,28 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 7. TRUNG LẬP, KHÔNG KHUYẾN NGHỊ ĐẦU TƯ: giữ giọng văn chuyên gia; không đưa khuyến nghị mua/bán tài chính trực tiếp.
 8. ĐÚNG PHẠM VI: nếu câu hỏi ngoài phạm vi năng lượng/carbon/thị trường liên quan, lịch sự từ chối — kể cả khi có thể tra được bằng web_search, không đi lạc đề.
 9. NGÔN NGỮ: trả lời bằng tiếng Việt, trừ khi người dùng chủ động hỏi bằng ngôn ngữ khác."""
+
+
+def _build_dynamic_context(quote: str, context_block: str) -> str:
+    """Phần system prompt đổi theo TỪNG câu hỏi — quote cố định trong 1 phiên
+    nhưng context_block (dữ liệu nền retrieve) đổi mỗi câu hỏi. LUÔN đứng SAU
+    `_build_static_instructions()`, KHÔNG đánh cache_control — nếu đặt trước
+    hoặc chen giữa phần tĩnh, mọi thay đổi ở đây sẽ làm mất cache toàn bộ phần
+    tĩnh phía sau (cache là khớp PREFIX, hỏng ở đâu là mất cache từ đó trở đi).
+    """
+    return f"""=== ĐOẠN NGƯỜI DÙNG ĐANG BÔI ĐEN (điểm neo của toàn bộ hội thoại) ===
+\"\"\"{quote}\"\"\"
+
+=== DỮ LIỆU NỀN LIÊN QUAN (trích từ kho tin tức đã crawl, đánh số để trích dẫn) ===
+{context_block}"""
+
+
+def build_system_prompt(quote: str, report_date: str, context_block: str) -> str:
+    """Ghép static+dynamic thành 1 chuỗi — dùng cho backend Cohere (không hỗ
+    trợ cache_control theo block như Anthropic). Backend Anthropic dùng trực
+    tiếp `_build_static_instructions`/`_build_dynamic_context` tách rời (xem
+    `_stream_anthropic`) để tận dụng prompt caching."""
+    return _build_static_instructions(report_date) + "\n\n" + _build_dynamic_context(quote, context_block)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -215,15 +237,53 @@ WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_use
 
 
 async def _stream_anthropic(
-    system_prompt: str, messages: List[dict], model: str, enable_web_search: bool = False
+    static_instructions: str,
+    dynamic_context: str,
+    messages: List[dict],
+    model: str,
+    enable_web_search: bool = False,
 ) -> AsyncIterator[str]:
+    """PROMPT CACHING (2 breakpoint, tối đa cho phép là 4):
+    1. `system` tách 2 block — `static_instructions` (role/kiến thức/quy tắc,
+       giống hệt nhau ở MỌI request cùng report_date) đánh cache_control TTL
+       1h (traffic có thể thưa nên ưu tiên giữ cache lâu hơn mặc định 5 phút);
+       `dynamic_context` (quote+dữ liệu nền, đổi mỗi câu hỏi) đứng SAU, KHÔNG
+       cache — vì cache là khớp PREFIX, cái đổi phải luôn nằm ở CUỐI.
+    2. Nếu phiên đã có lịch sử (`messages` dài hơn 1, tức có ít nhất 1 lượt cũ
+       + câu hỏi mới), đánh thêm breakpoint ở tin nhắn lịch sử CUỐI CÙNG — các
+       câu hỏi tiếp theo trong CÙNG phiên tái dùng lại đúng prefix hội thoại đã
+       cache thay vì trả tiền đầy đủ lại từ đầu mỗi lượt.
+
+    LƯU Ý: model mặc định của Quote Chat (Haiku 4.5) yêu cầu prefix tối thiểu
+    4096 token mới thực sự được cache (ngưỡng cao hơn hẳn Sonnet/Opus) — nếu
+    prompt tĩnh không đủ dài, cache_control bị bỏ qua ÂM THẦM (không lỗi, chỉ
+    đơn giản `cache_creation_input_tokens: 0`). Kiểm tra hiệu quả thật qua
+    `response.usage.cache_read_input_tokens` trong log, không mặc định là có
+    tác dụng chỉ vì code đúng cú pháp.
+    """
     client = _get_anthropic_client()
     extra = {"tools": [WEB_SEARCH_TOOL]} if enable_web_search else {}
+
+    system = [
+        {"type": "text", "text": static_instructions, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+        {"type": "text", "text": dynamic_context},
+    ]
+
+    anthropic_messages = list(messages)
+    if len(anthropic_messages) > 1:
+        last_history_turn = anthropic_messages[-2]
+        anthropic_messages[-2] = {
+            "role": last_history_turn["role"],
+            "content": [
+                {"type": "text", "text": last_history_turn["content"], "cache_control": {"type": "ephemeral"}}
+            ],
+        }
+
     async with client.messages.stream(
         model=model,
         max_tokens=MAX_ANSWER_TOKENS,
-        system=system_prompt,
-        messages=messages,
+        system=system,
+        messages=anthropic_messages,
         temperature=0.3,
         **extra,
     ) as stream:
@@ -246,17 +306,25 @@ async def astream_quote_chat(
     sửa code).
     """
     settings = Settings.from_env()
-    system_prompt = build_system_prompt(
-        _truncate(quote, MAX_QUOTE_CHARS), report_date, _format_context(context_chunks, report_date)
-    )
+    truncated_quote = _truncate(quote, MAX_QUOTE_CHARS)
+    context_block = _format_context(context_chunks, report_date)
 
     messages = [{"role": turn.role, "content": turn.content} for turn in history]
     messages.append({"role": "user", "content": question})
 
     if settings.quote_chat_backend == "anthropic":
         # web_search là server tool của Anthropic — chưa hỗ trợ khi backend là Cohere.
-        stream = _stream_anthropic(system_prompt, messages, settings.quote_chat_model, enable_web_search=True)
+        # Tách static/dynamic (thay vì gọi build_system_prompt gộp sẵn) để bật
+        # prompt caching — xem docstring _stream_anthropic.
+        stream = _stream_anthropic(
+            _build_static_instructions(report_date),
+            _build_dynamic_context(truncated_quote, context_block),
+            messages,
+            settings.quote_chat_model,
+            enable_web_search=True,
+        )
     else:
+        system_prompt = build_system_prompt(truncated_quote, report_date, context_block)
         stream = _stream_cohere(system_prompt, messages, settings.quote_chat_model)
 
     async for delta in stream:

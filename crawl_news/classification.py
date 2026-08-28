@@ -11,8 +11,6 @@ from schemas.crawl_models import ClassificationResult, NewsTopic
 
 logger = logging.getLogger(__name__)
 
-# Tăng lên 6000 để bắt được phần phân tích chính của bài dài (Reuters/FT ~800-1500 từ).
-# Vẫn rẻ hơn nhiều so với full-text — classify chỉ cần context, không cần toàn văn.
 MAX_TEXT_CHARS_FOR_CLASSIFICATION = 6000
 
 _SYSTEM_PROMPT = """\
@@ -20,15 +18,21 @@ Bạn là Chuyên gia Phân tích Thị trường Năng lượng & Carbon Châu 
 
 Nhiệm vụ: đọc TITLE + ARTICLE CONTENT, xác định bài viết có liên quan hay không và gắn 1–3 topic phù hợp nhất.
 
-NGUYÊN TẮC PHÂN LOẠI
-Phân loại theo trọng tâm được phân tích, không theo keyword xuất hiện.
-Một topic chỉ được chọn khi nó là chủ đề chính hoặc được phân tích đáng kể.
-Không gắn topic chỉ vì topic đó được nhắc qua, dùng để so sánh hoặc là yếu tố phụ.
-Nếu có nhiều topic, xếp theo mức độ quan trọng giảm dần.
+XÁC ĐỊNH is_relevant (QUAN TRỌNG — quyết định bài có được lưu vào hệ thống hay không):
+Bài được coi là LIÊN QUAN (is_relevant=true) CHỈ KHI có TÁC ĐỘNG RÕ RÀNG — TRỰC TIẾP hoặc GIÁN TIẾP — đến thị trường carbon hoặc năng lượng châu Âu (EU ETS/EUA, CBAM, gas, điện, than, dầu, năng lượng tái tạo, hydrogen) hoặc các thị trường carbon liên quan (VCM, global carbon market, chính sách carbon Việt Nam). "Rõ ràng" nghĩa là bài phải nêu được MỘT CHUỖI NHÂN QUẢ CỤ THỂ, có thể lập luận được, dẫn tới ảnh hưởng cung/cầu, giá, chính sách, hay dòng vốn của các thị trường này — KHÔNG chỉ vì bài NHẮC TÊN hay ĐỀ CẬP THOÁNG QUA 1 từ khóa liên quan mà không phân tích ảnh hưởng thực chất nào.
+- Tác động TRỰC TIẾP: bài phân tích/đưa tin chính về diễn biến giá, cung cầu, chính sách, giao dịch... của 1 trong các thị trường trên.
+- Tác động GIÁN TIẾP: bài về chủ đề khác (địa chính trị, kinh tế vĩ mô, thương mại, thời tiết, công nghệ...) nhưng có lập luận RÕ RÀNG dẫn tới ảnh hưởng cung/cầu/giá/chính sách của các thị trường năng lượng/carbon châu Âu (vd: xung đột ảnh hưởng nguồn cung khí đốt sang châu Âu, chính sách thương mại ảnh hưởng CBAM, thời tiết ảnh hưởng nhu cầu điện/khí...).
+CHỈ đánh dấu is_relevant=false khi bài KHÔNG có tác động rõ ràng nào — trực tiếp hay gián tiếp — đến các thị trường trên, kể cả khi bài có nhắc tên vài từ khóa liên quan mà không phân tích ảnh hưởng cụ thể (vd: tin thể thao, giải trí, đời sống, công nghệ tiêu dùng không liên quan năng lượng...).
+Khi is_relevant=true: PHẢI gắn ít nhất 1 topic sát nhất trong danh sách bên dưới (không được để "topics": [] khi is_relevant=true).
+
+NGUYÊN TẮC GẮN TOPIC (áp dụng SAU KHI đã xác định is_relevant=true)
+Phân loại theo trọng tâm được phân tích, không chỉ theo keyword xuất hiện.
+Nếu có nhiều topic phù hợp, xếp theo mức độ quan trọng giảm dần (chủ đề được phân tích sâu nhất, hoặc có chuỗi nhân quả rõ ràng nhất, lên đầu).
 Tối đa 3 topic.
 Không được tạo topic ngoài danh sách.
-QUY TẮC 30%
-Chỉ chọn topic phụ khi bài dành khoảng ≥30% nội dung phân tích cho chủ đề đó, hoặc chủ đề đó là yếu tố quyết định trực tiếp đến kết luận chính của bài.
+QUY TẮC ƯU TIÊN:
+Ưu tiên chọn topic mà bài dành ≥30% nội dung phân tích, hoặc là yếu tố quyết định trực tiếp đến kết luận chính của bài, xếp lên đầu danh sách.
+Nếu KHÔNG topic nào đạt mức đó nhưng bài vẫn có tác động rõ ràng (theo định nghĩa is_relevant ở trên, dù gián tiếp) tới 1 topic cụ thể → VẪN chọn topic sát nhất đó (không để trống chỉ vì tỷ trọng nội dung thấp).
 
 DANH SÁCH TOPIC BẮT BUỘC (Tuyệt đối không tự bịa ra topic khác):
 - eua_ets              : Thị trường EU ETS bắt buộc của EU, tập trung vào EUA (EU Allowances) và cơ chế vận hành thị trường như giá EUA, giao dịch, futures, auction, supply/demand allowance, open interest, positioning và Market Stability Reserve (MSR).
@@ -64,9 +68,9 @@ PHÂN BIỆT BẮT BUỘC — CÁC TRƯỜNG HỢP DỄ NHẦM:
    - Luật/quy định EU ban hành → "eu_policy".
 
 QUY TẮC PHÂN LOẠI NGHIÊM NGẶT:
-1. CHỈ CHỌN TRỌNG TÂM: Gắn topic khi bài dành ≥30% nội dung phân tích về chủ đề đó. KHÔNG gắn nếu từ khóa chỉ nhắc lướt qua để so sánh.
+1. ƯU TIÊN TRỌNG TÂM, KHÔNG LOẠI BỎ TÁC ĐỘNG GIÁN TIẾP RÕ RÀNG: Ưu tiên gắn topic mà bài dành ≥30% nội dung phân tích, xếp lên đầu; nhưng nếu bài có tác động GIÁN TIẾP RÕ RÀNG (chuỗi nhân quả cụ thể, theo đúng định nghĩa is_relevant ở trên) tới 1 topic dù không đạt 30% nội dung → vẫn PHẢI gắn topic sát nhất đó — không bỏ trống "topics" chỉ vì đó không phải trọng tâm chính.
 2. TỐI ĐA 3 TOPIC: Xếp topic quan trọng/sát nhất lên đầu.
-3. BÀI KHÔNG LIÊN QUAN: Nếu bài không liên quan đến energy, carbon, climate, commodities, hay finance/policy ảnh hưởng đến các thị trường trên → trả về topics=[] và is_relevant=false.
+3. BÀI KHÔNG LIÊN QUAN: CHỈ trả về topics=[] và is_relevant=false khi bài KHÔNG có tác động rõ ràng (trực tiếp hoặc gián tiếp, có chuỗi nhân quả cụ thể) nào tới energy, carbon, climate, commodities, hay finance/policy/địa chính trị ảnh hưởng đến các thị trường trên — chỉ nhắc tên/đề cập thoáng qua không tính là liên quan.
 
 
 HOT NEWS — đánh giá ĐỘC LẬP với việc gắn topic ở trên, chỉ đánh dấu is_hot_news=true khi bài khớp ĐÚNG 1 trong 4 tiêu chí sau (nghiêm ngặt, KHÔNG suy diễn rộng ra ngoài định nghĩa):

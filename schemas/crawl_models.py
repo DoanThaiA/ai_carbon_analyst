@@ -111,8 +111,13 @@ class ExtractedArticle:
 class ClassificationResult:
     """Kết quả phân loại từ LLM — 1–3 topic, kèm confidence trung bình.
 
-    is_relevant=False: LLM nhận định bài không liên quan đến energy/carbon —
-    topics sẽ là [] và pipeline sẽ skip lưu DB (status='irrelevant').
+    is_relevant=False: LLM nhận định bài KHÔNG có tác động RÕ RÀNG (trực tiếp
+    hay gián tiếp, theo chuỗi nhân quả cụ thể) tới thị trường energy/carbon
+    châu Âu hay các yếu tố ảnh hưởng đến các thị trường đó — topics sẽ là []
+    và pipeline sẽ skip lưu DB (status='irrelevant'). Chỉ nhắc tên/đề cập
+    thoáng qua không có phân tích ảnh hưởng cụ thể KHÔNG tính là liên quan.
+    Tác động trực tiếp hoặc gián tiếp rõ ràng vẫn được coi là is_relevant=True
+    (kèm ít nhất 1 topic sát nhất).
 
     is_hot_news=True: bài khớp 1 trong 4 tiêu chí HOT NEWS (đảo chiều giá EUA,
     CBAM thay đổi đột ngột, địa chính trị tiềm ẩn xung đột, nước lớn rút khỏi
