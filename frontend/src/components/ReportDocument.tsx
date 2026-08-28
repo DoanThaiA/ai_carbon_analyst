@@ -52,6 +52,30 @@ function stripMarkdown(text: string) {
   return text.replace(/\*\*/g, "");
 }
 
+// Tách câu "chốt" (tổng hợp/kết luận) ra khỏi phần phân tích để tô nổi bật riêng
+// trong 1 ô đậm — backend đánh dấu các câu này bằng tag "**Tổng hợp:**"/"**Kết
+// luận:**" (xem report_generator.py), ở đây chỉ cần tìm tag đó và render khác đi.
+const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận)\s*:?\*\*/;
+
+function ConclusionAware({ text, className }: { text: string; className?: string }) {
+  const match = text.match(CONCLUSION_TAG_RE);
+  if (!match || match.index === undefined) {
+    return <p className={className}><RichText text={text} /></p>;
+  }
+  const before = text.slice(0, match.index).trim();
+  const highlight = text.slice(match.index).trim();
+  return (
+    <div className="space-y-1.5">
+      {before && <p className={className}><RichText text={before} /></p>}
+      <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
+        <p className="text-[13.5px] leading-relaxed font-bold text-primary-dark">
+          <RichText text={highlight} />
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // r.up chỉ phản ánh chiều biến động theo NGÀY — không thể dùng chung để tô màu cột
 // Δ Tuần, vì tuần có thể ngược chiều với ngày. Suy màu trực tiếp từ dấu của chuỗi giá trị.
 function isPositiveDelta(value: string) {
@@ -463,7 +487,7 @@ export function ReportDocument({ report }: { report: Report }) {
                 <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
                 <div className="space-y-1.5">
                   {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
-                    <p key={j} className="text-[14px] leading-relaxed text-body"><RichText text={line} /></p>
+                    <ConclusionAware key={j} text={line} className="text-[14px] leading-relaxed text-body" />
                   ))}
                 </div>
               </div>
@@ -485,10 +509,15 @@ export function ReportDocument({ report }: { report: Report }) {
                     )}
                   </div>
                 )}
-                <p className="text-[14px] leading-relaxed text-body">
-                  <RichText text={report.content["3"].correlation_analysis.fuel_switching_chain || report.content["3"].correlation_analysis.gas_coal_power} />
-                </p>
-                <p className="text-[14px] font-semibold text-primary-dark"><RichText text={report.content["3"].correlation_analysis.eua_conclusion} /></p>
+                <ConclusionAware
+                  text={report.content["3"].correlation_analysis.fuel_switching_chain || report.content["3"].correlation_analysis.gas_coal_power}
+                  className="text-[14px] leading-relaxed text-body"
+                />
+                <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
+                  <p className="text-[14px] leading-relaxed font-bold text-primary-dark">
+                    <RichText text={report.content["3"].correlation_analysis.eua_conclusion} />
+                  </p>
+                </div>
               </div>
             )}
 
@@ -591,10 +620,10 @@ export function ReportDocument({ report }: { report: Report }) {
               <div className="space-y-2.5">
                 {section.bullets ? (
                   section.bullets.map((b: string, i: number) => (
-                    <p key={i} className="text-[14px] leading-relaxed text-body"><RichText text={b} /></p>
+                    <ConclusionAware key={i} text={b} className="text-[14px] leading-relaxed text-body" />
                   ))
                 ) : (
-                  <p className="text-[14px] leading-relaxed text-body"><RichText text={section.text} /></p>
+                  <ConclusionAware text={section.text} className="text-[14px] leading-relaxed text-body" />
                 )}
               </div>
             </section>
