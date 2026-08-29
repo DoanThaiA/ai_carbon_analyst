@@ -23,8 +23,7 @@ logger = logging.getLogger(__name__)
 
 MIN_TEXT_LENGTH = 200  # bài quá ngắn thường là lỗi extract (trang chặn/redirect/404 dạng HTML)
 
-# Ngày tối thiểu hợp lệ (bài trước 2020 gần như chắc chắn là lỗi parse)
-_MIN_VALID_DATE = datetime(2020, 1, 1, tzinfo=timezone.utc)
+_MIN_VALID_DATE = datetime(2000, 1, 1, tzinfo=timezone.utc)
 
 
 def extract_article(item: CrawledItem) -> Optional[ExtractedArticle]:

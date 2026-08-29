@@ -10,8 +10,14 @@ Script chạy ngầm 24/7, tự động kích hoạt 4 tác vụ độc lập th
                                      ICE, EEX — xem NOON_TIER_A_DOMAINS)
   4. auto_report_job        07:00  — tự động sinh 1 báo cáo/ngày cho ngày hôm qua (VN) bằng Claude
 
+Cửa sổ lọc bài báo theo published_at (pipeline/crawl_pipeline.py):
+  Cả đợt crawl 06:00 lẫn 12:00 đều lọc bài theo cùng khung cố định:
+    [06:00 VN ngày T, 06:00 VN ngày T+1)
+  Ví dụ: báo cáo ngày 28/08 chỉ chứa bài publish từ 06:00 ngày 28/08 đến 06:00 ngày 29/08.
+  Đợt 12:00 bổ sung bài bị miss trong cùng cửa sổ đó, không lấy bài mới hơn 06:00 hôm nay.
+
 auto_report_job chạy SAU đợt morning_news_crawl 06:00 — tin tức đưa vào báo cáo được lọc
-theo khung giờ ở services/report_generator.py::get_news_for_report (07:00 VN ngày T →
+theo crawled_at ở services/report_generator.py::get_news_for_report (07:00 VN ngày T →
 07:00 VN ngày T+1). Job này chỉ tạo báo cáo mới nếu ngày đó CHƯA có report (hoặc report cũ
 bị 'failed') — không đụng vào report đã 'draft'/'published' do admin thao tác thủ công,
 các API /api/admin/reports/* (generate/publish/edit/delete) vẫn hoạt động độc lập như cũ.
@@ -20,6 +26,7 @@ Chạy thủ công để test:
   python scheduler.py --now        # chạy ngay cả 4 job theo thứ tự (không cần đợi giờ)
   python scheduler.py              # chạy nền, chờ đúng lịch mỗi ngày
 """
+
 
 import asyncio
 import logging

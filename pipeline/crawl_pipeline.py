@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, TYPE_CHECKING
 
+# Múi giờ Việt Nam (UTC+7) — dùng cho cửa sổ lọc ngày publish
+TZ_VN = timezone(timedelta(hours=7))
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -68,13 +71,21 @@ async def process_source(
     limit: Optional[int] = None,
     today_only: bool = True,
 ) -> List[PipelineResult]:
-    """Crawl 1 nguồn, lọc bài trong 24h qua, rồi chạy pipeline đầy đủ.
+    """Crawl 1 nguồn, lọc bài trong cửa sổ 06:00 VN hôm qua → 06:00 VN hôm nay.
 
-    Quy tắc lọc ngày:
-      - Bài có published_at và cũ hơn 24h tính từ thời điểm crawl → bỏ qua (skipped_old).
-      - Bài KHÔNG có published_at (None) → GIỮ LẠI, xử lý bình thường.
-        Nếu bài đó bị trùng lặp, lần crawl sau sẽ bị loại tự động qua dedup hash.
-    today_only=False: bỏ qua filter 24h (dùng khi backfill / test).
+    Quy tắc lọc ngày (áp dụng khi today_only=True):
+      - Cửa sổ hợp lệ: [06:00 VN ngày T, 06:00 VN ngày T+1)
+        (tương đương [23:00 UTC ngày T-1, 23:00 UTC ngày T))
+      - Bài có published_at nằm TRONG cửa sổ → GIỮ LẠI.
+      - Bài có published_at NGOÀI cửa sổ (quá cũ hoặc quá mới) → bỏ qua (skipped_old).
+      - Bài KHÔNG có published_at (None) → GIỮ LẠI an toàn (tránh bỏ sót nguồn
+        không gắn meta ngày; dedup hash sẽ loại trùng lặp ở lần crawl sau).
+
+    Cửa sổ cố định theo giờ VN giúp cả đợt crawl 06:00 lẫn 12:00 đều nhất quán:
+    đợt 12:00 chỉ bổ sung bài bị miss trong cùng khung 06:00→06:00, không
+    vô tình lấy bài mới hơn 06:00 VN hôm nay vào báo cáo của ngày hôm qua.
+
+    today_only=False: bỏ qua filter cửa sổ (dùng khi backfill / test).
     limit: cắt bớt số bài sau filter — dùng khi test để tiết kiệm gọi LLM.
     """
     seen_urls = seen_urls if seen_urls is not None else set()
@@ -83,10 +94,29 @@ async def process_source(
     # Bước extract trước để có published_at phục vụ date filter
     results: List[PipelineResult] = []
     extracted = []
-    crawl_time = datetime.now(timezone.utc)
-    # Lọc theo ngày: chỉ giữ bài đăng từ ngày hôm qua trở đi
-    # (crawl_date - 1). Bài cũ hơn → loại.
-    cutoff_date = (crawl_time - timedelta(days=1)).date()
+
+    now_vn = datetime.now(TZ_VN)
+    today_06_vn = now_vn.replace(hour=6, minute=0, second=0, microsecond=0)
+    noon_vn     = now_vn.replace(hour=12, minute=0, second=0, microsecond=0)
+
+    if now_vn < noon_vn:
+        # Morning crawl (trước 12:00 VN) — window = hôm qua
+        window_end_vn   = today_06_vn
+        window_start_vn = today_06_vn - timedelta(days=1)
+    else:
+        # Noon crawl (từ 12:00 VN) — window = hôm nay
+        window_start_vn = today_06_vn
+        window_end_vn   = today_06_vn + timedelta(days=1)
+
+    window_start_utc = window_start_vn.astimezone(timezone.utc)
+    window_end_utc   = window_end_vn.astimezone(timezone.utc)
+    logger.debug(
+        "[DATE-FILTER] Cửa sổ hợp lệ (%s): [%s, %s) VN",
+        "morning" if now_vn < noon_vn else "noon",
+        window_start_vn.strftime("%Y-%m-%d %H:%M"),
+        window_end_vn.strftime("%Y-%m-%d %H:%M"),
+    )
+
 
     for item in items:
         article = extract_article(item)
@@ -98,11 +128,13 @@ async def process_source(
                 pub = article.published_at
                 if pub.tzinfo is None:
                     pub = pub.replace(tzinfo=timezone.utc)
-                pub_date = pub.date()
-                if pub_date < cutoff_date:
+                if pub < window_start_utc or pub >= window_end_utc:
                     logger.debug(
-                        "[DATE-FILTER] Bỏ qua bài cũ hơn ngày hôm qua: %s (published=%s, cutoff=%s)",
-                        article.url, pub_date, cutoff_date,
+                        "[DATE-FILTER] Bỏ qua bài ngoài cửa sổ: %s (published=%s, window=[%s, %s))",
+                        article.url,
+                        pub.strftime("%Y-%m-%d %H:%M UTC"),
+                        window_start_utc.strftime("%Y-%m-%d %H:%M UTC"),
+                        window_end_utc.strftime("%Y-%m-%d %H:%M UTC"),
                     )
                     results.append(PipelineResult(url=article.url, status="skipped_old"))
                     continue
@@ -112,7 +144,7 @@ async def process_source(
         if len(items) == 0 and not results:
             reason = "tất cả link ứng viên đã crawl trước đó hoặc fetch lỗi"
         else:
-            reason = "không có bài nào trong 24h qua hoặc không extract được nội dung"
+            reason = "không có bài nào trong cửa sổ 06:00 VN hôm qua→hôm nay hoặc không extract được nội dung"
         logger.info("[SKIP] %s: %s, bỏ qua.", source.domain, reason)
         return results
 
