@@ -79,6 +79,14 @@ QUY TẮC GỐC: MỌI chuỗi nhân quả bên dưới là KHUNG CHUẨN DUY NH
 với khung này. Mọi yếu tố khi phân tích PHẢI đi tới kết luận cuối cùng về tác động lên CUNG/CẦU
 và GIÁ EUA (hoặc nêu rõ đây là kênh phụ củng cố 1 chuỗi khác) — KHÔNG được dừng phân tích giữa
 chừng ở 1 thị trường trung gian (gas/dầu/điện/kim loại...) mà không kết luận tác động lên EUA.
+CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ của khung này trong bất kỳ text nào trả về cho người đọc
+— các tên như "FUEL_SWITCHING", "POWER_EUA_TWO_WAY", "OIL_GASOIL", "GEOPOLITICS_SUPPLY_CHAIN",
+"RELATIVE_FUEL_ECONOMICS", "WEATHER_POWER_SYSTEM", "CBAM_ETS", "POLICY_MSR", "FINANCE_SPECULATION",
+"POSITIONING_TECHNICALS", "MACRO", "METALS", "HYDROGEN_DECARBONIZATION", hay nhãn "nhánh (a)"/"nhánh
+(b)", "theo khung...", "áp dụng đúng chuỗi..." CHỈ là công cụ nội bộ giúp AI suy luận đúng logic —
+KHÔNG BAO GIỜ được xuất hiện trong "content"/text đầu ra. Đầu ra chỉ được viết bằng ngôn ngữ phân
+tích tự nhiên, thể hiện ĐÚNG logic nhân quả của khung đó (số liệu → cơ chế → tác động cung/cầu →
+kết luận EUA) mà không gọi tên hay viện dẫn framework/luật/quy tắc.
 
 A. CÁC MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG (cross-market signals):
 Chỉ nêu khi có dữ liệu / tin tức thực sự hỗ trợ. KHÔNG suy diễn gượng ép.
@@ -204,6 +212,9 @@ EUA_FRAMEWORK_COMPACT = f"""
 === KHUNG PHÂN TÍCH GIÁ CARBON (EUA) — BẮT BUỘC ÁP DỤNG ===
 QUY TẮC GỐC: Bám sát đúng chuỗi nhân quả đã cho, KHÔNG tự sinh thêm hay đảo chiều.
 Mọi phân tích PHẢI kết luận tác động lên CUNG/CẦU và GIÁ EUA.
+CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ của khung này (vd "FUEL_SWITCHING", "POWER_EUA_TWO_WAY",
+"OIL_GASOIL", "GEOPOLITICS_SUPPLY_CHAIN"...) hay nhãn "nhánh (a)/(b)" trong text trả về — chỉ dùng
+nội bộ để suy luận, đầu ra viết bằng ngôn ngữ phân tích tự nhiên thể hiện đúng logic đó.
 
 A. MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG (chỉ nêu khi có dữ liệu/tin tức hỗ trợ):
 
@@ -867,7 +878,7 @@ A. "analysis_blocks": mảng gồm "heading" và "content". Heading 1, 2, 4 LUÔ
       "Năng lượng & nhiên liệu hóa thạch:\\n- TTF đóng cửa X, Δ ngày +3.7%, Δ tuần +5.1% — tăng do lo ngại nguồn cung LNG.\\n- Than NEWC đóng cửa Y, Δ ngày -1.2% — giảm do nhu cầu nhiệt điện châu Á yếu.\\nHạn ngạch & tín chỉ carbon:\\n- ICE ghi nhận khối lượng đấu giá EUA tuần này tăng so với kế hoạch.\\nChính sách:\\n- EU công bố siết lịch đấu giá EUA quý 4."
    2. heading="Yếu tố dẫn dắt" — PHÂN TÍCH TÁC ĐỘNG: dựa trên đúng các thông tin/số liệu đã nêu ở "Diễn biến chính" (KHÔNG lặp lại số liệu, chỉ tham chiếu ngắn gọn khi cần làm căn cứ trực tiếp cho suy luận), phân tích thông tin của TỪNG NHÓM đã xuất hiện ở "Diễn biến chính" sẽ ảnh hưởng thế nào đến CUNG/CẦU và GIÁ EUA. BẮT BUỘC áp dụng ĐÚNG chuỗi nhân quả trong "A. CÁC MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG" của KHUNG PHÂN TÍCH ở trên (fuel switching, CBAM/ETS, chính sách/MSR, địa chính trị...) — TUYỆT ĐỐI KHÔNG tự sinh chuỗi nhân quả khác hay suy diễn lệch khỏi khung chuẩn đó.
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu của "QUY TẮC ĐỘ DÀI CHUNG" ở trên — mỗi gạch đầu dòng PHẢI viết ĐẦY ĐỦ chuỗi suy luận dưới dạng văn xuôi hoàn chỉnh (số liệu → cơ chế → tác động cung/cầu → kết luận chiều EUA), TUYỆT ĐỐI KHÔNG rút gọn thành liệt kê cộc lốc thiếu suy luận. Nhưng vẫn phải súc tích, thẳng vào thông tin: không câu mở đầu/đệm/chuyển tiếp thừa, không lặp lại nguyên văn số liệu đã nêu ở "Diễn biến chính" (chỉ nhắc số liệu khi trực tiếp làm căn cứ cho bước suy luận trong chính câu đó).
-      YÊU CẦU SUY LUẬN RIÊNG CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã xuất hiện ở "Diễn biến chính" nhóm này, mỗi mã/yếu tố là 1 gạch đầu dòng với ĐẦY ĐỦ các bước sau (bỏ bước nào thì phải nêu rõ lý do, vd thiếu dữ liệu):
+      YÊU CẦU SUY LUẬN RIÊNG CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã xuất hiện ở "Diễn biến chính" nhóm này, mỗi mã/yếu tố là 1 gạch đầu dòng với ĐẦY ĐỦ các bước sau (bỏ bước nào thì phải nêu rõ lý do, vd thiếu dữ liệu). LƯU Ý: tên chuỗi/nhánh viết HOA bên dưới (FUEL_SWITCHING, POWER_EUA_TWO_WAY, OIL_GASOIL, GEOPOLITICS_SUPPLY_CHAIN, "nhánh (a)"...) CHỈ để bạn xác định ĐÚNG cơ chế cần áp dụng — TUYỆT ĐỐI KHÔNG chép các tên này vào "content"; chỉ viết ra phần suy luận bằng lời (số liệu → cơ chế → kết luận), không gọi tên khung/luật:
         (i) ĐỐI CHIẾU KHUNG THỜI GIAN: so Δ ngày VÀ Δ tuần của chính mã đó. ĐỒNG THUẬN (cùng chiều) → xác nhận xu hướng bền vững, đủ cơ sở kết luận dứt khoát chiều tác động EUA. MÂU THUẪN (trái chiều) → nêu rõ đây là tín hiệu ngắn hạn/chưa đủ mạnh, cần thêm phiên xác nhận, KHÔNG được chốt chiều tác động EUA dứt khoát.
         (ii) GAS/THAN → áp dụng FUEL_SWITCHING: gas/than biến động đồng pha xác nhận xu hướng nào đang chiếm ưu thế trong dispatch (gas tăng → than cạnh tranh hơn → utility có thể dịch dispatch sang than → phát thải và cầu EUA tăng, hoặc chiều ngược lại) — phải nêu rõ cơ chế dispatch, không chỉ nêu chiều giá.
         (iii) ĐIỆN ĐỨC (DEBY1) → áp dụng ĐÚNG nhánh (a) của POWER_EUA_TWO_WAY: nếu DEBY1 biến động đồng pha với gas/than → kết luận điện tăng do chi phí nhiên liệu cao hơn, utility hedge thêm EUA tương ứng sản lượng đã bán. CHỈ được quy nguyên nhân "RES thấp" khi có dữ liệu/tin tức THỰC SỰ xác nhận RES thấp trong ngày — nếu KHÔNG có dữ liệu RES, PHẢI nêu rõ "không có dữ liệu RES trong ngày để xác nhận nhánh này" thay vì mặc định suy diễn.
