@@ -8,6 +8,7 @@ import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
+import { ReportEditor } from "@/components/ReportEditor";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -24,7 +25,7 @@ export default function AdminReportReview() {
   const [error, setError] = useState("");
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState("");
+  const [editContent, setEditContent] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
   const fetchReport = useCallback(async () => {
@@ -91,23 +92,16 @@ export default function AdminReportReview() {
 
   const handleEditClick = () => {
     if (!report) return;
-    setEditContent(JSON.stringify(report.content, null, 2));
+    // Deep clone để không sửa trực tiếp state `report` trong lúc đang edit.
+    setEditContent(JSON.parse(JSON.stringify(report.content)));
     setIsEditing(true);
   };
 
   const handleSaveEdit = async () => {
-    let parsedContent;
-    try {
-      parsedContent = JSON.parse(editContent);
-    } catch (e) {
-      alert("JSON không hợp lệ! Vui lòng kiểm tra lại cấu trúc (dấu ngoặc, dấu phẩy...).");
-      return;
-    }
-
     setSaving(true);
     try {
-      await api.put(`/api/admin/reports/${date}`, { content: parsedContent });
-      setReport(prev => prev ? { ...prev, content: parsedContent } : null);
+      await api.put(`/api/admin/reports/${date}`, { content: editContent });
+      setReport(prev => prev ? { ...prev, content: editContent } : null);
       setIsEditing(false);
     } catch (err: any) {
       alert(err.response?.data?.detail || "Lỗi khi lưu báo cáo");
@@ -186,7 +180,7 @@ export default function AdminReportReview() {
               className="flex items-center gap-1.5 bg-surface hover:bg-surface-alt border border-border text-foreground px-4 py-1.5 rounded-full font-semibold text-sm transition-colors duration-500 ease-in-out"
             >
               <Edit2 size={14} />
-              Sửa Raw JSON
+              Chỉnh sửa nội dung
             </button>
           )}
 
@@ -205,8 +199,8 @@ export default function AdminReportReview() {
 
       {isEditing ? (
         <div className="bg-background rounded-2xl border border-border shadow-[var(--shadow-soft)] p-6 mb-10">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-heading">Edit Report JSON</h3>
+          <div className="flex justify-between items-center mb-4 sticky top-0 z-10 bg-background pb-2">
+            <h3 className="font-bold text-heading">Chỉnh sửa báo cáo</h3>
             <div className="flex gap-2">
               <button
                 onClick={() => setIsEditing(false)}
@@ -225,14 +219,7 @@ export default function AdminReportReview() {
               </button>
             </div>
           </div>
-          <div className="bg-yellow-50 text-yellow-800 text-xs px-3 py-2 rounded mb-4 border border-yellow-200">
-            <strong>Cảnh báo:</strong> Đảm bảo định dạng JSON hợp lệ. Dùng dấu ngoặc kép <code>" "</code> cho các khóa (keys).
-          </div>
-          <textarea
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            className="w-full h-[600px] font-mono text-sm p-4 bg-surface border border-border rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y"
-          />
+          <ReportEditor content={editContent} onChange={setEditContent} />
         </div>
       ) : report.status === 'generating' ? (
         <div className="text-center py-20 bg-background border border-border rounded-2xl shadow-[var(--shadow-soft)]">
