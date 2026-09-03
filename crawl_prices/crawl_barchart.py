@@ -9,10 +9,17 @@ cần thiết cho hệ thống phân tích carbon:
   Oil      : Brent (CB*0), WTI (CL*0), Gasoil (LF*0)
   Coal     : API2/ARA (ITF*1), API4/Richards Bay (LV*0)
 
-Kỹ thuật:
-  1. GET trang price-history để lấy cookie session + XSRF-TOKEN
-  2. GET API nội bộ /proxies/timeseries/queryeod.ashx với cookie + header
-     X-XSRF-TOKEN — Barchart cho phép user ẩn danh lấy vài phiên gần nhất.
+Kỹ thuật (Playwright, không còn dùng requests):
+  Barchart đã bật AWS WAF (trả 202 + JS challenge cho request thường, không
+  còn set cookie XSRF-TOKEN) và đổi sang API JSON mới
+  (/proxies/core-api/v1/historical/get) — API này còn 403 nếu gọi trực tiếp
+  với meta-symbol dạng "CK*0" (phải là symbol hợp đồng thực tế, vd "CKZ26",
+  do chính JS trên trang tự resolve).
+
+  Ta mở trang price-history của meta-symbol bằng Chromium (mô phỏng trình
+  duyệt thật để vượt qua challenge của AWS WAF), rồi dùng
+  `page.expect_response()` để chặn (intercept) đúng response JSON mà trang
+  tự gọi (với symbol thực đã resolve) thay vì tự dựng request.
 
 Không cần tài khoản, không cần API key trả phí.
 Thay thế hoàn toàn crawl_eia.py (WTI, Brent, Henry Hub) và mở rộng thêm
@@ -22,22 +29,22 @@ các instrument mà EIA không cung cấp.
 from __future__ import annotations
 
 import asyncio
-import csv
-import io
 import logging
 import os
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
-from urllib.parse import unquote
 
 # Giờ Việt Nam = UTC+7
 TZ_VN = timezone(timedelta(hours=7))
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    TimeoutError as PlaywrightTimeoutError,
+    async_playwright,
+)
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -54,15 +61,16 @@ logger = logging.getLogger(__name__)
 # Hằng số
 # ---------------------------------------------------------------------------
 
-BARCHART_BASE  = "https://www.barchart.com"
-EOD_ENDPOINT   = f"{BARCHART_BASE}/proxies/timeseries/queryeod.ashx"
-REQUEST_TIMEOUT = 30
-MIN_VALID_PRICE = 0.01
+BARCHART_BASE      = "https://www.barchart.com"
+HISTORICAL_API_PATH = "proxies/core-api/v1/historical/get"
+PAGE_TIMEOUT_MS    = 30_000
+MIN_VALID_PRICE    = 0.01
+MAX_RESULTS_PER_SYMBOL = 30  # chỉ upsert tối đa 30 phiên gần nhất mỗi lần chạy
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/125.0.0.0 Safari/537.36"
+    "Chrome/127.0.0.0 Safari/537.36"
 )
 
 
@@ -106,47 +114,7 @@ async def load_specs_from_db(session_factory) -> list[BarchartSpec]:
 
 
 # ---------------------------------------------------------------------------
-# HTTP session
-# ---------------------------------------------------------------------------
-
-def _build_http_session() -> requests.Session:
-    """Session dùng chung: connection pooling + auto-retry cho lỗi tạm thời."""
-    session = requests.Session()
-    retry = Retry(
-        total=3,
-        backoff_factor=1.5,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
-    )
-    session.mount("https://", HTTPAdapter(max_retries=retry))
-    session.headers.update({
-        "User-Agent": _UA,
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    })
-    return session
-
-
-def _prime_session(http: requests.Session, symbol: str) -> str:
-    """
-    Load trang price-history để nhận cookie session + XSRF-TOKEN.
-    Barchart dùng Laravel double-submit CSRF: token nằm trong cookie,
-    phải gửi lại qua header X-XSRF-TOKEN khi gọi API.
-
-    Trả về giá trị XSRF-TOKEN đã URL-decode.
-    """
-    url = f"{BARCHART_BASE}/futures/quotes/{symbol}/price-history/historical"
-    resp = http.get(url, timeout=REQUEST_TIMEOUT)
-    resp.raise_for_status()
-
-    token = http.cookies.get("XSRF-TOKEN", "")
-    if token:
-        token = unquote(token)
-    return token
-
-
-# ---------------------------------------------------------------------------
-# Fetch + parse
+# Fetch (Playwright) + parse
 # ---------------------------------------------------------------------------
 
 def _yesterday_vn() -> date:
@@ -158,96 +126,66 @@ def _yesterday_vn() -> date:
     return datetime.now(TZ_VN).date() - timedelta(days=1)
 
 
-def _fetch_eod(
-    http: requests.Session,
-    spec: BarchartSpec,
-    xsrf_token: str,
-    target_date: date,
-) -> str:
+async def _fetch_historical_json(context: BrowserContext, spec: BarchartSpec) -> dict:
     """
-    Gọi queryeod.ashx, trả về raw CSV text.
-    Lấy 21 ngày trước target_date để có đủ:
-      - íe nhất 1 phiên cho Δ ngày
-      - íe nhất 1 phiên cách 7+ ngày lịch cho Δ tuần
+    Mở trang price-history của meta-symbol (vd "CK*0") trong Chromium và chặn
+    (intercept) response JSON mà chính trang gọi tới
+    proxies/core-api/v1/historical/get.
+
+    Trang tự resolve meta-symbol sang symbol hợp đồng thực (vd "CKZ26") và tự
+    vượt qua challenge AWS WAF khi chạy JS — ta không tự dựng request, chỉ
+    lắng nghe response Playwright đã thấy.
     """
-    start = (target_date - timedelta(days=21)).strftime("%Y%m%d")
-    end   = target_date.strftime("%Y%m%d")
+    page = await context.new_page()
+    try:
+        url = f"{BARCHART_BASE}/futures/quotes/{spec.symbol}/price-history/historical"
+        async with page.expect_response(
+            lambda r: HISTORICAL_API_PATH in r.url,
+            timeout=PAGE_TIMEOUT_MS,
+        ) as response_info:
+            await page.goto(url, timeout=PAGE_TIMEOUT_MS)
+        response = await response_info.value
 
-    params = {
-        "data": "daily",
-        "maxrecords": "20",
-        "volume": "total",
-        "order": "asc",
-        "dividends": "false",
-        "backadjusted": "false",
-        "contractroll": "expiration",
-        "symbol": spec.symbol,
-        "startDate": start,
-        "endDate":   end,
-        "customcols": "date|open|high|low|last|volume|openInterest",
-        "raw": "1",
-    }
-    headers = {
-        "Referer": (
-            f"{BARCHART_BASE}/futures/quotes/{spec.symbol}/price-history/historical"
-        ),
-        "X-Requested-With": "XMLHttpRequest",
-        "Accept": "text/plain, */*; q=0.01",
-    }
-    if xsrf_token:
-        headers["X-XSRF-TOKEN"] = xsrf_token
-
-    resp = http.get(EOD_ENDPOINT, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
-
-    if resp.status_code == 401:
-        raise PermissionError(
-            f"Barchart từ chối request (401) cho {spec.symbol}. "
-            "Session cookie chưa được khởi tạo hoặc Barchart đã thay đổi cơ chế auth."
-        )
-    resp.raise_for_status()
-    return resp.text
+        if response.status != 200:
+            raise RuntimeError(
+                f"Barchart trả về status {response.status} cho {spec.symbol} "
+                f"(url={response.url})"
+            )
+        return await response.json()
+    finally:
+        await page.close()
 
 
-
-# Thứ tự cột trả về từ Barchart queryeod (KHÔNG có header row)
-_COL_SYMBOL  = 0
-_COL_DATE    = 1
-_COL_OPEN    = 2
-_COL_HIGH    = 3
-_COL_LOW     = 4
-_COL_LAST    = 5
-_COL_VOLUME  = 6
-_COL_OI      = 7
-
-
-def _parse_eod(csv_text: str, spec: BarchartSpec, target_date: date) -> list[dict]:
+def _parse_historical_json(data: dict, spec: BarchartSpec, target_date: date) -> list[dict]:
     """
-    Parse CSV positional — Barchart trả về KHÔNG có header row.
-    Format mỗi dòng: symbol,date,open,high,low,last,volume,openInterest
+    Parse JSON trả về từ proxies/core-api/v1/historical/get: mỗi phần tử
+    data["data"] có field "raw" chứa tradeTime ("YYYY-MM-DD"), openPrice,
+    highPrice, lowPrice, lastPrice, volume — Barchart trả về mới nhất trước
+    (orderDir=desc), ta sắp lại tăng dần để tính Δ ngày/Δ tuần.
 
-    Chỉ lấy các phiên <= target_date (ngày hôm qua VN) — bỏ qua phiên
-    hôm nay nếu Barchart đã có giá nờ trong ngày.
+    Chỉ lấy các phiên <= target_date (ngày hôm qua VN) — bỏ qua phiên hôm nay
+    nếu Barchart đã có giá nờ trong ngày.
 
     Tính:
       Δ ngày  — so với phiên liền trước
       Δ tuần  — so với phiên gần nhất cách target_date ít nhất 7 ngày lịch
-              (xử lý đúng cuối tuần/lễ giống pattern crawl_eia.py)
     """
-    text = csv_text.strip()
-    if not text or text.startswith("null") or "error" in text[:50].lower():
-        raise ValueError(
-            f"Barchart trả về dữ liệu rỗng/lỗi cho {spec.symbol}: {text[:200]}"
-        )
+    items = data.get("data") or []
+    if not items:
+        raise ValueError(f"Barchart trả về dữ liệu rỗng cho {spec.symbol}")
 
-    target_str = target_date.isoformat()  # "YYYY-MM-DD"
+    target_str = target_date.isoformat()
 
-    rows = []
-    for line in csv.reader(io.StringIO(text)):
-        if len(line) >= 6 and line[_COL_DATE].strip():
-            row_date = line[_COL_DATE].strip()
-            # Chỉ lấy phiên ≤ target_date — loại phiên hôm nay nếu thị trường đang mở
-            if row_date <= target_str:
-                rows.append(line)
+    rows: list[tuple[date, dict]] = []
+    for item in items:
+        raw = item.get("raw") or {}
+        trade_time = raw.get("tradeTime")
+        if not trade_time:
+            continue
+        row_date = date.fromisoformat(trade_time[:10])
+        # Chỉ lấy phiên ≤ target_date — loại phiên hôm nay nếu thị trường đang mở
+        if row_date.isoformat() <= target_str:
+            rows.append((row_date, raw))
 
     if not rows:
         raise ValueError(
@@ -255,57 +193,48 @@ def _parse_eod(csv_text: str, spec: BarchartSpec, target_date: date) -> list[dic
             "Thị trường có thể đang nghỉ (cuối tuần/lễ)."
         )
 
-    def _f(row: list, col: int) -> Optional[float]:
-        try:
-            val = row[col].strip()
-            return float(val) if val else None
-        except (IndexError, ValueError):
-            return None
+    rows.sort(key=lambda r: r[0])  # Barchart trả về mới nhất trước -> sắp tăng dần
 
-    # Lấy tối đa 30 ngày gần nhất
-    recent_rows = rows[-30:]
+    def _num(raw: dict, key: str) -> Optional[float]:
+        val = raw.get(key)
+        return float(val) if val is not None else None
+
     results = []
+    output_from = max(0, len(rows) - MAX_RESULTS_PER_SYMBOL)
 
-    for i, current_row in enumerate(recent_rows):
-        current_date = date.fromisoformat(current_row[_COL_DATE].strip())
-        close_price = _f(current_row, _COL_LAST) or 0.0
-        if close_price < MIN_VALID_PRICE:
+    for i, (row_date, raw) in enumerate(rows):
+        close_price = _num(raw, "lastPrice") or 0.0
+        if close_price < MIN_VALID_PRICE or i < output_from:
             continue
-            
-        open_price = _f(current_row, _COL_OPEN)
-        high_price = _f(current_row, _COL_HIGH)
-        low_price = _f(current_row, _COL_LOW)
 
         # Tính day_change_pct so với phiên liền trước trong toàn bộ list rows
         day_change_pct = None
-        row_idx_in_all = rows.index(current_row)
-        if row_idx_in_all >= 1:
-            prev_close = _f(rows[row_idx_in_all - 1], _COL_LAST)
+        if i >= 1:
+            prev_close = _num(rows[i - 1][1], "lastPrice")
             if prev_close and prev_close > 0:
                 day_change_pct = round((close_price - prev_close) / prev_close * 100, 3)
 
         # Tính week_change_pct
         week_change_pct = None
-        for r in reversed(rows[:row_idx_in_all]):
-            r_date = date.fromisoformat(r[_COL_DATE].strip())
-            if (current_date - r_date).days >= 7:
-                week_close = _f(r, _COL_LAST)
+        for prev_date, prev_raw in reversed(rows[:i]):
+            if (row_date - prev_date).days >= 7:
+                week_close = _num(prev_raw, "lastPrice")
                 if week_close and week_close > 0:
                     week_change_pct = round((close_price - week_close) / week_close * 100, 3)
                 break
 
         results.append({
             "instrument_code": spec.instrument_code,
-            "price_date":      current_row[_COL_DATE].strip(),
-            "open_price":      open_price,
-            "high_price":      high_price,
-            "low_price":       low_price,
+            "price_date":      row_date.isoformat(),
+            "open_price":      _num(raw, "openPrice"),
+            "high_price":      _num(raw, "highPrice"),
+            "low_price":       _num(raw, "lowPrice"),
             "close_price":     close_price,
-            "volume":          _f(current_row, _COL_VOLUME),
+            "volume":          _num(raw, "volume"),
             "day_change_pct":  day_change_pct,
             "week_change_pct": week_change_pct,
         })
-        
+
     if results:
         latest = results[-1]
         logger.debug(
@@ -387,7 +316,8 @@ async def _upsert(results: list[dict], spec: BarchartSpec, session_factory) -> N
 class BarchartPriceCrawler(BaseCrawler):
     """
     Crawl giá ngày hôm qua từ Barchart cho các hợp đồng tương lai ICE/EEX.
-    Không cần API key — dùng session cookie ẩn danh của Barchart.
+    Không cần API key — dùng Chromium (Playwright) để vượt AWS WAF và chặn
+    response JSON mà chính trang Barchart tự gọi.
     """
 
     name = "Barchart"
@@ -407,7 +337,6 @@ class BarchartPriceCrawler(BaseCrawler):
         engine     = self._engine or create_engine(settings.database_url)
         session_factory = build_sessionmaker(engine)
 
-        http = _build_http_session()
         specs = await load_specs_from_db(session_factory)
         if not specs:
             logger.warning(
@@ -415,44 +344,57 @@ class BarchartPriceCrawler(BaseCrawler):
                 "Cấu hình qua admin panel (/admin/price-sources)."
             )
 
-        for spec in specs:
+        # 1 browser + 1 context dùng chung cho toàn bộ symbol (context giữ lại
+        # cookie AWS WAF/CloudFront đã pass challenge, mỗi symbol chỉ cần mở
+        # page mới, không cần khởi động lại Chromium)
+        async with async_playwright() as p:
+            browser: Browser = await p.chromium.launch(headless=True)
+            context: BrowserContext = await browser.new_context(
+                user_agent=_UA,
+                locale="en-US",
+            )
             try:
-                # 1. Xác định ngày hôm qua theo giờ Việt Nam
+                # Xác định ngày hôm qua theo giờ Việt Nam (giống cho mọi symbol)
                 target_date = _yesterday_vn()
                 logger.info("target_date (giờ VN): %s", target_date)
 
-                # 2. Khởi tạo session cookie + lấy XSRF token
-                xsrf_token = _prime_session(http, spec.symbol)
-                logger.debug(
-                    "XSRF-TOKEN cho %s: %s…", spec.symbol, xsrf_token[:12]
-                )
+                for spec in specs:
+                    try:
+                        # 1. Mở trang price-history + chặn response JSON
+                        data = await _fetch_historical_json(context, spec)
 
-                # 3. Fetch EOD
-                csv_text = _fetch_eod(http, spec, xsrf_token, target_date)
+                        # 2. Parse
+                        results = _parse_historical_json(data, spec, target_date)
 
-                # 4. Parse
-                results = _parse_eod(csv_text, spec, target_date)
+                        # 3. Lưu DB
+                        await _upsert(results, spec, session_factory)
 
-                # 5. Lưu DB
-                await _upsert(results, spec, session_factory)
+                        stats["prices_saved"] += len(results)
+                        if results:
+                            latest = results[-1]
+                            logger.info(
+                                "Da luu %s (%d phien), moi nhat %s: close=%.4f  D1d=%s%%  D7d=%s%%  vol=%s",
+                                latest["instrument_code"],
+                                len(results),
+                                latest["price_date"],
+                                latest["close_price"],
+                                latest["day_change_pct"],
+                                latest["week_change_pct"],
+                                latest["volume"],
+                            )
 
-                stats["prices_saved"] += len(results)
-                if results:
-                    latest = results[-1]
-                    logger.info(
-                        "Da luu %s (%d phien), moi nhat %s: close=%.4f  D1d=%s%%  D7d=%s%%  vol=%s",
-                        latest["instrument_code"],
-                        len(results),
-                        latest["price_date"],
-                        latest["close_price"],
-                        latest["day_change_pct"],
-                        latest["week_change_pct"],
-                        latest["volume"],
-                    )
-
-            except Exception:
-                logger.exception("Lỗi crawl Barchart symbol %s", spec.symbol)
-                stats["errors"].append(spec.symbol)
+                    except PlaywrightTimeoutError:
+                        logger.exception(
+                            "Timeout cho Barchart symbol %s — không thấy response %s trong %dms",
+                            spec.symbol, HISTORICAL_API_PATH, PAGE_TIMEOUT_MS,
+                        )
+                        stats["errors"].append(spec.symbol)
+                    except Exception:
+                        logger.exception("Lỗi crawl Barchart symbol %s", spec.symbol)
+                        stats["errors"].append(spec.symbol)
+            finally:
+                await context.close()
+                await browser.close()
 
         if own_engine:
             await engine.dispose()
