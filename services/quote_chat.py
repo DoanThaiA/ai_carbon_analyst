@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_CHUNKS = 8
 HYBRID_SEARCH_LIMIT = 20
 MAX_QUOTE_CHARS = 2000  # đủ cho 1 đoạn/gạch đầu dòng của báo cáo
-MAX_ANSWER_TOKENS = 700  # chặn cứng độ dài — bổ trợ cho rule ngắn gọn trong system prompt
+MAX_ANSWER_TOKENS = 1000  # chặn cứng độ dài — bổ trợ cho rule ngắn gọn trong system prompt
 
 # Ngưỡng relevance_score (thang 0-1 của Cohere rerank) để 1 chunk được coi là
 # THẬT SỰ liên quan tới quote+câu hỏi — top_k chỉ giới hạn số lượng, không đảm
