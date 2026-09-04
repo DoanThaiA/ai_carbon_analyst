@@ -70,87 +70,53 @@ SECTION_MAX_TOKENS: Dict[str, int] = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Khung phân tích giá EUA — tiêm vào prompt Mục 3 và 5
+# Khung phân tích giá EUA — tiêm ĐỘNG vào prompt Mục 2/3/5
+#
+# TRƯỚC ĐÂY đây là 2 hằng số module-level (EUA_ANALYSIS_FRAMEWORK/COMPACT)
+# luôn nạp TĨNH toàn bộ 14 cơ chế của eua_causal_chains.py cho mọi báo cáo,
+# bất kể ngày đó có tin thuộc topic tương ứng hay không (vd không có tin dầu
+# vẫn nạp nguyên OIL_GASOIL, không có tin kim loại vẫn nạp METALS...). Giờ
+# chuyển thành HÀM, gọi `chains.build_context(topics_present, horizon=...)`
+# để chỉ nạp đúng cơ chế khớp topic THỰC SỰ có tin trong ngày — tiết kiệm
+# input token đáng kể vào những ngày tin tức không phủ hết mọi nhóm, mà vẫn
+# giữ đúng cơ chế cần thiết khi có tin (topics_present tính theo đúng
+# SECTION_TOPICS[section_key], xem `_topics_present`).
 # ─────────────────────────────────────────────────────────────────────
-EUA_ANALYSIS_FRAMEWORK = f"""
-=== KHUNG PHÂN TÍCH GIÁ CARBON (EUA) — BẮT BUỘC ÁP DỤNG ===
-QUY TẮC GỐC: MỌI chuỗi nhân quả bên dưới là KHUNG CHUẨN DUY NHẤT của hệ thống — PHẢI bám sát
-đúng chiều mũi tên đã cho, TUYỆT ĐỐI KHÔNG tự sinh thêm bước trung gian khác hay đảo chiều so
-với khung này. Mọi yếu tố khi phân tích PHẢI đi tới kết luận cuối cùng về tác động lên CUNG/CẦU
-và GIÁ EUA (hoặc nêu rõ đây là kênh phụ củng cố 1 chuỗi khác) — KHÔNG được dừng phân tích giữa
-chừng ở 1 thị trường trung gian (gas/dầu/điện/kim loại...) mà không kết luận tác động lên EUA.
-CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ của khung này trong bất kỳ text nào trả về cho người đọc
-— các tên như "FUEL_SWITCHING", "POWER_EUA_TWO_WAY", "OIL_GASOIL", "GEOPOLITICS_SUPPLY_CHAIN",
-"RELATIVE_FUEL_ECONOMICS", "WEATHER_POWER_SYSTEM", "CBAM_ETS", "POLICY_MSR", "FINANCE_SPECULATION",
-"POSITIONING_TECHNICALS", "MACRO", "METALS", "HYDROGEN_DECARBONIZATION", "TERM_STRUCTURE_CARRY",
-hay nhãn "nhánh (a)"/"nhánh (b)", "theo khung...", "áp dụng đúng chuỗi...", hay các THẺ NGOẶC VUÔNG
-dùng để tổ chức nội dung bên dưới ("[ID]", "[TOPIC]", "[HORIZON]", "[ĐỘ MẠNH]", "[KÍCH HOẠT]",
-"[CHUỖI]", "[BÁC BỎ / VÔ HIỆU]", "[DỮ LIỆU]"), hay MÃ LUẬT ("L1"–"L10") — tất cả CHỈ là công cụ nội
-bộ giúp AI suy luận đúng logic, KHÔNG BAO GIỜ được xuất hiện nguyên văn trong "content"/text đầu ra.
-Đầu ra chỉ được viết bằng ngôn ngữ phân tích tự nhiên, thể hiện ĐÚNG logic nhân quả của khung đó
-(số liệu → cơ chế → tác động cung/cầu → kết luận EUA) mà không gọi tên hay viện dẫn framework/luật.
 
-{chains.INFERENCE_RULES}
+_EUA_FRAMEWORK_PREAMBLE = (
+    "QUY TẮC GỐC: MỌI chuỗi nhân quả bên dưới là KHUNG CHUẨN DUY NHẤT của hệ thống — PHẢI bám sát "
+    "đúng chiều mũi tên đã cho, TUYỆT ĐỐI KHÔNG tự sinh thêm bước trung gian khác hay đảo chiều so "
+    "với khung này. Mọi yếu tố khi phân tích PHẢI đi tới kết luận cuối cùng về tác động lên CUNG/CẦU "
+    "và GIÁ EUA (hoặc nêu rõ đây là kênh phụ củng cố 1 chuỗi khác) — KHÔNG được dừng phân tích giữa "
+    "chừng ở 1 thị trường trung gian (gas/dầu/điện/kim loại...) mà không kết luận tác động lên EUA.\n"
+    "CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ của khung này trong bất kỳ text nào trả về cho người đọc "
+    "— các tên như \"FUEL_SWITCHING\", \"POWER_EUA_TWO_WAY\", \"OIL_GASOIL\", \"GEOPOLITICS_SUPPLY_CHAIN\", "
+    "\"RELATIVE_FUEL_ECONOMICS\", \"WEATHER_POWER_SYSTEM\", \"CBAM_ETS\", \"POLICY_MSR\", \"FINANCE_SPECULATION\", "
+    "\"POSITIONING_TECHNICALS\", \"MACRO\", \"METALS\", \"HYDROGEN_DECARBONIZATION\", \"TERM_STRUCTURE_CARRY\", "
+    "hay nhãn \"nhánh (a)\"/\"nhánh (b)\", \"theo khung...\", \"áp dụng đúng chuỗi...\", hay các THẺ NGOẶC VUÔNG "
+    "dùng để tổ chức nội dung bên dưới (\"[ID]\", \"[TOPIC]\", \"[HORIZON]\", \"[ĐỘ MẠNH]\", \"[KÍCH HOẠT]\", "
+    "\"[CHUỖI]\", \"[BÁC BỎ / VÔ HIỆU]\", \"[DỮ LIỆU]\"), hay MÃ LUẬT (\"L1\"–\"L11\") — tất cả CHỈ là công cụ nội "
+    "bộ giúp AI suy luận đúng logic, KHÔNG BAO GIỜ được xuất hiện nguyên văn trong \"content\"/text đầu ra. "
+    "Đầu ra chỉ được viết bằng ngôn ngữ phân tích tự nhiên, thể hiện ĐÚNG logic nhân quả của khung đó "
+    "(số liệu → cơ chế → tác động cung/cầu → kết luận EUA) mà không gọi tên hay viện dẫn framework/luật."
+)
 
-A. CÁC MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG (cross-market signals):
-Chỉ nêu khi có dữ liệu / tin tức thực sự hỗ trợ. KHÔNG suy diễn gượng ép.
+# Ghi chú áp dụng — rẻ (vài câu) nên giữ tĩnh thay vì gate theo topic cho đơn
+# giản; chỉ có ý nghĩa khi model THỰC SỰ dùng tới OIL_GASOIL/GEOPOLITICS
+# nhánh (a) (đã được build_context() nạp hay không tuỳ topics_present).
+_EUA_FRAMEWORK_NOTES = (
+    "GHI CHÚ ÁP DỤNG (chỉ liên quan nếu bạn thực sự dùng tới cơ chế tương ứng ở trên):\n"
+    "- Nếu dùng tới crack spread Gasoil: con số đã tính sẵn (quy đổi cùng đơn vị USD/bbl) trong mục "
+    "\"GASOIL CRACK SPREAD\" bên dưới — LUÔN dùng đúng con số đó, TUYỆT ĐỐI KHÔNG tự suy luận crack "
+    "spread từ 2 số liệu khác đơn vị (Gasoil USD/MT vs Brent/WTI USD/bbl).\n"
+    "- Nếu dùng tới kênh cung nhiên liệu của địa chính trị: PHẢI nêu đủ bước \"sự kiện địa chính trị "
+    "→ tác động cung → tác động giá gas/dầu → tác động EUA\" (dùng đúng số liệu giá gas/dầu đã có "
+    "trong DỮ LIỆU GIÁ nếu sự kiện đã phản ánh vào giá; nếu tin mới xảy ra, giá chưa kịp phản ánh thì "
+    "ghi rõ \"rủi ro cung/giá trong ngắn hạn\" thay vì bịa số) — KHÔNG bỏ qua bước cung/giá để suy "
+    "diễn thẳng từ sự kiện chính trị sang EUA."
+)
 
-1. FUEL SWITCHING — chuỗi logic quan trọng nhất:
-   {chains.FUEL_SWITCHING}
-
-   REFINEMENT — KINH TẾ NHIÊN LIỆU TƯƠNG ĐỐI (áp dụng khi có đủ dữ liệu, ưu tiên hơn chuỗi giá tuyệt
-   đối ở trên):
-   {chains.RELATIVE_FUEL_ECONOMICS}
-
-   {chains.POWER_EUA_TWO_WAY}
-
-   {chains.WEATHER_POWER_SYSTEM}
-
-2. DẦU & GASOIL:
-   {chains.OIL_GASOIL}
-   Con số crack spread (nếu có, đã quy đổi cùng đơn vị USD/bbl) sẽ được cung cấp trực tiếp trong mục "GASOIL CRACK SPREAD" bên dưới — LUÔN dùng đúng con số đó khi nhận định mở rộng/thu hẹp, TUYỆT ĐỐI KHÔNG tự suy luận crack spread từ 2 số liệu khác đơn vị (Gasoil USD/MT vs Brent/WTI USD/bbl).
-
-3. KIM LOẠI CƠ BẢN (nhôm/kẽm):
-   {chains.METALS}
-   LƯU Ý: hệ thống KHÔNG theo dõi giá kim loại theo dữ liệu giá (không có instrument nhôm/kẽm) — CHỈ được nêu liên kết này khi tin tức trích dẫn ở trên có SỐ LIỆU CỤ THỂ về giá/công suất kim loại; TUYỆT ĐỐI KHÔNG tự suy đoán chiều giá kim loại khi không có số liệu.
-
-4. CBAM & MỞ RỘNG ETS:
-   {chains.CBAM_ETS}
-
-5. CHÍNH SÁCH & MSR:
-   {chains.POLICY_MSR}
-
-6. ĐỊA CHÍNH TRỊ (2 kênh tách biệt — cung nhiên liệu vs kỳ vọng chính sách/thương mại, xem chi tiết bên dưới):
-   {chains.GEOPOLITICS_SUPPLY_CHAIN}
-   KHI TRÍCH DẪN kênh cung nhiên liệu: PHẢI nêu đủ bước "sự kiện địa chính trị → tác động cung →
-   tác động giá gas/dầu → tác động EUA" (dùng đúng số liệu giá gas/dầu đã có trong DỮ LIỆU GIÁ nếu
-   sự kiện đã phản ánh vào giá; nếu tin mới xảy ra, giá chưa kịp phản ánh thì ghi rõ "rủi ro cung/giá
-   trong ngắn hạn" thay vì bịa số) — KHÔNG bỏ qua bước cung/giá để suy diễn thẳng từ sự kiện chính
-   trị sang EUA.
-
-7. TÀI CHÍNH & ĐẦU CƠ:
-   {chains.FINANCE_SPECULATION}
-   TUYỆT ĐỐI KHÔNG quy kết một biến động giá rõ rệt hoàn toàn cho đầu cơ khi không có tin tức/số
-   liệu xác nhận dòng vốn cụ thể.
-
-   POSITIONING & TECHNICALS (chi tiết hoá mục trên — dùng khi tin tức có nêu số liệu cụ thể):
-   {chains.POSITIONING_TECHNICALS}
-
-8. MACRO:
-   {chains.MACRO}
-   LƯU Ý: hệ thống KHÔNG theo dõi chỉ số USD/lãi suất theo dữ liệu giá — CHỈ được nêu liên kết USD/lãi suất khi tin tức trích dẫn ở trên có SỐ LIỆU CỤ THỂ (vd DXY, lợi suất trái phiếu); TUYỆT ĐỐI KHÔNG tự suy đoán chiều USD/lãi suất khi không có số liệu.
-
-9. HYDROGEN:
-   {chains.HYDROGEN_DECARBONIZATION}
-
-10. CẤU TRÚC KỲ HẠN & CARRY (giải thích vì sao tin chính sách/cap dài hạn thường thắng tin thời
-    tiết/dispatch ngắn hạn khi hai bên trái chiều — CHỈ dùng khi cần phân xử tín hiệu trái chiều
-    hoặc khi tin tức có nêu chênh lệch kỳ hạn/lãi suất cụ thể):
-   {chains.TERM_STRUCTURE_CARRY}
-
-{chains.CONFLICT_RESOLUTION}
-
-B. DANH MỤC THEO DÕI (phạm vi "liên quan trực tiếp đến giá EUA" — CHỈ nội dung khớp
+_EUA_FRAMEWORK_CATALOG = """B. DANH MỤC THEO DÕI (phạm vi "liên quan trực tiếp đến giá EUA" — CHỈ nội dung khớp
 danh mục này mới được đưa vào phân tích Mục 3/5; tin ngoài phạm vi này bỏ qua):
 
 NHÓM 1 — NĂNG LƯỢNG & NHIÊN LIỆU HÓA THẠCH:
@@ -183,95 +149,83 @@ NHÓM 3 — CHÍNH SÁCH (QUAN TRỌNG HƠN TIN GIÁ — xem QUY TẮC ƯU TIÊN
 
 QUY TẮC ƯU TIÊN: NHÓM 3 (CHÍNH SÁCH) quan trọng hơn tin giá ở NHÓM 1/2 — 1 thay đổi quy
 định CBAM có giá trị hơn 10 bài bình luận giá EUA. Khi cả tin chính sách và tin giá cùng
-xuất hiện trong ngày, PHẢI ưu tiên nêu bật tin chính sách trước.
+xuất hiện trong ngày, PHẢI ưu tiên nêu bật tin chính sách trước."""
 
-C. QUY TẮC NHẬN ĐỊNH BẮT BUỘC:
-- Luôn bắt đầu bằng số liệu thực tế (giá đóng cửa, % thay đổi) TRƯỚC khi phân tích nguyên nhân.
-- Xây dựng chuỗi nhân quả rõ ràng, không gán nhãn cảm tính.
-- Kết luận chiều giá EUA chỉ khi ≥2 yếu tố xác nhận cùng hướng.
-- Tín hiệu mâu thuẫn nhau → ghi "tín hiệu hỗn hợp" + nêu 2 chiều + điều kiện kích hoạt mỗi chiều.
-- Nếu không có liên kết chéo đáng chú ý: ghi "Không có tín hiệu liên thị trường mới" — KHÔNG bịa.
+_EUA_FRAMEWORK_RULES_FULL = (
+    "C. QUY TẮC NHẬN ĐỊNH BẮT BUỘC:\n"
+    "- Luôn bắt đầu bằng số liệu thực tế (giá đóng cửa, % thay đổi) TRƯỚC khi phân tích nguyên nhân.\n"
+    "- Xây dựng chuỗi nhân quả rõ ràng, không gán nhãn cảm tính.\n"
+    "- Kết luận chiều giá EUA chỉ khi ≥2 yếu tố xác nhận cùng hướng.\n"
+    "- Tín hiệu mâu thuẫn nhau → ghi \"tín hiệu hỗn hợp\" + nêu 2 chiều + điều kiện kích hoạt mỗi chiều.\n"
+    "- Nếu không có liên kết chéo đáng chú ý: ghi \"Không có tín hiệu liên thị trường mới\" — KHÔNG bịa."
+)
+_EUA_FRAMEWORK_RULES_COMPACT = (
+    "C. QUY TẮC NHẬN ĐỊNH:\n"
+    "- Bắt đầu bằng số liệu thực tế TRƯỚC phân tích. Kết luận chiều giá chỉ khi ≥2 yếu tố cùng hướng.\n"
+    "- Mâu thuẫn → \"tín hiệu hỗn hợp\" + 2 chiều + điều kiện. Không có liên kết chéo → ghi rõ, KHÔNG bịa."
+)
 
-D. KHUNG THỜI GIAN PHÂN TÍCH — BẮT BUỘC ĐỐI CHIẾU CẢ "Δ NGÀY" VÀ "Δ TUẦN" (để nhận định khách quan
-   nhất, không bị nhiễu/thổi phồng bởi biến động của riêng 1 phiên):
-1. GHI RÕ KHUNG THỜI GIAN: mọi số liệu %Δ trích dẫn PHẢI ghi rõ là "Δ ngày" (so với phiên liền trước)
-   hay "Δ tuần" (so với 7 ngày trước, lấy đúng trường "Δ tuần" trong DỮ LIỆU GIÁ) — TUYỆT ĐỐI KHÔNG
-   viết "%Δ" trống không rõ khung thời gian nào, và TUYỆT ĐỐI KHÔNG tự suy ra Δ tuần từ Δ ngày hay
-   ngược lại — chỉ dùng đúng 2 con số đã cho sẵn.
-2. ĐỐI CHIẾU TRƯỚC KHI KẾT LUẬN CHIỀU: trước khi kết luận chiều biến động của bất kỳ instrument nào
-   (EUA, Gas, Than, Điện Đức, Dầu, Gasoil...), PHẢI đối chiếu CẢ Δ ngày VÀ Δ tuần của chính instrument đó:
-   - CÙNG CHIỀU (Δ ngày và Δ tuần cùng tăng hoặc cùng giảm) → xu hướng nhất quán, có độ tin cậy CAO,
-     được phép kết luận dứt khoát và dùng làm căn cứ chính cho hướng giá EUA.
-   - TRÁI CHIỀU (vd Δ ngày tăng nhưng Δ tuần vẫn đang giảm, hoặc ngược lại) → đây là biến động của
-     RIÊNG 1 phiên, CHƯA đủ cơ sở kết luận đảo chiều xu hướng — PHẢI nêu rõ cả 2 con số và ghi nhận
-     dạng "biến động trong ngày đi ngược xu hướng tuần, cần thêm phiên xác nhận" thay vì khẳng định
-     đảo chiều ngay.
-3. ÁP DỤNG VÀO ĐỘ TIN CẬY: "probability" trong trading_scenarios và mức độ chắc chắn của "eua_conclusion"/
-   kết luận chiều giá PHẢI phản ánh đúng mức đồng thuận ngày/tuần nói trên — 1 driver có cả Δ ngày và
-   Δ tuần cùng chiều được xếp probability/độ tin cậy cao hơn 1 driver chỉ có tín hiệu của riêng 1 phiên.
-=== KẾT THÚC KHUNG PHÂN TÍCH ===
-"""
+_EUA_FRAMEWORK_TIMEFRAME_FULL = (
+    "D. KHUNG THỜI GIAN PHÂN TÍCH — BẮT BUỘC ĐỐI CHIẾU CẢ \"Δ NGÀY\" VÀ \"Δ TUẦN\" (để nhận định khách "
+    "quan nhất, không bị nhiễu/thổi phồng bởi biến động của riêng 1 phiên):\n"
+    "1. GHI RÕ KHUNG THỜI GIAN: mọi số liệu %Δ trích dẫn PHẢI ghi rõ là \"Δ ngày\" (so với phiên liền "
+    "trước) hay \"Δ tuần\" (so với 7 ngày trước, lấy đúng trường \"Δ tuần\" trong DỮ LIỆU GIÁ) — TUYỆT "
+    "ĐỐI KHÔNG viết \"%Δ\" trống không rõ khung thời gian nào, và TUYỆT ĐỐI KHÔNG tự suy ra Δ tuần từ "
+    "Δ ngày hay ngược lại — chỉ dùng đúng 2 con số đã cho sẵn.\n"
+    "2. ĐỐI CHIẾU TRƯỚC KHI KẾT LUẬN CHIỀU: trước khi kết luận chiều biến động của bất kỳ instrument "
+    "nào (EUA, Gas, Than, Điện Đức, Dầu, Gasoil...), PHẢI đối chiếu CẢ Δ ngày VÀ Δ tuần của chính "
+    "instrument đó:\n"
+    "   - CÙNG CHIỀU (Δ ngày và Δ tuần cùng tăng hoặc cùng giảm) → xu hướng nhất quán, có độ tin cậy "
+    "CAO, được phép kết luận dứt khoát và dùng làm căn cứ chính cho hướng giá EUA.\n"
+    "   - TRÁI CHIỀU (vd Δ ngày tăng nhưng Δ tuần vẫn đang giảm, hoặc ngược lại) → đây là biến động "
+    "của RIÊNG 1 phiên, CHƯA đủ cơ sở kết luận đảo chiều xu hướng — PHẢI nêu rõ cả 2 con số và ghi "
+    "nhận dạng \"biến động trong ngày đi ngược xu hướng tuần, cần thêm phiên xác nhận\" thay vì khẳng "
+    "định đảo chiều ngay.\n"
+    "3. ÁP DỤNG VÀO ĐỘ TIN CẬY: \"probability\" trong trading_scenarios và mức độ chắc chắn của "
+    "\"eua_conclusion\"/kết luận chiều giá PHẢI phản ánh đúng mức đồng thuận ngày/tuần nói trên — 1 "
+    "driver có cả Δ ngày và Δ tuần cùng chiều được xếp probability/độ tin cậy cao hơn 1 driver chỉ có "
+    "tín hiệu của riêng 1 phiên."
+)
+_EUA_FRAMEWORK_TIMEFRAME_COMPACT = (
+    "D. KHUNG THỜI GIAN: mọi %Δ ghi rõ \"Δ ngày\" hay \"Δ tuần\" (dùng đúng từ DỮ LIỆU GIÁ, KHÔNG tự "
+    "tính). Đối chiếu CẢ 2: cùng chiều → tin cậy cao; trái chiều → biến động phiên đơn lẻ, cần thêm "
+    "xác nhận."
+)
 
-# Phiên bản rút gọn (bỏ phần B — DANH MỤC THEO DÕI, ~1500 token) cho Mục 2 và 5.
-# Mục 3 (phân tích sâu nhất) vẫn dùng EUA_ANALYSIS_FRAMEWORK đầy đủ.
-EUA_FRAMEWORK_COMPACT = f"""
-=== KHUNG PHÂN TÍCH GIÁ CARBON (EUA) — BẮT BUỘC ÁP DỤNG ===
-QUY TẮC GỐC: Bám sát đúng chuỗi nhân quả đã cho, KHÔNG tự sinh thêm hay đảo chiều.
-Mọi phân tích PHẢI kết luận tác động lên CUNG/CẦU và GIÁ EUA.
-CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ của khung này (vd "FUEL_SWITCHING", "POWER_EUA_TWO_WAY",
-"OIL_GASOIL", "GEOPOLITICS_SUPPLY_CHAIN", "TERM_STRUCTURE_CARRY"...) hay nhãn "nhánh (a)/(b)", các
-thẻ ngoặc vuông ("[ID]", "[CHUỖI]", "[BÁC BỎ / VÔ HIỆU]"...), hay mã luật ("L1"–"L10") trong text
-trả về — chỉ dùng nội bộ để suy luận, đầu ra viết bằng ngôn ngữ phân tích tự nhiên thể hiện đúng
-logic đó.
 
-{chains.INFERENCE_RULES}
+def _eua_framework(topics_present: List[str], *, full: bool) -> str:
+    """Dựng khung phân tích giá EUA CHO ĐÚNG topics_present của ngày báo cáo.
 
-A. MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG (chỉ nêu khi có dữ liệu/tin tức hỗ trợ):
+    `full=True` (Mục 3): kèm phần B — DANH MỤC THEO DÕI, dùng horizon="medium"
+    khi gọi build_context() (KHÔNG "short") vì Mục 3 vẫn cần
+    HYDROGEN_DECARBONIZATION khi topic "energy_hydrogen" có tin trong ngày
+    (đúng thiết kế "Diễn biến chính" NHÓM 1 mục (c) — hydrogen là driver tổng
+    quan, không phải tín hiệu ngày/tuần, nhưng Mục 3 vẫn cần nhắc tới khi có
+    tin) — "short" sẽ loại cơ chế này dù đang có tin, sai với thiết kế đó.
+    `full=False` (Mục 2/5): bỏ phần B, horizon="short" (đúng bản chất 2 mục
+    này — bảng động lực/tín hiệu theo phiên, không cần phần driver dài hạn).
+    """
+    horizon = "medium" if full else "short"
+    dynamic = chains.build_context(topics_present, horizon=horizon)
 
-1. FUEL SWITCHING — chuỗi logic quan trọng nhất:
-   {chains.FUEL_SWITCHING}
-   REFINEMENT: {chains.RELATIVE_FUEL_ECONOMICS}
-   {chains.POWER_EUA_TWO_WAY}
-   {chains.WEATHER_POWER_SYSTEM}
+    parts = [
+        "=== KHUNG PHÂN TÍCH GIÁ CARBON (EUA) — BẮT BUỘC ÁP DỤNG ===",
+        _EUA_FRAMEWORK_PREAMBLE,
+        "A. CÁC MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG (cross-market signals) — CHỈ áp dụng cơ chế nào có dữ "
+        "liệu/tin tức thực sự hỗ trợ, KHÔNG suy diễn gượng ép:",
+        dynamic,
+        _EUA_FRAMEWORK_NOTES,
+    ]
+    if full:
+        parts.append(_EUA_FRAMEWORK_CATALOG)
+        parts.append(_EUA_FRAMEWORK_RULES_FULL)
+        parts.append(_EUA_FRAMEWORK_TIMEFRAME_FULL)
+    else:
+        parts.append(_EUA_FRAMEWORK_RULES_COMPACT)
+        parts.append(_EUA_FRAMEWORK_TIMEFRAME_COMPACT)
+    parts.append("=== KẾT THÚC KHUNG PHÂN TÍCH ===")
 
-2. DẦU & GASOIL:
-   {chains.OIL_GASOIL}
-   Crack spread đã tính sẵn — dùng đúng con số đó, KHÔNG tự suy luận từ 2 số liệu khác đơn vị.
-
-3. KIM LOẠI CƠ BẢN:
-   {chains.METALS}
-   LƯU Ý: KHÔNG có instrument giá kim loại — CHỈ nêu khi tin tức có SỐ LIỆU CỤ THỂ.
-
-4. CBAM & MỞ RỘNG ETS: {chains.CBAM_ETS}
-
-5. CHÍNH SÁCH & MSR: {chains.POLICY_MSR}
-
-6. ĐỊA CHÍNH TRỊ:
-   {chains.GEOPOLITICS_SUPPLY_CHAIN}
-   PHẢI nêu đủ bước "sự kiện → cung → giá gas/dầu → EUA", KHÔNG nhảy thẳng.
-
-7. TÀI CHÍNH & ĐẦU CƠ:
-   {chains.FINANCE_SPECULATION}
-   POSITIONING: {chains.POSITIONING_TECHNICALS}
-
-8. MACRO:
-   {chains.MACRO}
-   LƯU Ý: KHÔNG có instrument USD/lãi suất — CHỈ nêu khi tin tức có SỐ LIỆU CỤ THỂ.
-
-9. HYDROGEN: {chains.HYDROGEN_DECARBONIZATION}
-
-10. CẤU TRÚC KỲ HẠN & CARRY: {chains.TERM_STRUCTURE_CARRY}
-
-{chains.CONFLICT_RESOLUTION}
-
-C. QUY TẮC NHẬN ĐỊNH:
-- Bắt đầu bằng số liệu thực tế TRƯỚC phân tích. Kết luận chiều giá chỉ khi ≥2 yếu tố cùng hướng.
-- Mâu thuẫn → "tín hiệu hỗn hợp" + 2 chiều + điều kiện. Không có liên kết chéo → ghi rõ, KHÔNG bịa.
-
-D. KHUNG THỜI GIAN: mọi %Δ ghi rõ "Δ ngày" hay "Δ tuần" (dùng đúng từ DỮ LIỆU GIÁ, KHÔNG tự tính).
-Đối chiếu CẢ 2: cùng chiều → tin cậy cao; trái chiều → biến động phiên đơn lẻ, cần thêm xác nhận.
-=== KẾT THÚC ===
-"""
+    return "\n\n".join(parts)
 
 # ─────────────────────────────────────────────────────────────────────
 # Data fetching
@@ -403,6 +357,14 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
 # ─────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────
+
+def _topics_present(news_by_topic: Dict[str, List[Dict]], section_key: str) -> List[str]:
+    """Danh sách topic thuộc SECTION_TOPICS[section_key] mà THỰC SỰ có tin trong
+    ngày — dùng để dựng khung phân tích ĐỘNG qua `chains.build_context()`
+    (xem `_eua_framework`), chỉ nạp đúng cơ chế liên quan thay vì luôn nạp
+    tĩnh toàn bộ khung."""
+    return [t for t in SECTION_TOPICS.get(section_key, []) if news_by_topic.get(t)]
+
 
 def _filter_news_for_section(news_by_topic: Dict[str, List[Dict]], section_key: str) -> str:
     """Lọc tin tức chỉ lấy các topic liên quan đến mục báo cáo."""
@@ -818,9 +780,10 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 def _prompt_section2(
     eua_key_facts: str, prices_text: str, eua_trend: str, gasoil_crack_spread: str,
-    news_text: str, target_date: str
+    news_text: str, target_date: str, topics_present: List[str]
 ) -> tuple[str, str]:
-    system = f"Bạn là chuyên gia phân tích thị trường carbon châu Âu.\n{CONCISENESS_RULE}\n\n{EUA_FRAMEWORK_COMPACT}"
+    framework = _eua_framework(topics_present, full=False)
+    system = f"Bạn là chuyên gia phân tích thị trường carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
 SỐ LIỆU EUA (dùng ĐÚNG, KHÔNG bịa):
@@ -854,9 +817,10 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
-    gasoil_crack_spread: str, target_date: str
+    gasoil_crack_spread: str, target_date: str, topics_present: List[str]
 ) -> tuple[str, str]:
-    system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{EUA_ANALYSIS_FRAMEWORK}"
+    framework = _eua_framework(topics_present, full=True)
+    system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
 DỮ LIỆU GIÁ PHIÊN VỪA QUA (dùng số liệu này để xây dựng chuỗi nhân quả, TUYỆT ĐỐI KHÔNG tự bịa số khác):
@@ -895,7 +859,9 @@ A. "analysis_blocks": mảng gồm "heading" và "content". Heading 1, 2, 4 LUÔ
         - Biến động không đáng kể (Δ ngày và Δ tuần đều gần như đi ngang) và không đủ kích hoạt bất kỳ cơ chế dispatch/hedge/chính sách nào.
         - Theo đúng chuỗi nhân quả chuẩn, yếu tố này KHÔNG dẫn tới tác động nào lên cung/cầu/giá EUA (trung lập thật sự theo logic, không phải chỉ vì thiếu số liệu).
       PHÂN BIỆT RÕ với trường hợp TÍN HIỆU MÂU THUẪN/CHƯA ĐỦ MẠNH ở bước (i) bên dưới (Δ ngày và Δ tuần trái chiều nhưng cả 2 đều là biến động thực) — trường hợp đó VẪN PHẢI giữ lại và viết thành 1 gạch đầu dòng, vì đây là rủi ro/tín hiệu cần theo dõi chứ không phải yếu tố trung lập/không tác động.
-      LOẠI TRỪ ĐÍCH DANH (không suy diễn gián tiếp — nêu thẳng để tránh bị đưa nhầm vào "Yếu tố dẫn dắt"): tin về VCM (Verra/Gold Standard/ACR/CAR...), thị trường carbon compliance NGOÀI EU (China ETS, Korea ETS, California Cap-and-Trade, RGGI, CORSIA...), hoặc chính sách/thị trường carbon Việt Nam (VETS, Nghị định 06...) — CÁC THỊ TRƯỜNG NÀY THEO THIẾT KẾ KHÔNG FUNGIBLE VỚI EUA VÀ KHÔNG TẠO CẦU/CUNG EUA TRỰC TIẾP. Dù các tin này ĐÃ xuất hiện ở "Diễn biến chính" (NHÓM 2, mục đích chỉ để thông tin), TUYỆT ĐỐI KHÔNG đưa vào "Yếu tố dẫn dắt" và TUYỆT ĐỐI KHÔNG viết kiểu "Kết luận: trung lập" cho riêng nội dung này — trừ khi chính tin tức đó nêu RÕ RÀNG 1 cơ chế cụ thể nối sang EUA (vd CBAM tính certificate cost dựa trên giá EUA, hoặc dòng vốn/doanh nghiệp chuyển từ thị trường đó sang mua EUA compliance) thì mới phân tích — và khi đó phải nêu rõ cơ chế nối đó, không mặc định.
+      LOẠI TRỪ ĐÍCH DANH (không suy diễn gián tiếp — nêu thẳng để tránh bị đưa nhầm vào "Yếu tố dẫn dắt"):
+      {chains.NON_EUA_CARBON_MARKETS}
+      Dù các tin này ĐÃ xuất hiện ở "Diễn biến chính" (NHÓM 2, mục đích chỉ để thông tin), TUYỆT ĐỐI KHÔNG đưa vào "Yếu tố dẫn dắt" và TUYỆT ĐỐI KHÔNG viết kiểu "Kết luận: trung lập" cho riêng nội dung này, theo đúng quy tắc ở trên.
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu của "QUY TẮC ĐỘ DÀI CHUNG" ở trên — mỗi gạch đầu dòng PHẢI viết ĐẦY ĐỦ chuỗi suy luận dưới dạng văn xuôi hoàn chỉnh (số liệu → cơ chế → tác động cung/cầu → kết luận chiều EUA), TUYỆT ĐỐI KHÔNG rút gọn thành liệt kê cộc lốc thiếu suy luận. Nhưng vẫn phải súc tích, thẳng vào thông tin: không câu mở đầu/đệm/chuyển tiếp thừa, không lặp lại nguyên văn số liệu đã nêu ở "Diễn biến chính" (chỉ nhắc số liệu khi trực tiếp làm căn cứ cho bước suy luận trong chính câu đó).
       YÊU CẦU SUY LUẬN RIÊNG CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã xuất hiện ở "Diễn biến chính" nhóm này, mỗi mã/yếu tố là 1 gạch đầu dòng với ĐẦY ĐỦ các bước sau (bỏ bước nào thì phải nêu rõ lý do, vd thiếu dữ liệu). LƯU Ý: tên chuỗi/nhánh viết HOA bên dưới (FUEL_SWITCHING, POWER_EUA_TWO_WAY, OIL_GASOIL, GEOPOLITICS_SUPPLY_CHAIN, "nhánh (a)"...) CHỈ để bạn xác định ĐÚNG cơ chế cần áp dụng — TUYỆT ĐỐI KHÔNG chép các tên này vào "content"; chỉ viết ra phần suy luận bằng lời (số liệu → cơ chế → kết luận), không gọi tên khung/luật:
         (i) ĐỐI CHIẾU KHUNG THỜI GIAN: so Δ ngày VÀ Δ tuần của chính mã đó. ĐỒNG THUẬN (cùng chiều) → xác nhận xu hướng bền vững, đủ cơ sở kết luận dứt khoát chiều tác động EUA. MÂU THUẪN (trái chiều) → nêu rõ đây là tín hiệu ngắn hạn/chưa đủ mạnh, cần thêm phiên xác nhận, KHÔNG được chốt chiều tác động EUA dứt khoát.
@@ -965,8 +931,12 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
     return system, user
 
 
-def _prompt_section5(news_text: str, prices_text: str, gasoil_crack_spread: str, target_date: str) -> tuple[str, str]:
-    system = f"Bạn là chuyên gia phân tích liên thị trường năng lượng và carbon.\n{CONCISENESS_RULE}\n\n{EUA_FRAMEWORK_COMPACT}"
+def _prompt_section5(
+    news_text: str, prices_text: str, gasoil_crack_spread: str, target_date: str,
+    topics_present: List[str]
+) -> tuple[str, str]:
+    framework = _eua_framework(topics_present, full=False)
+    system = f"Bạn là chuyên gia phân tích liên thị trường năng lượng và carbon.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
 DỮ LIỆU GIÁ PHIÊN VỪA QUA:
@@ -1151,11 +1121,12 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         )),
         ("2", _prompt_section2(
             eua_key_facts, prices_text, eua_trend, gasoil_crack_spread,
-            section2_news_text, target_date
+            section2_news_text, target_date, _topics_present(news_by_topic, "2")
         )),
         ("3", _prompt_section3(
             _filter_news_for_section(news_by_topic, "3"),
-            prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date
+            prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
+            _topics_present(news_by_topic, "3")
         )),
         ("4", _prompt_section4(
             _filter_news_for_section(news_by_topic, "4"),
@@ -1163,7 +1134,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         )),
         ("5", _prompt_section5(
             _filter_news_for_section(news_by_topic, "5"),
-            prices_text, gasoil_crack_spread, target_date
+            prices_text, gasoil_crack_spread, target_date, _topics_present(news_by_topic, "5")
         )),
         ("7", _prompt_section7(
             section7_news_text,

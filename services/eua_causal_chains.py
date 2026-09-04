@@ -13,6 +13,21 @@ DÙNG CHUNG cho:
 Mọi chuỗi nhân quả xuất hiện ở cả 2 nơi PHẢI import từ đây, KHÔNG hard-code
 lại — sửa 1 chỗ trong file này là đồng bộ toàn hệ thống.
 
+PHẠM VI TOPIC — 3 topic CHỦ ĐÍCH KHÔNG có cơ chế/chuỗi nào trong file này:
+  vcm (thị trường carbon tự nguyện), global_carbon_market (thị trường carbon
+  compliance NGOÀI EU ETS — China ETS, Korea ETS, California Cap-and-Trade,
+  RGGI, CORSIA...), vietnam_carbon_policy (chính sách/thị trường carbon VN).
+  Lý do: các thị trường này KHÔNG fungible với EUA (tín chỉ/allowance không
+  quy đổi/thay thế lẫn nhau, hệ thống compliance tách biệt) nên KHÔNG tạo
+  cầu/cung EUA trực tiếp — xem NON_EUA_CARBON_MARKETS bên dưới và luật L11.
+  3 topic này CHỈ phục vụ Mục 4 (thông tin thị trường carbon khác) và Mục 8,
+  KHÔNG được dùng để kết luận tác động cung/cầu/giá EUA ở Mục 3/5/chat trừ
+  khi tin tức nêu rõ 1 cơ chế cụ thể nối sang EUA (vd CBAM, dòng vốn chuyển
+  đổi) — đây là điều dễ bị bỏ sót nhất khi thêm nội dung mới vào file này,
+  vì các cơ chế khác đều mô tả "CÓ chuỗi nhân quả", còn 3 topic trên phải
+  được nêu ĐÍCH DANH là "KHÔNG CÓ", nếu không người tiêm prompt (hoặc chính
+  model) dễ tự suy diễn ra 1 liên kết không có thật.
+
 Thiết kế lại từ bản gốc với 3 thay đổi cấu trúc:
 
 1. Thêm INFERENCE_RULES — bộ luật suy luận DÙNG CHUNG, đặt trước mọi cơ chế.
@@ -97,7 +112,17 @@ INFERENCE_RULES = (
     "Trước khi nối 'phát thải↑ → cầu EUA↑', phải kiểm tra nguồn phát thải đó có nằm trong ETS1 không.\n"
     "\n"
     "L10 — LUẬT MẶC ĐỊNH THẬN TRỌNG: 'không đủ căn cứ để kết luận' luôn là đáp án hợp lệ và "
-    "được ưu tiên hơn một kết luận có hướng nhưng thiếu bước trung gian hoặc thiếu dữ liệu."
+    "được ưu tiên hơn một kết luận có hướng nhưng thiếu bước trung gian hoặc thiếu dữ liệu.\n"
+    "\n"
+    "L11 — LUẬT THỊ TRƯỜNG KHÁC (non-fungible markets): tin tức về VCM (thị trường carbon tự "
+    "nguyện — Verra, Gold Standard, ACR, CAR...), thị trường carbon compliance NGOÀI EU ETS "
+    "(China ETS, Korea ETS, California Cap-and-Trade, RGGI, CORSIA...), hay chính sách/thị "
+    "trường carbon Việt Nam (VETS, Nghị định 06...) KHÔNG được mặc định suy ra tác động cung/"
+    "cầu/giá EUA — các thị trường này KHÔNG fungible với EUA (tín chỉ/allowance không quy đổi/"
+    "thay thế lẫn nhau), nên TUYỆT ĐỐI KHÔNG áp bất kỳ cơ chế nào trong PHẦN 1 cho tin thuộc "
+    "nhóm này. CHỈ phân tích tác động EUA nếu chính bản tin nêu RÕ 1 cơ chế cụ thể nối sang EUA "
+    "(vd CBAM certificate cost neo theo giá EUA, hay dòng vốn/doanh nghiệp chuyển từ thị trường "
+    "đó sang mua EUA compliance) — không suy diễn liên kết khi bản tin không nêu rõ."
 )
 
 
@@ -136,6 +161,26 @@ CONFLICT_RESOLUTION = (
     "  coi như không tồn tại, không dùng để 'trung hoà' tín hiệu chính.\n"
     "- Nếu sau khi phân xử vẫn còn hai chiều tương đương → kết luận TRUNG TÍNH và nêu rõ điều kiện "
     "  nào sẽ phá thế cân bằng (biến cần theo dõi tiếp)."
+)
+
+
+# Xem thêm luật L11 ở trên. Tách thành constant riêng (thay vì chỉ nằm trong
+# INFERENCE_RULES) để report_generator.py/quote_chat.py có thể tiêm ĐÍCH DANH
+# ngay tại vị trí liệt kê VCM/thị trường carbon khác/chính sách carbon VN
+# (thay vì trông chờ model tự nhớ lại L11 từ đầu prompt) — đây chính là kẽ hở
+# đã gây lỗi thực tế: 1 báo cáo đã viết "Kết luận: trung lập" cho tin CORSIA
+# thay vì bỏ hẳn khỏi phần phân tích, vì lúc đó chưa có constant này để tiêm
+# ngay tại chỗ, hệ thống phải trông chờ model tự suy luận gián tiếp.
+NON_EUA_CARBON_MARKETS = (
+    "VCM (thị trường carbon tự nguyện — Verra, Gold Standard, ACR, CAR...), thị trường carbon "
+    "compliance NGOÀI EU ETS (China ETS, Korea ETS, California Cap-and-Trade, RGGI, CORSIA...), "
+    "và chính sách/thị trường carbon Việt Nam (VETS, Nghị định 06...) KHÔNG fungible với EUA — "
+    "tín chỉ/allowance của các thị trường này không quy đổi/thay thế được cho EUA, hệ thống "
+    "compliance hoàn toàn tách biệt. TIN VỀ CÁC THỊ TRƯỜNG NÀY KHÔNG ĐƯỢC DÙNG để kết luận tác "
+    "động cung/cầu/giá EUA — kể cả kết luận 'trung lập' — CHỈ nêu mang tính thông tin, TRỪ KHI "
+    "chính bản tin nêu RÕ 1 cơ chế cụ thể nối sang EUA (vd CBAM certificate cost neo theo giá "
+    "EUA, hay dòng vốn/doanh nghiệp chuyển từ thị trường đó sang mua EUA compliance) thì mới "
+    "phân tích, và phải nêu rõ đúng cơ chế đó — không suy diễn liên kết khi bản tin không nêu rõ."
 )
 
 
@@ -687,6 +732,15 @@ HYDROGEN_DECARBONIZATION = (
 # thay vì luôn nạp toàn bộ khung — xem ghi chú ở report_generator.py.)
 # =============================================================================
 
+# CHỈ chứa 13 topic THẬT của hệ thống (khớp NewsTopic trong
+# crawl_news/classification.py) — không dùng pseudo-topic (vd "metals",
+# "weather", "macro", "market_structure") làm khoá nữa: pseudo-topic không
+# bao giờ khớp topic thật của 1 bài báo nên trước đây METALS/MACRO/
+# WEATHER_POWER_SYSTEM/TERM_STRUCTURE_CARRY/POSITIONING_TECHNICALS/
+# FINANCE_SPECULATION gắn qua các khoá đó sẽ KHÔNG BAO GIỜ được build_context()
+# nạp — regression âm thầm nếu dùng registry để tiêm động. Các cơ chế không
+# gắn được với 1 topic cụ thể (cross-cutting) được xử lý riêng bên dưới qua
+# SUPPLEMENTARY_SIGNALS/MANDATORY_CONFIRMERS/FILTERS thay vì qua registry.
 MECHANISM_REGISTRY = {
     "energy_gas":        [FUEL_SWITCHING, RELATIVE_FUEL_ECONOMICS, GEOPOLITICS_SUPPLY_CHAIN],
     "energy_coal":       [FUEL_SWITCHING, RELATIVE_FUEL_ECONOMICS],
@@ -694,20 +748,26 @@ MECHANISM_REGISTRY = {
     "energy_power_eu":   [POWER_EUA_TWO_WAY, FUEL_SWITCHING, WEATHER_POWER_SYSTEM,
                           RELATIVE_FUEL_ECONOMICS],
     "energy_renewable":  [WEATHER_POWER_SYSTEM, FUEL_SWITCHING],
-    "weather":           [WEATHER_POWER_SYSTEM],
     "eua_ets":           [POLICY_MSR, FUEL_SWITCHING, TERM_STRUCTURE_CARRY,
                           FINANCE_SPECULATION, POSITIONING_TECHNICALS],
     "eu_policy":         [POLICY_MSR, CBAM_ETS, GEOPOLITICS_SUPPLY_CHAIN],
     "cbam":              [CBAM_ETS, POLICY_MSR],
     "geopolitics":       [GEOPOLITICS_SUPPLY_CHAIN, FUEL_SWITCHING],
-    "macro":             [MACRO, TERM_STRUCTURE_CARRY],
-    "metals":            [METALS, FUEL_SWITCHING],
-    "market_structure":  [POSITIONING_TECHNICALS, FINANCE_SPECULATION, TERM_STRUCTURE_CARRY],
     "energy_hydrogen":   [HYDROGEN_DECARBONIZATION],
+    # 3 topic dưới đây CHỦ ĐÍCH map về [] — KHÔNG phải thiếu sót. Xem "PHẠM VI
+    # TOPIC" ở docstring đầu file và luật L11: các thị trường này không
+    # fungible với EUA nên không có cơ chế nào trong PHẦN 1 áp dụng cho chúng
+    # — build_context() bù lại bằng NON_EUA_CARBON_MARKETS (xem bên dưới).
+    "vcm":                [],
+    "global_carbon_market": [],
+    "vietnam_carbon_policy": [],
 }
 
-# Cơ chế KHÔNG được dùng để giải thích biến động giá trong ngày/tuần.
-LONG_HORIZON_ONLY = [HYDROGEN_DECARBONIZATION, MACRO]
+# Cơ chế KHÔNG được dùng để giải thích biến động giá trong ngày/tuần — hiện
+# chỉ HYDROGEN_DECARBONIZATION còn nằm trong registry theo topic thật
+# ("energy_hydrogen"); MACRO đã chuyển sang SUPPLEMENTARY_SIGNALS (luôn nạp,
+# không qua registry) nên không cần liệt kê ở đây nữa.
+LONG_HORIZON_ONLY = [HYDROGEN_DECARBONIZATION]
 
 # Cơ chế luôn phải đọc kèm khi có bất kỳ luận điểm nào về điện/RES.
 MANDATORY_CONFIRMERS = [WEATHER_POWER_SYSTEM]
@@ -715,17 +775,36 @@ MANDATORY_CONFIRMERS = [WEATHER_POWER_SYSTEM]
 # Cơ chế đóng vai trò BỘ LỌC: đọc sau cùng để hạ cấp độ tin cậy nếu cần.
 FILTERS = [FINANCE_SPECULATION, POSITIONING_TECHNICALS]
 
+# Tín hiệu PHỤ, cross-cutting — không gắn được với đúng 1 topic thật nào (kim
+# loại/macro có thể xuất hiện trong tin thuộc BẤT KỲ topic năng lượng/chính
+# sách nào) nên KHÔNG dùng MECHANISM_REGISTRY để gate theo topic — luôn nạp
+# (tương tự FILTERS), phần [BÁC BỎ]/[ĐỘ MẠNH] của chính 2 cơ chế này đã tự
+# giới hạn việc dùng khi thiếu số liệu, nên chi phí token thấp mà không mất
+# tín hiệu khi tin thực sự có.
+SUPPLEMENTARY_SIGNALS = [METALS, MACRO]
+
+# 3 topic không fungible với EUA (xem MECHANISM_REGISTRY) — khi 1 trong 3 topic
+# này thực sự có tin trong ngày, build_context() tiêm thêm NON_EUA_CARBON_MARKETS
+# NGAY TẠI ĐIỂM ÁP DỤNG (không chỉ trông chờ L11 ở đầu prompt) — đây chính là
+# kẽ hở từng gây lỗi thực tế (1 báo cáo viết "Kết luận: trung lập" cho tin
+# CORSIA thay vì bỏ hẳn khỏi phân tích).
+_NON_EUA_TOPICS = {"vcm", "global_carbon_market", "vietnam_carbon_policy"}
+
 
 def build_context(topics, horizon="short"):
     """
     Ghép phần tri thức cần đưa vào prompt cho một tập topic.
 
-    topics  : iterable tên topic (khớp khoá của MECHANISM_REGISTRY)
-    horizon : "short" (ngày–tuần) | "medium" (tuần–tháng) | "long" (quý trở lên)
+    topics  : iterable tên topic (khớp khoá của MECHANISM_REGISTRY) — CHỈ nên
+              truyền topic THỰC SỰ có tin trong ngày/phiên đang xử lý (không
+              phải toàn bộ 13 topic khả dĩ), để tối ưu token đúng mục đích.
+    horizon : "short" (ngày–tuần) | bất kỳ giá trị khác (vd "medium") sẽ KHÔNG
+              loại HYDROGEN_DECARBONIZATION dù topic "energy_hydrogen" có tin.
 
     Luôn đặt INFERENCE_RULES lên đầu và CONFLICT_RESOLUTION xuống cuối, để model
     đọc luật trước khi đọc cơ chế, và đọc luật phân xử ngay trước khi kết luận.
     """
+    topics = list(topics)
     blocks, seen = [], set()
     for topic in topics:
         for mech in MECHANISM_REGISTRY.get(topic, []):
@@ -741,12 +820,21 @@ def build_context(topics, horizon="short"):
                 seen.add(id(c))
                 blocks.append(c)
 
+    for s in SUPPLEMENTARY_SIGNALS:
+        if id(s) not in seen:
+            seen.add(id(s))
+            blocks.append(s)
+
     for f in FILTERS:
         if id(f) not in seen:
             seen.add(id(f))
             blocks.append(f)
 
-    return "\n\n".join([INFERENCE_RULES] + blocks + [CONFLICT_RESOLUTION])
+    tail = [CONFLICT_RESOLUTION]
+    if _NON_EUA_TOPICS.intersection(topics):
+        tail.insert(0, NON_EUA_CARBON_MARKETS)
+
+    return "\n\n".join([INFERENCE_RULES] + blocks + tail)
 
 
 # =============================================================================

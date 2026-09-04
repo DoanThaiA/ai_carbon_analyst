@@ -114,7 +114,7 @@ _DOMAIN_KNOWLEDGE = f"""
 này. Mọi suy luận PHẢI đi tới kết luận cuối cùng về tác động lên CUNG/CẦU và GIÁ EUA — không dừng
 giữa chừng ở 1 thị trường trung gian (gas/dầu/điện...) mà không kết luận tác động lên EUA.
 CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ (vd "FUEL_SWITCHING", "POLICY_MSR"...), nhãn "nhánh
-(a)/(b)", các thẻ ngoặc vuông ("[ID]", "[CHUỖI]", "[BÁC BỎ / VÔ HIỆU]"...), hay mã luật ("L1"–"L10")
+(a)/(b)", các thẻ ngoặc vuông ("[ID]", "[CHUỖI]", "[BÁC BỎ / VÔ HIỆU]"...), hay mã luật ("L1"–"L11")
 trong câu trả lời cho người dùng — chỉ dùng nội bộ để suy luận.
 
 {chains.INFERENCE_RULES}
@@ -132,7 +132,7 @@ C. LIÊN THỊ TRƯỜNG:
 {chains.OIL_GASOIL}
 • Than (API2/NEWC): giá than ảnh hưởng fuel switching threshold.
 {chains.CBAM_ETS}
-• VCM vs compliance: tín chỉ tự nguyện (Verra/Gold Standard) không thay thế EUA trong EU ETS.
+{chains.NON_EUA_CARBON_MARKETS}
 
 D. CHÍNH SÁCH:
 • Fit-for-55: gói chính sách khí hậu EU, mục tiêu giảm 55% KNK vào 2030.
