@@ -94,6 +94,11 @@ _DOMAIN_KNOWLEDGE = f"""
 đúng chiều mũi tên, TUYỆT ĐỐI KHÔNG tự sinh thêm bước trung gian khác hay đảo chiều so với khung
 này. Mọi suy luận PHẢI đi tới kết luận cuối cùng về tác động lên CUNG/CẦU và GIÁ EUA — không dừng
 giữa chừng ở 1 thị trường trung gian (gas/dầu/điện...) mà không kết luận tác động lên EUA.
+CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ (vd "FUEL_SWITCHING", "POLICY_MSR"...), nhãn "nhánh
+(a)/(b)", các thẻ ngoặc vuông ("[ID]", "[CHUỖI]", "[BÁC BỎ / VÔ HIỆU]"...), hay mã luật ("L1"–"L10")
+trong câu trả lời cho người dùng — chỉ dùng nội bộ để suy luận.
+
+{chains.INFERENCE_RULES}
 
 A. CƠ CHẾ CỐT LÕI EU ETS & GIÁ EUA:
 {chains.POLICY_MSR}
@@ -128,6 +133,9 @@ G. TÀI CHÍNH & MACRO:
 {chains.FINANCE_SPECULATION}
 {chains.POSITIONING_TECHNICALS}
 {chains.MACRO}
+{chains.TERM_STRUCTURE_CARRY}
+
+{chains.CONFLICT_RESOLUTION}
 """
 
 
