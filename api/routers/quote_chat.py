@@ -40,7 +40,12 @@ from services.chat_history import (
     start_of_today_vn_utc,
 )
 from services.embedding import CohereEmbedder
-from services.quote_chat import astream_quote_chat, retrieve_context_for_quote, suggest_questions
+from services.quote_chat import (
+    astream_quote_chat,
+    get_prices_text_for_chat,
+    retrieve_context_for_quote,
+    suggest_questions,
+)
 from services.retrieval import RetrievalService
 
 logger = logging.getLogger(__name__)
@@ -173,6 +178,7 @@ async def quote_chat_stream(
     async def event_stream() -> AsyncIterator[str]:
         try:
             context_chunks = await retrieve_context_for_quote(retrieval_service, quote, body.question, date)
+            prices_text = await get_prices_text_for_chat(session, date)
             # Gửi session_id + nguồn tham khảo trước khi bắt đầu stream câu trả
             # lời, để FE lưu lại session_id cho các câu hỏi tiếp theo và render
             # "Danh sách tin tức tham khảo" (link + ngày phát hành) dưới câu trả lời.
@@ -200,6 +206,7 @@ async def quote_chat_stream(
                 report_date=date,
                 history=history,
                 context_chunks=context_chunks,
+                prices_text=prices_text,
             ):
                 answer_parts.append(delta)
                 yield _sse("delta", delta)

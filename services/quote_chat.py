@@ -3,11 +3,14 @@ import logging
 import re
 from typing import AsyncIterator, List, Optional, Sequence
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.config import Settings
 from schemas.chat_models import ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
+from services.report_generator import get_prices_for_report, _summarize_prices
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +87,22 @@ def _format_context(chunks: Sequence[RetrievedDocument], report_date: str) -> st
     return "\n\n".join(parts)
 
 
+async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> str:
+    """Lấy dữ liệu giá (đóng cửa + Δ ngày/Δ tuần) của ngày báo cáo — CÙNG nguồn dữ
+    liệu report_generator.py dùng để sinh báo cáo gốc.
+
+    Trước khi có hàm này, quote_chat.py KHÔNG có quyền truy cập bảng giá — chỉ có
+    đoạn quote + RAG trên tin tức — nên khi người dùng hỏi về giá 1 mã không xuất
+    hiện nguyên số trong quote/tin tức retrieve được, model buộc phải viết mơ hồ
+    kiểu "tín hiệu chưa dứt khoát" vì không có số cụ thể để bám. Dùng đúng
+    `get_prices_for_report`/`_summarize_prices` của report_generator.py (không tự
+    viết lại logic định dạng) để câu trả lời của chat khớp đúng số liệu report
+    gốc đã dùng, không lệch nhau giữa 2 nơi.
+    """
+    prices, _ = await get_prices_for_report(session, report_date)
+    return _summarize_prices(prices)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Chuyên môn nền tảng — tiêm vào system prompt để model suy luận
 # ─────────────────────────────────────────────────────────────────────
@@ -143,17 +162,28 @@ G. TÀI CHÍNH & MACRO:
 # System prompt
 # ─────────────────────────────────────────────────────────────────────
 
-def _build_static_instructions(report_date: str) -> str:
+def _build_static_instructions(report_date: str, prices_text: str) -> str:
     """Phần system prompt KHÔNG đổi giữa các câu hỏi/phiên/user (chỉ đổi 1
-    lần/ngày theo report_date) — role, kiến thức nền, năng lực, quy tắc. Tách
-    riêng khỏi `_build_dynamic_context()` để làm prefix `cache_control` ổn
-    định cho backend Anthropic (xem PROMPT CACHING trong `_stream_anthropic`):
-    nội dung này giống hệt nhau ở MỌI request trong cùng report_date, chiếm
-    phần lớn dung lượng prompt, nên cache được sẽ tiết kiệm đáng kể input
-    token — miễn là đủ dài hơn ngưỡng cache tối thiểu của model đang dùng
-    (xem comment ở nơi gọi).
+    lần/ngày theo report_date) — role, kiến thức nền, dữ liệu giá, năng lực,
+    quy tắc. Tách riêng khỏi `_build_dynamic_context()` để làm prefix
+    `cache_control` ổn định cho backend Anthropic (xem PROMPT CACHING trong
+    `_stream_anthropic`): nội dung này giống hệt nhau ở MỌI request trong
+    cùng report_date, chiếm phần lớn dung lượng prompt, nên cache được sẽ
+    tiết kiệm đáng kể input token — miễn là đủ dài hơn ngưỡng cache tối thiểu
+    của model đang dùng (xem comment ở nơi gọi).
+
+    `prices_text` (giá đóng cửa + Δ ngày/Δ tuần, CÙNG dữ liệu report_generator.py
+    dùng để sinh báo cáo gốc — xem `get_prices_text_for_chat`) đặt Ở ĐÂY, không
+    phải trong `_build_dynamic_context()`, vì nó chỉ đổi theo report_date (1
+    lần/ngày, giống mọi phần khác của static instructions), không đổi theo
+    từng câu hỏi — đặt trong dynamic context sẽ phá cache mỗi request mà không
+    có lý do.
     """
     return f"""Bạn là chuyên gia phân tích cao cấp của bàn giao dịch năng lượng & carbon (Daily Carbon Intelligence), có kiến thức sâu rộng về EU ETS, thị trường carbon, năng lượng, chính sách khí hậu, và các mối liên hệ liên thị trường. Nhiệm vụ của bạn là giúp người đọc hiểu sâu hơn một đoạn trích cụ thể mà họ vừa bôi đen trong báo cáo ngày {report_date}, thông qua hội thoại hỏi-đáp.
+
+=== DỮ LIỆU GIÁ NGÀY BÁO CÁO {report_date} (đóng cửa + Δ ngày + Δ tuần — CÙNG số liệu report gốc đã dùng) ===
+{prices_text}
+LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức). Khi được hỏi về giá/biến động của 1 trong 6 mã này, PHẢI dùng ĐÚNG số ở trên (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay mô tả định tính mơ hồ ("biến động nhẹ", "chưa dứt khoát"...) thay cho con số thật đã có sẵn. Khi được hỏi về giá 1 mã KHÔNG nằm trong danh sách trên (vd giá than cốc, giá kim loại, giá điện nước khác Đức), nói rõ hệ thống không theo dõi giá đó — có thể dùng web_search nếu người dùng cần số liệu cụ thể — KHÔNG suy đoán con số.
 
 {_DOMAIN_KNOWLEDGE}
 
@@ -166,7 +196,7 @@ E. TRA CỨU WEB (chỉ khi thực sự cần, không lạm dụng): bạn có c
 
 QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 1. NEO VÀO ĐOẠN TRÍCH: mọi câu trả lời đều phải xoay quanh và nhất quán với nội dung đoạn trích. Đây là bối cảnh cố định của cả cuộc hội thoại.
-2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / dữ liệu nền, (b) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (c) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (d) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Dùng các cụm từ phân biệt: "Theo dữ liệu...", "Về mặt cơ chế...", "Trong kịch bản giả định này...", "Tra cứu thêm từ web...".
+2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) DỮ LIỆU GIÁ thật (Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi), (b) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / dữ liệu nền tin tức, (c) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (d) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (e) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Dùng các cụm từ phân biệt: "Theo dữ liệu giá...", "Theo tin tức...", "Về mặt cơ chế...", "Trong kịch bản giả định này...", "Tra cứu thêm từ web...".
 3. KHÔNG BỊA SỐ LIỆU CỤ THỂ: tuyệt đối không bịa ngày tháng, tên tổ chức, mức giá, hay sự kiện cụ thể không xuất hiện trong đoạn trích/dữ liệu nền/kết quả web_search. Nhưng BẠN ĐƯỢC PHÉP suy luận logic dựa trên kiến thức chuyên môn — "Nếu TTF tăng mạnh, theo cơ chế fuel switching thì..." KHÔNG phải bịa đặt mà là phân tích.
 4. THÀNH THẬT VỀ GIỚI HẠN: nếu câu hỏi đòi hỏi dữ liệu không có trong context — (a) nếu là thông tin cụ thể có thể tra cứu được (số liệu/sự kiện/tổ chức, không phải suy đoán), dùng công cụ web_search để tìm rồi trả lời dựa trên kết quả đó; (b) nếu không tra được hoặc câu hỏi mang tính suy luận/giả định, nói rõ giới hạn dữ liệu (VD "Dữ liệu hiện có chưa đề cập chi tiết X") rồi PHÂN TÍCH DỰA TRÊN NHỮNG GÌ BIẾT ĐƯỢC thay vì chỉ nói "không biết" và dừng.
 5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
@@ -190,12 +220,12 @@ def _build_dynamic_context(quote: str, context_block: str) -> str:
 {context_block}"""
 
 
-def build_system_prompt(quote: str, report_date: str, context_block: str) -> str:
+def build_system_prompt(quote: str, report_date: str, context_block: str, prices_text: str) -> str:
     """Ghép static+dynamic thành 1 chuỗi — dùng cho backend Cohere (không hỗ
     trợ cache_control theo block như Anthropic). Backend Anthropic dùng trực
     tiếp `_build_static_instructions`/`_build_dynamic_context` tách rời (xem
     `_stream_anthropic`) để tận dụng prompt caching."""
-    return _build_static_instructions(report_date) + "\n\n" + _build_dynamic_context(quote, context_block)
+    return _build_static_instructions(report_date, prices_text) + "\n\n" + _build_dynamic_context(quote, context_block)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -308,12 +338,18 @@ async def astream_quote_chat(
     report_date: str,
     history: Sequence[ChatTurn],
     context_chunks: Sequence[RetrievedDocument],
+    prices_text: str,
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta).
 
     Backend chọn qua `Settings.quote_chat_backend` ("anthropic" mặc định — có
     web_search; đổi "cohere" bằng ENV nếu muốn dùng Cohere thay thế, không cần
     sửa code).
+
+    `prices_text`: lấy từ `get_prices_text_for_chat()` (gọi bởi router — cần
+    session DB, hàm này không tự mở session) — đưa vào static instructions,
+    KHÔNG phải dynamic context, vì chỉ đổi theo report_date (xem docstring
+    `_build_static_instructions`).
     """
     settings = Settings.from_env()
     truncated_quote = _truncate(quote, MAX_QUOTE_CHARS)
@@ -327,14 +363,14 @@ async def astream_quote_chat(
         # Tách static/dynamic (thay vì gọi build_system_prompt gộp sẵn) để bật
         # prompt caching — xem docstring _stream_anthropic.
         stream = _stream_anthropic(
-            _build_static_instructions(report_date),
+            _build_static_instructions(report_date, prices_text),
             _build_dynamic_context(truncated_quote, context_block),
             messages,
             settings.quote_chat_model,
             enable_web_search=True,
         )
     else:
-        system_prompt = build_system_prompt(truncated_quote, report_date, context_block)
+        system_prompt = build_system_prompt(truncated_quote, report_date, context_block, prices_text)
         stream = _stream_cohere(system_prompt, messages, settings.quote_chat_model)
 
     async for delta in stream:
