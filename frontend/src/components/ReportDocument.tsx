@@ -356,10 +356,10 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       </div>
 
-      <div className="px-6 sm:px-10 pt-5 pb-10 space-y-3.5">
+      <div className="px-6 sm:px-10 pt-5 pb-10">
 
         {/* SECTION 1 */}
-        <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+        <section className="py-5">
           <SectionHeading number="01" title="Tóm tắt điều hành" />
           <ul className="list-none">
             {report.content["1"]?.bullets?.map((b: string, i: number) => {
@@ -382,7 +382,7 @@ export function ReportDocument({ report }: { report: Report }) {
         </section>
 
         {/* SECTION 2 */}
-        <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+        <section className="py-5">
           <SectionHeading number="02" title="Bảng giá nhanh" />
           {report.content["2"]?.price_timestamp && (
             <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
@@ -442,8 +442,8 @@ export function ReportDocument({ report }: { report: Report }) {
               <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Động lực thị trường</h4>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="border border-up/25 bg-up/[0.04] rounded-lg overflow-hidden">
-                  <div className="bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
-                    ▲ Động lực tăng
+                  <div className="flex items-center gap-1.5 bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
+                    <TrendingUp size={14} strokeWidth={2.5} /> Động lực tăng
                   </div>
                   <div className="p-3 space-y-3">
                     {report.content["2"].market_drivers.bullish?.length > 0 ? (
@@ -474,8 +474,8 @@ export function ReportDocument({ report }: { report: Report }) {
                   </div>
                 </div>
                 <div className="border border-down/25 bg-down/[0.04] rounded-lg overflow-hidden">
-                  <div className="bg-down/10 text-down font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-down/20">
-                    ▼ Động lực giảm
+                  <div className="flex items-center gap-1.5 bg-down/10 text-down font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-down/20">
+                    <TrendingDown size={14} strokeWidth={2.5} /> Động lực giảm
                   </div>
                   <div className="p-3 space-y-3">
                     {report.content["2"].market_drivers.bearish?.length > 0 ? (
@@ -512,7 +512,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 3 */}
         {report.content["3"] && (
-          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+          <section className="py-5">
             <SectionHeading number="03" title={report.content["3"].title} />
 
             {report.content["3"].analysis_blocks?.map((block: any, i: number) => (
@@ -648,7 +648,7 @@ export function ReportDocument({ report }: { report: Report }) {
           const section = report.content[key];
           if (!section) return null;
           return (
-            <section key={key} className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+            <section key={key} className="py-5">
               <SectionHeading number={`0${key}`} title={section.title} />
               <div className="space-y-2.5">
                 {section.bullets ? (
@@ -665,7 +665,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 7 — Quan điểm trái chiều */}
         {report.content["7"] && (
-          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+          <section className="py-5">
             <SectionHeading number="07" title={report.content["7"].title} />
             {report.content["7"].points?.length > 0 ? (
               <div className="space-y-5">
@@ -693,7 +693,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 8 — Lịch sự kiện */}
         {report.content["8"] && (
-          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+          <section className="py-5">
             <SectionHeading number="08" title={report.content["8"].title} />
             {report.content["8"].events?.length > 0 ? (
               // Lịch dạng timeline tuần tự: mỗi sự kiện là 1 "ô lịch" ngày/giờ nối bằng
@@ -743,7 +743,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION BIZ — Gợi ý kinh doanh */}
         {report.content["biz"] && (
-          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+          <section className="py-5">
             <SectionHeading number="SIM" title={report.content["biz"].title} />
             <div className="flex flex-col gap-6">
               <BizRecommendationTable
@@ -772,7 +772,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 9 — Nguồn */}
         {report.content["9"] && (
-          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
+          <section className="py-5">
             <SectionHeading number="09" title={report.content["9"].title} />
             {report.content["9"].items?.length > 0 ? (
               <ul className="space-y-1.5">
