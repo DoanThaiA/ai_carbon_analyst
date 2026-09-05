@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import List, Dict, Any, Optional
 import asyncio
 import anthropic
@@ -14,10 +14,8 @@ from services.eua_framework_admin import get_overrides_map
 
 logger = logging.getLogger(__name__)
 
-# Mục 1-5, 7, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Sonnet;
-# Mục 6 (tóm tắt ngắn từng bài) dùng Haiku — rẻ hơn nhiều, đủ cho việc tóm tắt.
+# Mục 1-5, 7, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Sonnet.
 REPORT_MODEL_SONNET = "claude-sonnet-5"
-REPORT_MODEL_HAIKU = "claude-haiku-4-5"
 
 # Meta-instruction chống dài dòng — đặt ở đầu system message mọi section,
 # LLM anchor vào instruction đầu tiên mạnh nhất.
@@ -437,80 +435,6 @@ def _collect_cited_articles(news_by_topic: Dict[str, List[Dict]], limit: int = 4
     return articles[:limit]
 
 
-def _build_section6_news(news_by_topic: Dict[str, List[Dict]], limit_per_region: int = 30) -> Dict[str, List[Dict]]:
-    """Gom toàn bộ tin tức đã crawl trong ngày, dedup theo url, tách theo
-    region ('vietnam' / 'international') cho Mục 6 — mỗi tin giữ title/summary/
-    source/url để hiển thị dạng danh sách có thể bấm link tới bài gốc."""
-    articles = _collect_cited_articles(news_by_topic, limit=1000)
-    international = [a for a in articles if a.get("region") != "vietnam"][:limit_per_region]
-    vietnam = [a for a in articles if a.get("region") == "vietnam"][:limit_per_region]
-    return {"international": international, "vietnam": vietnam}
-
-
-def _prompt_section6_summary(article: Dict, target_date: str) -> str:
-    return f"""Bạn là chuyên gia phân tích thị trường carbon & năng lượng châu Âu.
-Ngày báo cáo: {target_date}
-
-BÀI VIẾT CẦN TÓM TẮT (CHỈ bài này, không liên quan bài nào khác):
-Nguồn: {article['source']}
-Tiêu đề: {article['title']}
-Nội dung (trích): {article.get('content_excerpt') or article['summary']}
-
-YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT (2–4 câu) CHO RIÊNG bài viết này:
-- 1–2 câu đầu: tóm tắt ĐÚNG nội dung chính của bài (fact, số liệu nếu bài có nêu) — TUYỆT ĐỐI KHÔNG bịa thêm thông tin ngoài nội dung đã cho, KHÔNG trộn với thông tin của bài viết khác.
-- Câu cuối: 1 nhận định ngắn gọn về ý nghĩa/tác động của tin này đối với thị trường carbon/năng lượng châu Âu hoặc giá EUA — chỉ viết câu này nếu có cơ sở hợp lý từ nội dung bài, nếu bài không liên quan thì bỏ qua, chỉ tóm tắt fact.
-- Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác: dịch ý sang tiếng Việt tự nhiên, không dịch máy móc từng từ.
-- Văn phong khách quan, súc tích. KHÔNG dùng markdown (không **, không gạch đầu dòng).
-
-CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"summary": "..."}}"""
-
-
-SECTION6_SUMMARY_CONCURRENCY = 4
-
-
-async def _summarize_section6_articles(
-    articles: List[Dict], target_date: str, concurrency: int = SECTION6_SUMMARY_CONCURRENCY
-) -> List[Dict]:
-    """Sinh tóm tắt bằng LLM CHO RIÊNG TỪNG bài đã lọt vào Mục 6 — mỗi bài 1
-    lần gọi LLM ĐỘC LẬP, prompt CHỈ chứa đúng 1 bài (không gộp nhiều bài vào
-    chung 1 prompt) để đảm bảo tóm tắt của bài nào chỉ dựa trên đúng nội dung
-    bài đó, không bị trộn/tổng hợp chéo với các bài khác. Các lệnh gọi này độc
-    lập với nhau nên chạy song song có giới hạn (Semaphore) thay vì tuần tự
-    từng bài — giảm đáng kể thời gian sinh báo cáo khi Mục 6 có tới 60 bài, mà
-    vẫn không vi phạm yêu cầu "mỗi bài 1 prompt riêng". Chỉ chạy cho các bài đã
-    lọt vào Mục 6 (không tóm tắt toàn bộ tin trong ngày — tốn kém không cần thiết).
-
-    Trả về danh sách bài MỚI (không mutate input gốc — các dict này còn được
-    share với news_by_topic dùng cho prompt các mục khác) với "summary" đã
-    thay bằng bản LLM viết riêng cho bài đó; bài nào LLM lỗi → fallback dùng
-    đúng đoạn cắt content gốc của chính bài đó, không ảnh hưởng các bài khác.
-    """
-    if not articles:
-        return []
-
-    sem = asyncio.Semaphore(concurrency)
-
-    async def _summarize_one(art: Dict) -> Dict:
-        async with sem:
-            await asyncio.sleep(1)  # giãn nhịp nhẹ trong mỗi slot, tránh dồn request tức thời
-            raw = await _call_llm(
-                _prompt_section6_summary(art, target_date),
-                model=REPORT_MODEL_HAIKU,
-                max_tokens=512,
-            )
-            parsed = _extract_json(raw) if raw else None
-            summary = (parsed.get("summary") or "").strip() if parsed else ""
-
-            if not summary:
-                logger.warning("[REPORT] Mục 6: tóm tắt LLM thất bại cho bài %s, dùng fallback.", art["url"])
-                summary = art["summary"]
-
-            return {**art, "summary": summary}
-
-    return list(await asyncio.gather(*[_summarize_one(art) for art in articles]))
-
-
 def _summarize_prices(prices: List[Dict]) -> str:
     """Tạo dòng tóm tắt số liệu giá để đưa vào prompt."""
     lines = []
@@ -619,14 +543,88 @@ async def get_previous_report_events(session: AsyncSession, target_date_str: str
     return prev_report.content.get("8", {}).get("events", [])
 
 
-def _format_prev_events(events: List[Dict]) -> str:
-    if not events:
-        return "(Không có báo cáo trước đó, hoặc báo cáo trước không có sự kiện nào.)"
-    lines = [
-        f"- {ev.get('datetime_vn', '?')} | {ev.get('event', '?')} | Tác động: {ev.get('impact', '?')}"
-        for ev in events
-    ]
-    return "\n".join(lines)
+def _parse_event_date(ev: Dict) -> Optional[date]:
+    """Parse field 'date' (YYYY-MM-DD) của 1 event Mục 8; None nếu thiếu/sai định dạng."""
+    raw = ev.get("date")
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _split_prev_events(events: List[Dict], target_date_str: str) -> tuple[List[Dict], List[Dict]]:
+    """Lọc sự kiện Mục 8 của báo cáo trước theo cửa sổ 7 ngày tính từ target_date —
+    đây là chỗ CHẶN CỨNG (không chỉ dựa vào prompt) để Mục 8 không tồn đọng sự kiện
+    cũ vô thời hạn:
+    - "pending_outcome": ngày diễn ra CÙNG NGÀY hoặc TRƯỚC target_date (date <=
+      target_date) mà CHƯA có "outcome" — đưa cho LLM cập nhật kết quả ĐÚNG 1 LẦN
+      trong báo cáo này (kể cả sự kiện diễn ra ĐÚNG NGÀY báo cáo — vd báo cáo ngày
+      01/09 có nêu sự kiện ngày 03/09 thì báo cáo ngày 03/09 phải cố cập nhật kết
+      quả luôn, không đợi thêm 1 ngày nữa). Sau khi có outcome (kể cả placeholder
+      "chưa xác nhận"), lần gọi kế tiếp sẽ không còn thấy nó thiếu outcome nữa ->
+      tự động rơi khỏi cả 2 nhóm và bị loại vĩnh viễn — không lặp lại lần 2.
+    - "still_upcoming": còn ở tương lai trong cửa sổ 7 ngày tới (target_date <
+      date <= target_date+6) — giữ lại để không mất các sự kiện đơn lẻ (không định
+      kỳ) mà tin tức hôm nay không nhắc lại.
+    Sự kiện đã có outcome, đã quá hạn quá lâu, vượt quá 7 ngày tới, hoặc thiếu "date"
+    hợp lệ đều bị loại khỏi cả 2 nhóm (không mang sang báo cáo mới)."""
+    target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    window_end = target + timedelta(days=6)
+    pending_outcome, still_upcoming = [], []
+    for ev in events:
+        ev_date = _parse_event_date(ev)
+        if ev_date is None:
+            continue
+        if ev_date <= target and not ev.get("outcome"):
+            pending_outcome.append(ev)
+        elif target < ev_date <= window_end:
+            still_upcoming.append(ev)
+    return pending_outcome, still_upcoming
+
+
+def _format_prev_events(pending_outcome: List[Dict], still_upcoming: List[Dict]) -> str:
+    def _fmt(ev: Dict) -> str:
+        return f"- {ev.get('date', '?')} ({ev.get('datetime_vn', '?')}) | {ev.get('event', '?')} | Tác động: {ev.get('impact', '?')}"
+
+    parts = []
+    if pending_outcome:
+        parts.append(
+            "Đã diễn ra hoặc diễn ra đúng hôm nay, CẦN cập nhật kết quả (thêm field \"outcome\"):\n"
+            + "\n".join(_fmt(ev) for ev in pending_outcome)
+        )
+    if still_upcoming:
+        parts.append(
+            "Vẫn còn sắp tới trong cửa sổ 7 ngày, giữ nguyên \"date\" (KHÔNG cần \"outcome\"):\n"
+            + "\n".join(_fmt(ev) for ev in still_upcoming)
+        )
+    if not parts:
+        return "(Không có sự kiện nào cần mang sang từ báo cáo trước.)"
+    return "\n\n".join(parts)
+
+
+def _finalize_section8_events(events: Optional[List[Dict]], target_date_str: str) -> List[Dict]:
+    """Chặn cứng lần cuối ở tầng code trên chính output LLM vừa trả về: chỉ giữ sự
+    kiện có "date" trong cửa sổ 7 ngày tính từ target_date, hoặc sự kiện quá hạn
+    nhưng vừa được điền "outcome" trong lượt này — đảm bảo Mục 8 không bao giờ tồn
+    đọng sự kiện cũ dù prompt có bị LLM làm sai."""
+    target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    window_end = target + timedelta(days=6)
+    kept = []
+    for ev in events or []:
+        ev_date = _parse_event_date(ev)
+        if ev_date is None:
+            # Thiếu/lỗi "date" — không đủ căn cứ để lọc, giữ nguyên để tránh mất dữ
+            # liệu do LLM quên field, chỉ log để theo dõi.
+            logger.warning("[REPORT] Mục 8: event thiếu/lỗi field 'date', giữ nguyên: %s", ev.get("event"))
+            kept.append(ev)
+        elif target <= ev_date <= window_end:
+            kept.append(ev)
+        elif ev_date < target and ev.get("outcome"):
+            kept.append(ev)
+        # else: quá hạn chưa có outcome, hoặc vượt quá 7 ngày tới -> loại bỏ hẳn.
+    return kept
 
 
 def _extract_message_text(message: "anthropic.types.Message") -> str:
@@ -655,8 +653,7 @@ async def _call_llm(
     tắc không đổi theo ngày, chỉ user message chứa DATA mới đổi) nên tận dụng
     được prompt caching thật sự của Anthropic (KHÔNG tự động nếu chỉ truyền
     chuỗi thường — phải khai báo cache_control tường minh như dưới đây).
-    model mặc định Sonnet cho các mục phân tích chuyên sâu (Mục 1-5, 7, 8, biz);
-    Mục 6 (tóm tắt từng bài) gọi với model=REPORT_MODEL_HAIKU — rẻ hơn, đủ dùng.
+    model mặc định Sonnet cho mọi mục phân tích (Mục 1-5, 7, 8, biz).
     """
     client = _get_anthropic_client()
     for attempt in range(max_retries):
@@ -998,36 +995,37 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 
 
 def _prompt_section8(news_text: str, prev_events_text: str, target_date: str) -> tuple[str, str]:
+    window_start = target_date
+    window_end = (datetime.strptime(target_date, "%Y-%m-%d").date() + timedelta(days=6)).isoformat()
     system = f"Bạn là chuyên gia lịch trình thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date} (Giờ Việt Nam, UTC+7)
+CỬA SỔ HIỂN THỊ: CHỈ liệt kê sự kiện có ngày diễn ra ("date") từ {window_start} đến {window_end} (đúng 7 ngày kể từ ngày báo cáo) — TUYỆT ĐỐI KHÔNG liệt kê sự kiện có "date" trước {window_start}, TRỪ đúng các sự kiện thuộc nhóm "Đã diễn ra, CẦN cập nhật kết quả" bên dưới.
 
-SỰ KIỆN ĐÃ NÊU TỪ BÁO CÁO KỲ TRƯỚC:
+SỰ KIỆN TỪ BÁO CÁO TRƯỚC:
 {prev_events_text}
 
 TIN TỨC LIÊN QUAN:
 {news_text}
 
-YÊU CẦU: Viết MỤC 8 — LỊCH SỰ KIỆN 7 NGÀY TỚI.
-Bắt buộc liệt kê các sự kiện định kỳ trọng yếu sau (kèm ngày giờ Việt Nam ước tính và mức tác động):
-  - Tồn kho dầu EIA (thứ Tư hàng tuần, ~22h30 VN)
-  - Tồn kho dầu API (thứ Ba hàng tuần, ~22h30 VN)
+YÊU CẦU: Viết MỤC 8 — LỊCH SỰ KIỆN 7 NGÀY TỚI ({window_start} → {window_end}).
+Bắt buộc liệt kê các sự kiện định kỳ trọng yếu sau nếu rơi vào cửa sổ trên (kèm ngày VN ước tính và mức tác động):
+  - Tồn kho dầu EIA (thứ Tư hàng tuần)
+  - Tồn kho dầu API (thứ Ba hàng tuần)
   - Rig count Baker Hughes (thứ Sáu hàng tuần)
   - Đấu giá EUA (nếu có trong tuần, xem lịch ICE)
   - Họp FOMC / ECB / chính sách liên quan (nếu có)
   - Đáo hạn hợp đồng tương lai (nếu có)
   - Sự kiện bổ sung từ tin tức (nếu có).
-Mỗi event gồm: ngày giờ VN | Tên sự kiện | Mức tác động (Cao/Trung/Thấp).
+Mỗi event gồm: "date" (YYYY-MM-DD, ngày dương lịch VN sự kiện diễn ra — BẮT BUỘC, dùng để hệ thống lọc theo cửa sổ 7 ngày), "datetime_vn" (chuỗi hiển thị CHỈ gồm ngày/tháng dạng "DD/MM", vd "10/09" — TUYỆT ĐỐI KHÔNG kèm năm, KHÔNG kèm giờ), "event", "impact" (Cao/Trung/Thấp).
 
-CẬP NHẬT KẾT QUẢ SỰ KIỆN KỲ TRƯỚC (bắt buộc):
-Với mỗi sự kiện trong "SỰ KIỆN ĐÃ NÊU TỪ BÁO CÁO KỲ TRƯỚC" ở trên mà ngày diễn ra đã qua so với {target_date}:
-- Thêm field "outcome" vào object event tương ứng trong "events" trả về.
-- CHỈ điền "outcome" bằng kết quả THỰC TẾ nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ràng (vd số liệu tồn kho thực tế, kết quả cuộc họp...).
-- Nếu tin tức KHÔNG xác nhận kết quả, ghi đúng "Chưa có thông tin kết quả xác nhận" — TUYỆT ĐỐI KHÔNG tự bịa số liệu/kết quả.
-- Sự kiện kỳ trước mà ngày diễn ra CHƯA qua (vẫn còn trong 7 ngày tới) → liệt kê lại bình thường, KHÔNG cần field "outcome".
+CẬP NHẬT KẾT QUẢ SỰ KIỆN KỲ TRƯỚC (bắt buộc, chỉ áp dụng cho danh sách "SỰ KIỆN TỪ BÁO CÁO TRƯỚC" ở trên):
+- Nhóm "Đã diễn ra hoặc diễn ra đúng hôm nay, CẦN cập nhật kết quả": với MỖI sự kiện, thêm field "outcome" — CHỈ điền kết quả THỰC TẾ nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ràng (vd số liệu tồn kho thực tế, kết quả cuộc họp...); nếu tin tức KHÔNG xác nhận, ghi đúng "Chưa có thông tin kết quả xác nhận" — TUYỆT ĐỐI KHÔNG tự bịa số liệu/kết quả, KHÔNG tự bịa thêm sự kiện không có căn cứ. Giữ nguyên "date" gốc (KHÔNG đổi sang ngày khác).
+- Nhóm "Vẫn còn sắp tới trong cửa sổ 7 ngày": liệt kê lại bình thường, giữ nguyên "date", KHÔNG cần field "outcome" — tránh liệt kê trùng nếu sự kiện này đã nằm trong danh sách sự kiện định kỳ bạn tự tính ở trên.
 - Sự kiện mới của kỳ 7 ngày tới tính từ {target_date} → liệt kê bình thường, KHÔNG cần field "outcome".
+- KHÔNG đưa vào "events" bất kỳ sự kiện nào có "date" nằm ngoài khoảng {window_start} → {window_end}, TRỪ các sự kiện thuộc nhóm "Đã diễn ra, CẦN cập nhật kết quả".
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"8": {{"title": "Lịch sự kiện 7 ngày tới", "events": [{{"datetime_vn": "...", "event": "...", "impact": "Cao/Trung/Thấp", "outcome": "... (optional, chỉ khi sự kiện đã qua)"}}]}}}}"""
+{{"8": {{"title": "Lịch sự kiện 7 ngày tới", "events": [{{"date": "YYYY-MM-DD", "datetime_vn": "DD/MM", "event": "...", "impact": "Cao/Trung/Thấp", "outcome": "... (optional, chỉ khi sự kiện đã qua)"}}]}}}}"""
     return system, user
 
 
@@ -1086,7 +1084,10 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     gasoil_crack_spread = _gasoil_crack_spread_summary(prices) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
-    prev_events_text = _format_prev_events(await get_previous_report_events(session, target_date))
+    pending_outcome_events, still_upcoming_events = _split_prev_events(
+        await get_previous_report_events(session, target_date), target_date
+    )
+    prev_events_text = _format_prev_events(pending_outcome_events, still_upcoming_events)
 
     # Số liệu thật (tính sẵn bằng Python, không để LLM tự bịa) cho Mục 2:
     # giá đóng cửa phiên liền trước, biến động trong phiên liền trước, xu hướng 30 ngày.
@@ -1224,6 +1225,11 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
                 content["7"] = {**section_data, "points": resolved_points}
         elif section_key == "2":
             section2_data = section_data
+        elif section_key == "8":
+            content["8"] = {
+                **section_data,
+                "events": _finalize_section8_events(section_data.get("events"), target_date),
+            }
         else:
             content[section_key] = section_data
 
@@ -1250,15 +1256,6 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
             "bullish": _resolve_driver_items(raw_drivers.get("bullish")),
             "bearish": _resolve_driver_items(raw_drivers.get("bearish")),
         },
-    }
-
-    section6_news = _build_section6_news(news_by_topic)
-    section6_international = await _summarize_section6_articles(section6_news["international"], target_date)
-    section6_vietnam = await _summarize_section6_articles(section6_news["vietnam"], target_date)
-    content["6"] = {
-        "title": "Chi tiết các tin tức chính",
-        "international": section6_international,
-        "vietnam": section6_vietnam,
     }
 
     cited_articles = _collect_cited_articles(news_by_topic)

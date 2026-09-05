@@ -3,7 +3,10 @@
 import { useState } from "react";
 import clsx from "clsx";
 import Image from "next/image";
-import { Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle, ListChecks } from "lucide-react";
+import {
+  Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle, ListChecks,
+  Sparkles, LineChart, BarChart3, FileText, AlignLeft, Newspaper, Scale, CalendarDays, Lightbulb, Link2,
+} from "lucide-react";
 import type { Report } from "@/lib/types";
 
 // "YYYY-MM-DD" -> "dd/MM" (nhãn trục X) — tránh phụ thuộc date-fns chỉ cho 1 format đơn giản.
@@ -82,15 +85,34 @@ function isPositiveDelta(value: string) {
   return typeof value === "string" ? !value.trim().startsWith("-") : true;
 }
 
-// Đầu mục section: badge số được tô đặc (thay vì viền mảnh) để phân biệt rõ ràng
-// từng phần trong báo cáo dài, tiêu đề lớn/đậm hơn để tạo phân cấp thị giác rõ.
+// Icon riêng cho từng section giúp người đọc nhận diện ngay loại nội dung
+// (giá/tin tức/lịch/gợi ý...) thay vì chỉ dựa vào số thứ tự.
+const SECTION_ICON: Record<string, typeof Sparkles> = {
+  "01": Sparkles,
+  "02": LineChart,
+  "03": BarChart3,
+  "04": FileText,
+  "05": AlignLeft,
+  "06": Newspaper,
+  "07": Scale,
+  "08": CalendarDays,
+  "SIM": Lightbulb,
+  "09": Link2,
+};
+
+// Đầu mục section: icon nổi bật trong khối bo tròn để phân biệt rõ ràng từng
+// phần trong báo cáo dài, tiêu đề lớn/đậm hơn để tạo phân cấp thị giác rõ.
 function SectionHeading({ number, title }: { number: string; title: string }) {
+  const Icon = SECTION_ICON[number] ?? Sparkles;
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <span className="font-mono text-[11px] font-bold text-white bg-primary rounded-[4px] px-2 py-1 leading-none shrink-0">
-        {number}
+    <div className="flex items-center gap-3 mb-4">
+      <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-tint text-primary-dark shrink-0">
+        <Icon size={18} strokeWidth={2.25} />
       </span>
-      <span className="text-[21px] font-extrabold tracking-tight text-foreground">{title}</span>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="text-[20px] font-extrabold tracking-tight text-foreground">{title}</span>
+        <span className="font-mono text-[10px] font-semibold text-muted-light tracking-wider">{number}</span>
+      </div>
     </div>
   );
 }
@@ -117,12 +139,12 @@ function BizRecommendationTable({
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[36px]">#</th>
+                <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[32px] sm:w-[36px]">#</th>
                 {columns.map((col, i) => (
                   <th
                     key={col.key}
                     className={clsx(
-                      "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 bg-tint",
+                      "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 bg-tint",
                       i < columns.length - 1 && "border-r border-border"
                     )}
                   >
@@ -134,11 +156,11 @@ function BizRecommendationTable({
             <tbody className="divide-y divide-border">
               {rows.map((row, ri) => (
                 <tr key={ri} className="align-top even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                  <td className="px-3 py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">{ri + 1}</td>
+                  <td className="px-2 sm:px-3 py-2.5 sm:py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">{ri + 1}</td>
                   {columns.map((col, i) => (
                     <td
                       key={col.key}
-                      className={clsx("px-3 py-3 text-body leading-relaxed", i < columns.length - 1 && "border-r border-border")}
+                      className={clsx("px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-relaxed", i < columns.length - 1 && "border-r border-border")}
                     >
                       <RichText text={row[col.key] || ""} />
                     </td>
@@ -162,19 +184,21 @@ function CandlestickChart({ report }: { report: Report }) {
 
   if (candles.length === 0) {
     return (
-      <div className="w-full h-[260px] flex items-center justify-center text-muted-light text-sm border border-border rounded-lg bg-background">
+      <div className="w-full h-[200px] sm:h-[260px] flex items-center justify-center text-muted-light text-sm border border-border rounded-lg bg-background">
         Đang cập nhật dữ liệu...
       </div>
     );
   }
 
-  const W = 640, H = 260, padL = 48, padR = 12, padT = 12, padB = 26;
+  // padT/padB nhỏ + biên độ giá 5% (thay vì 8%) để nến lấp gần hết chiều cao khung,
+  // tránh khoảng trống thừa phía trên/dưới khi thu nhỏ khung trên mobile.
+  const W = 640, H = 260, padL = 48, padR = 12, padT = 6, padB = 20;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const allVals = candles.flatMap((c: any) => [c.high, c.low]);
   const min = Math.min(...allVals), max = Math.max(...allVals);
   const range = max - min || 1;
-  const pMin = min - range * 0.08;
-  const pMax = max + range * 0.08;
+  const pMin = min - range * 0.05;
+  const pMax = max + range * 0.05;
 
   const yScale = (v: number) => padT + plotH - ((v - pMin) / (pMax - pMin)) * plotH;
   const cw = plotW / candles.length;
@@ -200,7 +224,7 @@ function CandlestickChart({ report }: { report: Report }) {
   return (
     <div className="relative">
       <svg
-        width="100%" height="260" viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair"
+        width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-[200px] sm:h-[260px] cursor-crosshair"
         onMouseMove={handlePointer}
         onMouseLeave={() => setHoverIndex(null)}
         onTouchMove={handlePointer}
@@ -332,10 +356,10 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       </div>
 
-      <div className="px-6 sm:px-10 pb-14">
+      <div className="px-6 sm:px-10 pt-5 pb-10 space-y-3.5">
 
         {/* SECTION 1 */}
-        <section className="py-9 border-b-2 border-border-soft">
+        <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
           <SectionHeading number="01" title="Tóm tắt điều hành" />
           <ul className="list-none">
             {report.content["1"]?.bullets?.map((b: string, i: number) => {
@@ -344,8 +368,7 @@ export function ReportDocument({ report }: { report: Report }) {
               const text = isMatch ? b.split(':').slice(1).join(':') : b;
 
               return (
-                <li key={i} className="flex gap-3.5 py-2.5 border-t border-border text-[14.5px] first:border-t-0">
-                  <span className="font-mono text-primary text-xs pt-0.5 min-w-[16px]">—</span>
+                <li key={i} className="py-2.5 border-t border-border text-[14.5px] first:border-t-0">
                   <p className="text-foreground">
                     <span className="font-mono text-[10.5px] text-primary-dark bg-tint border border-primary/20 rounded-[3px] px-1 py-px mr-2">
                       {tag.trim().substring(0, 15)}
@@ -359,51 +382,61 @@ export function ReportDocument({ report }: { report: Report }) {
         </section>
 
         {/* SECTION 2 */}
-        <section className="py-9 border-b-2 border-border-soft">
+        <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
           <SectionHeading number="02" title="Bảng giá nhanh" />
           {report.content["2"]?.price_timestamp && (
             <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
           )}
 
-          {/* Bảng giá trước, biểu đồ nến bên dưới — mỗi phần full-width thay vì chia đôi cột */}
-          <div className="flex flex-col gap-6">
-            <table className="w-full border-collapse font-mono text-[12.5px]">
-              <thead>
-                <tr>
-                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Hợp đồng</th>
-                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Giá</th>
-                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Ngày</th>
-                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Tuần</th>
-                  <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {priceRows.map((r: any, i: number) => (
-                  <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                    <td className="p-2.5 font-sans font-semibold text-[13px] text-label">{r.name}</td>
-                    <td className="p-2.5">{r.price}</td>
-                    <td className={clsx("p-2.5", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
-                    <td className={clsx("p-2.5", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
-                    <td className="p-2.5 font-sans text-[12px] text-body">{r.note}</td>
+          {/* Bảng giá full-width; nến + số liệu chính đứng cùng hàng bên phải trên desktop
+              (lg:flex-row), xếp chồng trên mobile (chart trước, số liệu chính sau, giữ nguyên
+              thứ tự cũ) nhưng bảng giá được phóng to chữ. 4 cột số liệu luôn 1 dòng
+              (whitespace-nowrap); cột Ghi chú (prose, ít thiết yếu để quét nhanh) ẩn trên
+              mobile thay vì để nó ép cả hàng cao lên do tự xuống dòng trong cột hẹp. */}
+          <div className="flex flex-col gap-5">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
+                <thead>
+                  <tr>
+                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Hợp đồng</th>
+                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Giá</th>
+                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Δ Ngày</th>
+                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Δ Tuần</th>
+                    <th className="hidden sm:table-cell text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {priceRows.map((r: any, i: number) => (
+                    <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
+                      <td className="px-2 sm:px-2.5 py-2.5 font-sans font-semibold text-label">{r.name}</td>
+                      <td className="px-2 sm:px-2.5 py-2.5 whitespace-nowrap">{r.price}</td>
+                      <td className={clsx("px-2 sm:px-2.5 py-2.5 whitespace-nowrap", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
+                      <td className={clsx("px-2 sm:px-2.5 py-2.5 whitespace-nowrap", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
+                      <td className="hidden sm:table-cell px-2 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-            <div className="bg-surface border border-border rounded-lg p-4">
-              <div className="flex justify-between font-mono text-[11px] text-muted-light mb-2.5 uppercase tracking-wider">
-                <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
-                <span>EUR/tCO₂e</span>
+            <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+              <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
+                <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
+                  <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
+                  <span>EUR/tCO₂e</span>
+                </div>
+                <CandlestickChart report={report} />
               </div>
-              <CandlestickChart report={report} />
+
+              {report.content["2"]?.key_facts && (
+                <div className="lg:flex-1 lg:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
+                  <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
+                  <p className="text-[13px] leading-relaxed text-body"><RichText text={report.content["2"].key_facts} /></p>
+                </div>
+              )}
             </div>
           </div>
-          {report.content["2"]?.key_facts && (
-            <div className="mt-3 border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
-              <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
-              <p className="text-[13px] leading-relaxed text-body"><RichText text={report.content["2"].key_facts} /></p>
-            </div>
-          )}
+
           {(report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0) && (
             <div className="mt-4">
               <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Động lực thị trường</h4>
@@ -479,7 +512,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 3 */}
         {report.content["3"] && (
-          <section className="py-9 border-b-2 border-border-soft">
+          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
             <SectionHeading number="03" title={report.content["3"].title} />
 
             {report.content["3"].analysis_blocks?.map((block: any, i: number) => (
@@ -568,12 +601,12 @@ export function ReportDocument({ report }: { report: Report }) {
                     <table className="w-full border-collapse text-[13px]">
                       <thead>
                         <tr>
-                          <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint min-w-[130px]">Chỉ tiêu</th>
+                          <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint min-w-[120px]">Chỉ tiêu</th>
                           {columns.map(h => {
                             const meta = HORIZON_META[h];
                             const Icon = meta.icon;
                             return (
-                              <th key={h} className={clsx("text-left px-3 py-2.5 border-b-2 border-border min-w-[220px]", meta.iconBg)}>
+                              <th key={h} className={clsx("text-left px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-border min-w-[200px]", meta.iconBg)}>
                                 <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider">
                                   <Icon size={13} /> {h}
                                 </span>
@@ -587,14 +620,14 @@ export function ReportDocument({ report }: { report: Report }) {
                           const RowIcon = row.icon;
                           return (
                             <tr key={ri} className="align-top even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                              <td className="px-3 py-3 border-r border-border bg-surface font-semibold text-label text-[12.5px]">
+                              <td className="px-2 sm:px-3 py-2.5 sm:py-3 border-r border-border bg-surface font-semibold text-label text-[12.5px]">
                                 <span className="flex items-center gap-1.5">
                                   {RowIcon && <RowIcon size={13} className="text-primary-dark shrink-0" />}
                                   {row.label}
                                 </span>
                               </td>
                               {columns.map(h => (
-                                <td key={h} className="px-3 py-3 text-body leading-relaxed">
+                                <td key={h} className="px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-relaxed">
                                   {byHorizon[h] ? row.render(byHorizon[h]) : <span className="text-muted-light">—</span>}
                                 </td>
                               ))}
@@ -615,7 +648,7 @@ export function ReportDocument({ report }: { report: Report }) {
           const section = report.content[key];
           if (!section) return null;
           return (
-            <section key={key} className="py-8 border-b border-border">
+            <section key={key} className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
               <SectionHeading number={`0${key}`} title={section.title} />
               <div className="space-y-2.5">
                 {section.bullets ? (
@@ -630,47 +663,9 @@ export function ReportDocument({ report }: { report: Report }) {
           );
         })}
 
-        {/* SECTION 6 — Chi tiết các tin tức chính */}
-        {report.content["6"] && (
-          <section className="py-9 border-b-2 border-border-soft">
-            <SectionHeading number="06" title={report.content["6"].title} />
-            {[
-              { key: "international", label: "Quốc tế" },
-              { key: "vietnam", label: "Việt Nam" },
-            ].map(({ key, label }) => {
-              const items = report.content["6"][key];
-              return (
-                <div key={key} className="mb-6 last:mb-0">
-                  <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-3">{label}</h4>
-                  {items?.length > 0 ? (
-                    <div className="space-y-4">
-                      {items.map((art: any, i: number) => (
-                        <div key={i} className="pb-4 border-b border-border-soft last:border-b-0 last:pb-0">
-                          <p className="text-[14px] font-semibold text-label leading-snug">{i + 1}. {art.title}</p>
-                          <p className="mt-1 text-[13.5px] leading-relaxed text-body"><RichText text={art.summary} /></p>
-                          <a
-                            href={art.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-1 inline-block font-mono text-[11.5px] text-primary hover:underline"
-                          >
-                            Nguồn: {art.source} ↗
-                          </a>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[13.5px] text-muted-light italic">Không có tin tức {label.toLowerCase()} trong kỳ này.</p>
-                  )}
-                </div>
-              );
-            })}
-          </section>
-        )}
-
         {/* SECTION 7 — Quan điểm trái chiều */}
         {report.content["7"] && (
-          <section className="py-9 border-b-2 border-border-soft">
+          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
             <SectionHeading number="07" title={report.content["7"].title} />
             {report.content["7"].points?.length > 0 ? (
               <div className="space-y-5">
@@ -698,34 +693,45 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 8 — Lịch sự kiện */}
         {report.content["8"] && (
-          <section className="py-9 border-b-2 border-border-soft">
+          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
             <SectionHeading number="08" title={report.content["8"].title} />
             {report.content["8"].events?.length > 0 ? (
-              <div className="space-y-2">
-                <div className="flex gap-4 items-center pb-2 border-b border-border-soft">
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-light min-w-[140px]">Thời gian (VN)</span>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-light flex-1">Sự kiện</span>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-light">Tác động</span>
-                </div>
-                {report.content["8"].events.map((ev: any, i: number) => (
-                  <div key={i} className="py-2.5 border-t border-border first:border-t-0">
-                    <div className="flex gap-4 items-start">
-                      <span className="font-mono text-[11.5px] text-muted-light min-w-[140px]">{ev.datetime_vn}</span>
-                      <span className="text-[13.5px] text-foreground flex-1">{ev.event}</span>
-                      <span className={clsx(
-                        "font-mono text-[10px] uppercase px-1.5 py-0.5 rounded border",
-                        ev.impact === "Cao" ? "text-down border-down/30 bg-red-50" :
-                        ev.impact === "Trung" ? "text-warn border-warn/30 bg-warn-tint" :
-                        "text-muted-light border-border"
-                      )}>{ev.impact}</span>
+              // Lịch dạng timeline tuần tự: mỗi sự kiện là 1 "ô lịch" ngày/giờ nối bằng
+              // 1 trục dọc + chấm tròn, thay vì bảng hàng/cột — dễ quét theo trình tự thời gian.
+              <div>
+                {report.content["8"].events.map((ev: any, i: number) => {
+                  const isLast = i === report.content["8"].events.length - 1;
+                  const impactDot =
+                    ev.impact === "Cao" ? "border-down" :
+                    ev.impact === "Trung" ? "border-warn" : "border-muted-light";
+                  return (
+                    <div key={i} className="flex gap-3 sm:gap-4">
+                      <div className="w-[52px] sm:w-[60px] shrink-0 flex items-center justify-center rounded-lg border border-border bg-tint/50 py-1.5 mt-0.5">
+                        <span className="font-mono text-[11px] font-bold text-primary-dark leading-none">{ev.datetime_vn || "—"}</span>
+                      </div>
+                      <div className="flex flex-col items-center shrink-0">
+                        <span className={clsx("w-2.5 h-2.5 rounded-full border-2 bg-background mt-3.5 shrink-0", impactDot)} />
+                        {!isLast && <span className="w-px flex-1 bg-border mt-1" />}
+                      </div>
+                      <div className={clsx("flex-1 min-w-0", !isLast && "pb-4")}>
+                        <div className="flex items-start justify-between gap-3 pt-1">
+                          <span className="text-[13.5px] text-foreground leading-snug">{ev.event}</span>
+                          <span className={clsx(
+                            "shrink-0 font-mono text-[10px] uppercase px-1.5 py-0.5 rounded border",
+                            ev.impact === "Cao" ? "text-down border-down/30 bg-red-50" :
+                            ev.impact === "Trung" ? "text-warn border-warn/30 bg-warn-tint" :
+                            "text-muted-light border-border"
+                          )}>{ev.impact}</span>
+                        </div>
+                        {ev.outcome && (
+                          <p className="mt-1.5 text-[12.5px] text-body italic">
+                            <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    {ev.outcome && (
-                      <p className="mt-1.5 ml-[156px] text-[12.5px] text-body italic">
-                        <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               report.content["8"].bullets?.map((b: string, i: number) => (
@@ -737,7 +743,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION BIZ — Gợi ý kinh doanh */}
         {report.content["biz"] && (
-          <section className="py-9 border-b-2 border-border-soft">
+          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
             <SectionHeading number="SIM" title={report.content["biz"].title} />
             <div className="flex flex-col gap-6">
               <BizRecommendationTable
@@ -766,7 +772,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 9 — Nguồn */}
         {report.content["9"] && (
-          <section className="py-9">
+          <section className="rounded-2xl border border-border-soft/70 shadow-sm px-5 sm:px-7 py-6">
             <SectionHeading number="09" title={report.content["9"].title} />
             {report.content["9"].items?.length > 0 ? (
               <ul className="space-y-1.5">
