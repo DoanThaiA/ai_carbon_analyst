@@ -10,6 +10,7 @@ from sqlalchemy import select, and_, desc, func
 from db.models import Article, Price, Instrument, Report
 from core.config import Settings
 from services import eua_causal_chains as chains
+from services.eua_framework_admin import get_overrides_map
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +194,9 @@ _EUA_FRAMEWORK_TIMEFRAME_COMPACT = (
 )
 
 
-def _eua_framework(topics_present: List[str], *, full: bool) -> str:
+def _eua_framework(
+    topics_present: List[str], *, full: bool, overrides: Optional[Dict[str, str]] = None
+) -> str:
     """Dựng khung phân tích giá EUA CHO ĐÚNG topics_present của ngày báo cáo.
 
     `full=True` (Mục 3): kèm phần B — DANH MỤC THEO DÕI, dùng horizon="medium"
@@ -204,9 +207,14 @@ def _eua_framework(topics_present: List[str], *, full: bool) -> str:
     tin) — "short" sẽ loại cơ chế này dù đang có tin, sai với thiết kế đó.
     `full=False` (Mục 2/5): bỏ phần B, horizon="short" (đúng bản chất 2 mục
     này — bảng động lực/tín hiệu theo phiên, không cần phần driver dài hạn).
+
+    `overrides`: nội dung admin đã custom cho từng khối (xem
+    services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở đầu
+    `generate_report_content()` rồi truyền xuống đây — None = dùng toàn bộ
+    bản mặc định trong code.
     """
     horizon = "medium" if full else "short"
-    dynamic = chains.build_context(topics_present, horizon=horizon)
+    dynamic = chains.build_context(topics_present, horizon=horizon, overrides=overrides)
 
     parts = [
         "=== KHUNG PHÂN TÍCH GIÁ CARBON (EUA) — BẮT BUỘC ÁP DỤNG ===",
@@ -780,9 +788,10 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 def _prompt_section2(
     eua_key_facts: str, prices_text: str, eua_trend: str, gasoil_crack_spread: str,
-    news_text: str, target_date: str, topics_present: List[str]
+    news_text: str, target_date: str, topics_present: List[str],
+    overrides: Optional[Dict[str, str]] = None,
 ) -> tuple[str, str]:
-    framework = _eua_framework(topics_present, full=False)
+    framework = _eua_framework(topics_present, full=False, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
@@ -817,9 +826,10 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
-    gasoil_crack_spread: str, target_date: str, topics_present: List[str]
+    gasoil_crack_spread: str, target_date: str, topics_present: List[str],
+    overrides: Optional[Dict[str, str]] = None,
 ) -> tuple[str, str]:
-    framework = _eua_framework(topics_present, full=True)
+    framework = _eua_framework(topics_present, full=True, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
@@ -860,7 +870,7 @@ A. "analysis_blocks": mảng gồm "heading" và "content". Heading 1, 2, 4 LUÔ
         - Theo đúng chuỗi nhân quả chuẩn, yếu tố này KHÔNG dẫn tới tác động nào lên cung/cầu/giá EUA (trung lập thật sự theo logic, không phải chỉ vì thiếu số liệu).
       PHÂN BIỆT RÕ với trường hợp TÍN HIỆU MÂU THUẪN/CHƯA ĐỦ MẠNH ở bước (i) bên dưới (Δ ngày và Δ tuần trái chiều nhưng cả 2 đều là biến động thực) — trường hợp đó VẪN PHẢI giữ lại và viết thành 1 gạch đầu dòng, vì đây là rủi ro/tín hiệu cần theo dõi chứ không phải yếu tố trung lập/không tác động.
       LOẠI TRỪ ĐÍCH DANH (không suy diễn gián tiếp — nêu thẳng để tránh bị đưa nhầm vào "Yếu tố dẫn dắt"):
-      {chains.NON_EUA_CARBON_MARKETS}
+      {chains.get_block("NON_EUA_CARBON_MARKETS", overrides)}
       Dù các tin này ĐÃ xuất hiện ở "Diễn biến chính" (NHÓM 2, mục đích chỉ để thông tin), TUYỆT ĐỐI KHÔNG đưa vào "Yếu tố dẫn dắt" và TUYỆT ĐỐI KHÔNG viết kiểu "Kết luận: trung lập" cho riêng nội dung này, theo đúng quy tắc ở trên.
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu của "QUY TẮC ĐỘ DÀI CHUNG" ở trên — mỗi gạch đầu dòng PHẢI viết ĐẦY ĐỦ chuỗi suy luận dưới dạng văn xuôi hoàn chỉnh (số liệu → cơ chế → tác động cung/cầu → kết luận chiều EUA), TUYỆT ĐỐI KHÔNG rút gọn thành liệt kê cộc lốc thiếu suy luận. Nhưng vẫn phải súc tích, thẳng vào thông tin: không câu mở đầu/đệm/chuyển tiếp thừa, không lặp lại nguyên văn số liệu đã nêu ở "Diễn biến chính" (chỉ nhắc số liệu khi trực tiếp làm căn cứ cho bước suy luận trong chính câu đó).
       YÊU CẦU SUY LUẬN RIÊNG CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã xuất hiện ở "Diễn biến chính" nhóm này, mỗi mã/yếu tố là 1 gạch đầu dòng với ĐẦY ĐỦ các bước sau (bỏ bước nào thì phải nêu rõ lý do, vd thiếu dữ liệu). LƯU Ý: tên chuỗi/nhánh viết HOA bên dưới (FUEL_SWITCHING, POWER_EUA_TWO_WAY, OIL_GASOIL, GEOPOLITICS_SUPPLY_CHAIN, "nhánh (a)"...) CHỈ để bạn xác định ĐÚNG cơ chế cần áp dụng — TUYỆT ĐỐI KHÔNG chép các tên này vào "content"; chỉ viết ra phần suy luận bằng lời (số liệu → cơ chế → kết luận), không gọi tên khung/luật:
@@ -933,9 +943,9 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 
 def _prompt_section5(
     news_text: str, prices_text: str, gasoil_crack_spread: str, target_date: str,
-    topics_present: List[str]
+    topics_present: List[str], overrides: Optional[Dict[str, str]] = None,
 ) -> tuple[str, str]:
-    framework = _eua_framework(topics_present, full=False)
+    framework = _eua_framework(topics_present, full=False, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích liên thị trường năng lượng và carbon.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
@@ -1063,6 +1073,9 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     Mỗi mục chỉ nhận đúng những topic tin tức liên quan.
     """
     # ── 1. Thu thập dữ liệu ──────────────────────────────────────────
+    # 1 query duy nhất — override admin đã custom cho khung phân tích EUA (nếu
+    # có), dùng cho cả Mục 2/3/5 bên dưới (xem services/eua_framework_admin.py).
+    eua_framework_overrides = await get_overrides_map(session)
     prices, max_price_date = await get_prices_for_report(session, target_date)
     chart_data = await get_historical_ohlc_for_report(session, "EUA", target_date)
     news_by_topic, sources = await get_news_for_report(session, target_date)
@@ -1121,12 +1134,14 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         )),
         ("2", _prompt_section2(
             eua_key_facts, prices_text, eua_trend, gasoil_crack_spread,
-            section2_news_text, target_date, _topics_present(news_by_topic, "2")
+            section2_news_text, target_date, _topics_present(news_by_topic, "2"),
+            overrides=eua_framework_overrides,
         )),
         ("3", _prompt_section3(
             _filter_news_for_section(news_by_topic, "3"),
             prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
-            _topics_present(news_by_topic, "3")
+            _topics_present(news_by_topic, "3"),
+            overrides=eua_framework_overrides,
         )),
         ("4", _prompt_section4(
             _filter_news_for_section(news_by_topic, "4"),
@@ -1134,7 +1149,8 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         )),
         ("5", _prompt_section5(
             _filter_news_for_section(news_by_topic, "5"),
-            prices_text, gasoil_crack_spread, target_date, _topics_present(news_by_topic, "5")
+            prices_text, gasoil_crack_spread, target_date, _topics_present(news_by_topic, "5"),
+            overrides=eua_framework_overrides,
         )),
         ("7", _prompt_section7(
             section7_news_text,

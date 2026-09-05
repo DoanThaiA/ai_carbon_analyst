@@ -23,6 +23,7 @@ from api.deps import get_current_user, get_db
 from db.models import Report
 from schemas.chat_models import (
     ChatSessionDetail,
+    ChatSessionRatingRequest,
     ChatSessionSummary,
     ChatTurn,
     QuoteChatRequest,
@@ -37,9 +38,11 @@ from services.chat_history import (
     list_session_messages,
     list_sessions,
     load_recent_turns,
+    set_session_rating,
     start_of_today_vn_utc,
 )
 from services.embedding import CohereEmbedder
+from services.eua_framework_admin import get_overrides_map
 from services.quote_chat import (
     astream_quote_chat,
     get_prices_text_for_chat,
@@ -105,7 +108,14 @@ async def get_sessions(
     """Danh sách các phiên Quote Chat đã lưu của user hiện tại cho báo cáo này."""
     sessions = await list_sessions(session, user_email=payload["sub"], report_date=date)
     return [
-        ChatSessionSummary(id=s.id, quote=s.quote, created_at=s.created_at, updated_at=s.updated_at)
+        ChatSessionSummary(
+            id=s.id,
+            quote=s.quote,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+            rating=s.rating,
+            rating_reason=s.rating_reason,
+        )
         for s in sessions
     ]
 
@@ -129,6 +139,39 @@ async def get_session_detail(
         quote=chat_session.quote,
         created_at=chat_session.created_at,
         messages=[ChatTurn(role=m.role, content=m.content) for m in messages],
+        rating=chat_session.rating,
+        rating_reason=chat_session.rating_reason,
+    )
+
+
+@router.post("/sessions/{session_id}/rating", response_model=ChatSessionSummary)
+async def rate_session(
+    date: str,
+    session_id: int,
+    body: ChatSessionRatingRequest,
+    session: AsyncSession = Depends(get_db),
+    payload: dict = Depends(get_current_user),
+):
+    """Người dùng đánh giá 1 phiên Quote Chat là tốt/không tốt (kèm lý do khi
+    không tốt) — hiển thị lại ở màn hình admin quản lý đánh giá chat."""
+    chat_session = await set_session_rating(
+        session,
+        session_id=session_id,
+        user_email=payload["sub"],
+        report_date=date,
+        rating=body.rating,
+        reason=body.reason,
+    )
+    if chat_session is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+
+    return ChatSessionSummary(
+        id=chat_session.id,
+        quote=chat_session.quote,
+        created_at=chat_session.created_at,
+        updated_at=chat_session.updated_at,
+        rating=chat_session.rating,
+        rating_reason=chat_session.rating_reason,
     )
 
 
@@ -179,6 +222,7 @@ async def quote_chat_stream(
         try:
             context_chunks = await retrieve_context_for_quote(retrieval_service, quote, body.question, date)
             prices_text = await get_prices_text_for_chat(session, date)
+            eua_framework_overrides = await get_overrides_map(session)
             # Gửi session_id + nguồn tham khảo trước khi bắt đầu stream câu trả
             # lời, để FE lưu lại session_id cho các câu hỏi tiếp theo và render
             # "Danh sách tin tức tham khảo" (link + ngày phát hành) dưới câu trả lời.
@@ -207,6 +251,7 @@ async def quote_chat_stream(
                 history=history,
                 context_chunks=context_chunks,
                 prices_text=prices_text,
+                eua_framework_overrides=eua_framework_overrides,
             ):
                 answer_parts.append(delta)
                 yield _sse("delta", delta)

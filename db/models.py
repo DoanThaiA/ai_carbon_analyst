@@ -261,12 +261,18 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
     __table_args__ = (
         Index("idx_chat_sessions_user_report", "user_email", "report_date"),
+        CheckConstraint("rating IN ('good', 'bad')", name="ck_chat_sessions_rating"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_email: Mapped[str] = mapped_column(Text, nullable=False)
     report_date: Mapped[str] = mapped_column(Text, nullable=False)  # trùng Report.report_date, không FK cứng vì report có thể chưa publish khi lưu draft session
     quote: Mapped[str] = mapped_column(Text, nullable=False)
+    # Đánh giá phiên chat của user: 'good'/'bad'/None (chưa đánh giá).
+    # rating_reason bắt buộc (validate ở API) khi rating='bad' để admin biết vì sao.
+    rating: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rating_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -297,3 +303,22 @@ class ChatMessage(Base):
 
     def __repr__(self) -> str:
         return f"ChatMessage(id={self.id!r}, session_id={self.session_id!r}, role={self.role!r})"
+
+
+class EuaFrameworkOverride(Base):
+    """Nội dung admin tự custom cho 1 khối tri thức của khung nhân quả EUA
+    (xem services/eua_causal_chains.py::BLOCK_DEFAULTS) — ghi đè bản mặc định
+    trong code khi sinh báo cáo/chat. Bảng THƯA: 1 block chỉ có row ở đây nếu
+    đã bị admin custom; không có row -> dùng bản mặc định trong code."""
+
+    __tablename__ = "eua_framework_overrides"
+
+    block_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"EuaFrameworkOverride(block_id={self.block_id!r})"

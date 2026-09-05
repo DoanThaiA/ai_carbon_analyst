@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { FileText, Radar, Users, LogOut } from "lucide-react";
+import { FileText, Radar, Users, LogOut, MessageSquareText, BrainCircuit } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 
@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { href: "/admin/reports", label: "Báo cáo", icon: FileText },
   { href: "/admin/price-sources", label: "Nguồn giá", icon: Radar },
   { href: "/admin/users", label: "Người dùng", icon: Users },
+  { href: "/admin/chat-reviews", label: "Đánh giá chat", icon: MessageSquareText },
+  { href: "/admin/eua-framework", label: "Khung phân tích EUA", icon: BrainCircuit },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

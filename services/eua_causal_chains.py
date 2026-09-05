@@ -56,6 +56,7 @@ LƯU Ý CHO NGƯỜI TIÊM PROMPT (report_generator.py / quote_chat.py):
 
 Các lỗi logic đã sửa so với bản gốc — xem CHANGELOG ở cuối file.
 """
+from typing import Dict, Optional
 
 # =============================================================================
 # PHẦN 0 — LUẬT SUY LUẬN DÙNG CHUNG (đọc TRƯỚC mọi cơ chế bên dưới)
@@ -725,6 +726,74 @@ HYDROGEN_DECARBONIZATION = (
 
 
 # =============================================================================
+# PHẦN 1.5 — ĐĂNG KÝ NỘI DUNG MẶC ĐỊNH, DÙNG CHO ADMIN CUSTOM
+# (services/eua_framework_admin.py + api/routers/admin_eua_framework.py)
+#
+# Mỗi khối tri thức ở trên (PHẦN 0 + PHẦN 1) có thể bị admin ghi đè nội dung
+# text qua bảng `eua_framework_overrides` (db/models.py::EuaFrameworkOverride)
+# — KHÔNG đổi được cơ chế nào áp dụng cho topic nào (MECHANISM_REGISTRY/
+# build_context() ở PHẦN 2 vẫn cố định trong code), CHỈ đổi được NỘI DUNG diễn
+# giải của từng khối. `get_block()` là điểm duy nhất mọi nơi dùng để đọc 1 khối
+# — luôn đi qua đây (không đọc thẳng hằng số module-level) để override có hiệu
+# lực ngay từ request kế tiếp, không cần restart server.
+# =============================================================================
+
+BLOCK_DEFAULTS: Dict[str, str] = {
+    "INFERENCE_RULES": INFERENCE_RULES,
+    "CONFLICT_RESOLUTION": CONFLICT_RESOLUTION,
+    "NON_EUA_CARBON_MARKETS": NON_EUA_CARBON_MARKETS,
+    "FUEL_SWITCHING": FUEL_SWITCHING,
+    "POWER_EUA_TWO_WAY": POWER_EUA_TWO_WAY,
+    "OIL_GASOIL": OIL_GASOIL,
+    "METALS": METALS,
+    "CBAM_ETS": CBAM_ETS,
+    "POLICY_MSR": POLICY_MSR,
+    "GEOPOLITICS_SUPPLY_CHAIN": GEOPOLITICS_SUPPLY_CHAIN,
+    "FINANCE_SPECULATION": FINANCE_SPECULATION,
+    "POSITIONING_TECHNICALS": POSITIONING_TECHNICALS,
+    "MACRO": MACRO,
+    "TERM_STRUCTURE_CARRY": TERM_STRUCTURE_CARRY,
+    "WEATHER_POWER_SYSTEM": WEATHER_POWER_SYSTEM,
+    "RELATIVE_FUEL_ECONOMICS": RELATIVE_FUEL_ECONOMICS,
+    "HYDROGEN_DECARBONIZATION": HYDROGEN_DECARBONIZATION,
+}
+
+# Nhãn ngắn tiếng Việt cho màn hình admin — KHÔNG dùng để tiêm prompt.
+BLOCK_TITLES: Dict[str, str] = {
+    "INFERENCE_RULES": "Luật suy luận bắt buộc (L1–L11)",
+    "CONFLICT_RESOLUTION": "Phân xử khi tín hiệu trái chiều",
+    "NON_EUA_CARBON_MARKETS": "Thị trường carbon khác (không fungible với EUA)",
+    "FUEL_SWITCHING": "Chuyển đổi nhiên liệu phát điện (Fuel Switching)",
+    "POWER_EUA_TWO_WAY": "Quan hệ hai chiều điện Đức (DEBY1) ↔ EUA",
+    "OIL_GASOIL": "Dầu thô & Gasoil",
+    "METALS": "Kim loại cơ bản (tín hiệu phụ)",
+    "CBAM_ETS": "CBAM & mở rộng phạm vi ETS",
+    "POLICY_MSR": "Cơ chế lõi thị trường: cap, MSR, đấu giá, compliance",
+    "GEOPOLITICS_SUPPLY_CHAIN": "Địa chính trị & chuỗi cung ứng",
+    "FINANCE_SPECULATION": "Tài chính & đầu cơ (van an toàn)",
+    "POSITIONING_TECHNICALS": "Positioning & kỹ thuật (chi tiết)",
+    "MACRO": "Vĩ mô & chu kỳ kinh tế",
+    "TERM_STRUCTURE_CARRY": "Cấu trúc kỳ hạn & carry",
+    "WEATHER_POWER_SYSTEM": "Thời tiết & hệ thống điện",
+    "RELATIVE_FUEL_ECONOMICS": "Kinh tế nhiên liệu tương đối",
+    "HYDROGEN_DECARBONIZATION": "Hydrogen & decarbonization (dài hạn)",
+}
+
+
+def get_block(block_id: str, overrides: Optional[Dict[str, str]] = None) -> str:
+    """Điểm truy cập DUY NHẤT cho nội dung 1 khối — trả về override của admin
+    nếu có (và không rỗng), ngược lại trả bản mặc định trong code. Mọi nơi
+    tiêm prompt (report_generator.py, quote_chat.py, build_context() bên dưới)
+    PHẢI đọc qua hàm này, KHÔNG đọc thẳng hằng số module-level, để override có
+    tác dụng thực tế."""
+    if overrides:
+        custom = overrides.get(block_id)
+        if custom:
+            return custom
+    return BLOCK_DEFAULTS[block_id]
+
+
+# =============================================================================
 # PHẦN 2 — ĐĂNG KÝ CƠ CHẾ THEO TOPIC & KHUNG THỜI GIAN
 # (Chưa dùng để tiêm prompt động — hiện report_generator.py/quote_chat.py vẫn
 # tiêm TĨNH toàn bộ các hằng số ở trên. Registry + build_context() dưới đây
@@ -741,19 +810,22 @@ HYDROGEN_DECARBONIZATION = (
 # nạp — regression âm thầm nếu dùng registry để tiêm động. Các cơ chế không
 # gắn được với 1 topic cụ thể (cross-cutting) được xử lý riêng bên dưới qua
 # SUPPLEMENTARY_SIGNALS/MANDATORY_CONFIRMERS/FILTERS thay vì qua registry.
+# Từ đây trở đi, đăng ký theo BLOCK ID (string, khớp khoá BLOCK_DEFAULTS) thay
+# vì tham chiếu thẳng hằng số — để build_context() có thể tra override qua
+# get_block() cho từng ID thay vì bị khoá cứng vào nội dung mặc định.
 MECHANISM_REGISTRY = {
-    "energy_gas":        [FUEL_SWITCHING, RELATIVE_FUEL_ECONOMICS, GEOPOLITICS_SUPPLY_CHAIN],
-    "energy_coal":       [FUEL_SWITCHING, RELATIVE_FUEL_ECONOMICS],
-    "energy_oil":        [OIL_GASOIL, FUEL_SWITCHING, GEOPOLITICS_SUPPLY_CHAIN],
-    "energy_power_eu":   [POWER_EUA_TWO_WAY, FUEL_SWITCHING, WEATHER_POWER_SYSTEM,
-                          RELATIVE_FUEL_ECONOMICS],
-    "energy_renewable":  [WEATHER_POWER_SYSTEM, FUEL_SWITCHING],
-    "eua_ets":           [POLICY_MSR, FUEL_SWITCHING, TERM_STRUCTURE_CARRY,
-                          FINANCE_SPECULATION, POSITIONING_TECHNICALS],
-    "eu_policy":         [POLICY_MSR, CBAM_ETS, GEOPOLITICS_SUPPLY_CHAIN],
-    "cbam":              [CBAM_ETS, POLICY_MSR],
-    "geopolitics":       [GEOPOLITICS_SUPPLY_CHAIN, FUEL_SWITCHING],
-    "energy_hydrogen":   [HYDROGEN_DECARBONIZATION],
+    "energy_gas":        ["FUEL_SWITCHING", "RELATIVE_FUEL_ECONOMICS", "GEOPOLITICS_SUPPLY_CHAIN"],
+    "energy_coal":       ["FUEL_SWITCHING", "RELATIVE_FUEL_ECONOMICS"],
+    "energy_oil":        ["OIL_GASOIL", "FUEL_SWITCHING", "GEOPOLITICS_SUPPLY_CHAIN"],
+    "energy_power_eu":   ["POWER_EUA_TWO_WAY", "FUEL_SWITCHING", "WEATHER_POWER_SYSTEM",
+                          "RELATIVE_FUEL_ECONOMICS"],
+    "energy_renewable":  ["WEATHER_POWER_SYSTEM", "FUEL_SWITCHING"],
+    "eua_ets":           ["POLICY_MSR", "FUEL_SWITCHING", "TERM_STRUCTURE_CARRY",
+                          "FINANCE_SPECULATION", "POSITIONING_TECHNICALS"],
+    "eu_policy":         ["POLICY_MSR", "CBAM_ETS", "GEOPOLITICS_SUPPLY_CHAIN"],
+    "cbam":              ["CBAM_ETS", "POLICY_MSR"],
+    "geopolitics":       ["GEOPOLITICS_SUPPLY_CHAIN", "FUEL_SWITCHING"],
+    "energy_hydrogen":   ["HYDROGEN_DECARBONIZATION"],
     # 3 topic dưới đây CHỦ ĐÍCH map về [] — KHÔNG phải thiếu sót. Xem "PHẠM VI
     # TOPIC" ở docstring đầu file và luật L11: các thị trường này không
     # fungible với EUA nên không có cơ chế nào trong PHẦN 1 áp dụng cho chúng
@@ -767,13 +839,13 @@ MECHANISM_REGISTRY = {
 # chỉ HYDROGEN_DECARBONIZATION còn nằm trong registry theo topic thật
 # ("energy_hydrogen"); MACRO đã chuyển sang SUPPLEMENTARY_SIGNALS (luôn nạp,
 # không qua registry) nên không cần liệt kê ở đây nữa.
-LONG_HORIZON_ONLY = [HYDROGEN_DECARBONIZATION]
+LONG_HORIZON_ONLY = ["HYDROGEN_DECARBONIZATION"]
 
 # Cơ chế luôn phải đọc kèm khi có bất kỳ luận điểm nào về điện/RES.
-MANDATORY_CONFIRMERS = [WEATHER_POWER_SYSTEM]
+MANDATORY_CONFIRMERS = ["WEATHER_POWER_SYSTEM"]
 
 # Cơ chế đóng vai trò BỘ LỌC: đọc sau cùng để hạ cấp độ tin cậy nếu cần.
-FILTERS = [FINANCE_SPECULATION, POSITIONING_TECHNICALS]
+FILTERS = ["FINANCE_SPECULATION", "POSITIONING_TECHNICALS"]
 
 # Tín hiệu PHỤ, cross-cutting — không gắn được với đúng 1 topic thật nào (kim
 # loại/macro có thể xuất hiện trong tin thuộc BẤT KỲ topic năng lượng/chính
@@ -781,7 +853,7 @@ FILTERS = [FINANCE_SPECULATION, POSITIONING_TECHNICALS]
 # (tương tự FILTERS), phần [BÁC BỎ]/[ĐỘ MẠNH] của chính 2 cơ chế này đã tự
 # giới hạn việc dùng khi thiếu số liệu, nên chi phí token thấp mà không mất
 # tín hiệu khi tin thực sự có.
-SUPPLEMENTARY_SIGNALS = [METALS, MACRO]
+SUPPLEMENTARY_SIGNALS = ["METALS", "MACRO"]
 
 # 3 topic không fungible với EUA (xem MECHANISM_REGISTRY) — khi 1 trong 3 topic
 # này thực sự có tin trong ngày, build_context() tiêm thêm NON_EUA_CARBON_MARKETS
@@ -791,50 +863,59 @@ SUPPLEMENTARY_SIGNALS = [METALS, MACRO]
 _NON_EUA_TOPICS = {"vcm", "global_carbon_market", "vietnam_carbon_policy"}
 
 
-def build_context(topics, horizon="short"):
+def build_context(topics, horizon="short", overrides: Optional[Dict[str, str]] = None) -> str:
     """
     Ghép phần tri thức cần đưa vào prompt cho một tập topic.
 
-    topics  : iterable tên topic (khớp khoá của MECHANISM_REGISTRY) — CHỈ nên
-              truyền topic THỰC SỰ có tin trong ngày/phiên đang xử lý (không
-              phải toàn bộ 13 topic khả dĩ), để tối ưu token đúng mục đích.
-    horizon : "short" (ngày–tuần) | bất kỳ giá trị khác (vd "medium") sẽ KHÔNG
-              loại HYDROGEN_DECARBONIZATION dù topic "energy_hydrogen" có tin.
+    topics    : iterable tên topic (khớp khoá của MECHANISM_REGISTRY) — CHỈ nên
+                truyền topic THỰC SỰ có tin trong ngày/phiên đang xử lý (không
+                phải toàn bộ 13 topic khả dĩ), để tối ưu token đúng mục đích.
+    horizon   : "short" (ngày–tuần) | bất kỳ giá trị khác (vd "medium") sẽ KHÔNG
+                loại HYDROGEN_DECARBONIZATION dù topic "energy_hydrogen" có tin.
+    overrides : map block_id -> nội dung admin đã custom (xem
+                services/eua_framework_admin.py::get_overrides_map), truyền
+                xuống get_block() cho từng khối — None/thiếu key = dùng mặc định.
 
     Luôn đặt INFERENCE_RULES lên đầu và CONFLICT_RESOLUTION xuống cuối, để model
     đọc luật trước khi đọc cơ chế, và đọc luật phân xử ngay trước khi kết luận.
+
+    Việc CHỌN cơ chế nào áp dụng cho topic nào (MECHANISM_REGISTRY và các danh
+    sách LONG_HORIZON_ONLY/MANDATORY_CONFIRMERS/FILTERS/SUPPLEMENTARY_SIGNALS ở
+    trên) là cấu trúc CỐ ĐỊNH trong code, KHÔNG đổi qua `overrides` — override
+    chỉ thay được NỘI DUNG của 1 block đã được chọn.
     """
     topics = list(topics)
-    blocks, seen = [], set()
+    block_ids, seen = [], set()
     for topic in topics:
-        for mech in MECHANISM_REGISTRY.get(topic, []):
-            if horizon == "short" and mech in LONG_HORIZON_ONLY:
+        for mech_id in MECHANISM_REGISTRY.get(topic, []):
+            if horizon == "short" and mech_id in LONG_HORIZON_ONLY:
                 continue
-            if id(mech) not in seen:
-                seen.add(id(mech))
-                blocks.append(mech)
+            if mech_id not in seen:
+                seen.add(mech_id)
+                block_ids.append(mech_id)
 
-    if any(m in blocks for m in (POWER_EUA_TWO_WAY, FUEL_SWITCHING)):
+    if any(m in block_ids for m in ("POWER_EUA_TWO_WAY", "FUEL_SWITCHING")):
         for c in MANDATORY_CONFIRMERS:
-            if id(c) not in seen:
-                seen.add(id(c))
-                blocks.append(c)
+            if c not in seen:
+                seen.add(c)
+                block_ids.append(c)
 
     for s in SUPPLEMENTARY_SIGNALS:
-        if id(s) not in seen:
-            seen.add(id(s))
-            blocks.append(s)
+        if s not in seen:
+            seen.add(s)
+            block_ids.append(s)
 
     for f in FILTERS:
-        if id(f) not in seen:
-            seen.add(id(f))
-            blocks.append(f)
+        if f not in seen:
+            seen.add(f)
+            block_ids.append(f)
 
-    tail = [CONFLICT_RESOLUTION]
+    tail_ids = ["CONFLICT_RESOLUTION"]
     if _NON_EUA_TOPICS.intersection(topics):
-        tail.insert(0, NON_EUA_CARBON_MARKETS)
+        tail_ids.insert(0, "NON_EUA_CARBON_MARKETS")
 
-    return "\n\n".join([INFERENCE_RULES] + blocks + tail)
+    ordered_ids = ["INFERENCE_RULES"] + block_ids + tail_ids
+    return "\n\n".join(get_block(bid, overrides) for bid in ordered_ids)
 
 
 # =============================================================================

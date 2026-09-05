@@ -1,7 +1,7 @@
 
 import logging
 import re
-from typing import AsyncIterator, List, Optional, Sequence
+from typing import AsyncIterator, Dict, List, Optional, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,7 +107,14 @@ async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> s
 # Chuyên môn nền tảng — tiêm vào system prompt để model suy luận
 # ─────────────────────────────────────────────────────────────────────
 
-_DOMAIN_KNOWLEDGE = f"""
+def _build_domain_knowledge(overrides: Optional[Dict[str, str]] = None) -> str:
+    """Trước đây đây là hằng số module-level `_DOMAIN_KNOWLEDGE` dựng 1 LẦN lúc
+    import — chuyển thành hàm để mỗi khối `chains.X` đi qua `chains.get_block()`
+    (thay vì đọc thẳng hằng số), nhờ đó admin custom nội dung 1 khối (xem
+    services/eua_framework_admin.py) có tác dụng ngay ở câu hỏi kế tiếp, không
+    cần restart server."""
+    gb = chains.get_block
+    return f"""
 === KIẾN THỨC CHUYÊN MÔN NỀN TẢNG (dùng khi suy luận / phân tích giả định) ===
 Đây là bản RÚT GỌN của KHUNG PHÂN TÍCH CHUẨN (dùng chung với báo cáo Mục 3/5) — PHẢI bám sát
 đúng chiều mũi tên, TUYỆT ĐỐI KHÔNG tự sinh thêm bước trung gian khác hay đảo chiều so với khung
@@ -117,22 +124,22 @@ CẤM TUYỆT ĐỐI nhắc tên biến/nhãn NỘI BỘ (vd "FUEL_SWITCHING", "
 (a)/(b)", các thẻ ngoặc vuông ("[ID]", "[CHUỖI]", "[BÁC BỎ / VÔ HIỆU]"...), hay mã luật ("L1"–"L11")
 trong câu trả lời cho người dùng — chỉ dùng nội bộ để suy luận.
 
-{chains.INFERENCE_RULES}
+{gb("INFERENCE_RULES", overrides)}
 
 A. CƠ CHẾ CỐT LÕI EU ETS & GIÁ EUA:
-{chains.POLICY_MSR}
+{gb("POLICY_MSR", overrides)}
 
 B. FUEL SWITCHING — chuỗi logic quan trọng nhất:
-{chains.FUEL_SWITCHING}
-{chains.RELATIVE_FUEL_ECONOMICS}
+{gb("FUEL_SWITCHING", overrides)}
+{gb("RELATIVE_FUEL_ECONOMICS", overrides)}
 
 C. LIÊN THỊ TRƯỜNG:
-• {chains.POWER_EUA_TWO_WAY}
-{chains.WEATHER_POWER_SYSTEM}
-{chains.OIL_GASOIL}
+• {gb("POWER_EUA_TWO_WAY", overrides)}
+{gb("WEATHER_POWER_SYSTEM", overrides)}
+{gb("OIL_GASOIL", overrides)}
 • Than (API2/NEWC): giá than ảnh hưởng fuel switching threshold.
-{chains.CBAM_ETS}
-{chains.NON_EUA_CARBON_MARKETS}
+{gb("CBAM_ETS", overrides)}
+{gb("NON_EUA_CARBON_MARKETS", overrides)}
 
 D. CHÍNH SÁCH:
 • Fit-for-55: gói chính sách khí hậu EU, mục tiêu giảm 55% KNK vào 2030.
@@ -146,15 +153,15 @@ E. THỊ TRƯỜNG CARBON VIỆT NAM:
 • DN VN chịu ảnh hưởng CBAM: ngành thép, nhôm, xi măng, phân bón xuất khẩu sang EU.
 
 F. ĐỊA CHÍNH TRỊ:
-{chains.GEOPOLITICS_SUPPLY_CHAIN}
+{gb("GEOPOLITICS_SUPPLY_CHAIN", overrides)}
 
 G. TÀI CHÍNH & MACRO:
-{chains.FINANCE_SPECULATION}
-{chains.POSITIONING_TECHNICALS}
-{chains.MACRO}
-{chains.TERM_STRUCTURE_CARRY}
+{gb("FINANCE_SPECULATION", overrides)}
+{gb("POSITIONING_TECHNICALS", overrides)}
+{gb("MACRO", overrides)}
+{gb("TERM_STRUCTURE_CARRY", overrides)}
 
-{chains.CONFLICT_RESOLUTION}
+{gb("CONFLICT_RESOLUTION", overrides)}
 """
 
 
@@ -162,7 +169,9 @@ G. TÀI CHÍNH & MACRO:
 # System prompt
 # ─────────────────────────────────────────────────────────────────────
 
-def _build_static_instructions(report_date: str, prices_text: str) -> str:
+def _build_static_instructions(
+    report_date: str, prices_text: str, overrides: Optional[Dict[str, str]] = None
+) -> str:
     """Phần system prompt KHÔNG đổi giữa các câu hỏi/phiên/user (chỉ đổi 1
     lần/ngày theo report_date) — role, kiến thức nền, dữ liệu giá, năng lực,
     quy tắc. Tách riêng khỏi `_build_dynamic_context()` để làm prefix
@@ -185,7 +194,7 @@ def _build_static_instructions(report_date: str, prices_text: str) -> str:
 {prices_text}
 LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức). Khi được hỏi về giá/biến động của 1 trong 6 mã này, PHẢI dùng ĐÚNG số ở trên (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay mô tả định tính mơ hồ ("biến động nhẹ", "chưa dứt khoát"...) thay cho con số thật đã có sẵn. Khi được hỏi về giá 1 mã KHÔNG nằm trong danh sách trên (vd giá than cốc, giá kim loại, giá điện nước khác Đức), nói rõ hệ thống không theo dõi giá đó — có thể dùng web_search nếu người dùng cần số liệu cụ thể — KHÔNG suy đoán con số.
 
-{_DOMAIN_KNOWLEDGE}
+{_build_domain_knowledge(overrides)}
 
 NĂNG LỰC CỦA BẠN — bạn có thể và NÊN thực hiện khi người dùng yêu cầu, nhưng LUÔN ở dạng CÔ ĐỌNG (xem QUY TẮC TRẢ LỜI mục 6 — độ dài luôn ưu tiên hơn độ đầy đủ):
 A. TRẢ LỜI THỰC TẾ: giải thích, tóm tắt, làm rõ nội dung đoạn trích dựa trên dữ liệu nền — thẳng vào ý chính, không diễn giải lan man.
@@ -220,12 +229,18 @@ def _build_dynamic_context(quote: str, context_block: str) -> str:
 {context_block}"""
 
 
-def build_system_prompt(quote: str, report_date: str, context_block: str, prices_text: str) -> str:
+def build_system_prompt(
+    quote: str, report_date: str, context_block: str, prices_text: str,
+    overrides: Optional[Dict[str, str]] = None,
+) -> str:
     """Ghép static+dynamic thành 1 chuỗi — dùng cho backend Cohere (không hỗ
     trợ cache_control theo block như Anthropic). Backend Anthropic dùng trực
     tiếp `_build_static_instructions`/`_build_dynamic_context` tách rời (xem
     `_stream_anthropic`) để tận dụng prompt caching."""
-    return _build_static_instructions(report_date, prices_text) + "\n\n" + _build_dynamic_context(quote, context_block)
+    return (
+        _build_static_instructions(report_date, prices_text, overrides)
+        + "\n\n" + _build_dynamic_context(quote, context_block)
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -339,6 +354,7 @@ async def astream_quote_chat(
     history: Sequence[ChatTurn],
     context_chunks: Sequence[RetrievedDocument],
     prices_text: str,
+    eua_framework_overrides: Optional[Dict[str, str]] = None,
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta).
 
@@ -350,6 +366,10 @@ async def astream_quote_chat(
     session DB, hàm này không tự mở session) — đưa vào static instructions,
     KHÔNG phải dynamic context, vì chỉ đổi theo report_date (xem docstring
     `_build_static_instructions`).
+
+    `eua_framework_overrides`: nội dung admin đã custom cho khung tri thức EUA
+    (xem services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở
+    router rồi truyền xuống đây — None = dùng toàn bộ bản mặc định trong code.
     """
     settings = Settings.from_env()
     truncated_quote = _truncate(quote, MAX_QUOTE_CHARS)
@@ -363,14 +383,16 @@ async def astream_quote_chat(
         # Tách static/dynamic (thay vì gọi build_system_prompt gộp sẵn) để bật
         # prompt caching — xem docstring _stream_anthropic.
         stream = _stream_anthropic(
-            _build_static_instructions(report_date, prices_text),
+            _build_static_instructions(report_date, prices_text, eua_framework_overrides),
             _build_dynamic_context(truncated_quote, context_block),
             messages,
             settings.quote_chat_model,
             enable_web_search=True,
         )
     else:
-        system_prompt = build_system_prompt(truncated_quote, report_date, context_block, prices_text)
+        system_prompt = build_system_prompt(
+            truncated_quote, report_date, context_block, prices_text, eua_framework_overrides
+        )
         stream = _stream_cohere(system_prompt, messages, settings.quote_chat_model)
 
     async for delta in stream:

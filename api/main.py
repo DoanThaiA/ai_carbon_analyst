@@ -6,7 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from api.deps import get_current_user, get_db, settings
-from api.routers import admin_price_sources, admin_reports, admin_users, auth_admin, auth_user, hot_news, quote_chat
+from api.routers import (
+    admin_chat_reviews,
+    admin_eua_framework,
+    admin_price_sources,
+    admin_reports,
+    admin_users,
+    auth_admin,
+    auth_user,
+    hot_news,
+    quote_chat,
+)
 from db.models import Report
 from services.hot_news_broadcast import start_listening, stop_listening
 
@@ -39,6 +49,8 @@ app.include_router(auth_user.router)
 app.include_router(admin_price_sources.router)
 app.include_router(admin_users.router)
 app.include_router(admin_reports.router)
+app.include_router(admin_chat_reviews.router)
+app.include_router(admin_eua_framework.router)
 app.include_router(quote_chat.router)
 app.include_router(hot_news.router)
 

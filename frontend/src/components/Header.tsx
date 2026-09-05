@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { HotNewsBell } from "@/components/HotNewsBell";
-import { Settings } from "lucide-react";
+import { Settings, LayoutDashboard } from "lucide-react";
 import { api } from "@/lib/api";
 
 export function Header() {
@@ -36,13 +36,23 @@ export function Header() {
       {!isLogin && (
         <div className="flex items-center gap-3">
           {role === "admin" && !isAdmin && (
-            <Link 
-              href="/admin/reports" 
+            <Link
+              href="/admin/reports"
               className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
               title="Trang Quản Trị"
             >
               <Settings size={14} />
               <span className="hidden sm:inline">Quản Trị</span>
+            </Link>
+          )}
+          {isAdmin && (
+            <Link
+              href="/"
+              className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
+              title="Về trang báo cáo chính (giao diện người dùng)"
+            >
+              <LayoutDashboard size={14} />
+              <span className="hidden sm:inline">Dashboard</span>
             </Link>
           )}
           <HotNewsBell />

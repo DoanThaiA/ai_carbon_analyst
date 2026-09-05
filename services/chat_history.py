@@ -8,7 +8,7 @@ theo, nhưng không để prompt phình to vô hạn theo thời gian.
 """
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -104,6 +104,77 @@ async def list_session_messages(session: AsyncSession, *, session_id: int) -> Se
     )
     result = await session.execute(stmt)
     return result.scalars().all()
+
+
+async def set_session_rating(
+    session: AsyncSession,
+    *,
+    session_id: int,
+    user_email: str,
+    report_date: str,
+    rating: str,
+    reason: Optional[str],
+) -> Optional[ChatSession]:
+    """Ghi đánh giá tốt/không tốt cho 1 phiên chat của chính user đó — trả None
+    nếu không tìm thấy phiên (đã bị xoá / không đúng chủ sở hữu)."""
+    chat_session = await get_owned_session(
+        session, session_id=session_id, user_email=user_email, report_date=report_date
+    )
+    if chat_session is None:
+        return None
+
+    chat_session.rating = rating
+    chat_session.rating_reason = reason
+    chat_session.rated_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(chat_session)
+    return chat_session
+
+
+async def list_sessions_admin(
+    session: AsyncSession,
+    *,
+    rating: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Tuple[Sequence[Tuple[ChatSession, int]], int]:
+    """Danh sách toàn bộ phiên chat (mọi user/báo cáo) cho màn hình admin quản lý
+    đánh giá — kèm số tin nhắn mỗi phiên (subquery, tránh N+1 query) và tổng số
+    phiên khớp filter để FE phân trang. `rating`: None (tất cả), 'good', 'bad',
+    hoặc 'none' (chưa đánh giá)."""
+    filters = []
+    if rating == "none":
+        filters.append(ChatSession.rating.is_(None))
+    elif rating in ("good", "bad"):
+        filters.append(ChatSession.rating == rating)
+
+    count_stmt = select(func.count(ChatSession.id))
+    if filters:
+        count_stmt = count_stmt.where(*filters)
+    total = (await session.execute(count_stmt)).scalar_one()
+
+    message_count_col = (
+        select(func.count(ChatMessage.id))
+        .where(ChatMessage.session_id == ChatSession.id)
+        .correlate(ChatSession)
+        .scalar_subquery()
+    )
+    stmt = select(ChatSession, message_count_col.label("message_count"))
+    if filters:
+        stmt = stmt.where(*filters)
+    stmt = stmt.order_by(ChatSession.updated_at.desc()).limit(limit).offset(offset)
+
+    result = await session.execute(stmt)
+    rows = [(row[0], row[1]) for row in result.all()]
+    return rows, total
+
+
+async def get_session_admin(session: AsyncSession, *, session_id: int) -> Optional[ChatSession]:
+    """Lấy 1 phiên chat theo id, KHÔNG scope theo chủ sở hữu — chỉ dùng cho admin
+    xem lại lịch sử (xác thực quyền admin đã nằm ở dependency của router)."""
+    stmt = select(ChatSession).where(ChatSession.id == session_id)
+    result = await session.execute(stmt)
+    return result.scalars().first()
 
 
 def start_of_today_vn_utc() -> datetime:
