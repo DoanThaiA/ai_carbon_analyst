@@ -72,7 +72,7 @@ export default function AdminChatReviewDetailPage() {
         );
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi cập nhật ví dụ mẫu.");
+      alert(err.response?.data?.detail || "Lỗi khi cập nhật đoạn chat tham khảo.");
     } finally {
       setBusyMessageId(null);
     }
@@ -159,8 +159,8 @@ export default function AdminChatReviewDetailPage() {
                         disabled={busyMessageId === m.id}
                         title={
                           m.example_id
-                            ? "Đang dùng làm ví dụ mẫu cho Quote Chat — bấm để bỏ"
-                            : "Dùng câu trả lời này làm ví dụ mẫu (few-shot) cho Quote Chat"
+                            ? "Đang dùng làm đoạn chat tham khảo cho Quote Chat — bấm để bỏ"
+                            : "Dùng câu trả lời này làm đoạn chat tham khảo (few-shot) cho Quote Chat"
                         }
                         className={clsx(
                           "mt-1.5 flex items-center gap-1.5 text-[11.5px] font-semibold px-2 py-1 rounded-full transition-colors disabled:opacity-50",
@@ -176,7 +176,7 @@ export default function AdminChatReviewDetailPage() {
                         ) : (
                           <BookmarkPlus size={12} />
                         )}
-                        {m.example_id ? "Đã thêm ví dụ mẫu" : "Dùng làm ví dụ mẫu"}
+                        {m.example_id ? "Đã thêm để tham khảo" : "Để tham khảo"}
                       </button>
                     )}
                   </div>

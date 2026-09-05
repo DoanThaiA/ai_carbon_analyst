@@ -18,7 +18,7 @@ export default function AdminQuoteChatExamplesPage() {
       const res = await api.get("/api/admin/quote-chat-examples");
       setExamples(res.data);
     } catch {
-      setError("Không thể tải danh sách ví dụ mẫu.");
+      setError("Không thể tải danh sách đoạn chat tham khảo.");
     } finally {
       setLoading(false);
     }
@@ -29,13 +29,13 @@ export default function AdminQuoteChatExamplesPage() {
   }, []);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Xoá ví dụ mẫu này? Quote Chat sẽ không tham khảo nó nữa.")) return;
+    if (!confirm("Xoá đoạn chat tham khảo này? Quote Chat sẽ không tham khảo nó nữa.")) return;
     setDeletingId(id);
     try {
       await api.delete(`/api/admin/quote-chat-examples/${id}`);
       setExamples((prev) => prev.filter((e) => e.id !== id));
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi xoá ví dụ mẫu.");
+      alert(err.response?.data?.detail || "Lỗi khi xoá đoạn chat tham khảo.");
     } finally {
       setDeletingId(null);
     }
@@ -44,7 +44,7 @@ export default function AdminQuoteChatExamplesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Ví Dụ Mẫu Quote Chat</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Đoạn Chat Tham Khảo</h2>
         <p className="text-body">
           Các cặp hỏi-đáp admin chọn từ mục{" "}
           <Link href="/admin/chat-reviews" className="text-primary-dark hover:underline font-semibold">
@@ -72,11 +72,11 @@ export default function AdminQuoteChatExamplesPage() {
         <div className="text-center py-16 bg-surface border border-border-soft border-dashed rounded-2xl">
           <Sparkles size={40} className="mx-auto text-muted mb-3" />
           <p className="text-body">
-            Chưa có ví dụ mẫu nào. Vào{" "}
+            Chưa có đoạn chat tham khảo nào. Vào{" "}
             <Link href="/admin/chat-reviews" className="text-primary-dark hover:underline font-semibold">
               Đánh giá chat
             </Link>
-            , mở 1 phiên và bấm &quot;Dùng làm ví dụ mẫu&quot; ở câu trả lời phù hợp.
+            , mở 1 phiên và bấm &quot;Để tham khảo&quot; ở câu trả lời phù hợp.
           </p>
         </div>
       ) : (
@@ -93,7 +93,7 @@ export default function AdminQuoteChatExamplesPage() {
                   onClick={() => handleDelete(ex.id)}
                   disabled={deletingId === ex.id}
                   className="p-1.5 rounded hover:bg-red-50 text-down disabled:opacity-40 shrink-0"
-                  title="Xoá ví dụ mẫu"
+                  title="Xoá đoạn chat tham khảo"
                 >
                   <Trash2 size={16} />
                 </button>

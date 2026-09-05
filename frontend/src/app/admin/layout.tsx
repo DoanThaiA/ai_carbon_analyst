@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { href: "/admin/price-sources", label: "Nguồn giá", icon: Radar },
   { href: "/admin/users", label: "Người dùng", icon: Users },
   { href: "/admin/chat-reviews", label: "Đánh giá chat", icon: MessageSquareText },
-  { href: "/admin/quote-chat-examples", label: "Ví dụ mẫu chat", icon: Sparkles },
+  { href: "/admin/quote-chat-examples", label: "Đoạn chat tham khảo", icon: Sparkles },
   { href: "/admin/eua-framework", label: "Khung phân tích EUA", icon: BrainCircuit },
 ];
 
