@@ -598,7 +598,43 @@ export function ReportDocument({ report }: { report: Report }) {
               return (
                 <div className="mt-5">
                   <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-label mb-3">Kịch bản chiến lược</h4>
-                  <div className="overflow-x-auto border border-border rounded-lg">
+
+                  {/* Mobile: mỗi khung thời gian là 1 card xếp dọc (label/giá trị theo hàng)
+                      thay vì bảng 4 cột — bảng 4 cột luôn cần kéo ngang trên màn hình hẹp,
+                      xếp card tránh hẳn thanh cuộn ngang. */}
+                  <div className="sm:hidden space-y-4">
+                    {columns.map(h => {
+                      const meta = HORIZON_META[h];
+                      const Icon = meta.icon;
+                      const sc = byHorizon[h];
+                      return (
+                        <div key={h} className="border border-border rounded-lg overflow-hidden">
+                          <div className={clsx("flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2", meta.iconBg)}>
+                            <Icon size={13} /> {h}
+                          </div>
+                          <div className="divide-y divide-border">
+                            {ROWS.map((row, ri) => {
+                              const RowIcon = row.icon;
+                              return (
+                                <div key={ri} className="px-3 py-2.5">
+                                  <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-primary-dark mb-1">
+                                    {RowIcon && <RowIcon size={12} className="shrink-0" />}
+                                    {row.label}
+                                  </div>
+                                  <div className="text-[13px] text-body leading-relaxed">
+                                    {sc ? row.render(sc) : <span className="text-muted-light">—</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* sm+: giữ bảng so sánh 4 cột như cũ (đủ rộng để không cần kéo ngang) */}
+                  <div className="hidden sm:block overflow-x-auto border border-border rounded-lg">
                     <table className="w-full border-collapse text-[13px]">
                       <thead>
                         <tr>
