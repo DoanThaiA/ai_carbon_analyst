@@ -15,6 +15,15 @@ function formatShortDate(dateStr: string) {
   return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateStr;
 }
 
+// Backend luôn trả 4 số thập phân (vd "72.4000") — rút gọn còn 2 số khi hiển thị
+// trong bảng giá để chuỗi số ngắn lại, đủ nằm gọn trong cột hẹp trên mobile mà
+// không cần ngắt dòng giữa chừng. Không đổi dữ liệu gốc, chỉ rút gọn phần hiển thị.
+function formatCompactPriceNumber(numStr: string): string {
+  const n = Number(numStr.replace(/,/g, ""));
+  if (Number.isNaN(n)) return numStr;
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function formatFullDate(dateStr: string) {
   const parts = dateStr.split("-");
   return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
@@ -399,23 +408,38 @@ export function ReportDocument({ report }: { report: Report }) {
               <table className="w-full table-fixed border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
                 <thead>
                   <tr>
-                    <th className="w-[28%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Hợp đồng</th>
-                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Giá</th>
-                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Ngày</th>
-                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Tuần</th>
-                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
+                    <th className="w-[20%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
+                    <th className="w-[21%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
+                    <th className="w-[21%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Δ Ngày</th>
+                    <th className="w-[21%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Δ Tuần</th>
+                    <th className="w-[17%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {priceRows.map((r: any, i: number) => (
-                    <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                      <td className="px-2 sm:px-2.5 py-2.5 font-sans font-semibold text-label">{r.name}</td>
-                      <td className="px-2 sm:px-2.5 py-2.5">{r.price}</td>
-                      <td className={clsx("px-2 sm:px-2.5 py-2.5", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
-                      <td className={clsx("px-2 sm:px-2.5 py-2.5", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
-                      <td className="px-2 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
-                    </tr>
-                  ))}
+                  {priceRows.map((r: any, i: number) => {
+                    // "price" từ backend là 1 chuỗi "<số> <đơn vị>" (vd "72.4000 EUR/tCO2e") —
+                    // đơn vị thường không có khoảng trắng nên trình duyệt không tự ngắt dòng
+                    // được, dễ tràn sang cột Δ Ngày bên cạnh trên màn hình hẹp. Tách riêng số
+                    // (dòng trên, rút gọn 2 số thập phân cho ngắn) và đơn vị (dòng dưới, nhỏ
+                    // hơn) thay vì hiện chung 1 dòng.
+                    const [rawPriceNumber, ...priceUnitParts] = String(r.price || "").split(" ");
+                    const priceNumber = formatCompactPriceNumber(rawPriceNumber);
+                    const priceUnit = priceUnitParts.join(" ");
+                    return (
+                      <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
+                        <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border font-sans font-semibold text-label">{r.name}</td>
+                        <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border align-top">
+                          <div className="flex flex-col leading-tight">
+                            <span className="break-words">{priceNumber}</span>
+                            {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
+                          </div>
+                        </td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border break-words", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border break-words", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
+                        <td className="px-1.5 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -453,7 +477,7 @@ export function ReportDocument({ report }: { report: Report }) {
                           <p className="text-[13px] leading-relaxed text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                              d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
+                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
                             )}>{d.tag}</span>
                             <RichText text={d.text} />
                           </p>
@@ -485,7 +509,7 @@ export function ReportDocument({ report }: { report: Report }) {
                           <p className="text-[13px] leading-relaxed text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                              d.tag === "FACT" ? "bg-surface-alt text-label border border-border-soft" : "bg-tint text-primary-dark border border-primary/20"
+                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
                             )}>{d.tag}</span>
                             <RichText text={d.text} />
                           </p>
