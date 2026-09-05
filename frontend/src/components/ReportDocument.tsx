@@ -390,29 +390,30 @@ export function ReportDocument({ report }: { report: Report }) {
 
           {/* Bảng giá full-width; nến + số liệu chính đứng cùng hàng bên phải trên desktop
               (lg:flex-row), xếp chồng trên mobile (chart trước, số liệu chính sau, giữ nguyên
-              thứ tự cũ) nhưng bảng giá được phóng to chữ. 4 cột số liệu luôn 1 dòng
-              (whitespace-nowrap); cột Ghi chú (prose, ít thiết yếu để quét nhanh) ẩn trên
-              mobile thay vì để nó ép cả hàng cao lên do tự xuống dòng trong cột hẹp. */}
+              thứ tự cũ). table-fixed + width cố định theo %: cột Hợp đồng rộng nhất (tên hợp
+              đồng dài như "German Power" không bị ép xuống dòng nhiều), 4 cột còn lại
+              (Giá/Δ Ngày/Δ Tuần/Ghi chú) rộng bằng nhau — tránh 1 cột co hẹp bất thường làm
+              hàng cao lên, giữ giao diện gọn trên mobile. */}
           <div className="flex flex-col gap-5">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
+              <table className="w-full table-fixed border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
                 <thead>
                   <tr>
-                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Hợp đồng</th>
-                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Giá</th>
-                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Δ Ngày</th>
-                    <th className="text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint whitespace-nowrap">Δ Tuần</th>
-                    <th className="hidden sm:table-cell text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
+                    <th className="w-[28%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Hợp đồng</th>
+                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Giá</th>
+                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Ngày</th>
+                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Δ Tuần</th>
+                    <th className="w-[18%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-2 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {priceRows.map((r: any, i: number) => (
                     <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
                       <td className="px-2 sm:px-2.5 py-2.5 font-sans font-semibold text-label">{r.name}</td>
-                      <td className="px-2 sm:px-2.5 py-2.5 whitespace-nowrap">{r.price}</td>
-                      <td className={clsx("px-2 sm:px-2.5 py-2.5 whitespace-nowrap", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
-                      <td className={clsx("px-2 sm:px-2.5 py-2.5 whitespace-nowrap", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
-                      <td className="hidden sm:table-cell px-2 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
+                      <td className="px-2 sm:px-2.5 py-2.5">{r.price}</td>
+                      <td className={clsx("px-2 sm:px-2.5 py-2.5", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
+                      <td className={clsx("px-2 sm:px-2.5 py-2.5", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
+                      <td className="px-2 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
                     </tr>
                   ))}
                 </tbody>
