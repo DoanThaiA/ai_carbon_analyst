@@ -409,9 +409,9 @@ export function ReportDocument({ report }: { report: Report }) {
                 <thead>
                   <tr>
                     <th className="w-[20%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
-                    <th className="w-[21%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
-                    <th className="w-[21%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Δ Ngày</th>
-                    <th className="w-[21%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Δ Tuần</th>
+                    <th className="w-[21%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
+                    <th className="w-[21%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Δ Ngày</th>
+                    <th className="w-[21%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Δ Tuần</th>
                     <th className="w-[17%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
                   </tr>
                 </thead>
@@ -428,14 +428,14 @@ export function ReportDocument({ report }: { report: Report }) {
                     return (
                       <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
                         <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border font-sans font-semibold text-label">{r.name}</td>
-                        <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border align-top">
-                          <div className="flex flex-col leading-tight">
+                        <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center">
+                          <div className="flex flex-col items-center leading-tight">
                             <span className="break-words">{priceNumber}</span>
                             {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
                           </div>
                         </td>
-                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border break-words", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
-                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border break-words", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
                         <td className="px-1.5 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
                       </tr>
                     );
