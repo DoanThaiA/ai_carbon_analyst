@@ -35,8 +35,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="flex flex-col md:flex-row gap-6">
-      <nav className="md:w-56 shrink-0 bg-background border border-border rounded-2xl p-3 h-fit">
+    <div className="flex flex-col md:flex-row gap-8">
+      <nav className="md:w-56 shrink-0 bg-background border border-border rounded-2xl p-3 h-fit md:sticky md:top-20">
         <ul className="space-y-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
             <li key={href}>
