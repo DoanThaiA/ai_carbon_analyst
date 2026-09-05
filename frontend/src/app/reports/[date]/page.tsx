@@ -43,7 +43,7 @@ export default function ReportDetail() {
 
   if (loading) {
     return (
-      <div className="flex flex-col space-y-6 animate-pulse max-w-[1080px] mx-auto">
+      <div className="flex flex-col space-y-6 animate-pulse">
         <div className="h-10 w-1/3 bg-background border border-border rounded"></div>
         <div className="h-64 w-full bg-background border border-border rounded-2xl"></div>
       </div>
@@ -64,7 +64,7 @@ export default function ReportDetail() {
   }
 
   return (
-    <div className="max-w-[1080px] mx-auto px-4 sm:px-6">
+    <div>
       <div className="flex items-center justify-between mb-6">
         <Link href="/" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />

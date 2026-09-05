@@ -49,6 +49,7 @@ from services.quote_chat import (
     retrieve_context_for_quote,
     suggest_questions,
 )
+from services.quote_chat_examples import build_few_shot_prompt_block
 from services.retrieval import RetrievalService
 
 logger = logging.getLogger(__name__)
@@ -223,6 +224,7 @@ async def quote_chat_stream(
             context_chunks = await retrieve_context_for_quote(retrieval_service, quote, body.question, date)
             prices_text = await get_prices_text_for_chat(session, date)
             eua_framework_overrides = await get_overrides_map(session)
+            few_shot_block = await build_few_shot_prompt_block(session)
             # Gửi session_id + nguồn tham khảo trước khi bắt đầu stream câu trả
             # lời, để FE lưu lại session_id cho các câu hỏi tiếp theo và render
             # "Danh sách tin tức tham khảo" (link + ngày phát hành) dưới câu trả lời.
@@ -252,6 +254,7 @@ async def quote_chat_stream(
                 context_chunks=context_chunks,
                 prices_text=prices_text,
                 eua_framework_overrides=eua_framework_overrides,
+                few_shot_block=few_shot_block,
             ):
                 answer_parts.append(delta)
                 yield _sse("delta", delta)

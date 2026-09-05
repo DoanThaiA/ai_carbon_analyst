@@ -170,7 +170,8 @@ G. TÀI CHÍNH & MACRO:
 # ─────────────────────────────────────────────────────────────────────
 
 def _build_static_instructions(
-    report_date: str, prices_text: str, overrides: Optional[Dict[str, str]] = None
+    report_date: str, prices_text: str, overrides: Optional[Dict[str, str]] = None,
+    few_shot_block: str = "",
 ) -> str:
     """Phần system prompt KHÔNG đổi giữa các câu hỏi/phiên/user (chỉ đổi 1
     lần/ngày theo report_date) — role, kiến thức nền, dữ liệu giá, năng lực,
@@ -187,7 +188,12 @@ def _build_static_instructions(
     lần/ngày, giống mọi phần khác của static instructions), không đổi theo
     từng câu hỏi — đặt trong dynamic context sẽ phá cache mỗi request mà không
     có lý do.
+
+    `few_shot_block`: khối ví dụ mẫu do admin chọn lọc (xem
+    services/quote_chat_examples.py::build_few_shot_prompt_block), rỗng nếu
+    admin chưa thêm ví dụ nào — đặt cùng phần static vì không đổi theo câu hỏi.
     """
+    few_shot_section = f"\n{few_shot_block}\n" if few_shot_block else ""
     return f"""Bạn là chuyên gia phân tích cao cấp của bàn giao dịch năng lượng & carbon (Daily Carbon Intelligence), có kiến thức sâu rộng về EU ETS, thị trường carbon, năng lượng, chính sách khí hậu, và các mối liên hệ liên thị trường. Nhiệm vụ của bạn là giúp người đọc hiểu sâu hơn một đoạn trích cụ thể mà họ vừa bôi đen trong báo cáo ngày {report_date}, thông qua hội thoại hỏi-đáp.
 
 === DỮ LIỆU GIÁ NGÀY BÁO CÁO {report_date} (đóng cửa + Δ ngày + Δ tuần — CÙNG số liệu report gốc đã dùng) ===
@@ -195,7 +201,7 @@ def _build_static_instructions(
 LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức). Khi được hỏi về giá/biến động của 1 trong 6 mã này, PHẢI dùng ĐÚNG số ở trên (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay mô tả định tính mơ hồ ("biến động nhẹ", "chưa dứt khoát"...) thay cho con số thật đã có sẵn. Khi được hỏi về giá 1 mã KHÔNG nằm trong danh sách trên (vd giá than cốc, giá kim loại, giá điện nước khác Đức), nói rõ hệ thống không theo dõi giá đó — có thể dùng web_search nếu người dùng cần số liệu cụ thể — KHÔNG suy đoán con số.
 
 {_build_domain_knowledge(overrides)}
-
+{few_shot_section}
 NĂNG LỰC CỦA BẠN — bạn có thể và NÊN thực hiện khi người dùng yêu cầu, nhưng LUÔN ở dạng CÔ ĐỌNG (xem QUY TẮC TRẢ LỜI mục 6 — độ dài luôn ưu tiên hơn độ đầy đủ):
 A. TRẢ LỜI THỰC TẾ: giải thích, tóm tắt, làm rõ nội dung đoạn trích dựa trên dữ liệu nền — thẳng vào ý chính, không diễn giải lan man.
 B. PHÂN TÍCH GIẢ ĐỊNH (what-if): khi người dùng đặt câu hỏi giả định (VD "Nếu giá gas tăng 20% thì..."), trả lời NGẮN GỌN theo đúng 1 mạch: mở đầu bằng "Trong kịch bản giả định..." rồi nêu chuỗi nhân quả cô đọng (2-3 bước chính, dựa trên KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên) và chốt HƯỚNG tác động (mạnh/vừa/nhẹ) — KHÔNG liệt kê tách riêng từng bước thành nhiều gạch đầu dòng, KHÔNG đưa con số giá cụ thể (không thể dự đoán chính xác). Chỉ khai triển dài hơn nếu người dùng chủ động yêu cầu "giải thích chi tiết"/"phân tích sâu hơn".
@@ -231,14 +237,14 @@ def _build_dynamic_context(quote: str, context_block: str) -> str:
 
 def build_system_prompt(
     quote: str, report_date: str, context_block: str, prices_text: str,
-    overrides: Optional[Dict[str, str]] = None,
+    overrides: Optional[Dict[str, str]] = None, few_shot_block: str = "",
 ) -> str:
     """Ghép static+dynamic thành 1 chuỗi — dùng cho backend Cohere (không hỗ
     trợ cache_control theo block như Anthropic). Backend Anthropic dùng trực
     tiếp `_build_static_instructions`/`_build_dynamic_context` tách rời (xem
     `_stream_anthropic`) để tận dụng prompt caching."""
     return (
-        _build_static_instructions(report_date, prices_text, overrides)
+        _build_static_instructions(report_date, prices_text, overrides, few_shot_block)
         + "\n\n" + _build_dynamic_context(quote, context_block)
     )
 
@@ -355,6 +361,7 @@ async def astream_quote_chat(
     context_chunks: Sequence[RetrievedDocument],
     prices_text: str,
     eua_framework_overrides: Optional[Dict[str, str]] = None,
+    few_shot_block: str = "",
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta).
 
@@ -370,6 +377,10 @@ async def astream_quote_chat(
     `eua_framework_overrides`: nội dung admin đã custom cho khung tri thức EUA
     (xem services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở
     router rồi truyền xuống đây — None = dùng toàn bộ bản mặc định trong code.
+
+    `few_shot_block`: khối ví dụ mẫu admin đã chọn lọc (xem
+    services/quote_chat_examples.py::build_few_shot_prompt_block), lấy 1 lần ở
+    router — rỗng nếu chưa có ví dụ nào.
     """
     settings = Settings.from_env()
     truncated_quote = _truncate(quote, MAX_QUOTE_CHARS)
@@ -383,7 +394,7 @@ async def astream_quote_chat(
         # Tách static/dynamic (thay vì gọi build_system_prompt gộp sẵn) để bật
         # prompt caching — xem docstring _stream_anthropic.
         stream = _stream_anthropic(
-            _build_static_instructions(report_date, prices_text, eua_framework_overrides),
+            _build_static_instructions(report_date, prices_text, eua_framework_overrides, few_shot_block),
             _build_dynamic_context(truncated_quote, context_block),
             messages,
             settings.quote_chat_model,
@@ -391,7 +402,7 @@ async def astream_quote_chat(
         )
     else:
         system_prompt = build_system_prompt(
-            truncated_quote, report_date, context_block, prices_text, eua_framework_overrides
+            truncated_quote, report_date, context_block, prices_text, eua_framework_overrides, few_shot_block
         )
         stream = _stream_cohere(system_prompt, messages, settings.quote_chat_model)
 

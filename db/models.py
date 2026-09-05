@@ -322,3 +322,42 @@ class EuaFrameworkOverride(Base):
 
     def __repr__(self) -> str:
         return f"EuaFrameworkOverride(block_id={self.block_id!r})"
+
+
+class QuoteChatExample(Base):
+    """Ví dụ mẫu (few-shot) cho Quote Chat — admin chọn 1 cặp hỏi-đáp trong lịch
+    sử chat (xem api/routers/admin_chat_reviews.py) mà mình đánh giá là phân
+    tích hợp lý; hệ thống tiêm lại các cặp này vào system prompt của MỌI phiên
+    Quote Chat sau đó làm chuẩn tham khảo về cách suy luận/văn phong (xem
+    services/quote_chat_examples.py::build_few_shot_prompt_block) — KHÔNG phải
+    để model chép lại số liệu/sự kiện cụ thể, vì các cặp này có thể thuộc
+    quote/report_date khác với phiên đang chạy.
+
+    `question`/`answer` là BẢN SAO nội dung tại thời điểm thêm (không tham
+    chiếu sống) — ví dụ vẫn còn dùng được dù `chat_sessions`/`chat_messages`
+    gốc sau này bị xoá (source_*_id chỉ để truy vết, ON DELETE SET NULL).
+    Unique trên source_answer_message_id để bấm "thêm" nhiều lần không tạo
+    trùng — xem services/quote_chat_examples.py::create_example_from_message.
+    """
+
+    __tablename__ = "quote_chat_examples"
+    __table_args__ = (
+        UniqueConstraint("source_answer_message_id", name="uq_quote_chat_examples_answer_message"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    source_session_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("chat_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    source_answer_message_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"QuoteChatExample(id={self.id!r})"

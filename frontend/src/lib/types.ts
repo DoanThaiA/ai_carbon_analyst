@@ -68,6 +68,13 @@ export interface AdminChatSessionListResponse {
   total: number;
 }
 
+export interface AdminChatMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  example_id: number | null;
+}
+
 export interface AdminChatSessionDetail {
   id: number;
   user_email: string;
@@ -77,7 +84,18 @@ export interface AdminChatSessionDetail {
   rating_reason: string | null;
   created_at: string;
   updated_at: string;
-  messages: ChatTurn[];
+  messages: AdminChatMessage[];
+}
+
+export interface QuoteChatExample {
+  id: number;
+  question: string;
+  answer: string;
+  source_session_id: number | null;
+  source_report_date: string | null;
+  source_quote: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface EuaFrameworkBlock {

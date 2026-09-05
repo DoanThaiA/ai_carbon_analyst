@@ -3,11 +3,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, AlertCircle, ThumbsUp, ThumbsDown, HelpCircle, Quote as QuoteIcon, Mail, Calendar } from "lucide-react";
+import {
+  ArrowLeft,
+  AlertCircle,
+  ThumbsUp,
+  ThumbsDown,
+  HelpCircle,
+  Quote as QuoteIcon,
+  Mail,
+  Calendar,
+  BookmarkPlus,
+  BookmarkCheck,
+  Loader2,
+} from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
-import type { AdminChatSessionDetail } from "@/lib/types";
+import type { AdminChatMessage, AdminChatSessionDetail } from "@/lib/types";
 
 const RATING_BADGE: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
   good: { label: "Tốt", icon: <ThumbsUp size={13} />, cls: "bg-tint text-primary-dark border border-primary/20" },
@@ -22,6 +34,7 @@ export default function AdminChatReviewDetailPage() {
   const [session, setSession] = useState<AdminChatSessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [busyMessageId, setBusyMessageId] = useState<number | null>(null);
 
   const fetchSession = useCallback(async () => {
     try {
@@ -37,6 +50,33 @@ export default function AdminChatReviewDetailPage() {
   useEffect(() => {
     if (sessionId) fetchSession();
   }, [sessionId, fetchSession]);
+
+  async function toggleExample(m: AdminChatMessage) {
+    if (!session || busyMessageId) return;
+    setBusyMessageId(m.id);
+    try {
+      if (m.example_id) {
+        await api.delete(`/api/admin/quote-chat-examples/${m.example_id}`);
+        setSession((prev) =>
+          prev ? { ...prev, messages: prev.messages.map((x) => (x.id === m.id ? { ...x, example_id: null } : x)) } : prev
+        );
+      } else {
+        const res = await api.post("/api/admin/quote-chat-examples", {
+          session_id: session.id,
+          answer_message_id: m.id,
+        });
+        setSession((prev) =>
+          prev
+            ? { ...prev, messages: prev.messages.map((x) => (x.id === m.id ? { ...x, example_id: res.data.id } : x)) }
+            : prev
+        );
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Lỗi khi cập nhật ví dụ mẫu.");
+    } finally {
+      setBusyMessageId(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -99,8 +139,8 @@ export default function AdminChatReviewDetailPage() {
               {session.messages.length === 0 ? (
                 <p className="text-sm text-muted-light">Phiên này chưa có tin nhắn nào.</p>
               ) : (
-                session.messages.map((m, i) => (
-                  <div key={i} className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
+                session.messages.map((m) => (
+                  <div key={m.id} className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
                     <span className="text-[11px] text-muted-light mb-1 px-1">{m.role === "user" ? "Người dùng" : "AI"}</span>
                     <div
                       className={clsx(
@@ -112,6 +152,33 @@ export default function AdminChatReviewDetailPage() {
                     >
                       {m.content}
                     </div>
+
+                    {m.role === "assistant" && (
+                      <button
+                        onClick={() => toggleExample(m)}
+                        disabled={busyMessageId === m.id}
+                        title={
+                          m.example_id
+                            ? "Đang dùng làm ví dụ mẫu cho Quote Chat — bấm để bỏ"
+                            : "Dùng câu trả lời này làm ví dụ mẫu (few-shot) cho Quote Chat"
+                        }
+                        className={clsx(
+                          "mt-1.5 flex items-center gap-1.5 text-[11.5px] font-semibold px-2 py-1 rounded-full transition-colors disabled:opacity-50",
+                          m.example_id
+                            ? "bg-tint text-primary-dark border border-primary/20"
+                            : "text-muted-light border border-border-soft hover:border-primary hover:text-primary-dark"
+                        )}
+                      >
+                        {busyMessageId === m.id ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : m.example_id ? (
+                          <BookmarkCheck size={12} />
+                        ) : (
+                          <BookmarkPlus size={12} />
+                        )}
+                        {m.example_id ? "Đã thêm ví dụ mẫu" : "Dùng làm ví dụ mẫu"}
+                      </button>
+                    )}
                   </div>
                 ))
               )}

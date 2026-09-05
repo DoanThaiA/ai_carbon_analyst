@@ -4,7 +4,6 @@ import { Leaf } from "lucide-react";
 import "./globals.css";
 import clsx from "clsx";
 import { Header } from "@/components/Header";
-import { PageShell } from "@/components/PageShell";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -30,7 +29,7 @@ export default function RootLayout({
 
         <div className="flex flex-col min-h-screen">
           <Header />
-          <PageShell>{children}</PageShell>
+          <main className="flex-1 px-4 py-6 md:px-6 md:py-8">{children}</main>
         </div>
       </body>
     </html>

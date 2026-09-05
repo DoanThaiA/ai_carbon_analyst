@@ -78,6 +78,18 @@ class AdminChatSessionSummary(BaseModel):
     updated_at: datetime
 
 
+class AdminChatMessage(BaseModel):
+    """Như ChatTurn nhưng kèm `id` (cần để admin chọn đúng 1 câu trả lời làm
+    ví dụ mẫu — xem POST /api/admin/quote-chat-examples) và `example_id`: None
+    nếu câu trả lời này CHƯA được thêm làm ví dụ mẫu, ngược lại là id của
+    QuoteChatExample tương ứng (FE dùng để hiện trạng thái đã thêm + xoá)."""
+
+    id: int
+    role: Literal["user", "assistant"]
+    content: str
+    example_id: Optional[int] = None
+
+
 class AdminChatSessionDetail(BaseModel):
     id: int
     user_email: str
@@ -87,7 +99,7 @@ class AdminChatSessionDetail(BaseModel):
     rating_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    messages: List[ChatTurn]
+    messages: List[AdminChatMessage]
 
 
 class AdminChatSessionListResponse(BaseModel):

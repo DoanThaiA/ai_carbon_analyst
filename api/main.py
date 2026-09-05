@@ -10,6 +10,7 @@ from api.routers import (
     admin_chat_reviews,
     admin_eua_framework,
     admin_price_sources,
+    admin_quote_chat_examples,
     admin_reports,
     admin_users,
     auth_admin,
@@ -51,6 +52,7 @@ app.include_router(admin_users.router)
 app.include_router(admin_reports.router)
 app.include_router(admin_chat_reviews.router)
 app.include_router(admin_eua_framework.router)
+app.include_router(admin_quote_chat_examples.router)
 app.include_router(quote_chat.router)
 app.include_router(hot_news.router)
 

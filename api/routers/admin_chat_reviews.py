@@ -9,12 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_admin, get_db
 from schemas.chat_models import (
+    AdminChatMessage,
     AdminChatSessionDetail,
     AdminChatSessionListResponse,
     AdminChatSessionSummary,
-    ChatTurn,
 )
 from services.chat_history import get_session_admin, list_session_messages, list_sessions_admin
+from services.quote_chat_examples import get_example_map_for_session
 
 router = APIRouter(
     prefix="/api/admin/chat-sessions",
@@ -57,6 +58,7 @@ async def get_chat_session_detail(session_id: int, session: AsyncSession = Depen
         raise HTTPException(status_code=404, detail="Chat session not found")
 
     messages = await list_session_messages(session, session_id=session_id)
+    example_map = await get_example_map_for_session(session, session_id=session_id)
     return AdminChatSessionDetail(
         id=chat_session.id,
         user_email=chat_session.user_email,
@@ -66,5 +68,8 @@ async def get_chat_session_detail(session_id: int, session: AsyncSession = Depen
         rating_reason=chat_session.rating_reason,
         created_at=chat_session.created_at,
         updated_at=chat_session.updated_at,
-        messages=[ChatTurn(role=m.role, content=m.content) for m in messages],
+        messages=[
+            AdminChatMessage(id=m.id, role=m.role, content=m.content, example_id=example_map.get(m.id))
+            for m in messages
+        ],
     )
