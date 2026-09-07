@@ -14,9 +14,9 @@ from services.eua_framework_admin import get_overrides_map
 
 logger = logging.getLogger(__name__)
 
-# Mục 1-5, 7, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Sonnet;
+# Mục 1-5, 7, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Opus;
 # Mục 6 (tóm tắt ngắn từng bài) dùng Haiku — rẻ hơn nhiều, đủ cho việc tóm tắt.
-REPORT_MODEL_SONNET = "claude-sonnet-5"
+REPORT_MODEL_OPUS = "claude-opus-5"
 REPORT_MODEL_HAIKU = "claude-haiku-4-5"
 
 # Meta-instruction chống dài dòng — đặt ở đầu system message mọi section,
@@ -332,8 +332,14 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
         
     cbam_price = await _fetch_cbam_price()
     if cbam_price:
-        prices.append(cbam_price)
-        
+        # Chèn ngay sau EUA trong bảng giá thay vì luôn để cuối danh sách —
+        # CBAM và EUA cùng nhóm "carbon", đặt cạnh nhau dễ so sánh hơn.
+        eua_idx = next((i for i, p in enumerate(prices) if p["code"] == "EUA"), None)
+        if eua_idx is not None:
+            prices.insert(eua_idx + 1, cbam_price)
+        else:
+            prices.append(cbam_price)
+
     return prices, max_date
 
 
@@ -575,9 +581,20 @@ def _summarize_prices(prices: List[Dict]) -> str:
     """Tạo dòng tóm tắt số liệu giá để đưa vào prompt."""
     lines = []
     for p in prices:
-        lines.append(
-            f"  - {p['name']} ({p['code']}): {p['price']} | Δ ngày {p['dday']} | Δ tuần {p['dweek']}"
-        )
+        if p.get("day_change_pct") is None and p.get("week_change_pct") is None:
+            # Giá tham chiếu không có Δ ngày/Δ tuần thật (vd CBAM Certificate — chốt
+            # theo quý, không khớp lệnh hàng ngày) — "-" ở "dday"/"dweek" dễ bị hiểu
+            # nhầm là có dữ liệu biến động. Đánh dấu rõ NGAY TẠI DÒNG DỮ LIỆU để mọi
+            # mục dùng chung hàm này (1, 2, 3, 5) đều chỉ báo giá, không cố phân tích
+            # nhân quả/xu hướng cho mã này.
+            lines.append(
+                f"  - {p['name']} ({p['code']}): {p['price']} — giá tham chiếu, KHÔNG có dữ liệu Δ ngày/Δ tuần "
+                f"(chỉ báo cáo giá hiện tại, KHÔNG phân tích biến động/nhân quả cho mã này)."
+            )
+        else:
+            lines.append(
+                f"  - {p['name']} ({p['code']}): {p['price']} | Δ ngày {p['dday']} | Δ tuần {p['dweek']}"
+            )
     return "\n".join(lines) if lines else "Chưa có dữ liệu giá."
 
 
@@ -777,7 +794,7 @@ def _extract_message_text(message: "anthropic.types.Message") -> str:
 async def _call_llm(
     prompt: str,
     system: str = "",
-    model: str = REPORT_MODEL_SONNET,
+    model: str = REPORT_MODEL_OPUS,
     max_tokens: int = 8192,
     max_retries: int = 3,
 ) -> Optional[str]:
@@ -789,7 +806,7 @@ async def _call_llm(
     tắc không đổi theo ngày, chỉ user message chứa DATA mới đổi) nên tận dụng
     được prompt caching thật sự của Anthropic (KHÔNG tự động nếu chỉ truyền
     chuỗi thường — phải khai báo cache_control tường minh như dưới đây).
-    model mặc định Sonnet cho các mục phân tích chuyên sâu (Mục 1-5, 7, 8, biz);
+    model mặc định Opus cho các mục phân tích chuyên sâu (Mục 1-5, 7, 8, biz);
     Mục 6 (tóm tắt từng bài) gọi với model=REPORT_MODEL_HAIKU — rẻ hơn, đủ dùng.
     """
     client = _get_anthropic_client()
