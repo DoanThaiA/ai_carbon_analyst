@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles,
@@ -11,11 +11,9 @@ import {
   Users,
   BarChart3,
   BookOpen,
-  MessageSquareWarning,
   LogIn,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { JennyFeedbackModal } from "@/components/JennyFeedbackModal";
 
 const USER_FEATURES = [
   { icon: FileText, text: "Xem báo cáo Daily Carbon Intelligence đã được duyệt" },
@@ -32,7 +30,6 @@ const ADMIN_FEATURES = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     // Người đã đăng nhập vào thẳng "/" thì đưa luôn về màn hình làm việc của
@@ -104,21 +101,6 @@ export default function LandingPage() {
           </a>
         </div>
       </section>
-
-      <section className="bg-surface border border-border-soft border-dashed rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <p className="text-sm text-body text-center sm:text-left">
-          Jenny phục vụ chưa tốt? Cho tôi biết để cải thiện.
-        </p>
-        <button
-          onClick={() => setFeedbackOpen(true)}
-          className="flex items-center gap-2 text-sm font-semibold text-primary-dark border border-primary/30 hover:bg-tint px-4 py-2 rounded-full transition-colors shrink-0"
-        >
-          <MessageSquareWarning size={16} />
-          Phản ánh thái độ của Jenny
-        </button>
-      </section>
-
-      <JennyFeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );
 }

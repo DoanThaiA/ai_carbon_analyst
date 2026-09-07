@@ -341,7 +341,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
         </div>
       )}
 
-      <JennyFeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} fixedRole="user" />
+      <JennyFeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
 
       {chatOpen && (
         <div className="fixed inset-0 z-[60] flex justify-end">

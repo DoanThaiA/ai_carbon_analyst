@@ -12,13 +12,11 @@ const PAGE_SIZE = 20;
 const ROLE_BADGE: Record<string, string> = {
   user: "bg-tint text-primary-dark border border-primary/20",
   admin: "bg-red-50 text-down border border-red-200",
-  guest: "bg-surface-alt text-muted-light border border-border",
 };
 
 const ROLE_LABEL: Record<string, string> = {
   user: "User",
   admin: "Admin",
-  guest: "Khách",
 };
 
 export default function AdminFeedbackPage() {
@@ -78,7 +76,7 @@ export default function AdminFeedbackPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold">Tên</th>
+                  <th className="px-4 py-3 font-semibold">Email</th>
                   <th className="px-4 py-3 font-semibold">Chức danh</th>
                   <th className="px-4 py-3 font-semibold">Nội dung</th>
                   <th className="px-4 py-3 font-semibold">Thời gian</th>
@@ -87,8 +85,9 @@ export default function AdminFeedbackPage() {
               <tbody className="divide-y divide-border">
                 {data.items.map((f) => (
                   <tr key={f.id}>
-                    <td className="px-4 py-2.5 font-semibold text-label whitespace-nowrap">
-                      {f.reporter_name || <span className="text-muted-light font-normal">Ẩn danh</span>}
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      <div className="font-semibold text-label">{f.user_email}</div>
+                      {f.reporter_name && <div className="text-xs text-muted-light">{f.reporter_name}</div>}
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold", ROLE_BADGE[f.reporter_role])}>

@@ -2,31 +2,13 @@
 
 import { useState } from "react";
 import { X, Send, CheckCircle2, AlertCircle } from "lucide-react";
-import clsx from "clsx";
 import { api } from "@/lib/api";
 
-type ReporterRole = "user" | "admin" | "guest";
-
-const ROLE_OPTIONS: { key: ReporterRole; label: string }[] = [
-  { key: "guest", label: "Khách" },
-  { key: "user", label: "User" },
-  { key: "admin", label: "Admin" },
-];
-
-export function JennyFeedbackModal({
-  open,
-  onClose,
-  fixedRole,
-}: {
-  open: boolean;
-  onClose: () => void;
-  // Khi mở từ 1 màn hình đã biết vai trò (vd đang đọc báo cáo với tư cách
-  // user đã đăng nhập) — cố định role, không cho chọn lại, tránh user tự
-  // nhận nhầm là "Admin"/"Khách".
-  fixedRole?: ReporterRole;
-}) {
+// Chỉ dùng trong màn hình đã đăng nhập (xem QuoteChat.tsx) — API yêu cầu
+// cookie session hợp lệ, backend tự lấy email + role từ JWT (payload["sub"]),
+// không nhận role/email từ client để tránh giả mạo.
+export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [reporterName, setReporterName] = useState("");
-  const [reporterRole, setReporterRole] = useState<ReporterRole>(fixedRole ?? "guest");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -37,7 +19,6 @@ export function JennyFeedbackModal({
   const handleClose = () => {
     // Reset để lần mở tiếp theo là 1 form trống, không giữ lại nội dung đã gửi.
     setReporterName("");
-    setReporterRole(fixedRole ?? "guest");
     setContent("");
     setError("");
     setSent(false);
@@ -52,7 +33,6 @@ export function JennyFeedbackModal({
     try {
       await api.post("/api/feedback", {
         reporter_name: reporterName.trim() || null,
-        reporter_role: reporterRole,
         content: content.trim(),
       });
       setSent(true);
@@ -89,7 +69,8 @@ export function JennyFeedbackModal({
           <>
             <p className="text-sm text-body mb-5">
               Nếu Jenny có thái độ không tốt, phục vụ không nhiệt tình, hiệu quả hợp tác không cao
-              .v.v. hãy phản ánh trực tiếp lên Sếp của Jenny (em).
+              .v.v. hãy phản ánh trực tiếp lên Sếp của Jenny (em). Phản ánh sẽ được gắn với tài khoản
+              email bạn đang đăng nhập.
             </p>
 
             {error && (
@@ -102,7 +83,7 @@ export function JennyFeedbackModal({
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-label mb-1.5">
-                  Tên <span className="text-muted-light font-normal">(không bắt buộc)</span>
+                  Tên hiển thị <span className="text-muted-light font-normal">(không bắt buộc)</span>
                 </label>
                 <input
                   type="text"
@@ -112,29 +93,6 @@ export function JennyFeedbackModal({
                   className="w-full px-3 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                 />
               </div>
-
-              {!fixedRole && (
-                <div>
-                  <label className="block text-sm font-semibold text-label mb-1.5">Chức danh</label>
-                  <div className="flex gap-2">
-                    {ROLE_OPTIONS.map(({ key, label }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setReporterRole(key)}
-                        className={clsx(
-                          "flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors",
-                          reporterRole === key
-                            ? "bg-primary text-white border-primary"
-                            : "border-border text-body hover:border-primary/40"
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div>
                 <label className="block text-sm font-semibold text-label mb-1.5">Nội dung phản ánh</label>

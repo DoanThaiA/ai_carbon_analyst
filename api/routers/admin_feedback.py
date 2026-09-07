@@ -32,6 +32,7 @@ async def list_feedbacks(
     items = [
         FeedbackResponse(
             id=r.id,
+            user_email=r.user_email,
             reporter_name=r.reporter_name,
             reporter_role=r.reporter_role,
             content=r.content,

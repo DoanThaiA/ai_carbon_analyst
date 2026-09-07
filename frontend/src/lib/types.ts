@@ -110,8 +110,9 @@ export interface EuaFrameworkBlock {
 
 export interface FeedbackItem {
   id: number;
+  user_email: string;
   reporter_name: string | null;
-  reporter_role: "user" | "admin" | "guest";
+  reporter_role: "user" | "admin";
   content: string;
   created_at: string;
 }
