@@ -755,6 +755,44 @@ export function ReportDocument({ report }: { report: Report }) {
           );
         })}
 
+        {/* SECTION 6 — Chi tiết các tin tức chính */}
+        {report.content["6"] && (
+          <section className="py-5">
+            <SectionHeading number="06" title={report.content["6"].title} />
+            {[
+              { key: "international", label: "Quốc tế" },
+              { key: "vietnam", label: "Việt Nam" },
+            ].map(({ key, label }) => {
+              const items = report.content["6"][key];
+              return (
+                <div key={key} className="mb-6 last:mb-0">
+                  <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-3">{label}</h4>
+                  {items?.length > 0 ? (
+                    <div className="space-y-4">
+                      {items.map((art: any, i: number) => (
+                        <div key={i} className="pb-4 border-b border-border-soft last:border-b-0 last:pb-0">
+                          <p className="text-[14px] font-semibold text-label leading-snug">{i + 1}. {art.title}</p>
+                          <p className="mt-1 text-[13.5px] leading-relaxed text-body"><RichText text={art.summary} /></p>
+                          <a
+                            href={art.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 inline-block font-mono text-[11.5px] text-primary hover:underline"
+                          >
+                            Nguồn: {art.source} ↗
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[13.5px] text-muted-light italic">Không có tin tức {label.toLowerCase()} trong kỳ này.</p>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+
         {/* SECTION 7 — Quan điểm trái chiều */}
         {report.content["7"] && (
           <section className="py-5">

@@ -14,8 +14,10 @@ from services.eua_framework_admin import get_overrides_map
 
 logger = logging.getLogger(__name__)
 
-# Mục 1-5, 7, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Sonnet.
+# Mục 1-5, 7, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Sonnet;
+# Mục 6 (tóm tắt ngắn từng bài) dùng Haiku — rẻ hơn nhiều, đủ cho việc tóm tắt.
 REPORT_MODEL_SONNET = "claude-sonnet-5"
+REPORT_MODEL_HAIKU = "claude-haiku-4-5"
 
 # Meta-instruction chống dài dòng — đặt ở đầu system message mọi section,
 # LLM anchor vào instruction đầu tiên mạnh nhất.
@@ -495,6 +497,80 @@ def _collect_cited_articles(news_by_topic: Dict[str, List[Dict]], limit: int = 4
     return articles[:limit]
 
 
+def _build_section6_news(news_by_topic: Dict[str, List[Dict]], limit_per_region: int = 30) -> Dict[str, List[Dict]]:
+    """Gom toàn bộ tin tức đã crawl trong ngày, dedup theo url, tách theo
+    region ('vietnam' / 'international') cho Mục 6 — mỗi tin giữ title/summary/
+    source/url để hiển thị dạng danh sách có thể bấm link tới bài gốc."""
+    articles = _collect_cited_articles(news_by_topic, limit=1000)
+    international = [a for a in articles if a.get("region") != "vietnam"][:limit_per_region]
+    vietnam = [a for a in articles if a.get("region") == "vietnam"][:limit_per_region]
+    return {"international": international, "vietnam": vietnam}
+
+
+def _prompt_section6_summary(article: Dict, target_date: str) -> str:
+    return f"""Bạn là chuyên gia phân tích thị trường carbon & năng lượng châu Âu.
+Ngày báo cáo: {target_date}
+
+BÀI VIẾT CẦN TÓM TẮT (CHỈ bài này, không liên quan bài nào khác):
+Nguồn: {article['source']}
+Tiêu đề: {article['title']}
+Nội dung (trích): {article.get('content_excerpt') or article['summary']}
+
+YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT (2–4 câu) CHO RIÊNG bài viết này:
+- 1–2 câu đầu: tóm tắt ĐÚNG nội dung chính của bài (fact, số liệu nếu bài có nêu) — TUYỆT ĐỐI KHÔNG bịa thêm thông tin ngoài nội dung đã cho, KHÔNG trộn với thông tin của bài viết khác.
+- Câu cuối: 1 nhận định ngắn gọn về ý nghĩa/tác động của tin này đối với thị trường carbon/năng lượng châu Âu hoặc giá EUA — chỉ viết câu này nếu có cơ sở hợp lý từ nội dung bài, nếu bài không liên quan thì bỏ qua, chỉ tóm tắt fact.
+- Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác: dịch ý sang tiếng Việt tự nhiên, không dịch máy móc từng từ.
+- Văn phong khách quan, súc tích. KHÔNG dùng markdown (không **, không gạch đầu dòng).
+
+CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
+{{"summary": "..."}}"""
+
+
+SECTION6_SUMMARY_CONCURRENCY = 4
+
+
+async def _summarize_section6_articles(
+    articles: List[Dict], target_date: str, concurrency: int = SECTION6_SUMMARY_CONCURRENCY
+) -> List[Dict]:
+    """Sinh tóm tắt bằng LLM CHO RIÊNG TỪNG bài đã lọt vào Mục 6 — mỗi bài 1
+    lần gọi LLM ĐỘC LẬP, prompt CHỈ chứa đúng 1 bài (không gộp nhiều bài vào
+    chung 1 prompt) để đảm bảo tóm tắt của bài nào chỉ dựa trên đúng nội dung
+    bài đó, không bị trộn/tổng hợp chéo với các bài khác. Các lệnh gọi này độc
+    lập với nhau nên chạy song song có giới hạn (Semaphore) thay vì tuần tự
+    từng bài — giảm đáng kể thời gian sinh báo cáo khi Mục 6 có tới 60 bài, mà
+    vẫn không vi phạm yêu cầu "mỗi bài 1 prompt riêng". Chỉ chạy cho các bài đã
+    lọt vào Mục 6 (không tóm tắt toàn bộ tin trong ngày — tốn kém không cần thiết).
+
+    Trả về danh sách bài MỚI (không mutate input gốc — các dict này còn được
+    share với news_by_topic dùng cho prompt các mục khác) với "summary" đã
+    thay bằng bản LLM viết riêng cho bài đó; bài nào LLM lỗi → fallback dùng
+    đúng đoạn cắt content gốc của chính bài đó, không ảnh hưởng các bài khác.
+    """
+    if not articles:
+        return []
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _summarize_one(art: Dict) -> Dict:
+        async with sem:
+            await asyncio.sleep(1)  # giãn nhịp nhẹ trong mỗi slot, tránh dồn request tức thời
+            raw = await _call_llm(
+                _prompt_section6_summary(art, target_date),
+                model=REPORT_MODEL_HAIKU,
+                max_tokens=512,
+            )
+            parsed = _extract_json(raw) if raw else None
+            summary = (parsed.get("summary") or "").strip() if parsed else ""
+
+            if not summary:
+                logger.warning("[REPORT] Mục 6: tóm tắt LLM thất bại cho bài %s, dùng fallback.", art["url"])
+                summary = art["summary"]
+
+            return {**art, "summary": summary}
+
+    return list(await asyncio.gather(*[_summarize_one(art) for art in articles]))
+
+
 def _summarize_prices(prices: List[Dict]) -> str:
     """Tạo dòng tóm tắt số liệu giá để đưa vào prompt."""
     lines = []
@@ -713,7 +789,8 @@ async def _call_llm(
     tắc không đổi theo ngày, chỉ user message chứa DATA mới đổi) nên tận dụng
     được prompt caching thật sự của Anthropic (KHÔNG tự động nếu chỉ truyền
     chuỗi thường — phải khai báo cache_control tường minh như dưới đây).
-    model mặc định Sonnet cho mọi mục phân tích (Mục 1-5, 7, 8, biz).
+    model mặc định Sonnet cho các mục phân tích chuyên sâu (Mục 1-5, 7, 8, biz);
+    Mục 6 (tóm tắt từng bài) gọi với model=REPORT_MODEL_HAIKU — rẻ hơn, đủ dùng.
     """
     client = _get_anthropic_client()
     for attempt in range(max_retries):
@@ -1306,6 +1383,15 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
             "bullish": _resolve_driver_items(raw_drivers.get("bullish")),
             "bearish": _resolve_driver_items(raw_drivers.get("bearish")),
         },
+    }
+
+    section6_news = _build_section6_news(news_by_topic)
+    section6_international = await _summarize_section6_articles(section6_news["international"], target_date)
+    section6_vietnam = await _summarize_section6_articles(section6_news["vietnam"], target_date)
+    content["6"] = {
+        "title": "Chi tiết các tin tức chính",
+        "international": section6_international,
+        "vietnam": section6_vietnam,
     }
 
     cited_articles = _collect_cited_articles(news_by_topic)
