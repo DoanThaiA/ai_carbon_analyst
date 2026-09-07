@@ -41,6 +41,26 @@ const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: strin
   "đi ngang": { icon: Minus, className: "text-muted-light border-border bg-surface-alt" },
 };
 
+// Mục 1: mỗi bullet mở đầu bằng 1 tag tự do do LLM đặt tên (EUA, Chính sách, Địa
+// chính trị...) — không phải enum cố định nên không thể map tay từng giá trị.
+// Băm tên tag thành 1 màu trong bảng màu cố định để CÙNG 1 tag luôn ra cùng màu
+// giữa các bullet/báo cáo, còn tag khác nhau nhìn tách bạch nhau ngay.
+const TAG_COLOR_PALETTE = [
+  "bg-tint text-primary-dark border-primary/20",
+  "bg-warn-tint text-warn border-warn/30",
+  "bg-red-50 text-down border-down/30",
+  "bg-indigo-50 text-indigo-700 border-indigo-200",
+  "bg-sky-50 text-sky-700 border-sky-200",
+  "bg-violet-50 text-violet-700 border-violet-200",
+];
+
+function tagColorClass(tag: string): string {
+  if (!tag) return "bg-surface-alt text-muted-light border-border";
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) >>> 0;
+  return TAG_COLOR_PALETTE[hash % TAG_COLOR_PALETTE.length];
+}
+
 // Nội dung từ backend đôi khi chứa markdown **bold** thô (đôi khi cả dấu ** lẻ, không cặp đôi)
 // — render thành <strong> và luôn dọn sạch mọi dấu * còn sót lại thay vì hiện literal.
 function RichText({ text }: { text: string }) {
@@ -359,7 +379,7 @@ export function ReportDocument({ report }: { report: Report }) {
             <div key={i} className="font-mono text-[12.5px] px-6 flex items-center gap-2 border-r border-border text-body">
               <span>{t.name}</span>
               <b className="text-foreground font-semibold">{t.price} {t.unit}</b>
-              <span className={isPositiveDelta(t.delta) ? "text-up" : "text-down"}>{t.delta}</span>
+              <span className={t.delta === "-" ? "text-muted-light" : isPositiveDelta(t.delta) ? "text-up" : "text-down"}>{t.delta}</span>
             </div>
           ))}
         </div>
@@ -378,8 +398,8 @@ export function ReportDocument({ report }: { report: Report }) {
 
               return (
                 <li key={i} className="py-2.5 border-t border-border text-[14.5px] first:border-t-0">
-                  <p className="text-foreground">
-                    <span className="font-mono text-[10.5px] text-primary-dark bg-tint border border-primary/20 rounded-[3px] px-1 py-px mr-2">
+                  <p className="text-foreground leading-[1.1]">
+                    <span className={clsx("font-mono text-[10.5px] border rounded-[3px] px-1 py-px mr-2", tagColorClass(tag.trim()))}>
                       {tag.trim().substring(0, 15)}
                     </span>
                     <RichText text={text.trim()} />
@@ -434,8 +454,8 @@ export function ReportDocument({ report }: { report: Report }) {
                             {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
                           </div>
                         </td>
-                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
-                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", r.dday === "-" ? "text-muted-light" : isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", r.dweek === "-" ? "text-muted-light" : isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
                         <td className="px-1.5 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
                       </tr>
                     );
@@ -456,7 +476,18 @@ export function ReportDocument({ report }: { report: Report }) {
               {report.content["2"]?.key_facts && (
                 <div className="lg:flex-1 lg:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
                   <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
-                  <p className="text-[13px] leading-relaxed text-body"><RichText text={report.content["2"].key_facts} /></p>
+                  <div className="space-y-1 text-[13px] leading-snug text-body">
+                    {/* Mỗi câu (tách theo dấu chấm cuối câu) xuống 1 dòng riêng thay vì
+                        dồn thành 1 đoạn dài — dễ quét mắt hơn, khoảng cách space-y-1 +
+                        leading-snug giữ tổng chiều cao vừa khít khung (bằng chiều cao
+                        biểu đồ nến bên cạnh) thay vì leading-relaxed cũ làm rộng hàng. */}
+                    {report.content["2"].key_facts
+                      .split(/(?<=\.)\s+/)
+                      .filter((s: string) => s.trim())
+                      .map((s: string, i: number) => (
+                        <p key={i}><RichText text={s} /></p>
+                      ))}
+                  </div>
                 </div>
               )}
             </div>
