@@ -13,16 +13,21 @@ export function Header() {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith("/admin");
   const isLogin = pathname === "/login";
-  const logoHref = isAdmin ? "/admin/reports" : "/";
   const [role, setRole] = useState<string | null>(null);
+  const logoHref = isAdmin ? "/admin/reports" : role ? "/dashboard" : "/";
 
   useEffect(() => {
     if (!isLogin) {
       api.get("/api/auth/me")
         .then(res => setRole(res.data.role))
-        .catch(() => {});
+        .catch(() => setRole(null));
     }
   }, [isLogin]);
+
+  // Chỉ hiện các nút dành cho người đã đăng nhập (Quản trị/Dashboard/Hot
+  // News/Đăng xuất) sau khi xác nhận có role — landing page `/` công khai
+  // (chưa đăng nhập) không nên hiện các nút này.
+  const isAuthenticated = !isLogin && role !== null;
 
   return (
     <header className="bg-primary-dark px-6 py-4 flex items-center justify-between sticky top-0 z-50">
@@ -33,7 +38,7 @@ export function Header() {
           AI Carbon Analyst
         </h1>
       </Link>
-      {!isLogin && (
+      {isAuthenticated && (
         <div className="flex items-center gap-3">
           {role === "admin" && !isAdmin && (
             <Link
@@ -47,7 +52,7 @@ export function Header() {
           )}
           {isAdmin && (
             <Link
-              href="/"
+              href="/dashboard"
               className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
               title="Về trang báo cáo chính (giao diện người dùng)"
             >

@@ -62,7 +62,7 @@ function UserLoginForm() {
     setError("");
     try {
       await api.post("/api/auth/otp/verify", { email, code });
-      router.push("/");
+      router.push("/dashboard");
     } catch (err: any) {
       setError(err.response?.data?.detail || "Mã OTP không đúng.");
     } finally {

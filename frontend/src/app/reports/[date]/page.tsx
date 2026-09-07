@@ -56,7 +56,7 @@ export default function ReportDetail() {
         <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
         <h2 className="text-xl font-bold text-heading mb-2">Oops!</h2>
         <p className="text-red-600 mb-6">{error}</p>
-        <Link href="/" className="text-primary hover:text-primary-dark font-semibold">
+        <Link href="/dashboard" className="text-primary hover:text-primary-dark font-semibold">
           &larr; Quay lại trang chủ
         </Link>
       </div>
@@ -66,7 +66,7 @@ export default function ReportDetail() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <Link href="/" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
+        <Link href="/dashboard" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />
           Quay lại Dashboard
         </Link>

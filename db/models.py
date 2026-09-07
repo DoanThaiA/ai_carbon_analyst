@@ -361,3 +361,28 @@ class QuoteChatExample(Base):
 
     def __repr__(self) -> str:
         return f"QuoteChatExample(id={self.id!r})"
+
+
+class AssistantFeedback(Base):
+    """Phản ánh của người dùng về thái độ/hiệu quả phục vụ của AI assistant
+    (hiện đặt tên hiển thị là "Jenny" ở UI — tên bảng để trung lập, tránh phải
+    migrate nếu sau này đổi tên nhân vật). Gửi công khai từ landing page `/`,
+    không yêu cầu đăng nhập — reporter_role tự khai báo (không xác thực JWT)."""
+
+    __tablename__ = "assistant_feedbacks"
+    __table_args__ = (
+        CheckConstraint(
+            "reporter_role IN ('user', 'admin', 'guest')", name="ck_assistant_feedbacks_reporter_role"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    reporter_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reporter_role: Mapped[str] = mapped_column(Text, nullable=False, server_default="guest")
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"AssistantFeedback(id={self.id!r}, reporter_role={self.reporter_role!r})"

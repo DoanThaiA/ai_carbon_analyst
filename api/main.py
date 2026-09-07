@@ -9,12 +9,14 @@ from api.deps import get_current_user, get_db, settings
 from api.routers import (
     admin_chat_reviews,
     admin_eua_framework,
+    admin_feedback,
     admin_price_sources,
     admin_quote_chat_examples,
     admin_reports,
     admin_users,
     auth_admin,
     auth_user,
+    feedback,
     hot_news,
     quote_chat,
 )
@@ -55,6 +57,8 @@ app.include_router(admin_eua_framework.router)
 app.include_router(admin_quote_chat_examples.router)
 app.include_router(quote_chat.router)
 app.include_router(hot_news.router)
+app.include_router(feedback.router)
+app.include_router(admin_feedback.router)
 
 
 @app.get("/api/reports")

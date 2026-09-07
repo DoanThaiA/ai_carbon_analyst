@@ -13,6 +13,14 @@ export function middleware(request: NextRequest) {
     }
   }
 
+  // Bảo vệ Dashboard (danh sách báo cáo) — trang chủ `/` giờ là landing page
+  // công khai, /dashboard mới là màn hình cần đăng nhập.
+  if (request.nextUrl.pathname.startsWith('/dashboard')) {
+    if (!token) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+  }
+
   return NextResponse.next()
 }
 
@@ -20,5 +28,6 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/admin/:path*',
+    '/dashboard/:path*',
   ],
 }
