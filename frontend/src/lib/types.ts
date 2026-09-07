@@ -108,6 +108,19 @@ export interface EuaFrameworkBlock {
   updated_by: string | null;
 }
 
+export interface FeedbackItem {
+  id: number;
+  reporter_name: string | null;
+  reporter_role: "user" | "admin" | "guest";
+  content: string;
+  created_at: string;
+}
+
+export interface FeedbackListResponse {
+  items: FeedbackItem[];
+  total: number;
+}
+
 export interface HotNewsItem {
   id: number;
   title: string | null;

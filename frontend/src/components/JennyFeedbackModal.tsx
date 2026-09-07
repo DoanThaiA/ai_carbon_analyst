@@ -13,9 +13,20 @@ const ROLE_OPTIONS: { key: ReporterRole; label: string }[] = [
   { key: "admin", label: "Admin" },
 ];
 
-export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function JennyFeedbackModal({
+  open,
+  onClose,
+  fixedRole,
+}: {
+  open: boolean;
+  onClose: () => void;
+  // Khi mở từ 1 màn hình đã biết vai trò (vd đang đọc báo cáo với tư cách
+  // user đã đăng nhập) — cố định role, không cho chọn lại, tránh user tự
+  // nhận nhầm là "Admin"/"Khách".
+  fixedRole?: ReporterRole;
+}) {
   const [reporterName, setReporterName] = useState("");
-  const [reporterRole, setReporterRole] = useState<ReporterRole>("guest");
+  const [reporterRole, setReporterRole] = useState<ReporterRole>(fixedRole ?? "guest");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -26,7 +37,7 @@ export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: 
   const handleClose = () => {
     // Reset để lần mở tiếp theo là 1 form trống, không giữ lại nội dung đã gửi.
     setReporterName("");
-    setReporterRole("guest");
+    setReporterRole(fixedRole ?? "guest");
     setContent("");
     setError("");
     setSent(false);
@@ -102,26 +113,28 @@ export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: 
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-label mb-1.5">Chức danh</label>
-                <div className="flex gap-2">
-                  {ROLE_OPTIONS.map(({ key, label }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setReporterRole(key)}
-                      className={clsx(
-                        "flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors",
-                        reporterRole === key
-                          ? "bg-primary text-white border-primary"
-                          : "border-border text-body hover:border-primary/40"
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              {!fixedRole && (
+                <div>
+                  <label className="block text-sm font-semibold text-label mb-1.5">Chức danh</label>
+                  <div className="flex gap-2">
+                    {ROLE_OPTIONS.map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setReporterRole(key)}
+                        className={clsx(
+                          "flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors",
+                          reporterRole === key
+                            ? "bg-primary text-white border-primary"
+                            : "border-border text-body hover:border-primary/40"
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-sm font-semibold text-label mb-1.5">Nội dung phản ánh</label>

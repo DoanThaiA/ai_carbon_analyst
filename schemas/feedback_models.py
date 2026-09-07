@@ -1,7 +1,7 @@
 """Data models cho tính năng phản ánh thái độ AI assistant (Jenny) — gửi công
 khai từ landing page, không yêu cầu đăng nhập."""
 from datetime import datetime
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,3 +18,8 @@ class FeedbackResponse(BaseModel):
     reporter_role: str
     content: str
     created_at: datetime
+
+
+class FeedbackListResponse(BaseModel):
+    items: List[FeedbackResponse]
+    total: int

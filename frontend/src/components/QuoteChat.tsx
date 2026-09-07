@@ -14,6 +14,7 @@ import {
   ExternalLink,
   ThumbsUp,
   ThumbsDown,
+  MessageSquareWarning,
 } from "lucide-react";
 import clsx from "clsx";
 import { formatDistanceToNow, format } from "date-fns";
@@ -21,6 +22,7 @@ import { vi } from "date-fns/locale";
 import { api } from "@/lib/api";
 import type { ChatRating, ChatSessionSummary, ChatSource, ChatTurn } from "@/lib/types";
 import { streamQuoteChat } from "@/lib/quoteChatStream";
+import { JennyFeedbackModal } from "@/components/JennyFeedbackModal";
 
 interface FloatingTrigger {
   x: number;
@@ -70,6 +72,8 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -318,14 +322,26 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       )}
 
       {!chatOpen && (
-        <button
-          onClick={openHistoryPanel}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-background border border-border text-body text-sm font-semibold px-4 py-3 rounded-full shadow-[var(--shadow-medium)] hover:border-primary hover:text-primary-dark transition-colors"
-        >
-          <History size={18} className="text-primary" />
-          Lịch sử hỏi đáp
-        </button>
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+          <button
+            onClick={() => setFeedbackOpen(true)}
+            title="Phản ánh thái độ của Jenny"
+            className="flex items-center gap-2 bg-background border border-border text-body text-sm font-semibold px-4 py-3 rounded-full shadow-[var(--shadow-medium)] hover:border-primary hover:text-primary-dark transition-colors"
+          >
+            <MessageSquareWarning size={18} className="text-primary" />
+            <span className="hidden sm:inline">Phản ánh</span>
+          </button>
+          <button
+            onClick={openHistoryPanel}
+            className="flex items-center gap-2 bg-background border border-border text-body text-sm font-semibold px-4 py-3 rounded-full shadow-[var(--shadow-medium)] hover:border-primary hover:text-primary-dark transition-colors"
+          >
+            <History size={18} className="text-primary" />
+            Lịch sử hỏi đáp
+          </button>
+        </div>
       )}
+
+      <JennyFeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} fixedRole="user" />
 
       {chatOpen && (
         <div className="fixed inset-0 z-[60] flex justify-end">
