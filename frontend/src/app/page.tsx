@@ -51,8 +51,9 @@ export default function LandingPage() {
             <Sparkles size={16} />
             AI Carbon Analyst
           </div>
-          <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-heading leading-[1.15]">
-            Xin chào, tôi là Jenny AI,<br className="hidden md:block" /> nhân viên của Stavian Industrial Metal.
+          <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-heading leading-[1.2]">
+            Xin chào, tôi là <span className="whitespace-nowrap">Jenny AI,</span><br className="hidden lg:block" />
+            <span className="inline-block mt-2">nhân viên của <span className="whitespace-nowrap">Stavian Industrial Metal.</span></span>
           </h1>
           <p className="text-body text-lg max-w-xl mx-auto md:mx-0 leading-relaxed">
             Tôi theo dõi tin tức và giá thị trường carbon/năng lượng mỗi ngày, tổng hợp thành báo cáo 
