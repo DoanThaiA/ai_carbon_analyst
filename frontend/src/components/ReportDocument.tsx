@@ -473,7 +473,7 @@ export function ReportDocument({ report }: { report: Report }) {
                               rel="noopener noreferrer"
                               className="ml-1 font-mono text-[10.5px] font-normal text-primary hover:underline whitespace-nowrap"
                             >
-                              (link)
+                              (nguồn)
                             </a>
                           )}
                         </td>
@@ -607,7 +607,7 @@ export function ReportDocument({ report }: { report: Report }) {
                 className="mb-4 flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-primary border border-primary/30 bg-tint/50 hover:bg-tint rounded-md px-2.5 py-1.5 transition-colors"
               >
                 {showAnalysis ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                {showAnalysis ? "Ẩn phần phân tích, chỉ xem bảng chiến lược" : "Hiện phần phân tích (Diễn biến chính → Cần theo dõi)"}
+                {showAnalysis ? "Ẩn phân tích" : "Hiện phân tích"}
               </button>
             )}
 
