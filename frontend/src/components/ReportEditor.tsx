@@ -157,11 +157,18 @@ function useArrayOps<T extends Record<string, any>>(list: T[] | undefined, onCha
   return { items, update, remove, add };
 }
 
-function useStringListOps(list: string[] | undefined, onChange: (next: string[]) => void) {
+// Bullet của Mục 1/4 là object { text, source_name, source_url } (nguồn tin do
+// backend tự map từ [N], xem services/report_generator.py::_resolve_bullet_sources)
+// thay vì string thô như các mục khác — BulletsEditor xử lý được cả 2 dạng,
+// chỉ cho sửa "text", giữ nguyên source_name/source_url khi lưu lại.
+type BulletItem = string | { text: string; source_name?: string | null; source_url?: string | null; [k: string]: unknown };
+
+function useBulletListOps(list: BulletItem[] | undefined, onChange: (next: BulletItem[]) => void) {
   const items = list || [];
   const update = (i: number, value: string) => {
     const next = items.slice();
-    next[i] = value;
+    const cur = next[i];
+    next[i] = typeof cur === "object" && cur !== null ? { ...cur, text: value } : value;
     onChange(next);
   };
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
@@ -174,33 +181,42 @@ function BulletsEditor({
   onChange,
   placeholder,
 }: {
-  bullets: string[] | undefined;
-  onChange: (b: string[]) => void;
+  bullets: BulletItem[] | undefined;
+  onChange: (b: BulletItem[]) => void;
   placeholder?: string;
 }) {
-  const { items, update, remove, add } = useStringListOps(bullets, onChange);
+  const { items, update, remove, add } = useBulletListOps(bullets, onChange);
   return (
     <div className="space-y-2">
-      {items.map((b, i) => (
-        <div key={i} className="flex gap-2 items-start group">
-          <span className="font-mono text-[10px] text-muted-light pt-3 w-4 shrink-0">{i + 1}</span>
-          <textarea
-            value={b}
-            onChange={(e) => update(i, e.target.value)}
-            rows={2}
-            placeholder={placeholder}
-            className="flex-1 text-[13.5px] p-2.5 bg-surface border border-border rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y"
-          />
-          <button
-            type="button"
-            onClick={() => remove(i)}
-            title="Xóa dòng"
-            className="text-muted-light hover:text-down p-1.5 mt-1 opacity-60 group-hover:opacity-100 transition-opacity shrink-0"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      ))}
+      {items.map((b, i) => {
+        const text = typeof b === "string" ? b : b.text || "";
+        const sourceName = typeof b === "object" && b !== null ? b.source_name : null;
+        return (
+          <div key={i} className="flex gap-2 items-start group">
+            <span className="font-mono text-[10px] text-muted-light pt-3 w-4 shrink-0">{i + 1}</span>
+            <div className="flex-1">
+              <textarea
+                value={text}
+                onChange={(e) => update(i, e.target.value)}
+                rows={2}
+                placeholder={placeholder}
+                className="w-full text-[13.5px] p-2.5 bg-surface border border-border rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y"
+              />
+              {sourceName && (
+                <p className="mt-1 font-mono text-[10.5px] text-muted-light">Nguồn (tự động, không sửa được ở đây): {sourceName}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              title="Xóa dòng"
+              className="text-muted-light hover:text-down p-1.5 mt-1 opacity-60 group-hover:opacity-100 transition-opacity shrink-0"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        );
+      })}
       <AddButton onClick={add} label="Thêm dòng" />
     </div>
   );
@@ -541,9 +557,8 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                     { key: "direction", label: "Chiều giá", type: "select", options: ["tăng", "giảm", "đi ngang"] },
                     { key: "condition", label: "Điều kiện kích hoạt", type: "textarea" },
                     { key: "price_zone", label: "Vùng giá tham chiếu" },
-                    { key: "market_pricing", label: "Định giá thị trường", type: "textarea" },
                     { key: "key_risk", label: "Rủi ro chính", type: "textarea" },
-                    { key: "action_plan", label: "Kế hoạch hành động", type: "textarea" },
+                    { key: "trading_strategy", label: "Chiến lược Trading", type: "textarea" },
                   ]}
                   rows={sec3.trading_scenarios}
                   onChange={(rows) => patchSection("3", { trading_scenarios: rows })}

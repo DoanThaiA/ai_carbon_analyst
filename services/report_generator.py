@@ -2,12 +2,13 @@ import json
 import logging
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Any, Optional
+from urllib.parse import quote
 import asyncio
 import anthropic
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, func
 
-from db.models import Article, Price, Instrument, Report
+from db.models import Article, Price, Instrument, PriceCrawlSource, Report
 from core.config import Settings
 from services import eua_causal_chains as chains
 from services.eua_framework_admin import get_overrides_map
@@ -239,8 +240,28 @@ def _eua_framework(
 # Data fetching
 # ─────────────────────────────────────────────────────────────────────
 
+# URL trang quote Barchart cho từng hợp đồng, dựng từ symbol trong
+# price_crawl_sources (vd "CK*0" -> .../futures/quotes/CK%2A0/overview) — cùng
+# domain crawl_prices/crawl_barchart.py dùng để lấy giá, chỉ khác đường dẫn
+# (overview thay vì price-history) vì đây là link cho người dùng bấm xem, không
+# phải endpoint crawl dữ liệu.
+BARCHART_QUOTE_URL = "https://www.barchart.com/futures/quotes/{symbol}/overview"
+CBAM_PRICE_PAGE_URL = 'https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism/price-cbam-certificates_en'
+
+
+def _barchart_url(symbol: str) -> str:
+    return BARCHART_QUOTE_URL.format(symbol=quote(symbol, safe=""))
+
+
+async def _get_barchart_symbols(session: AsyncSession) -> Dict[str, str]:
+    """Map instrument_code -> symbol Barchart (vd "EUA" -> "CK*0"), dùng để dựng
+    link bảng giá Barchart cho người dùng bấm xem trực tiếp trong Mục 2."""
+    rows = (await session.execute(select(PriceCrawlSource))).scalars().all()
+    return {row.instrument_code: row.symbol for row in rows}
+
+
 async def _fetch_cbam_price() -> Optional[Dict]:
-    url = 'https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism/price-cbam-certificates_en'
+    url = CBAM_PRICE_PAGE_URL
     try:
         from selectolax.parser import HTMLParser
         import httpx
@@ -287,7 +308,8 @@ async def _fetch_cbam_price() -> Optional[Dict]:
                     "close": float(clean_price),
                     "day_change_pct": None,
                     "week_change_pct": None,
-                    "category": "carbon"
+                    "category": "carbon",
+                    "source_url": CBAM_PRICE_PAGE_URL,
                 }
     except Exception as e:
         logger.error(f"Error fetching CBAM price: {e}")
@@ -311,11 +333,14 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
     result = await session.execute(stmt)
     rows = result.all()
 
+    barchart_symbols = await _get_barchart_symbols(session)
+
     prices = []
     for price, instrument in rows:
         is_up = price.day_change_pct is not None and price.day_change_pct > 0
         # Ghi chú bất thường: volume đột biến hoặc note thủ công
         note = price.note or ""
+        symbol = barchart_symbols.get(instrument.code)
         prices.append({
             "name": instrument.name,
             "code": instrument.code,
@@ -327,9 +352,11 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             "close": price.close_price,
             "day_change_pct": price.day_change_pct,
             "week_change_pct": price.week_change_pct,
+            "volume": price.volume,
             "category": instrument.category,
+            "source_url": _barchart_url(symbol) if symbol else None,
         })
-        
+
     cbam_price = await _fetch_cbam_price()
     if cbam_price:
         # Chèn ngay sau EUA trong bảng giá thay vì luôn để cuối danh sách —
@@ -370,7 +397,8 @@ async def get_historical_ohlc_for_report(session: AsyncSession, instrument_code:
             "open": open_p,
             "high": high_p,
             "low": low_p,
-            "close": p.close_price
+            "close": p.close_price,
+            "volume": p.volume,
         })
     return chart_data
 
@@ -487,6 +515,27 @@ def _filter_news_with_index(
         for i, art in index_lookup.items()
     ]
     return "\n".join(lines), index_lookup
+
+
+def _resolve_bullet_sources(items: Optional[List[Any]], index_lookup: Dict[int, Dict]) -> List[Dict]:
+    """Chuẩn hoá mảng "bullets" (mỗi phần tử {"text", "source_index"} do LLM trả
+    về, dùng chung cơ chế đánh số [N] với Mục 2/7 — LLM chỉ chọn số có thật,
+    backend tự map sang tên/URL nguồn thật, tránh bịa nguồn) thành
+    {"text", "source_name", "source_url"} để hiển thị nguồn cạnh mỗi bullet,
+    giống cách Mục 6 hiện "Nguồn: {source}". Chấp nhận cả string thô (fallback
+    khi LLM lỗi) — trả về không kèm nguồn cho trường hợp đó."""
+    resolved = []
+    for it in items or []:
+        if isinstance(it, str):
+            resolved.append({"text": it, "source_name": None, "source_url": None})
+            continue
+        src_art = index_lookup.get(it.get("source_index"))
+        resolved.append({
+            "text": it.get("text", ""),
+            "source_name": src_art["source"] if src_art else None,
+            "source_url": src_art["url"] if src_art else None,
+        })
+    return resolved
 
 
 def _collect_cited_articles(news_by_topic: Dict[str, List[Dict]], limit: int = 40) -> List[Dict]:
@@ -628,6 +677,60 @@ def _eua_session_range_summary(chart_data: List[Dict]) -> str:
     return (
         f"Biên độ phiên liền trước ({latest['date']}): cao {high:.2f} — thấp {low:.2f} "
         f"EUR/tCO2 (biên độ {high - low:.2f}, ~{range_pct:.1f}% so với giá đóng cửa)."
+    )
+
+
+# Ngưỡng phân loại % lệch khối lượng phiên liền trước so với TB — dùng để gắn
+# nhãn factual (KHÔNG phải kết luận hướng giá, chỉ mô tả mức độ bất thường của
+# khối lượng) cho LLM viết market_drivers ở Mục 2 dựa vào, thay vì tự đặt
+# ngưỡng khác nhau giữa các lần sinh báo cáo.
+EUA_VOLUME_SESSIONS_FOR_AVG = 20
+EUA_VOLUME_SPIKE_PCT = 20.0
+EUA_VOLUME_DROP_PCT = -20.0
+
+
+def _eua_volume_summary(chart_data: List[Dict]) -> str:
+    """Khối lượng giao dịch EUA phiên liền trước so với TB N phiên gần nhất
+    (tính trực tiếp từ Price.volume, KHÔNG để LLM tự suy luận/bịa mức "cao/thấp
+    bất thường") — kèm chiều giá cùng phiên đó để LLM dùng làm căn cứ suy luận
+    "khối lượng có xác nhận xu hướng giá hay không" khi viết market_drivers
+    (khối lượng tăng cùng chiều giá = tín hiệu xác nhận mạnh; khối lượng tăng
+    nhưng giá đi ngược/đi ngang, hoặc giá biến động mạnh mà khối lượng thấp =
+    tín hiệu yếu/đáng nghi ngờ — nhưng việc GHÉP thành kết luận bullish/bearish
+    là việc của LLM ở Mục 2, hàm này chỉ cung cấp SỐ LIỆU THẬT).
+    """
+    with_volume = [c for c in chart_data if c.get("volume") is not None]
+    if not with_volume:
+        return "Không có dữ liệu khối lượng giao dịch EUA cho phiên này."
+
+    latest = with_volume[-1]
+    latest_volume = latest["volume"]
+    prior = with_volume[:-1][-EUA_VOLUME_SESSIONS_FOR_AVG:]
+
+    price_direction = "đi ngang"
+    if latest["close"] is not None and latest.get("open") is not None and latest["close"] != latest["open"]:
+        price_direction = "tăng" if latest["close"] > latest["open"] else "giảm"
+
+    if not prior:
+        return (
+            f"Khối lượng giao dịch EUA phiên liền trước ({latest['date']}): {latest_volume:,.0f} hợp đồng "
+            f"— chưa đủ dữ liệu các phiên trước đó để so sánh với trung bình."
+        )
+
+    avg_volume = sum(c["volume"] for c in prior) / len(prior)
+    pct_diff = ((latest_volume - avg_volume) / avg_volume * 100) if avg_volume else 0
+
+    if pct_diff >= EUA_VOLUME_SPIKE_PCT:
+        level = "tăng đột biến"
+    elif pct_diff <= EUA_VOLUME_DROP_PCT:
+        level = "giảm mạnh"
+    else:
+        level = "ở mức bình thường"
+
+    return (
+        f"Khối lượng giao dịch EUA phiên liền trước ({latest['date']}): {latest_volume:,.0f} hợp đồng, "
+        f"so với TB {len(prior)} phiên gần nhất ({avg_volume:,.0f} hợp đồng) — {level} ({pct_diff:+.1f}%). "
+        f"Giá phiên đó {price_direction} so với giá mở cửa cùng phiên."
     )
 
 
@@ -923,17 +1026,18 @@ BIÊN ĐỘ PHIÊN LIỀN TRƯỚC EUA (dùng ĐÚNG số này, KHÔNG tự ư�
 XU HƯỚNG EUA 30 NGÀY:
 {eua_trend}
 
-TIN TỨC (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, geopolitics, eu_policy, cbam):
+TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, geopolitics, eu_policy, cbam) — CHỈ trích dẫn số có thật:
 {news_text}
 
 YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
 - Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo tác động EUA (cao→thấp).
 - Bullet đầu: giá đóng cửa EUA + biên độ phiên (dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên; nếu "Không có dữ liệu" → bỏ qua biên độ) + xu hướng 30 ngày.
 - Mỗi bullet mở đầu bằng tag đậm (**EUA:**, **Chính sách:**...). Nêu tin chính sách/địa chính trị ảnh hưởng EUA.
-- Không có tin nổi bật → "Không có sự kiện nổi bật."
+- Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
+- Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm nếu bullet dựa trên 1 tin cụ thể ở trên), hoặc null nếu bullet chỉ dựa trên DỮ LIỆU GIÁ hệ thống (không phải tin tức) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"1": {{"title": "Tóm tắt điều hành", "bullets": ["..."]}}}}"""
+{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": null}}]}}}}"""
     return system, user
 
 
@@ -969,6 +1073,10 @@ Cấu trúc: {{"bullish": [...], "bearish": [...]}}. Mỗi phần tử gồm "ta
 - "text": 1 câu fact + 1–2 câu chuỗi nhân quả → kết luận hướng tác động EUA. Nêu Δ ngày + Δ tuần khi trích dữ liệu giá.
 - "source_index": số [N] có thật trong danh sách, hoặc null.
 Xếp bullish/bearish theo ĐÚNG chuỗi nhân quả tới EUA (không theo chiều tăng/giảm bề ngoài của instrument). CHỈ đưa yếu tố có dữ liệu/tin hỗ trợ, không bịa thêm.
+- KHỐI LƯỢNG GIAO DỊCH EUA: dùng đúng số liệu khối lượng phiên liền trước so với TB các phiên gần nhất đã nêu trong "SỐ LIỆU EUA" ở trên (KHÔNG tự tính lại/bịa số khác) để BẮT BUỘC thêm 1 mục "FACT" riêng suy luận từ khối lượng vào bullish/bearish, theo đúng logic "khối lượng xác nhận xu hướng giá":
+  + Khối lượng tăng đột biến CÙNG chiều với giá tăng/giảm phiên đó → tín hiệu xác nhận lực mua/bán mạnh, xếp cùng chiều bullish/bearish tương ứng.
+  + Khối lượng giảm mạnh trong khi giá vẫn biến động mạnh, hoặc khối lượng tăng đột biến nhưng giá gần như đi ngang → tín hiệu YẾU/thiếu xác nhận, ghi rõ là "OPINION" và nêu rủi ro đảo chiều/thiếu động lực thay vì kết luận dứt khoát.
+  + Khối lượng ở mức bình thường → KHÔNG cần thêm mục riêng cho khối lượng (chỉ dùng khi có bất thường thực sự).
 
 CHỈ TRẢ VỀ JSON HỢP LỆ:
 {{"2": {{"market_drivers": {{"bullish": [{{"tag": "FACT", "text": "...", "source_index": null}}], "bearish": [{{"tag": "FACT", "text": "...", "source_index": null}}]}}}}}}"""
@@ -1049,18 +1157,21 @@ A. "analysis_blocks": mảng gồm "heading" và "content". Heading 1, 2, 4 LUÔ
         (c) NẾU XẢY RA THEO HƯỚNG NGƯỢC LẠI (hoặc không xảy ra) — bắt đầu bằng "Nếu [diễn biến ngược lại/không xác nhận]..." → nêu rõ tác động khác hoặc EUA đi ngang/giữ tín hiệu hỗn hợp.
       MỖI watchpoint là 1 DÒNG RIÊNG, đánh số "1.", "2.", "3."... — PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng, TUYỆT ĐỐI KHÔNG viết liền các watchpoint thành 1 đoạn văn dài không xuống dòng. Số lượng watchpoint bám theo đúng số điểm còn chưa chắc chắn thực sự tồn tại ở "Phân tích"/tin tức — KHÔNG bịa thêm watchpoint không có căn cứ chỉ để đủ số lượng.
 
-B. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn" (không được bỏ trống horizon nào). ĐÂY LÀ PHẦN CHIẾN LƯỢC QUAN TRỌNG NHẤT BÁO CÁO — viết bằng kiến thức chuyên môn thực sự của 1 chuyên gia chiến lược hàng hoá/carbon dày dạn (KHÔNG phải câu mẫu chung chung, sáo rỗng, hay lặp nguyên văn mục A). Mỗi kịch bản kể theo đúng mạch câu chuyện điều kiện: "Nếu [X] xảy ra, thị trường định giá theo hướng [Y]; rủi ro chính là [Z]" — rồi mới khai triển thêm kịch bản rủi ro cụ thể và kế hoạch hành động. Mỗi kịch bản gồm:
+B. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn" (không được bỏ trống horizon nào). ĐÂY LÀ PHẦN CHIẾN LƯỢC QUAN TRỌNG NHẤT BÁO CÁO — viết bằng kiến thức chuyên môn thực sự của 1 chuyên gia trading hàng hoá/carbon dày dạn (KHÔNG phải câu mẫu chung chung, sáo rỗng, hay lặp nguyên văn mục A). Mỗi kịch bản kể theo đúng mạch câu chuyện điều kiện: "Nếu [X] xảy ra, giá EUA có khả năng đi theo hướng [Y]; rủi ro chính là [Z]" — rồi mới khai triển thành 1 chiến lược trading cụ thể theo đúng kịch bản đó. Mỗi kịch bản gồm:
    - "horizon": "ngắn hạn" (1–2 tuần) / "trung hạn" (1–3 tháng) / "dài hạn" (>3 tháng)
    - "probability": xác suất kịch bản này xảy ra — CHỈ 1 trong 3 giá trị "Cao" / "Trung bình" / "Thấp", dựa trên driver ở mục A đã được dữ liệu/tin tức xác nhận rõ (probability cao hơn) hay mới chỉ là suy đoán/tin đồn (probability thấp hơn).
-   - "direction": ĐÚNG 1 trong 3 giá trị "tăng" / "giảm" / "đi ngang" — chiều giá EUA của RIÊNG kịch bản này, phải khớp với nội dung "market_pricing" (dùng để hiển thị mũi tên trên giao diện).
+   - "direction": ĐÚNG 1 trong 3 giá trị "tăng" / "giảm" / "đi ngang" — chiều giá EUA của RIÊNG kịch bản này, phải khớp ĐÚNG chiều với "trading_strategy" bên dưới (dùng để hiển thị mũi tên trên giao diện).
    - "condition" (1 câu): "Nếu [X cụ thể — gắn thẳng với 1 driver đã nêu ở mục A, có số liệu/ngưỡng/ngày tháng cụ thể] xảy ra..." — KHÔNG viết mơ hồ kiểu "nếu thị trường biến động mạnh".
    - "price_zone" (1 câu, chỉ số liệu): vùng giá EUA tham chiếu CỤ THỂ bằng EUR/tCO2 cho kịch bản này (vùng hỗ trợ gần nhất / vùng kháng cự gần nhất) — PHẢI neo vào đúng số liệu 30-ngày-cao, 30-ngày-thấp, giá đóng cửa, biên độ phiên liền trước đã cung cấp ở trên, TUYỆT ĐỐI KHÔNG bịa con số không có căn cứ từ dữ liệu đã cho.
-   - "market_pricing" (tối đa 2 câu): "...thị trường định giá theo hướng [Y]..." kèm 1 lý do lập luận thực sự, súc tích (không phải câu mẫu) — CHỈ lồng 1 khía cạnh chuyên môn phù hợp bối cảnh (vd: thanh khoản quanh kỳ đấu giá ICE, cấu trúc kỳ hạn/carry, tương quan chéo với phái sinh nhiên liệu, dòng vốn đầu cơ, mùa vụ compliance cycle) khi thực sự khớp driver đã nêu — KHÔNG chèn nhiều thuật ngữ cùng lúc, KHÔNG lặp lại nội dung đã nêu ở "condition".
    - "key_risk" (tối đa 2 câu): "...rủi ro chính là [Z]..." — kịch bản rủi ro CỤ THỂ gắn với 1 sự kiện/ngưỡng/mốc thời gian rõ ràng (KHÔNG viết chung chung "rủi ro là biến động thị trường"), nêu ngắn gọn nếu rủi ro này xảy ra thì đẩy giá lệch khỏi "price_zone" theo hướng nào, mức độ bao nhiêu.
-   - "action_plan" (tối đa 2–3 gạch ý ngắn hoặc 2–3 câu, súc tích): mốc/ngưỡng giá cụ thể cần theo dõi để đánh giá lại kịch bản, tần suất cập nhật, chỉ báo/dữ liệu cần bổ sung theo dõi — KHÔNG diễn giải dài dòng lý do, chỉ liệt kê việc cần làm. TUYỆT ĐỐI KHÔNG có câu lệnh mua/bán trực tiếp như "nên long/short", "nên mua/bán", "vào lệnh", "chốt lời", "cắt lỗ".
+   - "trading_strategy": CHIẾN LƯỢC TRADING CHUYÊN NGHIỆP cho riêng kịch bản này — suy luận trực tiếp từ "condition"/"price_zone"/"key_risk" đã nêu ở trên, PHẢI logic chặt chẽ và chính xác, KHÔNG chung chung/sáo rỗng. Bắt buộc đủ 3 phần, mỗi phần 1 câu súc tích, bắt đầu bằng đúng tag in đậm rồi xuống dòng thật (\\n) giữa 3 phần:
+     + "**Entry:**" vùng giá/điều kiện tham gia vị thế CỤ THỂ, ĐÚNG chiều với "direction" ở trên và neo đúng vào "price_zone" (KHÔNG bịa mức giá khác ngoài dữ liệu đã cho).
+     + "**Mục tiêu:**" vùng giá chốt lời hợp lý kế tiếp — dựa trên đúng số liệu 30-ngày-cao/30-ngày-thấp/biên độ phiên đã cung cấp, đảm bảo tỷ lệ risk/reward hợp lý so với Entry.
+     + "**Quản trị rủi ro:**" ngưỡng giá cụ thể để cắt lỗ/thoát vị thế nếu kịch bản bị vô hiệu hóa — gắn thẳng với "key_risk" đã nêu ở trên, nêu rõ mức giá nào xác nhận kịch bản này sai.
+     Đây là chiến lược tham khảo cho người đọc tự cân nhắc (giao diện đã có lưu ý rõ ràng đi kèm) — ĐƯỢC PHÉP nêu mức giá/vùng giá Entry/Target/cắt lỗ cụ thể, nhưng TUYỆT ĐỐI KHÔNG bịa số liệu không có căn cứ từ dữ liệu đã cho ở trên.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "market_pricing": "...", "key_risk": "...", "action_plan": "..."}}]}}}}"""
+{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "key_risk": "...", "trading_strategy": "..."}}]}}}}"""
     return system, user
 
 
@@ -1068,7 +1179,7 @@ def _prompt_section4(news_text: str, target_date: str) -> tuple[str, str]:
     system = f"Bạn là chuyên gia phân tích thị trường carbon tự nguyện và CBAM.\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date}
 
-TIN TỨC LIÊN QUAN (cbam, vcm, global_carbon_market, vietnam_carbon_policy):
+TIN TỨC LIÊN QUAN đã đánh số [N] (cbam, vcm, global_carbon_market, vietnam_carbon_policy) — CHỈ trích dẫn số có thật:
 {news_text}
 
 YÊU CẦU: Viết MỤC 4 — CẬP NHẬT TÍN CHỈ CARBON & CBAM.
@@ -1078,12 +1189,13 @@ Mục này theo dõi 3 cấu phần:
   (iii) Diễn biến CBAM: EU CBAM, UK CBAM, lộ trình của các nước.
 
 QUY TẮC BẮT BUỘC:
-- Cấu phần nào CÓ tin trong TIN TỨC ở trên → viết 1 gạch đầu dòng riêng cho cấu phần đó (tối đa 2 câu NGẮN GỌN, đi thẳng vào thông tin chính — không diễn giải dài dòng), BẮT ĐẦU bằng ĐÚNG TÊN ĐẦY ĐỦ in đậm markdown "**Tên cấu phần:**" (dùng đúng nguyên văn "VCM quốc tế", "Dự án carbon gắn thép xanh / kim loại xanh", "Diễn biến CBAM" — TUYỆT ĐỐI KHÔNG dùng ký hiệu La Mã "[i]"/"[ii]"/"[iii]").
+- Cấu phần nào CÓ tin trong TIN TỨC ở trên → viết 1 bullet riêng cho cấu phần đó (tối đa 2 câu NGẮN GỌN, đi thẳng vào thông tin chính — không diễn giải dài dòng), phần "text" BẮT ĐẦU bằng ĐÚNG TÊN ĐẦY ĐỦ in đậm markdown "**Tên cấu phần:**" (dùng đúng nguyên văn "VCM quốc tế", "Dự án carbon gắn thép xanh / kim loại xanh", "Diễn biến CBAM" — TUYỆT ĐỐI KHÔNG dùng ký hiệu La Mã "[i]"/"[ii]"/"[iii]").
 - Cấu phần nào KHÔNG có tin → BỎ QUA, không viết dòng riêng "Không có diễn biến trọng yếu" cho từng cấu phần nữa.
-- Nếu CẢ 3 cấu phần đều không có tin: chỉ viết ĐÚNG 1 gạch đầu dòng gộp chung duy nhất: "**VCM quốc tế/Dự án carbon thép xanh/CBAM:** Không có diễn biến mới." — KHÔNG liệt kê lặp lại từng cấu phần.
+- Nếu CẢ 3 cấu phần đều không có tin: chỉ viết ĐÚNG 1 bullet gộp chung duy nhất: {{"text": "**VCM quốc tế/Dự án carbon thép xanh/CBAM:** Không có diễn biến mới.", "source_index": null}} — KHÔNG liệt kê lặp lại từng cấu phần.
+- Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho cấu phần đó ở trên — BẮT BUỘC kèm khi bullet dựa trên 1 tin cụ thể (chỉ chọn 1 số, chọn bài quan trọng/liên quan nhất nếu cấu phần có nhiều tin), null CHỈ khi không có tin nào làm căn cứ — TUYỆT ĐỐI KHÔNG bịa số không có thật.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"4": {{"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["**VCM quốc tế:** ...", "**Dự án carbon gắn thép xanh / kim loại xanh:** ...", "**Diễn biến CBAM:** ..."]}}}}"""
+{{"4": {{"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": [{{"text": "**VCM quốc tế:** ...", "source_index": null}}, {{"text": "**Dự án carbon gắn thép xanh / kim loại xanh:** ...", "source_index": null}}, {{"text": "**Diễn biến CBAM:** ...", "source_index": null}}]}}}}"""
     return system, user
 
 
@@ -1230,6 +1342,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     prices_text = _summarize_prices(prices)
     eua_trend = _eua_trend_summary(chart_data)
     eua_session_range = _eua_session_range_summary(chart_data)
+    eua_volume = _eua_volume_summary(chart_data)
     gasoil_crack_spread = _gasoil_crack_spread_summary(prices) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
@@ -1255,13 +1368,13 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
                 f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2. "
                 f"Δ ngày: {direction} {abs(delta):.2f} ({delta_pct:+.1f}%) so với phiên trước đó ({prev_close:.2f}). "
                 f"Δ tuần: {week_change_str} so với 7 ngày trước. "
-                f"{eua_session_range} {eua_trend}"
+                f"{eua_session_range} {eua_trend} {eua_volume}"
             )
         else:
             eua_key_facts = (
                 f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2. "
                 f"Δ tuần: {week_change_str} so với 7 ngày trước. "
-                f"{eua_session_range} {eua_trend}"
+                f"{eua_session_range} {eua_trend} {eua_volume}"
             )
     else:
         eua_key_facts = "Không có dữ liệu giá EUA cho phiên này."
@@ -1273,13 +1386,18 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     # thể — dùng cùng cơ chế đánh số [N] để LLM chỉ chọn số có thật, backend map
     # sang URL thật (tránh bịa nguồn).
     section2_news_text, section2_index_lookup = _filter_news_with_index(news_by_topic, "2")
+    # Mục 1 (Tóm tắt điều hành) và Mục 4 (Cập nhật tín chỉ carbon & CBAM): mỗi
+    # bullet dựa trên tin tức cũng cần hiện tên nguồn (giống Mục 6) — cùng cơ chế
+    # đánh số [N], LLM chỉ chọn số có thật, backend tự map sang tên/URL nguồn thật.
+    section1_news_text, section1_index_lookup = _filter_news_with_index(news_by_topic, "1")
+    section4_news_text, section4_index_lookup = _filter_news_with_index(news_by_topic, "4")
 
     # ── 2. Gọi LLM từng mục song song (tuần tự để tránh rate limit) ──
     content: Dict[str, Any] = {}
 
     SECTIONS = [
         ("1", _prompt_section1(
-            _filter_news_for_section(news_by_topic, "1"),
+            section1_news_text,
             prices_text, eua_trend, eua_session_range, target_date
         )),
         ("2", _prompt_section2(
@@ -1294,7 +1412,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
             overrides=eua_framework_overrides,
         )),
         ("4", _prompt_section4(
-            _filter_news_for_section(news_by_topic, "4"),
+            section4_news_text,
             target_date
         )),
         ("5", _prompt_section5(
@@ -1317,12 +1435,12 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     ]
 
     FALLBACKS: Dict[str, dict] = {
-        "1": {"title": "Tóm tắt điều hành", "bullets": ["Không thể sinh nội dung tự động."]},
+        "1": {"title": "Tóm tắt điều hành", "bullets": [{"text": "Không thể sinh nội dung tự động.", "source_index": None}]},
         "2": {"market_drivers": {"bullish": [], "bearish": []}},
         "3": {"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA",
               "analysis_blocks": [{"heading": "Diễn biến chính", "content": "Không có dữ liệu."}],
               "trading_scenarios": []},
-        "4": {"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": ["Không có diễn biến trọng yếu."]},
+        "4": {"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": [{"text": "Không có diễn biến trọng yếu.", "source_index": None}]},
         "5": {"title": "Tín hiệu liên thị trường", "bullets": ["Không có tín hiệu liên thị trường mới."]},
         "7": {"title": "Quan điểm trái chiều đáng chú ý", "has_content": False, "points": [], "text": "Không có quan điểm trái chiều có cơ sở trong kỳ này."},
         "8": {"title": "Lịch sự kiện 7 ngày tới", "events": []},
@@ -1374,6 +1492,10 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
                 **section_data,
                 "events": _finalize_section8_events(section_data.get("events"), target_date),
             }
+        elif section_key == "1":
+            content["1"] = {**section_data, "bullets": _resolve_bullet_sources(section_data.get("bullets"), section1_index_lookup)}
+        elif section_key == "4":
+            content["4"] = {**section_data, "bullets": _resolve_bullet_sources(section_data.get("bullets"), section4_index_lookup)}
         else:
             content[section_key] = section_data
 
