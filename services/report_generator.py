@@ -680,6 +680,36 @@ def _eua_session_range_summary(chart_data: List[Dict]) -> str:
     )
 
 
+def _eua_technical_levels_summary(chart_data: List[Dict]) -> str:
+    """Mốc hỗ trợ/kháng cự kỹ thuật của EUA — tính trực tiếp từ đỉnh/đáy 30
+    phiên gần nhất trong OHLC thật (KHÔNG để LLM tự bịa mốc), dùng cho Quote
+    Chat khi người dùng hỏi về "điểm chốt lời kỹ thuật" (kháng cự) và "điểm
+    bắt đáy" (hỗ trợ) — xem services/quote_chat.py::get_prices_text_for_chat.
+
+    Mục tiêu giá nếu phá kháng cự dùng kỹ thuật "đo biên độ" (measured move)
+    chuẩn trong phân tích kỹ thuật: mục tiêu = kháng cự + (kháng cự - hỗ trợ).
+    Đây CHỈ LÀ ước lượng kỹ thuật tham khảo dựa trên biên độ dao động lịch sử,
+    KHÔNG PHẢI dự đoán chắc chắn hay khuyến nghị đầu tư — system prompt của
+    Quote Chat (rule 7) yêu cầu model nhắc rõ điều này khi trả lời.
+    """
+    if not chart_data:
+        return "Không có đủ dữ liệu lịch sử EUA để xác định mốc kỹ thuật."
+
+    resistance = max(c["high"] for c in chart_data)
+    support = min(c["low"] for c in chart_data)
+    last_close = chart_data[-1]["close"]
+    breakout_target = resistance + (resistance - support)
+
+    return (
+        f"Kháng cự/điểm chốt lời kỹ thuật (đỉnh 30 phiên gần nhất): ~{resistance:.2f} EUR/tCO2 — "
+        f"nếu giá phá vỡ mốc này, mục tiêu kỹ thuật tham khảo (đo biên độ dao động 30 phiên) "
+        f"~{breakout_target:.2f} EUR/tCO2. "
+        f"Hỗ trợ/điểm giảm kỹ thuật (đáy 30 phiên gần nhất): ~{support:.2f} EUR/tCO2 — vùng thường "
+        f"xuất hiện lực mua bắt đáy về mặt kỹ thuật. "
+        f"Giá đóng cửa gần nhất: {last_close:.2f} EUR/tCO2."
+    )
+
+
 # Ngưỡng phân loại % lệch khối lượng phiên liền trước so với TB — dùng để gắn
 # nhãn factual (KHÔNG phải kết luận hướng giá, chỉ mô tả mức độ bất thường của
 # khối lượng) cho LLM viết market_drivers ở Mục 2 dựa vào, thay vì tự đặt

@@ -10,7 +10,13 @@ from schemas.chat_models import ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
-from services.report_generator import get_prices_for_report, _summarize_prices
+from services.report_generator import (
+    get_prices_for_report,
+    _summarize_prices,
+    get_historical_ohlc_for_report,
+    _eua_volume_summary,
+    _eua_technical_levels_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +104,22 @@ async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> s
     `get_prices_for_report`/`_summarize_prices` của report_generator.py (không tự
     viết lại logic định dạng) để câu trả lời của chat khớp đúng số liệu report
     gốc đã dùng, không lệch nhau giữa 2 nơi.
+
+    Nối thêm dòng khối lượng giao dịch EUA (phiên liền trước so với TB các phiên
+    gần nhất — CÙNG `_eua_volume_summary` mà report_generator.py dùng cho Mục 2)
+    để người dùng có thể hỏi trực tiếp về volume EUA, không chỉ giá/Δ ngày/Δ tuần.
+
+    Nối thêm dòng mốc kỹ thuật EUA (kháng cự/điểm chốt lời + mục tiêu nếu phá
+    vỡ, hỗ trợ/điểm bắt đáy — `_eua_technical_levels_summary`, tính từ đỉnh/đáy
+    30 phiên gần nhất CÙNG bộ OHLC vừa lấy ở trên) — CHỈ cho EUA theo yêu cầu,
+    không mở rộng sang 5 instrument còn lại.
     """
     prices, _ = await get_prices_for_report(session, report_date)
-    return _summarize_prices(prices)
+    prices_text = _summarize_prices(prices)
+    chart_data = await get_historical_ohlc_for_report(session, "EUA", report_date)
+    volume_text = _eua_volume_summary(chart_data)
+    technical_text = _eua_technical_levels_summary(chart_data)
+    return f"{prices_text}\n  - {volume_text}\n  - {technical_text}"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -199,6 +218,8 @@ def _build_static_instructions(
 === DỮ LIỆU GIÁ NGÀY BÁO CÁO {report_date} (đóng cửa + Δ ngày + Δ tuần — CÙNG số liệu report gốc đã dùng) ===
 {prices_text}
 LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức). Khi được hỏi về giá/biến động của 1 trong 6 mã này, PHẢI dùng ĐÚNG số ở trên (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay mô tả định tính mơ hồ ("biến động nhẹ", "chưa dứt khoát"...) thay cho con số thật đã có sẵn. Khi được hỏi về giá 1 mã KHÔNG nằm trong danh sách trên (vd giá than cốc, giá kim loại, giá điện nước khác Đức), nói rõ hệ thống không theo dõi giá đó — có thể dùng web_search nếu người dùng cần số liệu cụ thể — KHÔNG suy đoán con số.
+LƯU Ý VỀ VOLUME: dòng thứ 2 từ cuối ở trên là khối lượng giao dịch EUA (hợp đồng) phiên liền trước so với TB các phiên gần nhất — hệ thống CHỈ theo dõi volume cho EUA, KHÔNG có volume cho 5 instrument còn lại. Khi được hỏi về khối lượng/volume EUA, PHẢI dùng ĐÚNG con số này (không tự bịa); dùng làm căn cứ suy luận volume có "xác nhận" xu hướng giá hay không (volume tăng cùng chiều giá = tín hiệu mạnh; volume cao nhưng giá đi ngang/ngược chiều, hoặc giá biến động mạnh mà volume thấp = tín hiệu yếu/đáng nghi ngờ) — nhưng đây CHỈ LÀ SUY LUẬN, không phải kết luận chắc chắn.
+LƯU Ý VỀ MỐC KỸ THUẬT: dòng cuối cùng ở trên là mốc hỗ trợ/kháng cự kỹ thuật của EUA (đỉnh/đáy 30 phiên gần nhất, tính từ giá thật) — hệ thống CHỈ tính mốc kỹ thuật cho EUA, KHÔNG có cho 5 instrument còn lại (nếu được hỏi mốc kỹ thuật của mã khác, nói rõ hệ thống chưa hỗ trợ, KHÔNG tự bịa mốc). Xem chi tiết cách dùng ở mục F (NĂNG LỰC CỦA BẠN) bên dưới.
 
 {_build_domain_knowledge(overrides)}
 {few_shot_section}
@@ -208,10 +229,15 @@ B. PHÂN TÍCH GIẢ ĐỊNH (what-if): khi người dùng đặt câu hỏi gi�
 C. SUY LUẬN CHUYÊN SÂU: khi người dùng hỏi "tại sao", "cơ chế nào", "mối liên hệ giữa X và Y", giải thích cơ chế truyền dẫn NGẮN GỌN, đủ hiểu bản chất — không cần liệt kê mọi khía cạnh (ngắn/dài hạn, điều kiện kích hoạt...) trừ khi câu hỏi hỏi rõ về khía cạnh đó.
 D. SO SÁNH & ĐÁNH GIÁ: khi hỏi về ảnh hưởng đến doanh nghiệp/ngành/quốc gia, nêu thẳng kênh tác động chính và mức độ chắc chắn trong 1 đoạn ngắn — không cần liệt kê đầy đủ mọi kênh truyền dẫn nếu không được hỏi.
 E. TRA CỨU WEB (chỉ khi thực sự cần, không lạm dụng): bạn có công cụ tìm kiếm web (web_search). CHỈ dùng khi ĐOẠN TRÍCH + DỮ LIỆU NỀN (đưa ra ngay bên dưới các quy tắc này) + KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên KHÔNG đủ để trả lời — ví dụ người dùng hỏi 1 số liệu/sự kiện/tổ chức cụ thể, hoặc tin tức rất mới không có trong DỮ LIỆU NỀN đã crawl. KHÔNG dùng web_search để tra lại thứ đã có sẵn, và KHÔNG dùng cho câu hỏi giả định/suy luận thuần (mục B, C) — những câu đó dùng kiến thức nền tảng, không cần tra cứu.
+F. PHÂN TÍCH KỸ THUẬT EUA (mốc chốt lời/bắt đáy): khi người dùng hỏi về mốc kỹ thuật/điểm chốt lời/điểm bắt đáy/kháng cự/hỗ trợ của EUA, dùng ĐÚNG dòng "MỐC KỸ THUẬT" trong DỮ LIỆU GIÁ ở trên (tính từ đỉnh/đáy 30 phiên thật, KHÔNG tự bịa mốc khác):
+   - Kháng cự/điểm chốt lời kỹ thuật = đỉnh 30 phiên gần nhất. Nếu người dùng hỏi "phá mốc này thì giá lên bao nhiêu", TRẢ LỜI bằng đúng mục tiêu kỹ thuật đã tính sẵn (kỹ thuật đo biên độ dao động — measured move) — khác với rule B (what-if vĩ mô KHÔNG đưa con số), ở đây ĐƯỢC PHÉP nêu con số vì đã tính sẵn từ dữ liệu thật, nhưng PHẢI nói rõ đây là "ước lượng kỹ thuật tham khảo" chứ không phải dự đoán chắc chắn.
+   - Hỗ trợ/điểm giảm kỹ thuật = đáy 30 phiên gần nhất — mô tả đây là vùng thường xuất hiện lực mua bắt đáy về mặt kỹ thuật (hành vi thị trường điển hình ở vùng hỗ trợ), KHÔNG khẳng định chắc chắn giá sẽ bật lại.
+   - Vẫn phải tuân thủ rule 7 (trung lập, không khuyến nghị đầu tư): mô tả mốc và hành vi kỹ thuật điển hình là được, KHÔNG được nói "nên mua/nên bán tại X" hay đưa lời khuyên giao dịch trực tiếp.
+   - Chỉ áp dụng cho EUA — nếu được hỏi mốc kỹ thuật của 5 instrument còn lại, nói rõ hệ thống chưa hỗ trợ mốc kỹ thuật cho mã đó.
 
 QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 1. NEO VÀO ĐOẠN TRÍCH: mọi câu trả lời đều phải xoay quanh và nhất quán với nội dung đoạn trích. Đây là bối cảnh cố định của cả cuộc hội thoại.
-2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) DỮ LIỆU GIÁ thật (Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi), (b) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / dữ liệu nền tin tức, (c) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (d) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (e) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Dùng các cụm từ phân biệt: "Theo dữ liệu giá...", "Theo tin tức...", "Về mặt cơ chế...", "Trong kịch bản giả định này...", "Tra cứu thêm từ web...".
+2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) DỮ LIỆU GIÁ thật (Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi, kèm volume/mốc kỹ thuật riêng cho EUA), (b) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / dữ liệu nền tin tức, (c) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (d) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (e) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Dùng các cụm từ phân biệt: "Theo dữ liệu giá...", "Theo tin tức...", "Về mặt cơ chế...", "Trong kịch bản giả định này...", "Tra cứu thêm từ web...".
 3. KHÔNG BỊA SỐ LIỆU CỤ THỂ: tuyệt đối không bịa ngày tháng, tên tổ chức, mức giá, hay sự kiện cụ thể không xuất hiện trong đoạn trích/dữ liệu nền/kết quả web_search. Nhưng BẠN ĐƯỢC PHÉP suy luận logic dựa trên kiến thức chuyên môn — "Nếu TTF tăng mạnh, theo cơ chế fuel switching thì..." KHÔNG phải bịa đặt mà là phân tích.
 4. THÀNH THẬT VỀ GIỚI HẠN: nếu câu hỏi đòi hỏi dữ liệu không có trong context — (a) nếu là thông tin cụ thể có thể tra cứu được (số liệu/sự kiện/tổ chức, không phải suy đoán), dùng công cụ web_search để tìm rồi trả lời dựa trên kết quả đó; (b) nếu không tra được hoặc câu hỏi mang tính suy luận/giả định, nói rõ giới hạn dữ liệu (VD "Dữ liệu hiện có chưa đề cập chi tiết X") rồi PHÂN TÍCH DỰA TRÊN NHỮNG GÌ BIẾT ĐƯỢC thay vì chỉ nói "không biết" và dừng.
 5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
@@ -418,6 +444,8 @@ _KEYWORD_QUESTIONS: List[tuple[str, str]] = [
     # Câu hỏi thực tế + suy luận cho EUA/ETS
     (r"EUA|ETS|hạn ngạch", "Vì sao diễn biến này tác động đến giá EUA?"),
     (r"EUA|ETS|hạn ngạch", "Nếu xu hướng này tiếp tục, giá EUA sẽ chịu áp lực theo hướng nào?"),
+    (r"EUA|ETS|hạn ngạch|volume|khối lượng", "Khối lượng giao dịch EUA phiên gần nhất có xác nhận xu hướng giá không?"),
+    (r"EUA|ETS|hạn ngạch|kỹ thuật|kháng cự|hỗ trợ|chốt lời|bắt đáy", "Mốc kháng cự/hỗ trợ kỹ thuật của EUA hiện ở đâu?"),
 
     # CBAM — đặc biệt quan trọng cho DN Việt Nam
     (r"CBAM", "CBAM ảnh hưởng thế nào đến doanh nghiệp xuất khẩu Việt Nam?"),

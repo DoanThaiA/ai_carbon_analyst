@@ -39,7 +39,7 @@ from services.chat_history import (
     list_sessions,
     load_recent_turns,
     set_session_rating,
-    start_of_today_vn_utc,
+    start_of_month_vn_utc,
 )
 from services.embedding import CohereEmbedder
 from services.eua_framework_admin import get_overrides_map
@@ -56,11 +56,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reports/{date}/quote-chat", tags=["quote-chat"])
 
-# Giới hạn số câu hỏi/ngày cho mỗi user (theo ngày dương lịch giờ VN, xem
-# `start_of_today_vn_utc`) — chặn spam/chi phí LLM (đặc biệt với web_search
+# Giới hạn số câu hỏi/tháng cho mỗi user (theo tháng dương lịch giờ VN, xem
+# `start_of_month_vn_utc`) — chặn spam/chi phí LLM (đặc biệt với web_search
 # server tool có thể tốn thêm request). Tính chung cho cả tính năng Quote Chat
-# (mọi báo cáo/phiên của user), không phải riêng từng báo cáo.
-QUOTE_CHAT_DAILY_LIMIT = 10
+# (mọi báo cáo/phiên của user), không phải riêng từng báo cáo. Trước đây giới
+# hạn theo NGÀY (QUOTE_CHAT_DAILY_LIMIT) — đổi sang theo THÁNG theo yêu cầu.
+QUOTE_CHAT_MONTHLY_LIMIT = 300
 
 # Lazy singleton — embedder dùng chung cho mọi request, tránh tạo lại Cohere
 # client mỗi lần (giống pattern report_generator.py / embedding.py).
@@ -188,15 +189,15 @@ async def quote_chat_stream(
 
     # Chặn TRƯỚC khi tạo session mới/gọi LLM — tránh tạo session mồ côi khi user
     # đã hết quota.
-    asked_today = await count_user_questions_since(
-        session, user_email=user_email, since=start_of_today_vn_utc()
+    asked_this_month = await count_user_questions_since(
+        session, user_email=user_email, since=start_of_month_vn_utc()
     )
-    if asked_today >= QUOTE_CHAT_DAILY_LIMIT:
+    if asked_this_month >= QUOTE_CHAT_MONTHLY_LIMIT:
         raise HTTPException(
             status_code=429,
             detail=(
-                f"Bạn đã đạt giới hạn {QUOTE_CHAT_DAILY_LIMIT} câu hỏi/ngày cho tính năng "
-                "Hỏi đáp AI. Vui lòng quay lại vào ngày mai."
+                f"Bạn đã đạt giới hạn {QUOTE_CHAT_MONTHLY_LIMIT} câu hỏi/tháng cho tính năng "
+                "Hỏi đáp AI. Vui lòng quay lại vào tháng sau."
             ),
         )
 

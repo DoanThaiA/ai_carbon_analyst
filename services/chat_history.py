@@ -177,18 +177,19 @@ async def get_session_admin(session: AsyncSession, *, session_id: int) -> Option
     return result.scalars().first()
 
 
-def start_of_today_vn_utc() -> datetime:
-    """Mốc 00:00 (giờ VN) của ngày hôm nay, quy đổi ra UTC — dùng làm mốc đầu
-    ngày để đếm quota hỏi đáp/ngày (xem `count_user_questions_since`)."""
+def start_of_month_vn_utc() -> datetime:
+    """Mốc 00:00 (giờ VN) ngày 1 của tháng hiện tại, quy đổi ra UTC — dùng làm
+    mốc đầu tháng để đếm quota hỏi đáp/tháng (xem QUOTE_CHAT_MONTHLY_LIMIT trong
+    api/routers/quote_chat.py, thay cho giới hạn theo ngày trước đây)."""
     vn_now = datetime.now(timezone.utc) + _VN_OFFSET
-    vn_midnight = vn_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return vn_midnight - _VN_OFFSET
+    vn_month_start = vn_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return vn_month_start - _VN_OFFSET
 
 
 async def count_user_questions_since(session: AsyncSession, *, user_email: str, since: datetime) -> int:
     """Đếm số câu hỏi (ChatMessage role='user') của 1 user trên TẤT CẢ phiên/báo
-    cáo kể từ mốc `since` — dùng áp giới hạn hỏi đáp/ngày cho Quote Chat
-    (xem QUOTE_CHAT_DAILY_LIMIT trong api/routers/quote_chat.py). Đếm theo
+    cáo kể từ mốc `since` — dùng áp giới hạn hỏi đáp/tháng cho Quote Chat
+    (xem QUOTE_CHAT_MONTHLY_LIMIT trong api/routers/quote_chat.py). Đếm theo
     user_email toàn cục (không tách theo report_date/session) vì giới hạn là
     cho cả tính năng, không phải cho riêng 1 báo cáo."""
     stmt = (
