@@ -90,6 +90,15 @@ function stripMarkdown(text: string) {
 // luận:**" (xem report_generator.py), ở đây chỉ cần tìm tag đó và render khác đi.
 const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận)\s*:?\*\*/;
 
+// Placeholder outcome mà backend cố tình ghi (xem _prompt_section8 /
+// _split_prev_events trong services/report_generator.py) khi tin tức KHÔNG xác
+// nhận được kết quả thực tế — dùng nội bộ để đánh dấu sự kiện "đã xử lý xong,
+// không hỏi lại nữa" ở lượt sinh báo cáo kế tiếp. Với người đọc, dòng này
+// không mang thông tin gì (EIA/API/Baker Hughes/đấu giá EUA hầu như không bao
+// giờ có bài báo xác nhận số liệu cụ thể) nên ẩn hẳn khỏi hiển thị thay vì
+// hiện "Kết quả: Chưa có thông tin kết quả xác nhận" gây nhiễu mỗi lần.
+const UNCONFIRMED_OUTCOME_TEXT = "Chưa có thông tin kết quả xác nhận";
+
 function ConclusionAware({ text, className }: { text: string; className?: string }) {
   const match = text.match(CONCLUSION_TAG_RE);
   if (!match || match.index === undefined) {
@@ -923,7 +932,14 @@ export function ReportDocument({ report }: { report: Report }) {
               // (đã diễn ra, đã cập nhật kết quả) đứng riêng khỏi sự kiện CHƯA diễn ra —
               // nhóm "sắp tới" sắp xếp theo "date" tăng dần để luôn đúng trình tự thời
               // gian dù thứ tự gốc trong content["8"].events là gì.
-              const events: any[] = report.content["8"].events;
+              //
+              // Loại bỏ hẳn sự kiện chỉ có outcome placeholder "chưa xác nhận" — với
+              // các mốc như EIA/API/Baker Hughes/đấu giá EUA, tin tức hầu như không
+              // bao giờ xác nhận số liệu cụ thể (xem UNCONFIRMED_OUTCOME_TEXT), nên
+              // hiện dòng này mỗi lần chỉ gây nhiễu, không có giá trị cho người đọc.
+              const events: any[] = report.content["8"].events.filter(
+                (ev: any) => ev.outcome !== UNCONFIRMED_OUTCOME_TEXT
+              );
               const results = events.filter((ev) => ev.outcome);
               const upcoming = events
                 .filter((ev) => !ev.outcome)
