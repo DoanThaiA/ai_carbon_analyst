@@ -1,6 +1,7 @@
 import json
 import logging
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time as dtime
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote
 import asyncio
@@ -720,15 +721,6 @@ EUA_VOLUME_DROP_PCT = -20.0
 
 
 def _eua_volume_summary(chart_data: List[Dict]) -> str:
-    """Khối lượng giao dịch EUA phiên liền trước so với TB N phiên gần nhất
-    (tính trực tiếp từ Price.volume, KHÔNG để LLM tự suy luận/bịa mức "cao/thấp
-    bất thường") — kèm chiều giá cùng phiên đó để LLM dùng làm căn cứ suy luận
-    "khối lượng có xác nhận xu hướng giá hay không" khi viết market_drivers
-    (khối lượng tăng cùng chiều giá = tín hiệu xác nhận mạnh; khối lượng tăng
-    nhưng giá đi ngược/đi ngang, hoặc giá biến động mạnh mà khối lượng thấp =
-    tín hiệu yếu/đáng nghi ngờ — nhưng việc GHÉP thành kết luận bullish/bearish
-    là việc của LLM ở Mục 2, hàm này chỉ cung cấp SỐ LIỆU THẬT).
-    """
     with_volume = [c for c in chart_data if c.get("volume") is not None]
     if not with_volume:
         return "Không có dữ liệu khối lượng giao dịch EUA cho phiên này."
@@ -890,11 +882,20 @@ def _format_prev_events(pending_outcome: List[Dict], still_upcoming: List[Dict])
     return "\n\n".join(parts)
 
 
-def _finalize_section8_events(events: Optional[List[Dict]], target_date_str: str) -> List[Dict]:
+def _finalize_section8_events(
+    events: Optional[List[Dict]], target_date_str: str, recurring_events: Optional[List[Dict]] = None,
+) -> List[Dict]:
     """Chặn cứng lần cuối ở tầng code trên chính output LLM vừa trả về: chỉ giữ sự
     kiện có "date" trong cửa sổ 7 ngày tính từ target_date, hoặc sự kiện quá hạn
     nhưng vừa được điền "outcome" trong lượt này — đảm bảo Mục 8 không bao giờ tồn
-    đọng sự kiện cũ dù prompt có bị LLM làm sai."""
+    đọng sự kiện cũ dù prompt có bị LLM làm sai.
+
+    `recurring_events`: cùng danh sách đã tính sẵn bằng Python truyền cho prompt
+    (xem `_compute_recurring_calendar_events`) — merge cứng lại ở đây (khớp đúng
+    theo "date" + "event") để đảm bảo các sự kiện định kỳ (EIA/API/Baker
+    Hughes/đấu giá EUA) LUÔN có mặt trong output cuối, kể cả khi LLM lỡ bỏ sót
+    hay parse JSON lỗi ở mục này — không phụ thuộc hoàn toàn vào việc LLM chép
+    đúng theo hướng dẫn trong prompt."""
     target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
     window_end = target + timedelta(days=6)
     kept = []
@@ -910,7 +911,107 @@ def _finalize_section8_events(events: Optional[List[Dict]], target_date_str: str
         elif ev_date < target and ev.get("outcome"):
             kept.append(ev)
         # else: quá hạn chưa có outcome, hoặc vượt quá 7 ngày tới -> loại bỏ hẳn.
+
+    existing_keys = {(ev.get("date"), ev.get("event")) for ev in kept}
+    for ev in recurring_events or []:
+        key = (ev.get("date"), ev.get("event"))
+        if key not in existing_keys:
+            kept.append(dict(ev))
+            existing_keys.add(key)
+
+    kept.sort(key=lambda ev: ev.get("date") or "")
     return kept
+
+
+# Múi giờ nguồn công bố gốc của 3 lịch định kỳ Mục 8 có DST (khác VN — VN
+# không có DST) — quy đổi qua zoneinfo để tự động bù trừ giờ mùa hè/đông thay
+# vì hardcode 1 offset cố định dễ sai lệch 1 tiếng tuỳ thời điểm trong năm.
+_EIA_API_TZ = ZoneInfo("America/New_York")
+_BAKER_HUGHES_TZ = ZoneInfo("America/Chicago")
+_VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
+    """Tính SẴN bằng Python (không để LLM tự đoán) các sự kiện lịch thị trường
+    có lịch công bố ĐỊNH KỲ, CỐ ĐỊNH theo tuần — cùng nguyên tắc "tính trực
+    tiếp từ dữ liệu/lịch thật, KHÔNG để LLM tự bịa" đã dùng cho OHLC/volume/mốc
+    kỹ thuật EUA ở trên (`_eua_session_range_summary`,
+    `_eua_technical_levels_summary`...).
+
+    Trước đây Mục 8 giao hẳn việc này cho LLM tự suy luận ngày + quy đổi giờ
+    VN — LLM không có lịch thật để tra, nên hay bỏ sót hoặc ước lượng sai giờ
+    (đặc biệt lệch múi giờ mùa hè/đông của Mỹ). Nguồn giờ công bố gốc (theo
+    thông số nghiệp vụ desk cung cấp):
+      - EIA Weekly Petroleum Status Report: Thứ Tư 10:30 ET.
+      - API Weekly Statistical Bulletin: Thứ Ba ~16:30 ET.
+      - Baker Hughes Rig Count: Thứ Sáu ~12:00 CT.
+    Quy đổi qua `zoneinfo` (tự bù DST của Mỹ) thay vì hardcode 1 offset — VD
+    10:30 ET là 21:30 VN vào mùa hè (DST) nhưng 22:30 VN vào mùa đông.
+
+    Đấu giá EUA (EEX) không có giờ công bố cụ thể đủ tin cậy để quy đổi (chỉ
+    biết là buổi sáng châu Âu, KHÔNG lệch ngày sang VN vì đã là buổi chiều/tối
+    CÙNG NGÀY dương lịch VN) nên chỉ tính NGÀY theo lịch thường kỳ Mon/Tue/Thu
+    của EEX, không kèm giờ — và luôn ghi rõ "có thể lệch nếu trùng ngày nghỉ
+    lễ" vì đây là lịch thường kỳ, không phải xác nhận từng phiên đấu giá thật.
+
+    KHÔNG tính ở đây: đáo hạn hợp đồng tương lai ICE, họp ECB/EU Climate
+    Action/FOMC — các sự kiện này KHÔNG có lịch tuần cố định (đáo hạn theo
+    từng contract, họp chính sách theo lịch riêng từng kỳ ~6 tuần/không đều)
+    nên để `_prompt_section8` lấy từ tin tức đã crawl XÁC NHẬN, thay vì đoán
+    ngày — tránh bịa lịch không có căn cứ.
+    """
+    target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    window_end = target + timedelta(days=6)
+    events: List[Dict] = []
+
+    def _add_us_release(anchor_date: date, anchor_time: dtime, tz: ZoneInfo, label: str, impact: str) -> None:
+        vn_dt = datetime.combine(anchor_date, anchor_time, tzinfo=tz).astimezone(_VN_TZ)
+        if target <= vn_dt.date() <= window_end:
+            events.append({
+                "date": vn_dt.date().isoformat(),
+                "datetime_vn": vn_dt.strftime("%d/%m %H:%M"),
+                "event": label,
+                "impact": impact,
+            })
+
+    # Quét dư ra 2 ngày trước cửa sổ VN vì mốc gốc tính theo lịch Mỹ (ET/CT) —
+    # quy đổi sang VN có thể lệch sang ngày hôm sau (VD API công bố tối thứ Ba
+    # ET rơi vào sáng thứ Tư giờ VN).
+    scan_day = target - timedelta(days=2)
+    while scan_day <= window_end:
+        if scan_day.weekday() == 2:  # Thứ Tư (Mỹ)
+            _add_us_release(scan_day, dtime(10, 30), _EIA_API_TZ,
+                             "Tồn kho dầu thô EIA (EIA Weekly Petroleum Status Report)", "Cao")
+        if scan_day.weekday() == 1:  # Thứ Ba (Mỹ)
+            _add_us_release(scan_day, dtime(16, 30), _EIA_API_TZ,
+                             "Tồn kho dầu thô API (API Weekly Statistical Bulletin)", "Trung")
+        if scan_day.weekday() == 4:  # Thứ Sáu (Mỹ)
+            _add_us_release(scan_day, dtime(12, 0), _BAKER_HUGHES_TZ,
+                             "Số giàn khoan Baker Hughes (Baker Hughes Rig Count)", "Trung")
+        scan_day += timedelta(days=1)
+
+    auction_day = target
+    while auction_day <= window_end:
+        if auction_day.weekday() in (0, 1, 3):  # Mon/Tue/Thu — lịch thường kỳ EEX
+            events.append({
+                "date": auction_day.isoformat(),
+                "datetime_vn": auction_day.strftime("%d/%m"),
+                "event": "Đấu giá EUA (EEX — theo lịch thường kỳ Mon/Tue/Thu, có thể lệch nếu trùng ngày nghỉ lễ)",
+                "impact": "Trung",
+            })
+        auction_day += timedelta(days=1)
+
+    events.sort(key=lambda e: e["date"])
+    return events
+
+
+def _format_recurring_calendar_events(events: List[Dict]) -> str:
+    if not events:
+        return "(Không có sự kiện định kỳ nào rơi vào cửa sổ 7 ngày này.)"
+    return "\n".join(
+        f'- date="{e["date"]}" datetime_vn="{e["datetime_vn"]}" event="{e["event"]}" impact="{e["impact"]}"'
+        for e in events
+    )
 
 
 def _extract_message_text(message: "anthropic.types.Message") -> str:
@@ -1285,12 +1386,17 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
     return system, user
 
 
-def _prompt_section8(news_text: str, prev_events_text: str, target_date: str) -> tuple[str, str]:
+def _prompt_section8(
+    news_text: str, prev_events_text: str, target_date: str, recurring_events_text: str,
+) -> tuple[str, str]:
     window_start = target_date
     window_end = (datetime.strptime(target_date, "%Y-%m-%d").date() + timedelta(days=6)).isoformat()
     system = f"Bạn là chuyên gia lịch trình thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date} (Giờ Việt Nam, UTC+7)
 CỬA SỔ HIỂN THỊ: CHỈ liệt kê sự kiện có ngày diễn ra ("date") từ {window_start} đến {window_end} (đúng 7 ngày kể từ ngày báo cáo) — TUYỆT ĐỐI KHÔNG liệt kê sự kiện có "date" trước {window_start}, TRỪ đúng các sự kiện thuộc nhóm "Đã diễn ra, CẦN cập nhật kết quả" bên dưới.
+
+SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN (tính bằng lịch thật + quy đổi múi giờ chính xác, KHÔNG phải LLM tự đoán — BẮT BUỘC đưa NGUYÊN VĂN từng sự kiện này vào "events", giữ đúng "date"/"datetime_vn"/"event"/"impact", TUYỆT ĐỐI KHÔNG tự đổi ngày/giờ hay bịa thêm sự kiện định kỳ khác ngoài danh sách này):
+{recurring_events_text}
 
 SỰ KIỆN TỪ BÁO CÁO TRƯỚC:
 {prev_events_text}
@@ -1299,19 +1405,17 @@ TIN TỨC LIÊN QUAN:
 {news_text}
 
 YÊU CẦU: Viết MỤC 8 — LỊCH SỰ KIỆN 7 NGÀY TỚI ({window_start} → {window_end}).
-Bắt buộc liệt kê các sự kiện định kỳ trọng yếu sau nếu rơi vào cửa sổ trên (kèm ngày VN ước tính và mức tác động):
-  - Tồn kho dầu EIA (thứ Tư hàng tuần)
-  - Tồn kho dầu API (thứ Ba hàng tuần)
-  - Rig count Baker Hughes (thứ Sáu hàng tuần)
-  - Đấu giá EUA (nếu có trong tuần, xem lịch ICE)
-  - Họp FOMC / ECB / chính sách liên quan (nếu có)
-  - Đáo hạn hợp đồng tương lai (nếu có)
-  - Sự kiện bổ sung từ tin tức (nếu có).
-Mỗi event gồm: "date" (YYYY-MM-DD, ngày dương lịch VN sự kiện diễn ra — BẮT BUỘC, dùng để hệ thống lọc theo cửa sổ 7 ngày), "datetime_vn" (chuỗi hiển thị CHỈ gồm ngày/tháng dạng "DD/MM", vd "10/09" — TUYỆT ĐỐI KHÔNG kèm năm, KHÔNG kèm giờ), "event", "impact" (Cao/Trung/Thấp).
+"events" CHỈ được gồm sự kiện thuộc ĐÚNG 5 NHÓM sau — KHÔNG thêm bất kỳ sự kiện nào ngoài 5 nhóm này dù tin tức có nhắc tới:
+  1. Tồn kho dầu EIA / API — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên, không tự tính lại.
+  2. Rig count Baker Hughes — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên, không tự tính lại.
+  3. Đấu giá EUA — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên, không tự tính lại.
+  4. Họp chính sách (ECB / EU Climate Action / FOMC / chính sách EU ETS liên quan) — CHỈ thêm nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ngày họp cụ thể; KHÔNG có xác nhận thì KHÔNG thêm (không đoán ngày).
+  5. Đáo hạn hợp đồng tương lai EUA/năng lượng — CHỈ thêm nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ngày đáo hạn cụ thể; KHÔNG có xác nhận thì KHÔNG thêm (không đoán ngày).
+Với sự kiện bạn TỰ thêm ở nhóm 4/5: "date" (YYYY-MM-DD), "datetime_vn" (CHỈ "DD/MM", KHÔNG kèm năm, KHÔNG kèm giờ trừ khi tin tức xác nhận rõ giờ), "event", "impact" (Cao/Trung/Thấp).
 
 CẬP NHẬT KẾT QUẢ SỰ KIỆN KỲ TRƯỚC (bắt buộc, chỉ áp dụng cho danh sách "SỰ KIỆN TỪ BÁO CÁO TRƯỚC" ở trên):
 - Nhóm "Đã diễn ra hoặc diễn ra đúng hôm nay, CẦN cập nhật kết quả": với MỖI sự kiện, thêm field "outcome" — CHỈ điền kết quả THỰC TẾ nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ràng (vd số liệu tồn kho thực tế, kết quả cuộc họp...); nếu tin tức KHÔNG xác nhận, ghi đúng "Chưa có thông tin kết quả xác nhận" — TUYỆT ĐỐI KHÔNG tự bịa số liệu/kết quả, KHÔNG tự bịa thêm sự kiện không có căn cứ. Giữ nguyên "date" gốc (KHÔNG đổi sang ngày khác).
-- Nhóm "Vẫn còn sắp tới trong cửa sổ 7 ngày": liệt kê lại bình thường, giữ nguyên "date", KHÔNG cần field "outcome" — tránh liệt kê trùng nếu sự kiện này đã nằm trong danh sách sự kiện định kỳ bạn tự tính ở trên.
+- Nhóm "Vẫn còn sắp tới trong cửa sổ 7 ngày": liệt kê lại bình thường, giữ nguyên "date", KHÔNG cần field "outcome" — tránh liệt kê trùng nếu sự kiện này đã nằm trong "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên.
 - Sự kiện mới của kỳ 7 ngày tới tính từ {target_date} → liệt kê bình thường, KHÔNG cần field "outcome".
 - KHÔNG đưa vào "events" bất kỳ sự kiện nào có "date" nằm ngoài khoảng {window_start} → {window_end}, TRỪ các sự kiện thuộc nhóm "Đã diễn ra, CẦN cập nhật kết quả".
 
@@ -1380,6 +1484,8 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         await get_previous_report_events(session, target_date), target_date
     )
     prev_events_text = _format_prev_events(pending_outcome_events, still_upcoming_events)
+    recurring_calendar_events = _compute_recurring_calendar_events(target_date)
+    recurring_events_text = _format_recurring_calendar_events(recurring_calendar_events)
 
     # Số liệu thật (tính sẵn bằng Python, không để LLM tự bịa) cho Mục 2:
     # giá đóng cửa phiên liền trước, biến động trong phiên liền trước, xu hướng 30 ngày.
@@ -1456,7 +1562,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         )),
         ("8", _prompt_section8(
             _filter_news_for_section(news_by_topic, "8"),
-            prev_events_text, target_date
+            prev_events_text, target_date, recurring_events_text,
         )),
         ("biz", _prompt_biz_recommendation(
             _filter_news_for_section(news_by_topic, "biz"),
@@ -1520,7 +1626,9 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         elif section_key == "8":
             content["8"] = {
                 **section_data,
-                "events": _finalize_section8_events(section_data.get("events"), target_date),
+                "events": _finalize_section8_events(
+                    section_data.get("events"), target_date, recurring_calendar_events,
+                ),
             }
         elif section_key == "1":
             content["1"] = {**section_data, "bullets": _resolve_bullet_sources(section_data.get("bullets"), section1_index_lookup)}

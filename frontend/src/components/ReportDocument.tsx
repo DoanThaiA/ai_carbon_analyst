@@ -147,6 +147,49 @@ function SectionHeading({ number, title }: { number: string; title: string }) {
   );
 }
 
+// Timeline sự kiện Mục 8 — tách riêng để tái dùng cho cả 2 nhóm "Kết quả" (đã
+// có outcome) và "Sự kiện sắp tới" (chưa diễn ra), thay vì 1 danh sách gộp lẫn
+// lộn cả hai như trước.
+function EventTimeline({ events }: { events: any[] }) {
+  return (
+    <div>
+      {events.map((ev: any, i: number) => {
+        const isLast = i === events.length - 1;
+        const impactDot =
+          ev.impact === "Cao" ? "border-down" :
+          ev.impact === "Trung" ? "border-warn" : "border-muted-light";
+        return (
+          <div key={i} className="flex gap-3 sm:gap-4">
+            <div className="w-[52px] sm:w-[60px] shrink-0 flex items-center justify-center rounded-lg border border-border bg-tint/50 py-1.5 mt-0.5">
+              <span className="font-mono text-[11px] font-bold text-primary-dark leading-none">{ev.datetime_vn || "—"}</span>
+            </div>
+            <div className="flex flex-col items-center shrink-0">
+              <span className={clsx("w-2.5 h-2.5 rounded-full border-2 bg-background mt-3.5 shrink-0", impactDot)} />
+              {!isLast && <span className="w-px flex-1 bg-border mt-1" />}
+            </div>
+            <div className={clsx("flex-1 min-w-0", !isLast && "pb-4")}>
+              <div className="flex items-start justify-between gap-3 pt-1">
+                <span className="text-[13.5px] text-foreground leading-snug">{ev.event}</span>
+                <span className={clsx(
+                  "shrink-0 font-mono text-[10px] uppercase px-1.5 py-0.5 rounded border",
+                  ev.impact === "Cao" ? "text-down border-down/30 bg-red-50" :
+                  ev.impact === "Trung" ? "text-warn border-warn/30 bg-warn-tint" :
+                  "text-muted-light border-border"
+                )}>{ev.impact}</span>
+              </div>
+              {ev.outcome && (
+                <p className="mt-1.5 text-[12.5px] text-body italic">
+                  <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Bảng gợi ý kinh doanh (Mục SIM) — mỗi gợi ý là 1 hàng, cột theo đúng cấu trúc
 // nhân quả (kích hoạt → hành động → lý do / cơ hội → giải pháp → kỳ vọng) thay vì
 // gộp thành 1 đoạn văn dài, để dễ quét theo hàng như các bảng chuẩn khác trong báo cáo.
@@ -875,45 +918,34 @@ export function ReportDocument({ report }: { report: Report }) {
         {report.content["8"] && (
           <section className="py-5">
             <SectionHeading number="07" title={report.content["8"].title} />
-            {report.content["8"].events?.length > 0 ? (
-              // Lịch dạng timeline tuần tự: mỗi sự kiện là 1 "ô lịch" ngày/giờ nối bằng
-              // 1 trục dọc + chấm tròn, thay vì bảng hàng/cột — dễ quét theo trình tự thời gian.
-              <div>
-                {report.content["8"].events.map((ev: any, i: number) => {
-                  const isLast = i === report.content["8"].events.length - 1;
-                  const impactDot =
-                    ev.impact === "Cao" ? "border-down" :
-                    ev.impact === "Trung" ? "border-warn" : "border-muted-light";
-                  return (
-                    <div key={i} className="flex gap-3 sm:gap-4">
-                      <div className="w-[52px] sm:w-[60px] shrink-0 flex items-center justify-center rounded-lg border border-border bg-tint/50 py-1.5 mt-0.5">
-                        <span className="font-mono text-[11px] font-bold text-primary-dark leading-none">{ev.datetime_vn || "—"}</span>
-                      </div>
-                      <div className="flex flex-col items-center shrink-0">
-                        <span className={clsx("w-2.5 h-2.5 rounded-full border-2 bg-background mt-3.5 shrink-0", impactDot)} />
-                        {!isLast && <span className="w-px flex-1 bg-border mt-1" />}
-                      </div>
-                      <div className={clsx("flex-1 min-w-0", !isLast && "pb-4")}>
-                        <div className="flex items-start justify-between gap-3 pt-1">
-                          <span className="text-[13.5px] text-foreground leading-snug">{ev.event}</span>
-                          <span className={clsx(
-                            "shrink-0 font-mono text-[10px] uppercase px-1.5 py-0.5 rounded border",
-                            ev.impact === "Cao" ? "text-down border-down/30 bg-red-50" :
-                            ev.impact === "Trung" ? "text-warn border-warn/30 bg-warn-tint" :
-                            "text-muted-light border-border"
-                          )}>{ev.impact}</span>
-                        </div>
-                        {ev.outcome && (
-                          <p className="mt-1.5 text-[12.5px] text-body italic">
-                            <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
-                          </p>
-                        )}
-                      </div>
+            {report.content["8"].events?.length > 0 ? (() => {
+              // Tách rõ 2 nhóm thay vì 1 timeline gộp lẫn lộn: sự kiện ĐÃ có "outcome"
+              // (đã diễn ra, đã cập nhật kết quả) đứng riêng khỏi sự kiện CHƯA diễn ra —
+              // nhóm "sắp tới" sắp xếp theo "date" tăng dần để luôn đúng trình tự thời
+              // gian dù thứ tự gốc trong content["8"].events là gì.
+              const events: any[] = report.content["8"].events;
+              const results = events.filter((ev) => ev.outcome);
+              const upcoming = events
+                .filter((ev) => !ev.outcome)
+                .slice()
+                .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+              return (
+                <div className="space-y-5">
+                  {results.length > 0 && (
+                    <div>
+                      <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Kết quả</h4>
+                      <EventTimeline events={results} />
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
+                  )}
+                  {upcoming.length > 0 && (
+                    <div>
+                      <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Sự kiện sắp tới</h4>
+                      <EventTimeline events={upcoming} />
+                    </div>
+                  )}
+                </div>
+              );
+            })() : (
               report.content["8"].bullets?.map((b: string, i: number) => (
                 <p key={i} className="text-[14px] leading-relaxed text-body"><RichText text={b} /></p>
               ))
