@@ -961,7 +961,7 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
         if target <= vn_dt.date() <= window_end:
             events.append({
                 "date": vn_dt.date().isoformat(),
-                "datetime_vn": vn_dt.strftime("%d/%m %H:%M"),
+                "datetime_vn": vn_dt.strftime("%d/%m"),
                 "event": label,
                 "impact": impact,
             })
@@ -1394,7 +1394,7 @@ YÊU CẦU: Viết MỤC 8 — LỊCH SỰ KIỆN 7 NGÀY TỚI ({window_start} 
   2. Rig count Baker Hughes — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên (đã có kết quả thực tế nếu sự kiện đã xảy ra), không tự tính lại.
   3. Họp chính sách (ECB / EU Climate Action / FOMC / chính sách EU ETS liên quan) — CHỈ thêm nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ngày họp cụ thể; KHÔNG có xác nhận thì KHÔNG thêm (không đoán ngày).
 LƯU Ý: API Crude Inventory và Đấu giá EUA EEX đã bị loại bỏ khỏi danh sách theo dõi định kỳ do không có nguồn dữ liệu công khai lấy được tự động. KHÔNG thêm các sự kiện này vào "events" dù báo cáo trước có liệt kê.
-Với sự kiện bạn TỰ thêm ở nhóm 3: "date" (YYYY-MM-DD), "datetime_vn" (CHỈ "DD/MM", KHÔNG kèm năm, KHÔNG kèm giờ trừ khi tin tức xác nhận rõ giờ), "event", "impact" (Cao/Trung/Thấp).
+Với sự kiện bạn TỰ thêm ở nhóm 3: "date" (YYYY-MM-DD), "datetime_vn" (CHỈ "DD/MM", KHÔNG kèm năm, TUYỆT ĐỐI KHÔNG kèm giờ dù tin tức có nêu rõ giờ), "event", "impact" (Cao/Trung/Thấp).
 
 CẬP NHẬT KẾT QUẢ SỰ KIỆN KỲ TRƯỚC (bắt buộc, chỉ áp dụng cho danh sách "SỰ KIỆN TỪ BÁO CÁO TRƯỚC" ở trên):
 - Nhóm "Đã diễn ra hoặc diễn ra đúng hôm nay, CẦN cập nhật kết quả": với MỖI sự kiện EIA/Baker Hughes — nếu "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên đã kèm "outcome" thực tế (được tính sẵn bằng dữ liệu fetch trực tiếp), PHẢI dùng đúng outcome đó, KHÔNG được tự viết outcome khác; với sự kiện khác (nhóm 3) — CHỈ điền outcome nếu TIN TỨC LIÊN QUAN xác nhận rõ; nếu không xác nhận, ghi "Chưa có thông tin kết quả xác nhận" — TUYỆT ĐỐI KHÔNG tự bịa số liệu. Giữ nguyên "date" gốc.
