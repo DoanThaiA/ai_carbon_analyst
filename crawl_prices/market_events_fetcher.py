@@ -46,6 +46,14 @@ _HTTP_HEADERS = {
     "Accept": "*/*",
 }
 
+# Akamai (WAF của rigcount.bakerhughes.com) chặn UA giả trình duyệt (thiếu bộ header
+# đi kèm như sec-ch-ua/Accept-Language → bị coi là bot giả mạo) nhưng cho qua UA
+# "trần" không giả trình duyệt — dùng header riêng, KHÔNG dùng chung _HTTP_HEADERS.
+_BH_HTTP_HEADERS = {
+    "User-Agent": "curl/8.0",
+    "Accept": "*/*",
+}
+
 
 async def fetch_eia_weekly_inventory() -> Optional[Dict[str, Any]]:
     """
@@ -187,7 +195,7 @@ async def fetch_baker_hughes_rig_count() -> Optional[Dict[str, Any]]:
     """
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-            resp = await client.get(_BH_EXCEL_URL, headers=_HTTP_HEADERS)
+            resp = await client.get(_BH_EXCEL_URL, headers=_BH_HTTP_HEADERS)
             resp.raise_for_status()
             content_bytes = resp.content
     except Exception as exc:
@@ -198,7 +206,19 @@ async def fetch_baker_hughes_rig_count() -> Optional[Dict[str, Any]]:
 
 
 def _parse_bh_excel(content_bytes: bytes) -> Optional[Dict[str, Any]]:
-    """Parse Excel Baker Hughes Rig Count — lấy hàng cuối cùng có data."""
+    """Parse Excel Baker Hughes Rig Count.
+
+    Định dạng file kể từ ~09/2026 ("New Report"): nhiều sheet
+    (NAM Summary/Breakdown/Yearly/Quarterly/Monthly/Weekly); số liệu tuần mới nhất
+    theo Oil/Gas/Total nằm ở sheet "NAM Breakdown", pivot theo CỘT (mỗi cột 1 mốc
+    thời gian — cột index 2 là tuần hiện tại, index 3 là tuần trước — thay vì mỗi
+    HÀNG 1 tuần như định dạng cũ). Trong sheet đó có 3 block lặp lại theo hàng
+    (nhãn ở cột index 1): "Location" (Inland Waters/Land/Offshore/United States/
+    Canada), "DrillFor" (Gas/Oil/Miscellaneous/United States/Canada), "Trajectory"
+    (Directional/Horizontal/Vertical/United States) — chỉ lấy occurrence ĐẦU TIÊN
+    của mỗi nhãn (thuộc block "Location"/"DrillFor" cho US) vì nhãn "United States"/
+    "Canada"/"Gas"/"Oil"/"Miscellaneous" lặp lại ở nhiều block.
+    """
     try:
         import openpyxl  # lazy import — chỉ cần khi gọi hàm này
     except ImportError:
@@ -208,90 +228,60 @@ def _parse_bh_excel(content_bytes: bytes) -> Optional[Dict[str, Any]]:
 
     try:
         wb = openpyxl.load_workbook(io.BytesIO(content_bytes), read_only=True, data_only=True)
-        ws = wb.active  # sheet đầu tiên
-
-        # Tìm header row: dòng chứa "Date" hoặc "Week Ending"
-        header_row_idx = None
-        col_map: Dict[str, int] = {}
-
-        for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
-            if row_idx > 30:
-                break
-            row_vals = [str(c).lower().strip() if c is not None else "" for c in row]
-            for ci, cell_val in enumerate(row_vals):
-                if "date" in cell_val or "week ending" in cell_val or "week of" in cell_val:
-                    header_row_idx = row_idx
-                    # Map column names
-                    for i2, v2 in enumerate(row_vals):
-                        v2_clean = v2.strip().lower()
-                        if "date" in v2_clean or "week" in v2_clean:
-                            col_map["date"] = i2
-                        elif "total" in v2_clean and "u.s" in v2_clean:
-                            col_map["us_total"] = i2
-                        elif "oil" in v2_clean and "u.s" in v2_clean:
-                            col_map["us_oil"] = i2
-                        elif "gas" in v2_clean and "u.s" in v2_clean:
-                            col_map["us_gas"] = i2
-                        elif "misc" in v2_clean:
-                            col_map["us_misc"] = i2
-                        elif "canada" in v2_clean and "total" in v2_clean:
-                            col_map["canada_total"] = i2
-                    break
-            if header_row_idx:
-                break
-
-        if header_row_idx is None or "date" not in col_map:
-            logger.warning("[BH-PARSE] Không tìm được header row trong Excel BH")
+        if "NAM Breakdown" not in wb.sheetnames:
+            logger.warning(
+                "[BH-PARSE] Không tìm thấy sheet 'NAM Breakdown' trong Excel BH "
+                "(sheets hiện có: %s) — định dạng file có thể đã đổi", wb.sheetnames,
+            )
             wb.close()
             return None
+        ws = wb["NAM Breakdown"]
 
-        # Lấy hàng dữ liệu cuối cùng có giá trị
-        last_valid_row = None
-        for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
-            date_val = row[col_map["date"]] if col_map["date"] < len(row) else None
-            if date_val is not None and str(date_val).strip() not in ("", "None"):
-                last_valid_row = row
+        CUR_COL = 2  # cột giá trị tuần hiện tại (cột index 1 là nhãn hàng)
 
-        wb.close()
+        week_ending_date: Optional[date] = None
+        us_total: Optional[int] = None
+        canada_total: Optional[int] = None
+        us_gas: Optional[int] = None
+        us_oil: Optional[int] = None
+        us_misc: Optional[int] = None
 
-        if last_valid_row is None:
-            logger.warning("[BH-PARSE] Không tìm thấy hàng dữ liệu hợp lệ trong Excel BH")
-            return None
-
-        def _get_int(col_key: str) -> Optional[int]:
-            ci = col_map.get(col_key)
-            if ci is None or ci >= len(last_valid_row):
-                return None
-            val = last_valid_row[ci]
+        def _to_int(val: Any) -> Optional[int]:
             try:
                 return int(float(str(val).replace(",", "")))
             except (ValueError, TypeError):
                 return None
 
-        def _get_date(col_key: str) -> Optional[date]:
-            ci = col_map.get(col_key)
-            if ci is None or ci >= len(last_valid_row):
-                return None
-            val = last_valid_row[ci]
-            if isinstance(val, (datetime, date)):
-                return val if isinstance(val, date) else val.date()
-            try:
-                return datetime.strptime(str(val).strip(), "%m/%d/%Y").date()
-            except ValueError:
-                try:
-                    return datetime.strptime(str(val).strip(), "%Y-%m-%d").date()
-                except ValueError:
-                    return None
+        for row in ws.iter_rows(values_only=True):
+            if len(row) <= CUR_COL:
+                continue
+            label = str(row[1]).strip() if row[1] is not None else ""
 
-        week_ending_date = _get_date("date")
-        us_total   = _get_int("us_total")
-        us_oil     = _get_int("us_oil")
-        us_gas     = _get_int("us_gas")
-        us_misc    = _get_int("us_misc")
-        canada_total = _get_int("canada_total")
+            if label in ("Location", "DrillFor", "Trajectory") and week_ending_date is None:
+                for fmt in ("%d/%b/%y", "%m/%d/%Y", "%Y-%m-%d"):
+                    try:
+                        week_ending_date = datetime.strptime(str(row[CUR_COL]).strip(), fmt).date()
+                        break
+                    except (ValueError, TypeError):
+                        continue
+            elif label == "United States" and us_total is None:
+                us_total = _to_int(row[CUR_COL])
+            elif label == "Canada" and canada_total is None:
+                canada_total = _to_int(row[CUR_COL])
+            elif label == "Gas" and us_gas is None:
+                us_gas = _to_int(row[CUR_COL])
+            elif label == "Oil" and us_oil is None:
+                us_oil = _to_int(row[CUR_COL])
+            elif label == "Miscellaneous" and us_misc is None:
+                us_misc = _to_int(row[CUR_COL])
+
+        wb.close()
 
         if us_total is None:
-            logger.warning("[BH-PARSE] Không đọc được 'US Total' từ Excel BH")
+            logger.warning(
+                "[BH-PARSE] Không đọc được 'US Total' từ sheet 'NAM Breakdown' "
+                "(định dạng file có thể đã đổi)"
+            )
             return None
 
         week_end_str = week_ending_date.strftime("%d/%m/%Y") if week_ending_date else "N/A"

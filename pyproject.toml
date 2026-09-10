@@ -27,4 +27,5 @@ dependencies = [
     "trafilatura>=1.12.2",
     "uvicorn[standard]>=0.52.4",
     "yfinance>=0.2.40",
+    "openpyxl>=3.1.5",
 ]
