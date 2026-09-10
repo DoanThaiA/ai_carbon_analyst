@@ -1403,7 +1403,7 @@ CẬP NHẬT KẾT QUẢ SỰ KIỆN KỲ TRƯỚC (bắt buộc, chỉ áp dụ
 - KHÔNG đưa vào "events" bất kỳ sự kiện nào có "date" nằm ngoài khoảng {window_start} → {window_end}, TRỪ các sự kiện thuộc nhóm "Đã diễn ra, CẦN cập nhật kết quả".
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"8": {{"title": "Lịch sự kiện 7 ngày tới", "events": [{{"date": "YYYY-MM-DD", "datetime_vn": "DD/MM", "event": "...", "impact": "Cao/Trung/Thấp", "outcome": "... (optional, chỉ khi sự kiện đã qua)"}}]}}}}\"""
+{{"8": {{"title": "Lịch sự kiện 7 ngày tới", "events": [{{"date": "YYYY-MM-DD", "datetime_vn": "DD/MM", "event": "...", "impact": "Cao/Trung/Thấp", "outcome": "... (optional, chỉ khi sự kiện đã qua)"}}]}}}}"""
     return system, user
 
 
