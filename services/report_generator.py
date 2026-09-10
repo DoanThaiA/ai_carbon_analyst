@@ -672,11 +672,11 @@ def _eua_session_range_summary(chart_data: List[Dict]) -> str:
     if not chart_data:
         return "Không có dữ liệu biên độ phiên liền trước."
     latest = chart_data[-1]
-    high, low, close = latest["high"], latest["low"], latest["close"]
+    open_p, high, low, close = latest["open"], latest["high"], latest["low"], latest["close"]
     range_pct = ((high - low) / close * 100) if close else 0
     return (
-        f"Biên độ phiên liền trước ({latest['date']}): cao {high:.2f} — thấp {low:.2f} "
-        f"EUR/tCO2 (biên độ {high - low:.2f}, ~{range_pct:.1f}% so với giá đóng cửa)."
+        f"Biên độ phiên liền trước ({latest['date']}): mở {open_p:.2f} — cao {high:.2f} — thấp {low:.2f} "
+        f"— đóng cửa {close:.2f} EUR/tCO2 (biên độ {high - low:.2f}, ~{range_pct:.1f}% so với giá đóng cửa)."
     )
 
 

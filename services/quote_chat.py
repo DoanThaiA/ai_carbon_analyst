@@ -16,6 +16,7 @@ from services.report_generator import (
     get_historical_ohlc_for_report,
     _eua_volume_summary,
     _eua_technical_levels_summary,
+    _eua_session_range_summary,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,11 @@ async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> s
     viết lại logic định dạng) để câu trả lời của chat khớp đúng số liệu report
     gốc đã dùng, không lệch nhau giữa 2 nơi.
 
+    Nối thêm dòng OHLC (mở/cao/thấp/đóng) phiên liền trước của EUA — CÙNG
+    `_eua_session_range_summary` mà report_generator.py dùng cho Mục 1 —
+    để người dùng có thể hỏi trực tiếp giá mở cửa/cao/thấp trong phiên, không
+    chỉ giá đóng cửa + Δ ngày/Δ tuần như `_summarize_prices` ở trên.
+
     Nối thêm dòng khối lượng giao dịch EUA (phiên liền trước so với TB các phiên
     gần nhất — CÙNG `_eua_volume_summary` mà report_generator.py dùng cho Mục 2)
     để người dùng có thể hỏi trực tiếp về volume EUA, không chỉ giá/Δ ngày/Δ tuần.
@@ -117,9 +123,10 @@ async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> s
     prices, _ = await get_prices_for_report(session, report_date)
     prices_text = _summarize_prices(prices)
     chart_data = await get_historical_ohlc_for_report(session, "EUA", report_date)
+    ohlc_text = _eua_session_range_summary(chart_data)
     volume_text = _eua_volume_summary(chart_data)
     technical_text = _eua_technical_levels_summary(chart_data)
-    return f"{prices_text}\n  - {volume_text}\n  - {technical_text}"
+    return f"{prices_text}\n  - {ohlc_text}\n  - {volume_text}\n  - {technical_text}"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -218,6 +225,7 @@ def _build_static_instructions(
 === DỮ LIỆU GIÁ NGÀY BÁO CÁO {report_date} (đóng cửa + Δ ngày + Δ tuần — CÙNG số liệu report gốc đã dùng) ===
 {prices_text}
 LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức). Khi được hỏi về giá/biến động của 1 trong 6 mã này, PHẢI dùng ĐÚNG số ở trên (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay mô tả định tính mơ hồ ("biến động nhẹ", "chưa dứt khoát"...) thay cho con số thật đã có sẵn. Khi được hỏi về giá 1 mã KHÔNG nằm trong danh sách trên (vd giá than cốc, giá kim loại, giá điện nước khác Đức), nói rõ hệ thống không theo dõi giá đó — có thể dùng web_search nếu người dùng cần số liệu cụ thể — KHÔNG suy đoán con số.
+LƯU Ý VỀ OHLC: dòng thứ 3 từ cuối ở trên là giá MỞ CỬA/CAO/THẤP/ĐÓNG CỬA (OHLC) phiên liền trước của EUA (tính trực tiếp từ dữ liệu giá thật) — hệ thống CHỈ có OHLC chi tiết theo phiên cho EUA, KHÔNG có cho 5 instrument còn lại (chỉ có giá đóng cửa + Δ ngày/Δ tuần ở bảng trên). Khi được hỏi giá mở cửa/cao nhất/thấp nhất trong phiên của EUA, PHẢI dùng ĐÚNG số ở dòng này, KHÔNG tự bịa hay suy đoán từ Δ ngày/Δ tuần.
 LƯU Ý VỀ VOLUME: dòng thứ 2 từ cuối ở trên là khối lượng giao dịch EUA (hợp đồng) phiên liền trước so với TB các phiên gần nhất — hệ thống CHỈ theo dõi volume cho EUA, KHÔNG có volume cho 5 instrument còn lại. Khi được hỏi về khối lượng/volume EUA, PHẢI dùng ĐÚNG con số này (không tự bịa); dùng làm căn cứ suy luận volume có "xác nhận" xu hướng giá hay không (volume tăng cùng chiều giá = tín hiệu mạnh; volume cao nhưng giá đi ngang/ngược chiều, hoặc giá biến động mạnh mà volume thấp = tín hiệu yếu/đáng nghi ngờ) — nhưng đây CHỈ LÀ SUY LUẬN, không phải kết luận chắc chắn.
 LƯU Ý VỀ MỐC KỸ THUẬT: dòng cuối cùng ở trên là mốc hỗ trợ/kháng cự kỹ thuật của EUA (đỉnh/đáy 30 phiên gần nhất, tính từ giá thật) — hệ thống CHỈ tính mốc kỹ thuật cho EUA, KHÔNG có cho 5 instrument còn lại (nếu được hỏi mốc kỹ thuật của mã khác, nói rõ hệ thống chưa hỗ trợ, KHÔNG tự bịa mốc). Xem chi tiết cách dùng ở mục F (NĂNG LỰC CỦA BẠN) bên dưới.
 
