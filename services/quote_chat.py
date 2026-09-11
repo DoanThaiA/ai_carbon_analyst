@@ -1,11 +1,13 @@
 
 import logging
 import re
-from typing import AsyncIterator, Dict, List, Optional, Sequence
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
+from db.models import Report
 from schemas.chat_models import ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services.retrieval import RetrievalService
@@ -25,6 +27,12 @@ MAX_CONTEXT_CHUNKS = 8
 HYBRID_SEARCH_LIMIT = 20
 MAX_QUOTE_CHARS = 2000  # đủ cho 1 đoạn/gạch đầu dòng của báo cáo
 MAX_ANSWER_TOKENS = 1000  # chặn cứng độ dài — bổ trợ cho rule ngắn gọn trong system prompt
+
+# Chặn trên độ dài text của TOÀN VĂN báo cáo sau khi format (xem
+# `_format_report_content`) — báo cáo thật thường không tới ngưỡng này (~9 mục,
+# mục 6 nhiều nhất cũng chỉ tới 60 bài tóm tắt 2-4 câu), đây chỉ là lưới an
+# toàn tránh 1 báo cáo bất thường dài làm phình prompt không kiểm soát.
+MAX_REPORT_CHARS = 40000
 
 # Ngưỡng relevance_score (thang 0-1 của Cohere rerank) để 1 chunk được coi là
 # THẬT SỰ liên quan tới quote+câu hỏi — top_k chỉ giới hạn số lượng, không đảm
@@ -192,12 +200,101 @@ G. TÀI CHÍNH & MACRO:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Toàn văn báo cáo (Mục 1-3) — trước đây quote_chat CHỈ có đoạn quote + RAG
+# trên tin tức, không có quyền truy cập các mục KHÁC của báo cáo, nên quote 1
+# gạch đầu dòng nhỏ ở Mục 1 rồi hỏi về nội dung Mục 2/3 không trả lời được.
+# Format phẳng Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân
+# tích chuyên sâu) của dict content (db/models.py::Report.content, JSONB 9 mục
+# — xem services/report_generator.py::generate_report_content) thành text để
+# tiêm vào system prompt, CÙNG cơ chế với prices_text (đặt ở static
+# instructions vì chỉ đổi 1 lần/ngày theo report_date, tận dụng prompt
+# caching). CHỈ 3 mục này theo yêu cầu — các mục 4/5/6/7/8/biz không đưa vào.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _format_bullets(bullets: Optional[List[Any]]) -> str:
+    """1 bullet có thể là string thuần hoặc dict {text, source_name,
+    source_url} (Mục 1) — chuẩn hoá về text, kèm tên nguồn nếu có."""
+    lines = []
+    for b in bullets or []:
+        if isinstance(b, dict):
+            text = (b.get("text") or "").strip()
+            source_name = b.get("source_name")
+            lines.append(f"- {text}" + (f" ({source_name})" if source_name else ""))
+        elif b:
+            lines.append(f"- {b}")
+    return "\n".join(lines) if lines else "(không có)"
+
+
+def _format_report_content(content: Optional[dict]) -> str:
+    """Chuyển Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh) và Mục 3
+    (Phân tích chuyên sâu) của báo cáo thành text phẳng, dễ đọc cho LLM — CHỈ
+    3 mục này theo yêu cầu, các mục còn lại (4/5/6/7/8/biz) KHÔNG đưa vào để
+    tránh phình prompt không cần thiết.
+
+    Bỏ qua "prices"/"chart_data" thô của Mục 2 (đã có `prices_text` riêng —
+    xem `get_prices_text_for_chat` — tránh trùng lặp dữ liệu trong prompt).
+    """
+    if not content:
+        return "(Không có nội dung báo cáo cho ngày này.)"
+
+    parts: List[str] = []
+
+    sec1 = content.get("1")
+    if sec1:
+        parts.append(f"## {sec1.get('title', 'Tóm tắt điều hành')}\n{_format_bullets(sec1.get('bullets'))}")
+
+    sec2 = content.get("2")
+    if sec2:
+        drivers = sec2.get("market_drivers") or {}
+        parts.append(
+            f"## {sec2.get('title', 'Bảng giá nhanh')}\n"
+            f"{sec2.get('key_facts', '')}\n"
+            f"Yếu tố hỗ trợ tăng giá:\n{_format_bullets(drivers.get('bullish'))}\n"
+            f"Yếu tố hỗ trợ giảm giá:\n{_format_bullets(drivers.get('bearish'))}"
+        )
+
+    sec3 = content.get("3")
+    if sec3:
+        blocks = "\n\n".join(
+            f"{b.get('heading', '')}: {b.get('content', '')}" for b in sec3.get("analysis_blocks") or []
+        )
+        scenarios = "\n".join(
+            f"- [{s.get('horizon')}] {s.get('direction')} (xác suất {s.get('probability')}): "
+            f"{s.get('condition')} | Vùng giá: {s.get('price_zone')} | Rủi ro: {s.get('key_risk')} | "
+            f"Chiến lược: {s.get('trading_strategy')}"
+            for s in sec3.get("trading_scenarios") or []
+        )
+        parts.append(
+            f"## {sec3.get('title', 'Phân tích chuyên sâu')}\n{blocks}\n\nKịch bản giao dịch:\n{scenarios or '(không có)'}"
+        )
+
+    return _truncate("\n\n".join(parts), MAX_REPORT_CHARS)
+
+
+async def get_report_text_for_chat(session: AsyncSession, report_date: str) -> str:
+    """Lấy + format Mục 1-3 của báo cáo `report_date` (đã published) để tiêm
+    vào system prompt — cho phép trả lời câu hỏi liên quan tới nội dung 3 mục
+    này ngoài đoạn quote, không chỉ dựa vào đoạn quote + RAG trên tin tức như
+    trước đây.
+
+    Đặt cùng nhóm với `get_prices_text_for_chat` (chỉ đổi 1 lần/ngày theo
+    report_date, không đổi theo câu hỏi) — dùng ở static instructions để tận
+    dụng prompt caching, KHÔNG phải dynamic context.
+    """
+    stmt = select(Report.content).where(Report.report_date == report_date, Report.status == "published")
+    result = await session.execute(stmt)
+    content = result.scalar_one_or_none()
+    return _format_report_content(content)
+
+
+# ─────────────────────────────────────────────────────────────────────
 # System prompt
 # ─────────────────────────────────────────────────────────────────────
 
 def _build_static_instructions(
     report_date: str, prices_text: str, overrides: Optional[Dict[str, str]] = None,
-    few_shot_block: str = "",
+    few_shot_block: str = "", report_text: str = "",
 ) -> str:
     """Phần system prompt KHÔNG đổi giữa các câu hỏi/phiên/user (chỉ đổi 1
     lần/ngày theo report_date) — role, kiến thức nền, dữ liệu giá, năng lực,
@@ -215,6 +312,13 @@ def _build_static_instructions(
     từng câu hỏi — đặt trong dynamic context sẽ phá cache mỗi request mà không
     có lý do.
 
+    `report_text`: Mục 1-3 của báo cáo ngày `report_date` đã format phẳng
+    (xem `get_report_text_for_chat`/`_format_report_content`) — CÙNG lý do đặt
+    ở static instructions như `prices_text` (chỉ đổi theo report_date). Giải
+    quyết hạn chế trước đây: quote_chat CHỈ biết đoạn quote + RAG trên tin tức,
+    không biết nội dung các mục KHÁC của báo cáo, nên quote 1 đoạn nhỏ rồi hỏi
+    về phần khác sẽ không trả lời được.
+
     `few_shot_block`: khối ví dụ mẫu do admin chọn lọc (xem
     services/quote_chat_examples.py::build_few_shot_prompt_block), rỗng nếu
     admin chưa thêm ví dụ nào — đặt cùng phần static vì không đổi theo câu hỏi.
@@ -228,6 +332,11 @@ LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ li
 LƯU Ý VỀ OHLC: dòng thứ 3 từ cuối ở trên là giá MỞ CỬA/CAO/THẤP/ĐÓNG CỬA (OHLC) phiên liền trước của EUA (tính trực tiếp từ dữ liệu giá thật) — hệ thống CHỈ có OHLC chi tiết theo phiên cho EUA, KHÔNG có cho 5 instrument còn lại (chỉ có giá đóng cửa + Δ ngày/Δ tuần ở bảng trên). Khi được hỏi giá mở cửa/cao nhất/thấp nhất trong phiên của EUA, PHẢI dùng ĐÚNG số ở dòng này, KHÔNG tự bịa hay suy đoán từ Δ ngày/Δ tuần.
 LƯU Ý VỀ VOLUME: dòng thứ 2 từ cuối ở trên là khối lượng giao dịch EUA (hợp đồng) phiên liền trước so với TB các phiên gần nhất — hệ thống CHỈ theo dõi volume cho EUA, KHÔNG có volume cho 5 instrument còn lại. Khi được hỏi về khối lượng/volume EUA, PHẢI dùng ĐÚNG con số này (không tự bịa); dùng làm căn cứ suy luận volume có "xác nhận" xu hướng giá hay không (volume tăng cùng chiều giá = tín hiệu mạnh; volume cao nhưng giá đi ngang/ngược chiều, hoặc giá biến động mạnh mà volume thấp = tín hiệu yếu/đáng nghi ngờ) — nhưng đây CHỈ LÀ SUY LUẬN, không phải kết luận chắc chắn.
 LƯU Ý VỀ MỐC KỸ THUẬT: dòng cuối cùng ở trên là mốc hỗ trợ/kháng cự kỹ thuật của EUA (đỉnh/đáy 30 phiên gần nhất, tính từ giá thật) — hệ thống CHỈ tính mốc kỹ thuật cho EUA, KHÔNG có cho 5 instrument còn lại (nếu được hỏi mốc kỹ thuật của mã khác, nói rõ hệ thống chưa hỗ trợ, KHÔNG tự bịa mốc). Xem chi tiết cách dùng ở mục F (NĂNG LỰC CỦA BẠN) bên dưới.
+
+=== NỘI DUNG MỤC 1-3 CỦA BÁO CÁO NGÀY {report_date} (Tóm tắt điều hành, Bảng giá nhanh, Phân tích chuyên sâu — để trả lời câu hỏi liên quan tới nội dung các mục này ngoài đoạn trích người dùng đang bôi đen) ===
+{report_text}
+LƯU Ý: đoạn trích người dùng bôi đen (đưa ra bên dưới, ở phần ĐOẠN NGƯỜI DÙNG ĐANG BÔI ĐEN) vẫn là điểm neo của hội thoại, nhưng khi câu hỏi nhắc tới nội dung Ở MỤC 1/2/3 khác đoạn trích (vd "Mục 3 nói gì về...", hoặc chỉ đơn giản hỏi 1 điều không có trong chính đoạn trích nhưng có trong 3 mục này), PHẢI dùng đúng nội dung ở trên để trả lời, KHÔNG được nói "không có thông tin" nếu thông tin đó thực sự có. Nếu câu hỏi liên quan tới mục KHÁC (4/5/6/7/8/biz) không có ở đây, áp dụng rule 4 (THÀNH THẬT VỀ GIỚI HẠN) bên dưới.
+LƯU Ý QUAN TRỌNG VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen là 1 câu/gạch đầu dòng CẮT RA từ nội dung MỤC 1-3 ở trên — nên có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời khỏi phần trước nó (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Khi gặp trường hợp này: TRƯỚC TIÊN, tìm đúng vị trí của đoạn trích trong nội dung MỤC 1-3 ở trên (khớp gần đúng câu chữ, kể cả khi đoạn trích không dấu câu/khoảng trắng y hệt), đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong cùng mục để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì (vd "nhóm này" = nhóm yếu tố nào vừa được liệt kê ngay trước), rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi ngữ cảnh đã có sẵn ngay trong MỤC 1-3 ở trên.
 
 {_build_domain_knowledge(overrides)}
 {few_shot_section}
@@ -244,13 +353,15 @@ F. PHÂN TÍCH KỸ THUẬT EUA (mốc chốt lời/bắt đáy): khi người d
    - Chỉ áp dụng cho EUA — nếu được hỏi mốc kỹ thuật của 5 instrument còn lại, nói rõ hệ thống chưa hỗ trợ mốc kỹ thuật cho mã đó.
 
 QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
-1. NEO VÀO ĐOẠN TRÍCH: mọi câu trả lời đều phải xoay quanh và nhất quán với nội dung đoạn trích. Đây là bối cảnh cố định của cả cuộc hội thoại.
-2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) DỮ LIỆU GIÁ thật (Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi, kèm volume/mốc kỹ thuật riêng cho EUA), (b) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / dữ liệu nền tin tức, (c) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (d) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (e) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Thể hiện sự phân biệt này bằng NGÔN NGỮ TỰ NHIÊN, không cần rập khuôn 1 cụm từ cố định cho mỗi loại — ví dụ "theo dữ liệu giá", "theo tin tức", "về cơ chế", "trong kịch bản giả định" chỉ là gợi ý cách diễn đạt, không phải khuôn mẫu bắt buộc lặp lại y nguyên; miễn người đọc phân biệt được đâu là số liệu thật, đâu là suy luận.
+1. NEO VÀO ĐOẠN TRÍCH: đoạn trích là bối cảnh khởi đầu của cả cuộc hội thoại, câu trả lời phải nhất quán với nó. Nhưng khi câu hỏi vượt ra ngoài chính đoạn trích và nội dung liên quan nằm trong Mục 1/2/3 (hỏi so sánh/liên hệ giữa đoạn trích với phần khác của 3 mục này...), PHẢI dùng đúng nội dung MỤC 1-3 ở trên để trả lời thay vì từ chối vì "ngoài phạm vi đoạn trích". Nếu câu hỏi liên quan tới mục KHÁC (4/5/6/7/8/biz) mà hệ thống không có nội dung, áp dụng rule 4.
+2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) DỮ LIỆU GIÁ thật (Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi, kèm volume/mốc kỹ thuật riêng cho EUA), (b) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / MỤC 1-3 CỦA BÁO CÁO / dữ liệu nền tin tức, (c) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (d) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (e) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Thể hiện sự phân biệt này bằng NGÔN NGỮ TỰ NHIÊN, không cần rập khuôn 1 cụm từ cố định cho mỗi loại — ví dụ "theo dữ liệu giá", "theo tin tức", "về cơ chế", "trong kịch bản giả định" chỉ là gợi ý cách diễn đạt, không phải khuôn mẫu bắt buộc lặp lại y nguyên; miễn người đọc phân biệt được đâu là số liệu thật, đâu là suy luận.
 3. KHÔNG BỊA SỐ LIỆU CỤ THỂ: tuyệt đối không bịa ngày tháng, tên tổ chức, mức giá, hay sự kiện cụ thể không xuất hiện trong đoạn trích/dữ liệu nền/kết quả web_search. Nhưng BẠN ĐƯỢC PHÉP suy luận logic dựa trên kiến thức chuyên môn — "Nếu TTF tăng mạnh, theo cơ chế fuel switching thì..." KHÔNG phải bịa đặt mà là phân tích.
 4. THÀNH THẬT VỀ GIỚI HẠN: nếu câu hỏi đòi hỏi dữ liệu không có trong context — (a) nếu là thông tin cụ thể có thể tra cứu được (số liệu/sự kiện/tổ chức, không phải suy đoán), dùng công cụ web_search để tìm rồi trả lời dựa trên kết quả đó; (b) nếu không tra được hoặc câu hỏi mang tính suy luận/giả định, nói rõ giới hạn dữ liệu (VD "Dữ liệu hiện có chưa đề cập chi tiết X") rồi PHÂN TÍCH DỰA TRÊN NHỮNG GÌ BIẾT ĐƯỢC thay vì chỉ nói "không biết" và dừng.
-5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
+5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng thông tin từ Mục 1/2/3 của báo cáo (ngoài đoạn trích), ghi rõ mục đã dùng — vd "(Báo cáo ngày {report_date}, Mục 3)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
 6. NGẮN GỌN, TRẢ LỜI THẲNG VÀO TRỌNG TÂM (ưu tiên cao nhất, áp dụng cho MỌI loại câu hỏi kể cả mục B/C/D ở trên): TỪ ĐẦU TIÊN của câu trả lời phải là nội dung trả lời thật sự.
-   - CẤM TUYỆT ĐỐI mọi câu/cụm mở đầu kiểu dẫn nhập, rào đón, hỏi lại, hay tự thuật lại quá trình suy nghĩ — vd "Để trả lời...", "Để trả lời chính xác, tôi cần...", "Trước khi trả lời...", "Đây là...", "Về vấn đề này...", "Câu hỏi hay...", hay bất kỳ câu nào hỏi ngược người dùng để làm rõ ý ("bạn đề cập là gì?", "ý bạn là...?"). Nếu câu hỏi có chỗ mơ hồ (VD "xu hướng này" không nói rõ là xu hướng gì), TỰ CHỌN cách hiểu hợp lý nhất dựa trên đoạn trích + ngữ cảnh hội thoại rồi trả lời thẳng luôn — không dừng lại hỏi lại, có thể nêu ngắn gọn cách hiểu đó trong câu trả lời (VD "Nếu xu hướng giảm của EUA tiếp diễn...") thay vì hỏi ngược.
+   - CẤM mọi câu/cụm mở đầu kiểu dẫn nhập, rào đón, hay tự thuật lại quá trình suy nghĩ — vd "Để trả lời...", "Để trả lời chính xác, tôi cần...", "Trước khi trả lời...", "Đây là...", "Về vấn đề này...", "Câu hỏi hay...".
+   - CÂU HỎI MƠ HỒ NHƯNG GIẢI QUYẾT ĐƯỢC TỪ NGỮ CẢNH SẴN CÓ (đoạn trích, MỤC 1-3, dữ liệu nền, lịch sử hội thoại): TỰ CHỌN cách hiểu hợp lý nhất rồi trả lời thẳng luôn — KHÔNG hỏi ngược người dùng ("bạn đề cập là gì?", "ý bạn là...?"). VD "xu hướng này" mà ngữ cảnh chỉ đang nhắc tới đúng 1 xu hướng — hiểu theo đó, có thể nêu ngắn gọn cách hiểu trong câu trả lời (VD "Nếu xu hướng giảm của EUA tiếp diễn...") thay vì hỏi ngược.
+   - CÂU HỎI MƠ HỒ VỀ Ý ĐỊNH/ĐỐI TƯỢNG HỎI, KHÔNG THỂ GIẢI QUYẾT TỪ NGỮ CẢNH SẴN CÓ (đoạn trích, MỤC 1-3, dữ liệu nền, lịch sử hội thoại) — khác với rule 4 (rule 4 là câu hỏi đã RÕ Ý nhưng THIẾU SỐ LIỆU/FACT cụ thể, vẫn phải phân tích dựa trên cái đã biết): đây là trường hợp bản thân câu hỏi có từ 2 cách hiểu hợp lý trở lên dẫn tới câu trả lời khác hẳn nhau (vd đại từ quy chiếu tới nhiều đối tượng cùng xuất hiện trong ngữ cảnh mà không rõ ý người dùng nhắm tới cái nào), hoặc nhắc tới 1 mã/sự kiện/mốc thời gian không hề xuất hiện ở bất kỳ đâu trong ngữ cảnh nên không xác định được NGƯỜI DÙNG ĐANG HỎI VỀ CÁI GÌ. Khi đó PHẢI hỏi lại NGẮN GỌN, ĐÚNG TRỌNG TÂM để làm rõ đúng điểm còn thiếu (1 câu hỏi ngắn, không rào đón dài dòng) — TUYỆT ĐỐI KHÔNG tự đoán bừa rồi trả lời như thể chắc chắn, và KHÔNG trả lời chung chung/né tránh để khỏi phải hỏi lại. Đây là NGOẠI LỆ DUY NHẤT được phép hỏi ngược trong toàn bộ hệ thống quy tắc này — chỉ áp dụng khi thực sự không thể tự chọn cách hiểu hợp lý.
    - CẤM dùng markdown mang tính bài viết/báo cáo trong câu trả lời: không tiêu đề (`#`, `##`), không đường kẻ ngang (`---`), không nhãn kiểu "**Trả lời ngắn:**"/"**Câu Trả Lời:**". Chỉ được dùng in đậm cho 1-2 từ khoá quan trọng và gạch đầu dòng khi thực sự liệt kê nhiều ý (xem giới hạn bên dưới) — không dùng cho cấu trúc tiêu đề/phần mục.
    - Toàn bộ câu trả lời tối đa 4-6 câu văn, HOẶC tối đa 4 gạch đầu dòng ngắn (mỗi gạch 1-2 câu) nếu thực sự cần liệt kê nhiều ý độc lập — KHÔNG dùng gạch đầu dòng cho câu trả lời đơn giản chỉ cần 1-2 câu. Đây là hội thoại chat nhanh, KHÔNG phải văn phong báo cáo dài — chỉ viết dài hơn mức này khi người dùng CHỦ ĐỘNG yêu cầu ("giải thích chi tiết hơn", "phân tích đầy đủ"...).
    - VĂN PHONG: viết như một chuyên gia đang trò chuyện, KHÔNG như điền vào khuôn mẫu có sẵn — câu chữ tự nhiên, khoa học, mạch lạc, biến đổi cách diễn đạt giữa các câu trả lời thay vì lặp lại đúng 1 cấu trúc/cụm từ mở đầu ở mọi lượt chat. Tránh giọng máy móc, liệt kê khô khan khi 1 câu văn liền mạch diễn đạt được — gạch đầu dòng chỉ dùng khi thực sự cần tách bạch nhiều ý độc lập (xem giới hạn ở trên).
@@ -275,14 +386,14 @@ def _build_dynamic_context(quote: str, context_block: str) -> str:
 
 def build_system_prompt(
     quote: str, report_date: str, context_block: str, prices_text: str,
-    overrides: Optional[Dict[str, str]] = None, few_shot_block: str = "",
+    overrides: Optional[Dict[str, str]] = None, few_shot_block: str = "", report_text: str = "",
 ) -> str:
     """Ghép static+dynamic thành 1 chuỗi — dùng cho backend Cohere (không hỗ
     trợ cache_control theo block như Anthropic). Backend Anthropic dùng trực
     tiếp `_build_static_instructions`/`_build_dynamic_context` tách rời (xem
     `_stream_anthropic`) để tận dụng prompt caching."""
     return (
-        _build_static_instructions(report_date, prices_text, overrides, few_shot_block)
+        _build_static_instructions(report_date, prices_text, overrides, few_shot_block, report_text)
         + "\n\n" + _build_dynamic_context(quote, context_block)
     )
 
@@ -400,6 +511,7 @@ async def astream_quote_chat(
     prices_text: str,
     eua_framework_overrides: Optional[Dict[str, str]] = None,
     few_shot_block: str = "",
+    report_text: str = "",
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta).
 
@@ -411,6 +523,10 @@ async def astream_quote_chat(
     session DB, hàm này không tự mở session) — đưa vào static instructions,
     KHÔNG phải dynamic context, vì chỉ đổi theo report_date (xem docstring
     `_build_static_instructions`).
+
+    `report_text`: toàn văn báo cáo ngày `report_date`, lấy từ
+    `get_report_text_for_chat()` (gọi bởi router) — CÙNG lý do đặt ở static
+    instructions như `prices_text`.
 
     `eua_framework_overrides`: nội dung admin đã custom cho khung tri thức EUA
     (xem services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở
@@ -432,7 +548,9 @@ async def astream_quote_chat(
         # Tách static/dynamic (thay vì gọi build_system_prompt gộp sẵn) để bật
         # prompt caching — xem docstring _stream_anthropic.
         stream = _stream_anthropic(
-            _build_static_instructions(report_date, prices_text, eua_framework_overrides, few_shot_block),
+            _build_static_instructions(
+                report_date, prices_text, eua_framework_overrides, few_shot_block, report_text
+            ),
             _build_dynamic_context(truncated_quote, context_block),
             messages,
             settings.quote_chat_model,
@@ -440,7 +558,8 @@ async def astream_quote_chat(
         )
     else:
         system_prompt = build_system_prompt(
-            truncated_quote, report_date, context_block, prices_text, eua_framework_overrides, few_shot_block
+            truncated_quote, report_date, context_block, prices_text,
+            eua_framework_overrides, few_shot_block, report_text,
         )
         stream = _stream_cohere(system_prompt, messages, settings.quote_chat_model)
 
