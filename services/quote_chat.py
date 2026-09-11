@@ -677,12 +677,15 @@ async def _stream_anthropic(
         # này bằng prompt đã siết chặt (cấm rõ ràng, kèm ví dụ cụ thể) thay vì
         # chặn cứng ở tầng code — xem log "[QUOTE-CHAT] Model chèn text..."
         # nếu cần theo dõi model có còn vi phạm không.
+        # `temperature`/`top_p`/`top_k` đã bị loại bỏ khỏi API cho Sonnet 5 (và cả
+        # dòng model 4.6+) — truyền lên sẽ bị lỗi 400 "temperature is deprecated
+        # for this model". Không có tham số sampling thay thế; nếu cần giảm biến
+        # thiên câu trả lời thì điều chỉnh qua system prompt.
         async with client.messages.stream(
             model=model,
             max_tokens=MAX_ANSWER_TOKENS,
             system=system,
             messages=anthropic_messages,
-            temperature=0.3,
             **extra,
         ) as stream:
             leaked_chars = 0
