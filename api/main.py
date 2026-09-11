@@ -5,6 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from core.logging import setup_logging
+
+# PHẢI gọi TRƯỚC MỌI import khác có thể log — nếu không, root logger không có handler nào, Python
+# chỉ tự in ra stderr đúng level WARNING trở lên (cơ chế "last resort" mặc định của thư viện
+# logging), khiến MỌI `logger.info(...)` trong toàn bộ app (vd log tổng kết tool/token mỗi câu hỏi
+# ở services/quote_chat.py) biến mất hoàn toàn dù code đúng — chỉ log ERROR/WARNING mới lọt ra
+# (đây là lý do trước giờ chỉ thấy log lỗi 400, không bao giờ thấy log INFO nào). `main.py`/
+# `scheduler.py` (2 entrypoint khác của repo) đã tự gọi `logging.basicConfig()` riêng — entrypoint
+# API (chạy qua `uvicorn api.main:app`, xem Dockerfile.backend) trước giờ bị bỏ sót.
+setup_logging()
+
 from api.deps import get_current_user, get_db, settings
 from api.routers import (
     admin_chat_reviews,
