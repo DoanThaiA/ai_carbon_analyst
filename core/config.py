@@ -72,7 +72,7 @@ class Settings:
             embedding_model=os.environ.get("EMBEDDING_MODEL", "embed-v4.0"),
             vector_dimension=int(os.environ.get("VECTOR_DIMENSION", "1536")),
             rerank_model=os.environ.get("RERANK_MODEL", "rerank-v3.5"),
-            quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", "claude-haiku-4-5"),
+            quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", "claude-sonnet-5"),
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),
             jwt_expire_minutes=int(os.environ.get("JWT_EXPIRE_MINUTES", str(60 * 24 * 7))),

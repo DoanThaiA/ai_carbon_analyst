@@ -179,8 +179,30 @@ async def _tool_market_prices_text(session: AsyncSession, report_date: str) -> s
     )
 
 
-async def _tool_eua_details_text(session: AsyncSession, report_date: str) -> str:
-    chart_data = await get_historical_ohlc_for_report(session, "EUA", report_date)  # 30 phiên mặc định
+async def _get_eua_chart_data_buffered(
+    session: AsyncSession, report_date: str, chart_cache: Dict[str, List[Any]]
+) -> List[Any]:
+    """Fetch chart_data EUA (đệm `EUA_VOLUME_SESSIONS_FOR_AVG` phiên trước 30
+    phiên hiển thị — xem `_tool_eua_volume_history_text`) DÙNG CHUNG giữa
+    `_tool_eua_details_text` và `_tool_eua_volume_history_text` — nếu model
+    gọi CẢ 2 tool này trong cùng 1 lượt hỏi (vd vừa hỏi mốc kỹ thuật vừa hỏi so
+    sánh khối lượng nhiều ngày), tránh query DB 2 lần cho cùng 1 khoảng dữ liệu
+    (bộ 50 phiên đã bao trùm đúng 30 phiên `_tool_eua_details_text` cần —
+    `chart_data_buffered[-30:]`). `chart_cache` sống trong đúng 1 lượt hỏi (tạo
+    mới ở `_stream_anthropic` mỗi lần gọi), không cache xuyên các câu hỏi khác
+    nhau — dữ liệu giá có thể đổi giữa các lần crawl nên không nên cache lâu
+    hơn phạm vi 1 câu trả lời.
+    """
+    if report_date not in chart_cache:
+        chart_cache[report_date] = await get_historical_ohlc_for_report(
+            session, "EUA", report_date, limit=EUA_VOLUME_HISTORY_SESSIONS + EUA_VOLUME_SESSIONS_FOR_AVG
+        )
+    return chart_cache[report_date]
+
+
+async def _tool_eua_details_text(session: AsyncSession, report_date: str, chart_cache: Dict[str, List[Any]]) -> str:
+    chart_data_buffered = await _get_eua_chart_data_buffered(session, report_date, chart_cache)
+    chart_data = chart_data_buffered[-30:]  # 30 phiên gần nhất — khớp mặc định của report_generator.py
     ohlc_text = _eua_session_range_summary(chart_data)
     volume_text = _eua_volume_summary(chart_data)
     technical_text = _eua_technical_levels_summary(chart_data)
@@ -193,10 +215,10 @@ async def _tool_eua_details_text(session: AsyncSession, report_date: str) -> str
     )
 
 
-async def _tool_eua_volume_history_text(session: AsyncSession, report_date: str) -> str:
-    chart_data_buffered = await get_historical_ohlc_for_report(
-        session, "EUA", report_date, limit=EUA_VOLUME_HISTORY_SESSIONS + EUA_VOLUME_SESSIONS_FOR_AVG
-    )
+async def _tool_eua_volume_history_text(
+    session: AsyncSession, report_date: str, chart_cache: Dict[str, List[Any]]
+) -> str:
+    chart_data_buffered = await _get_eua_chart_data_buffered(session, report_date, chart_cache)
     return (
         _eua_volume_history_text(chart_data_buffered)
         + "\nLƯU Ý: mỗi dòng đã tính sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC ngày đó (cố định "
@@ -385,6 +407,8 @@ LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích n
 
     return f"""Bạn là chuyên gia phân tích cao cấp của bàn giao dịch năng lượng & carbon (Daily Carbon Intelligence), có kiến thức sâu rộng về EU ETS, thị trường carbon, năng lượng, chính sách khí hậu, và các mối liên hệ liên thị trường. Nhiệm vụ của bạn là giúp người đọc hiểu sâu hơn một đoạn trích cụ thể mà họ vừa bôi đen trong báo cáo ngày {report_date}, thông qua hội thoại hỏi-đáp.
 
+QUY TẮC TUYỆT ĐỐI QUAN TRỌNG NHẤT, ÁP DỤNG CHO MỌI CÂU TRẢ LỜI (đọc kỹ trước khi làm bất cứ điều gì khác, xem lại chi tiết ở QUY TẮC TRẢ LỜI mục 6 phía dưới): TỪ ĐẦU TIÊN model xuất ra PHẢI là từ đầu tiên của câu trả lời thật — TUYỆT ĐỐI KHÔNG xuất bất kỳ token/từ/câu nào khác trước đó dưới bất kỳ hình thức nào, bao gồm nhưng không giới hạn: lời chào, lời dẫn nhập, rào đón, xin lỗi, nhắc lại câu hỏi, tự thuật lại quá trình suy nghĩ/kế hoạch trả lời ("Để trả lời...", "Tôi cần...", "Hãy để tôi...", "Trước tiên...", "Đây là...", "Câu hỏi hay..."), hay bất kỳ dạng "suy nghĩ thành tiếng" nào khác. Nếu cần gọi tool để lấy dữ liệu, GỌI TOOL NGAY, KHÔNG kèm bất kỳ câu text nào tường thuật việc đó — chỉ viết text SAU KHI đã có đủ dữ liệu, và text đó phải LÀ câu trả lời, không phải lời dẫn vào câu trả lời.
+
 {data_block}
 
 {_build_domain_knowledge(overrides)}
@@ -416,7 +440,9 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
    - VĂN PHONG: viết như một chuyên gia đang trò chuyện, KHÔNG như điền vào khuôn mẫu có sẵn — câu chữ tự nhiên, khoa học, mạch lạc, biến đổi cách diễn đạt giữa các câu trả lời thay vì lặp lại đúng 1 cấu trúc/cụm từ mở đầu ở mọi lượt chat. Tránh giọng máy móc, liệt kê khô khan khi 1 câu văn liền mạch diễn đạt được — gạch đầu dòng chỉ dùng khi thực sự cần tách bạch nhiều ý độc lập (xem giới hạn ở trên).
 7. TRUNG LẬP, KHÔNG KHUYẾN NGHỊ ĐẦU TƯ: giữ giọng văn chuyên gia; không đưa khuyến nghị mua/bán tài chính trực tiếp.
 8. ĐÚNG PHẠM VI: nếu câu hỏi ngoài phạm vi năng lượng/carbon/thị trường liên quan, lịch sự từ chối — kể cả khi có thể tra được bằng web_search, không đi lạc đề.
-9. NGÔN NGỮ: trả lời bằng tiếng Việt, trừ khi người dùng chủ động hỏi bằng ngôn ngữ khác."""
+9. NGÔN NGỮ: trả lời bằng tiếng Việt, trừ khi người dùng chủ động hỏi bằng ngôn ngữ khác.
+
+NHẮC LẠI LẦN CUỐI (quan trọng nhất, xem đầu prompt): từ đầu tiên xuất ra PHẢI là nội dung trả lời thật — không lời dẫn, không tường thuật ý định, không tường thuật việc gọi tool. Gọi tool NGAY nếu cần, không kèm text."""
 
 
 def _build_dynamic_context(quote: str, context_block: str) -> str:
@@ -523,25 +549,53 @@ CLIENT_TOOLS = [
     },
 ]
 
-MAX_TOOL_ITERATIONS = 4  # chặn lặp vô hạn nếu model cứ liên tục gọi tool
+# Chặn lặp vô hạn nếu model cứ liên tục gọi tool. 6 (không phải 4) vì prompt
+# hướng dẫn model "thử mục có khả năng chứa đoạn trích nhất trước, thử mục
+# khác nếu không thấy" (xem data_block trong _build_static_instructions) — nếu
+# model dò tuần tự cả 3 mục get_report_section ("1","2","3") ở 3 lượt riêng
+# rồi còn cần gọi thêm 1 tool giá, MAX_TOOL_ITERATIONS=4 sẽ hết trước khi kịp
+# sinh câu trả lời cuối — 6 chừa dư ít nhất 2 lượt cho tình huống đó.
+MAX_TOOL_ITERATIONS = 6
 
 
 async def _execute_client_tool(
-    name: str, tool_input: dict, session: AsyncSession, report_date: str
+    name: str,
+    tool_input: dict,
+    session: AsyncSession,
+    report_date: str,
+    *,
+    tool_cache: Dict[tuple, str],
+    chart_cache: Dict[str, List[Any]],
 ) -> str:
+    """`tool_cache`: nhớ lại kết quả TRONG PHẠM VI 1 câu hỏi (1 lượt gọi
+    `_stream_anthropic`) — hệ thống prompt đã yêu cầu model "KHÔNG gọi lại 1
+    tool đã dùng trong CÙNG hội thoại", nhưng đó chỉ là yêu cầu qua prompt,
+    không được đảm bảo (model vẫn có thể lỡ gọi lại, đặc biệt qua nhiều vòng
+    lặp tool). Cache ở tầng code đảm bảo gọi lại KHÔNG tốn thêm 1 round-trip
+    DB — chỉ cache kết quả THÀNH CÔNG (lỗi tạm thời/transient không nên bị
+    cache, để lần gọi lại sau có cơ hội thử lại thật).
+    """
+    cache_key = (name, tool_input.get("section")) if name == "get_report_section" else (name,)
+    if cache_key in tool_cache:
+        return tool_cache[cache_key]
+
     try:
         if name == "get_market_prices":
-            return await _tool_market_prices_text(session, report_date)
-        if name == "get_eua_details":
-            return await _tool_eua_details_text(session, report_date)
-        if name == "get_eua_volume_history":
-            return await _tool_eua_volume_history_text(session, report_date)
-        if name == "get_report_section":
-            return await _tool_report_section_text(session, report_date, str(tool_input.get("section", "")))
-        return f"Tool không xác định: {name}"
+            result = await _tool_market_prices_text(session, report_date)
+        elif name == "get_eua_details":
+            result = await _tool_eua_details_text(session, report_date, chart_cache)
+        elif name == "get_eua_volume_history":
+            result = await _tool_eua_volume_history_text(session, report_date, chart_cache)
+        elif name == "get_report_section":
+            result = await _tool_report_section_text(session, report_date, str(tool_input.get("section", "")))
+        else:
+            return f"Tool không xác định: {name}"
     except Exception:
         logger.exception("[QUOTE-CHAT] Lỗi khi thực thi tool %s", name)
         return "Đã xảy ra lỗi khi tra cứu dữ liệu này — trả lời dựa trên thông tin đã có, có thể nói rõ không tra cứu được nếu cần."
+
+    tool_cache[cache_key] = result
+    return result
 
 
 async def _stream_anthropic(
@@ -566,8 +620,9 @@ async def _stream_anthropic(
        câu hỏi tiếp theo trong CÙNG phiên tái dùng lại đúng prefix hội thoại đã
        cache thay vì trả tiền đầy đủ lại từ đầu mỗi lượt.
 
-    LƯU Ý: model mặc định của Quote Chat (Haiku 4.5) yêu cầu prefix tối thiểu
-    4096 token mới thực sự được cache (ngưỡng cao hơn hẳn Sonnet/Opus) — nếu
+    LƯU Ý: model mặc định của Quote Chat (Sonnet 5) yêu cầu prefix tối thiểu
+    1024 token mới thực sự được cache (thấp hơn Haiku — Haiku cần tới 4096,
+    nên nếu đổi QUOTE_CHAT_MODEL sang Haiku, kiểm tra lại ngưỡng này). Nếu
     prompt tĩnh không đủ dài, cache_control bị bỏ qua ÂM THẦM (không lỗi, chỉ
     đơn giản `cache_creation_input_tokens: 0`). Kiểm tra hiệu quả thật qua
     `response.usage.cache_read_input_tokens` trong log, không mặc định là có
@@ -595,6 +650,13 @@ async def _stream_anthropic(
         {"type": "text", "text": static_instructions, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
         {"type": "text", "text": dynamic_context},
     ]
+
+    # Cache trong PHẠM VI 1 câu hỏi (1 lần gọi hàm này) — xem docstring
+    # `_execute_client_tool`/`_get_eua_chart_data_buffered`. KHÔNG cache xuyên
+    # các câu hỏi khác nhau (mỗi câu hỏi mới = 1 lần gọi `_stream_anthropic`
+    # mới = cache rỗng lại).
+    tool_cache: Dict[tuple, str] = {}
+    chart_cache: Dict[str, List[Any]] = {}
 
     anthropic_messages = list(messages)
     if len(anthropic_messages) > 1:
@@ -652,11 +714,23 @@ async def _stream_anthropic(
         anthropic_messages.append({"role": "assistant", "content": final_message.content})
         tool_results = []
         for call in client_tool_calls:
-            result_text = await _execute_client_tool(call.name, call.input, session, report_date)
+            result_text = await _execute_client_tool(
+                call.name, call.input, session, report_date, tool_cache=tool_cache, chart_cache=chart_cache
+            )
             tool_results.append({"type": "tool_result", "tool_use_id": call.id, "content": result_text})
         anthropic_messages.append({"role": "user", "content": tool_results})
 
+    # Hết MAX_TOOL_ITERATIONS mà vẫn chưa có lượt nào kết thúc bằng câu trả lời
+    # thật (luôn `return` ngay khi stop_reason != "tool_use" ở trên) — nếu cứ
+    # để hàm kết thúc lặng lẽ, user sẽ nhận được "done" SSE với answer RỖNG,
+    # trông như hệ thống không phản hồi gì mà không rõ lý do. Trả về 1 câu xin
+    # lỗi cụ thể thay vì im lặng — router lưu câu này vào lịch sử chat như câu
+    # trả lời bình thường (không phải "error" SSE, vì đây không phải exception).
     logger.warning("[QUOTE-CHAT] Đạt giới hạn %d lượt gọi tool liên tiếp — dừng vòng lặp.", MAX_TOOL_ITERATIONS)
+    yield (
+        "Câu hỏi này cần tra cứu nhiều dữ liệu hơn mức xử lý được trong 1 lượt — "
+        "bạn có thể hỏi lại với câu hỏi cụ thể/ngắn gọn hơn giúp mình không?"
+    )
 
 
 async def astream_quote_chat(
