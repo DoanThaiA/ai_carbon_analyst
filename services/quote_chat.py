@@ -408,7 +408,7 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 4. THÀNH THẬT VỀ GIỚI HẠN: nếu câu hỏi đòi hỏi dữ liệu không có trong context —{limitation_tool_note} (a) nếu là thông tin cụ thể có thể tra cứu được (số liệu/sự kiện/tổ chức, không phải suy đoán), dùng công cụ web_search để tìm rồi trả lời dựa trên kết quả đó; (b) nếu không tra được hoặc câu hỏi mang tính suy luận/giả định, nói rõ giới hạn dữ liệu (VD "Dữ liệu hiện có chưa đề cập chi tiết X") rồi PHÂN TÍCH DỰA TRÊN NHỮNG GÌ BIẾT ĐƯỢC thay vì chỉ nói "không biết" và dừng.
 5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng thông tin từ Mục 1/2/3 của báo cáo (ngoài đoạn trích), ghi rõ mục đã dùng — vd "(Báo cáo ngày {report_date}, Mục 3)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
 6. NGẮN GỌN, TRẢ LỜI THẲNG VÀO TRỌNG TÂM (ưu tiên cao nhất, áp dụng cho MỌI loại câu hỏi kể cả mục B/C/D ở trên): TỪ ĐẦU TIÊN của câu trả lời phải là nội dung trả lời thật sự.
-   - CẤM mọi câu/cụm mở đầu kiểu dẫn nhập, rào đón, hay tự thuật lại quá trình suy nghĩ — vd "Để trả lời...", "Để trả lời chính xác, tôi cần...", "Trước khi trả lời...", "Đây là...", "Về vấn đề này...", "Câu hỏi hay...". (Việc gọi tool để lấy dữ liệu KHÔNG tính là vi phạm — chỉ cấm PHẦN TEXT dẫn nhập trước/sau khi gọi tool, không cấm bản thân hành động gọi tool.)
+   - CẤM mọi câu/cụm mở đầu kiểu dẫn nhập, rào đón, hay tự thuật lại quá trình suy nghĩ — vd "Để trả lời...", "Để trả lời chính xác, tôi cần...", "Trước khi trả lời...", "Đây là...", "Về vấn đề này...", "Câu hỏi hay...". QUY TẮC NÀY ÁP DỤNG CẢ KHI CẦN GỌI TOOL: nếu cần dữ liệu từ tool, GỌI TOOL NGAY LẬP TỨC — TUYỆT ĐỐI KHÔNG viết bất kỳ câu text nào trước/xen giữa lúc gọi tool để tường thuật ý định (CẤM tuyệt đối kiểu "Tôi cần lấy thêm dữ liệu...", "Hãy để tôi kiểm tra...", "Khối lượng này có thể phản ánh nhiều tín hiệu, để tôi xem thêm..."). Bản thân hành động gọi tool (không kèm text) KHÔNG tính là vi phạm — chỉ cấm PHẦN TEXT tường thuật, không cấm việc gọi tool. Chỉ viết text SAU KHI đã có đủ dữ liệu từ tool, và text đó PHẢI là câu trả lời thật, không phải lời dẫn.
    - CÂU HỎI MƠ HỒ NHƯNG GIẢI QUYẾT ĐƯỢC TỪ NGỮ CẢNH SẴN CÓ (đoạn trích, dữ liệu nền, lịch sử hội thoại, hoặc tra thêm được qua tool): TỰ CHỌN cách hiểu hợp lý nhất rồi trả lời thẳng luôn — KHÔNG hỏi ngược người dùng ("bạn đề cập là gì?", "ý bạn là...?"). VD "xu hướng này" mà ngữ cảnh chỉ đang nhắc tới đúng 1 xu hướng — hiểu theo đó, có thể nêu ngắn gọn cách hiểu trong câu trả lời (VD "Nếu xu hướng giảm của EUA tiếp diễn...") thay vì hỏi ngược.
    - CÂU HỎI MƠ HỒ VỀ Ý ĐỊNH/ĐỐI TƯỢNG HỎI, KHÔNG THỂ GIẢI QUYẾT TỪ NGỮ CẢNH SẴN CÓ (kể cả sau khi đã thử tra thêm qua tool nếu có) — khác với rule 4 (rule 4 là câu hỏi đã RÕ Ý nhưng THIẾU SỐ LIỆU/FACT cụ thể, vẫn phải phân tích dựa trên cái đã biết): đây là trường hợp bản thân câu hỏi có từ 2 cách hiểu hợp lý trở lên dẫn tới câu trả lời khác hẳn nhau (vd đại từ quy chiếu tới nhiều đối tượng cùng xuất hiện trong ngữ cảnh mà không rõ ý người dùng nhắm tới cái nào), hoặc nhắc tới 1 mã/sự kiện/mốc thời gian không hề xuất hiện ở bất kỳ đâu trong ngữ cảnh nên không xác định được NGƯỜI DÙNG ĐANG HỎI VỀ CÁI GÌ. Khi đó PHẢI hỏi lại NGẮN GỌN, ĐÚNG TRỌNG TÂM để làm rõ đúng điểm còn thiếu (1 câu hỏi ngắn, không rào đón dài dòng) — TUYỆT ĐỐI KHÔNG tự đoán bừa rồi trả lời như thể chắc chắn, và KHÔNG trả lời chung chung/né tránh để khỏi phải hỏi lại. Đây là NGOẠI LỆ DUY NHẤT được phép hỏi ngược trong toàn bộ hệ thống quy tắc này — chỉ áp dụng khi thực sự không thể tự chọn cách hiểu hợp lý.
    - CẤM dùng markdown mang tính bài viết/báo cáo trong câu trả lời: không tiêu đề (`#`, `##`), không đường kẻ ngang (`---`), không nhãn kiểu "**Trả lời ngắn:**"/"**Câu Trả Lời:**". Chỉ được dùng in đậm cho 1-2 từ khoá quan trọng và gạch đầu dòng khi thực sự liệt kê nhiều ý (xem giới hạn bên dưới) — không dùng cho cấu trúc tiêu đề/phần mục.
@@ -607,6 +607,14 @@ async def _stream_anthropic(
         }
 
     for _ in range(MAX_TOOL_ITERATIONS):
+        # Stream trực tiếp (yield ngay khi có delta) — ưu tiên UX real-time.
+        # ĐÁNH ĐỔI ĐÃ CHỌN: nếu model lỡ chèn text tường thuật trước/xen giữa
+        # lúc gọi tool (vi phạm rule 6, xem prompt), phần đó vẫn hiện cho user
+        # NGAY LÚC SINH RA — không có cơ chế "thu hồi" ở đây (cần FE hỗ trợ 1
+        # sự kiện SSE mới để xoá text đã hiện, chưa làm). Giảm thiểu rủi ro
+        # này bằng prompt đã siết chặt (cấm rõ ràng, kèm ví dụ cụ thể) thay vì
+        # chặn cứng ở tầng code — xem log "[QUOTE-CHAT] Model chèn text..."
+        # nếu cần theo dõi model có còn vi phạm không.
         async with client.messages.stream(
             model=model,
             max_tokens=MAX_ANSWER_TOKENS,
@@ -615,12 +623,20 @@ async def _stream_anthropic(
             temperature=0.3,
             **extra,
         ) as stream:
+            leaked_chars = 0
             async for text in stream.text_stream:
+                leaked_chars += len(text)
                 yield text
             final_message = await stream.get_final_message()
 
         if final_message.stop_reason != "tool_use":
             return
+
+        if leaked_chars:
+            logger.warning(
+                "[QUOTE-CHAT] Model chèn %d ký tự text trước/xen giữa lúc gọi tool — đã hiện cho user (chưa có cơ chế thu hồi).",
+                leaked_chars,
+            )
 
         client_tool_calls = [b for b in final_message.content if b.type == "tool_use"]
         if not client_tool_calls:
