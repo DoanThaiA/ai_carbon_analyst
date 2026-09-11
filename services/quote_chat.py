@@ -1051,6 +1051,25 @@ async def _stream_anthropic(
                 yield text
             final_message = await stream.get_final_message()
 
+        # `stop_reason == "refusal"` (HTTP 200, KHÔNG phải exception — bộ lọc an toàn của model từ
+        # chối trả lời, vd nội dung nhắc xung đột địa chính trị dù trong ngữ cảnh phân tích thị
+        # trường thuần tuý) trước đây bị coi như "end_turn" bình thường ở nhánh `return` ngay dưới —
+        # `stream.text_stream` hầu như không phát ký tự nào khi bị từ chối, nên hàm return LẶNG LẼ
+        # không yield gì cả: không exception (log sạch), HTTP vẫn 200, nhưng user nhận được câu trả
+        # lời RỖNG — đúng triệu chứng "quote chat không trả lời gì" dù log server không có lỗi.
+        if final_message.stop_reason == "refusal":
+            stop_details = getattr(final_message, "stop_details", None)
+            logger.warning(
+                "[QUOTE-CHAT] Model từ chối trả lời (refusal, category=%s) — không trả về nội dung nào cho user.",
+                getattr(stop_details, "category", None),
+            )
+            yield (
+                "Hệ thống không thể trả lời trực tiếp câu hỏi này (bộ lọc an toàn của model đánh giá nội dung "
+                "nhạy cảm, dù đây chỉ là phân tích thị trường) — bạn thử diễn đạt lại câu hỏi tập trung vào số "
+                "liệu/tác động giá thay vì mô tả sự kiện, hoặc hỏi lại theo cách khác giúp mình nhé."
+            )
+            return
+
         if final_message.stop_reason != "tool_use":
             return
 
