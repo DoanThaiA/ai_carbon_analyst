@@ -3,11 +3,11 @@ import logging
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
-from db.models import Report
+from db.models import Report, Instrument
 from schemas.chat_models import ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services.retrieval import RetrievalService
@@ -246,6 +246,81 @@ async def _tool_eua_volume_history_text(
     )
 
 
+PRICE_HISTORY_DEFAULT_SESSIONS = 10
+PRICE_HISTORY_MAX_SESSIONS = 60
+
+
+async def _resolve_instrument(session: AsyncSession, instrument_input: str) -> Optional[Instrument]:
+    """Map chuỗi model truyền (mã hoặc tên gần đúng) sang đúng 1 `Instrument` —
+    KHÔNG hardcode enum mã cố định trong tool schema vì `price_crawl_sources`/
+    `instruments` được admin CRUD qua /api/admin/price-sources (xem
+    db/models.py::PriceCrawlSource), danh sách mã có thể đổi mà không cần sửa
+    code. Thử khớp CHÍNH XÁC theo `code` (case-insensitive) trước, sau đó mới
+    thử khớp gần đúng theo `name` (ILIKE) — chỉ nhận nếu khớp đúng DUY NHẤT 1
+    instrument, tránh đoán nhầm khi chuỗi mơ hồ khớp nhiều mã."""
+    exact = (
+        await session.execute(select(Instrument).where(func.lower(Instrument.code) == instrument_input.strip().lower()))
+    ).scalar_one_or_none()
+    if exact:
+        return exact
+    candidates = (
+        await session.execute(select(Instrument).where(Instrument.name.ilike(f"%{instrument_input.strip()}%")))
+    ).scalars().all()
+    return candidates[0] if len(candidates) == 1 else None
+
+
+async def _tool_price_history_text(
+    session: AsyncSession, instrument_input: str, target_date: str, sessions: int, requested_date: Optional[str] = None
+) -> str:
+    """Lịch sử OHLC (+khối lượng nếu có) của 1 instrument BẤT KỲ hệ thống đang
+    theo dõi qua NHIỀU phiên — tổng quát hoá `get_historical_ohlc_for_report()`
+    (report_generator.py, vốn chỉ được `_tool_eua_details_text`/
+    `_tool_eua_volume_history_text` gọi cứng cho "EUA") cho cả 5 instrument
+    còn lại (TTF, than, dầu, điện Đức...), vì trước đây get_market_prices chỉ
+    cho xem giá CỦA 1 NGÀY, không có tool nào cho xem XU HƯỚNG/lịch sử nhiều
+    phiên của các mã ngoài EUA."""
+    inst = await _resolve_instrument(session, instrument_input)
+    if not inst:
+        all_instruments = (await session.execute(select(Instrument.code, Instrument.name))).all()
+        listing = ", ".join(f"{code} ({name})" for code, name in all_instruments) or "(không có instrument nào)"
+        return (
+            f"Không tìm thấy instrument \"{instrument_input}\" — hệ thống đang theo dõi các mã: {listing}. "
+            "Gọi lại tool với đúng 1 mã trong danh sách này."
+        )
+
+    chart_data = await get_historical_ohlc_for_report(session, inst.code, target_date, limit=sessions)
+    if not chart_data:
+        return f"Không có dữ liệu lịch sử giá cho {inst.name} ({inst.code}) tính đến ngày {target_date}."
+
+    last_date_str = str(chart_data[-1]["date"])
+    date_note = ""
+    if requested_date and last_date_str != requested_date:
+        date_note = (
+            f"LƯU Ý QUAN TRỌNG: hệ thống KHÔNG có dữ liệu đúng ngày {requested_date} bạn yêu cầu (cuối "
+            f"tuần/nghỉ lễ/chưa crawl) — dữ liệu dưới đây tính đến phiên gần nhất TRƯỚC đó, ngày "
+            f"{last_date_str}. PHẢI nói rõ ngày thực tế này trong câu trả lời.\n"
+        )
+
+    lines = [
+        f"- {c['date']}: mở {c['open']:.2f}, cao {c['high']:.2f}, thấp {c['low']:.2f}, đóng {c['close']:.2f}"
+        + (f", KL {c['volume']:,.0f}" if c.get("volume") is not None else "")
+        for c in chart_data
+    ]
+    first_close, last_close = chart_data[0]["close"], chart_data[-1]["close"]
+    change_pct = ((last_close - first_close) / first_close * 100) if first_close else 0
+    high = max(c["high"] for c in chart_data)
+    low = min(c["low"] for c in chart_data)
+
+    return (
+        f"{date_note}Lịch sử giá {inst.name} ({inst.code}, đơn vị {inst.unit or '?'}) — {len(chart_data)} phiên gần nhất "
+        f"tính đến {last_date_str}:\n" + "\n".join(lines) + "\n"
+        f"Tổng hợp: mở {first_close:.2f} → đóng gần nhất {last_close:.2f} ({change_pct:+.1f}%); "
+        f"cao nhất {high:.2f}, thấp nhất {low:.2f} trong giai đoạn này.\n"
+        "LƯU Ý: dùng ĐÚNG số liệu này, TUYỆT ĐỐI KHÔNG tự bịa số khác hay suy diễn thêm mốc kỹ thuật "
+        f"(mốc hỗ trợ/kháng cự tính sẵn CHỈ có cho EUA, qua tool get_eua_details) cho {inst.code}."
+    )
+
+
 def _format_section1(sec: dict) -> str:
     return f"{sec.get('title', 'Tóm tắt điều hành')}\n{_format_bullets(sec.get('bullets'))}"
 
@@ -273,16 +348,93 @@ def _format_section3(sec: dict) -> str:
     return f"{sec.get('title', 'Phân tích chuyên sâu')}\n{blocks}\n\nKịch bản giao dịch:\n{scenarios or '(không có)'}"
 
 
-_REPORT_SECTION_FORMATTERS = {"1": _format_section1, "2": _format_section2, "3": _format_section3}
+def _format_section4(sec: dict) -> str:
+    return f"{sec.get('title', 'Cập nhật tín chỉ carbon & CBAM')}\n{_format_bullets(sec.get('bullets'))}"
+
+
+def _format_section5(sec: dict) -> str:
+    # "bullets" ở Mục 5 là mảng string thuần (không phải object {text,
+    # source_index} như Mục 1/4) — `_format_bullets` xử lý được cả 2 dạng.
+    return f"{sec.get('title', 'Tín hiệu liên thị trường')}\n{_format_bullets(sec.get('bullets'))}"
+
+
+def _format_section6(sec: dict) -> str:
+    def _list(articles: Optional[List[dict]]) -> str:
+        lines = [
+            f"- [{a.get('source', '?')}] {a.get('title', '')}: {a.get('summary', '')}"
+            for a in articles or []
+        ]
+        return "\n".join(lines) if lines else "(không có)"
+
+    return (
+        f"{sec.get('title', 'Chi tiết các tin tức chính')}\n"
+        f"Tin quốc tế:\n{_list(sec.get('international'))}\n\n"
+        f"Tin Việt Nam:\n{_list(sec.get('vietnam'))}"
+    )
+
+
+def _format_section7(sec: dict) -> str:
+    if not sec.get("has_content") or not sec.get("points"):
+        return f"{sec.get('title', 'Quan điểm trái chiều đáng chú ý')}\n{sec.get('text', 'Không có quan điểm trái chiều có cơ sở trong kỳ này.')}"
+    lines = []
+    for p in sec["points"]:
+        source_name = p.get("source_name")
+        lines.append(f"- {p.get('viewpoint', '')}" + (f" (Nguồn: {source_name})" if source_name else ""))
+    return f"{sec.get('title', 'Quan điểm trái chiều đáng chú ý')}\n" + "\n".join(lines)
+
+
+def _format_section8(sec: dict) -> str:
+    lines = []
+    for ev in sec.get("events") or []:
+        outcome = ev.get("outcome")
+        lines.append(
+            f"- {ev.get('datetime_vn', ev.get('date', '?'))}: {ev.get('event', '')} "
+            f"(mức độ tác động: {ev.get('impact', '?')})" + (f" — Kết quả: {outcome}" if outcome else "")
+        )
+    return f"{sec.get('title', 'Lịch sự kiện 7 ngày tới')}\n" + ("\n".join(lines) if lines else "(không có sự kiện)")
+
+
+def _format_section9(sec: dict) -> str:
+    lines = [f"- [{it.get('source', '?')}] {it.get('title', '')} ({it.get('url', '')})" for it in sec.get("items") or []]
+    return f"{sec.get('title', 'Nguồn tham khảo')}\n" + ("\n".join(lines) if lines else "(không có nguồn)")
+
+
+def _format_section_biz(sec: dict) -> str:
+    short_term = "\n".join(
+        f"- Kích hoạt: {it.get('trigger', '')} | Hành động: {it.get('action', '')} | Lý do: {it.get('reason', '')}"
+        for it in sec.get("short_term") or []
+    ) or "(không có gợi ý ngắn hạn)"
+    long_term = "\n".join(
+        f"- Cơ hội: {it.get('opportunity', '')} | Giải pháp: {it.get('solution', '')} | Kỳ vọng: {it.get('expectation', '')}"
+        for it in sec.get("long_term") or []
+    ) or "(không có gợi ý dài hạn)"
+    return (
+        f"{sec.get('title', 'Gợi ý kinh doanh & giải pháp cho SIM')}\n"
+        f"Ngắn hạn:\n{short_term}\n\nDài hạn:\n{long_term}"
+    )
+
+
+_REPORT_SECTION_FORMATTERS = {
+    "1": _format_section1,
+    "2": _format_section2,
+    "3": _format_section3,
+    "4": _format_section4,
+    "5": _format_section5,
+    "6": _format_section6,
+    "7": _format_section7,
+    "8": _format_section8,
+    "9": _format_section9,
+    "biz": _format_section_biz,
+}
 
 
 async def _tool_report_section_text(session: AsyncSession, report_date: str, section: str) -> str:
-    """Lấy + format 1 mục (Mục 1/2/3) của báo cáo `report_date` (đã published)
-    — CHỈ mục được yêu cầu, không cả 3 mục cùng lúc (khác bản trước khi có tool
-    calling, luôn tiêm cả 3 mục dù chỉ cần 1)."""
+    """Lấy + format 1 mục (Mục 1-9 hoặc "biz") của báo cáo `report_date` (đã
+    published) — CHỈ mục được yêu cầu, không cả báo cáo cùng lúc (khác bản
+    trước khi có tool calling, luôn tiêm cả 3 mục dù chỉ cần 1)."""
     formatter = _REPORT_SECTION_FORMATTERS.get(section)
     if not formatter:
-        return "Mục không hợp lệ — chỉ hỗ trợ '1', '2' hoặc '3'."
+        return "Mục không hợp lệ — chỉ hỗ trợ '1' đến '9' hoặc 'biz'."
     stmt = select(Report.content).where(Report.report_date == report_date, Report.status == "published")
     result = await session.execute(stmt)
     content = result.scalar_one_or_none()
@@ -355,15 +507,19 @@ G. TÀI CHÍNH & MACRO:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Format Mục 1-3 của báo cáo (Tóm tắt điều hành, Bảng giá nhanh, Phân tích
-# chuyên sâu) — dict content (db/models.py::Report.content, JSONB 9 mục, xem
+# Format TOÀN BỘ mục của báo cáo (Mục 1-9 + "biz") — dict content
+# (db/models.py::Report.content, JSONB, xem
 # services/report_generator.py::generate_report_content) thành text phẳng cho
 # LLM. Trước đây quote_chat CHỈ có đoạn quote + RAG trên tin tức, không có
 # quyền truy cập các mục KHÁC của báo cáo, nên quote 1 gạch đầu dòng nhỏ ở Mục
-# 1 rồi hỏi về nội dung Mục 2/3 không trả lời được. CHỈ 3 mục này theo yêu cầu
-# — các mục 4/5/6/7/8/biz không hỗ trợ. Lấy TỪNG mục riêng lẻ qua
+# 1 rồi hỏi về nội dung Mục 2/3 không trả lời được — rồi CHỈ mở thêm 1/2/3 (vẫn
+# thiếu 4/5/6/7/8/9/biz). Giờ hỗ trợ ĐỦ mọi mục báo cáo thực sự có (khớp đúng
+# schema từng mục trong `generate_report_content` — xem formatter tương ứng
+# bên dưới), để bất kỳ câu hỏi nào về nội dung báo cáo (lịch sự kiện, gợi ý
+# kinh doanh, quan điểm trái chiều, cập nhật CBAM, nguồn tham khảo...) đều trả
+# lời được, không chỉ riêng đoạn người dùng bôi đen. Lấy TỪNG mục riêng lẻ qua
 # `_tool_report_section_text` (gọi qua tool get_report_section — xem bên dưới),
-# KHÔNG tiêm sẵn cả 3 mục vào mọi request như bản trước.
+# KHÔNG tiêm sẵn toàn bộ report vào mọi request.
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -415,14 +571,16 @@ Bạn CÓ CÁC TOOL sau — gọi khi câu hỏi THỰC SỰ cần, KHÔNG gọi
 - get_market_prices(date tuỳ chọn): giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức).
 - get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
-- get_report_section(section="1"|"2"|"3"): toàn văn Mục 1 (Tóm tắt điều hành) / Mục 2 (Bảng giá nhanh) / Mục 3 (Phân tích chuyên sâu) của báo cáo ngày {report_date}, NGOÀI đoạn trích người dùng đang bôi đen.
-QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history): mặc định (không truyền `date`) 3 tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về giá/khối lượng của 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "hôm qua", "tuần trước"), PHẢI tự quy đổi ra định dạng YYYY-MM-DD và truyền qua tham số `date` — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Nếu ngày yêu cầu không có dữ liệu, tool sẽ trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo rõ ràng — PHẢI đọc và nêu đúng ngày thực tế đó trong câu trả lời, không im lặng coi như đúng ngày đã hỏi.
-Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng CÙNG `date` trong CÙNG hội thoại (dữ liệu 1 ngày là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ; gọi lại NẾU đổi sang ngày khác). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
-LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen được cắt ra từ Mục 1, 2 hoặc 3 của báo cáo — có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Gặp trường hợp này: GỌI get_report_section (thử mục có khả năng chứa đoạn trích nhất trước, dựa vào văn phong — Mục 1 là các gạch đầu dòng tóm tắt, Mục 2 có "yếu tố hỗ trợ tăng/giảm giá", Mục 3 là phân tích chuyên sâu có tiêu đề từng khối; thử mục khác nếu không thấy) để tìm đúng vị trí đoạn trích, đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong kết quả trả về để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì, rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi có thể tự tra ra bằng tool."""
+- get_report_section(section="1".."9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 5 (Tín hiệu liên thị trường), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 7 (Quan điểm trái chiều đáng chú ý), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
+- get_price_history(instrument, sessions tuỳ chọn, date tuỳ chọn): lịch sử OHLC nhiều phiên của 1 instrument BẤT KỲ hệ thống theo dõi (không chỉ EUA) — dùng khi hỏi XU HƯỚNG/lịch sử giá qua thời gian của TTF/than/dầu/điện Đức..., khác get_market_prices (chỉ 1 ngày). EUA thì ưu tiên get_eua_details/get_eua_volume_history trước.
+- search_news(query, date tuỳ chọn): tìm CHỦ ĐỘNG trong TOÀN BỘ kho tin đã crawl (không giới hạn ngày báo cáo đang xem như DỮ LIỆU NỀN tự động bên dưới) — dùng khi câu hỏi lệch chủ đề khỏi DỮ LIỆU NỀN ban đầu hoặc cần tin của NGÀY KHÁC.
+QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section/get_price_history): mặc định (không truyền `date`) các tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "báo cáo hôm qua", "tuần trước"), PHẢI tự quy đổi ra định dạng YYYY-MM-DD và truyền qua tham số `date` — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Với get_market_prices/get_eua_details/get_eua_volume_history/get_price_history, nếu ngày yêu cầu không có dữ liệu, tool trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo — PHẢI đọc và nêu đúng ngày thực tế trong câu trả lời. Với get_report_section, nếu báo cáo ngày yêu cầu chưa published, tool báo rõ không có — KHÔNG tự suy diễn nội dung ngày đó. RIÊNG search_news: không truyền `date` = tìm KHÔNG giới hạn ngày (khác các tool trên, nơi không truyền `date` nghĩa là dùng {report_date}) — chỉ truyền `date` khi cần giới hạn đúng 1 ngày tin tức cụ thể.
+Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng CÙNG tham số (date/section/instrument/query...) trong CÙNG hội thoại (dữ liệu là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ; gọi lại NẾU đổi tham số). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
+LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen có thể được cắt ra từ BẤT KỲ mục nào của báo cáo (không chỉ Mục 1/2/3) — có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Gặp trường hợp này: GỌI get_report_section (ưu tiên thử mục có khả năng chứa đoạn trích nhất trước, dựa vào văn phong/nội dung — Mục 1 là các gạch đầu dòng tóm tắt, Mục 2 có "yếu tố hỗ trợ tăng/giảm giá", Mục 3 là phân tích chuyên sâu có tiêu đề từng khối, Mục 4 nhắc CBAM/VCM/thép xanh, Mục 5 là các tín hiệu dạng "X → EUA", Mục 7 là quan điểm trái chiều, Mục 8 là sự kiện có ngày giờ, "biz" là gợi ý dạng bảng kích hoạt/hành động/lý do; thử mục khác nếu không thấy, nhưng ưu tiên các mục có văn phong khớp nhất trước để không tốn lượt gọi tool vô ích) để tìm đúng vị trí đoạn trích, đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong kết quả trả về để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì, rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi có thể tự tra ra bằng tool."""
     price_ref = "gọi tool get_eua_details (hoặc get_market_prices/get_eua_volume_history tuỳ loại dữ liệu) rồi dùng"
     report_ref = "PHẢI gọi tool get_report_section lấy đúng mục cần rồi dùng nội dung trả về"
     web_search_order_note = " (ưu tiên các tool dữ liệu ở trên trước — dữ liệu hệ thống luôn chính xác hơn tìm trên web cho các mã/mục đang theo dõi)"
-    limitation_tool_note = " Trước khi kết luận 'không có dữ liệu', thử gọi tool liên quan (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section) nếu có khả năng tool đó chứa thông tin cần thiết."
+    limitation_tool_note = " Trước khi kết luận 'không có dữ liệu', thử gọi tool liên quan (get_market_prices/get_eua_details/get_eua_volume_history/get_price_history/get_report_section/search_news) nếu có khả năng tool đó chứa thông tin cần thiết."
 
     return f"""Bạn là chuyên gia phân tích cao cấp của bàn giao dịch năng lượng & carbon (Daily Carbon Intelligence), có kiến thức sâu rộng về EU ETS, thị trường carbon, năng lượng, chính sách khí hậu, và các mối liên hệ liên thị trường. Nhiệm vụ của bạn là giúp người đọc hiểu sâu hơn một đoạn trích cụ thể mà họ vừa bôi đen trong báo cáo ngày {report_date}, thông qua hội thoại hỏi-đáp.
 
@@ -445,11 +603,11 @@ F. PHÂN TÍCH KỸ THUẬT EUA (mốc chốt lời/bắt đáy): khi người d
    - Chỉ áp dụng cho EUA — nếu được hỏi mốc kỹ thuật của 5 instrument còn lại, nói rõ hệ thống chưa hỗ trợ mốc kỹ thuật cho mã đó.
 
 QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
-1. NEO VÀO ĐOẠN TRÍCH: đoạn trích là bối cảnh khởi đầu của cả cuộc hội thoại, câu trả lời phải nhất quán với nó. Nhưng khi câu hỏi vượt ra ngoài chính đoạn trích và nội dung liên quan nằm trong Mục 1/2/3 (hỏi so sánh/liên hệ giữa đoạn trích với phần khác của 3 mục này...), {report_ref} để trả lời thay vì từ chối vì "ngoài phạm vi đoạn trích". Nếu câu hỏi liên quan tới mục KHÁC (4/5/6/7/8/biz) mà hệ thống không có nội dung, áp dụng rule 4.
-2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) DỮ LIỆU GIÁ thật (Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi, kèm volume/mốc kỹ thuật riêng cho EUA), (b) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / MỤC 1-3 CỦA BÁO CÁO / dữ liệu nền tin tức, (c) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (d) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (e) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Thể hiện sự phân biệt này bằng NGÔN NGỮ TỰ NHIÊN, không cần rập khuôn 1 cụm từ cố định cho mỗi loại — ví dụ "theo dữ liệu giá", "theo tin tức", "về cơ chế", "trong kịch bản giả định" chỉ là gợi ý cách diễn đạt, không phải khuôn mẫu bắt buộc lặp lại y nguyên; miễn người đọc phân biệt được đâu là số liệu thật, đâu là suy luận.
+1. NEO VÀO ĐOẠN TRÍCH: đoạn trích là bối cảnh khởi đầu của cả cuộc hội thoại, câu trả lời phải nhất quán với nó. Nhưng khi câu hỏi vượt ra ngoài chính đoạn trích và nội dung liên quan nằm ở BẤT KỲ mục nào khác của báo cáo (Mục 1 đến 9, hoặc "biz" — hỏi so sánh/liên hệ giữa đoạn trích với phần khác của báo cáo, hoặc hỏi thẳng về nội dung 1 mục khác như lịch sự kiện/gợi ý kinh doanh/quan điểm trái chiều/nguồn tham khảo...), {report_ref} để trả lời thay vì từ chối vì "ngoài phạm vi đoạn trích" hay "hệ thống không hỗ trợ mục này" — get_report_section hỗ trợ ĐỦ mọi mục, không chỉ 1/2/3.
+2. PHÂN BIỆT RÕ RÀNG: luôn phân biệt giữa (a) DỮ LIỆU GIÁ thật (Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi, kèm volume/mốc kỹ thuật riêng cho EUA), (b) SỰ KIỆN/SỐ LIỆU thật từ đoạn trích / CÁC MỤC KHÁC CỦA BÁO CÁO (lấy qua get_report_section) / dữ liệu nền tin tức, (c) KIẾN THỨC NỀN TẢNG về cơ chế thị trường, (d) SUY LUẬN / PHÂN TÍCH GIẢ ĐỊNH của bạn, và (e) KẾT QUẢ TRA CỨU WEB (nếu có dùng công cụ web_search). Thể hiện sự phân biệt này bằng NGÔN NGỮ TỰ NHIÊN, không cần rập khuôn 1 cụm từ cố định cho mỗi loại — ví dụ "theo dữ liệu giá", "theo tin tức", "về cơ chế", "trong kịch bản giả định" chỉ là gợi ý cách diễn đạt, không phải khuôn mẫu bắt buộc lặp lại y nguyên; miễn người đọc phân biệt được đâu là số liệu thật, đâu là suy luận.
 3. KHÔNG BỊA SỐ LIỆU CỤ THỂ: tuyệt đối không bịa ngày tháng, tên tổ chức, mức giá, hay sự kiện cụ thể không xuất hiện trong đoạn trích/dữ liệu nền/kết quả web_search. Nhưng BẠN ĐƯỢC PHÉP suy luận logic dựa trên kiến thức chuyên môn — "Nếu TTF tăng mạnh, theo cơ chế fuel switching thì..." KHÔNG phải bịa đặt mà là phân tích.
 4. THÀNH THẬT VỀ GIỚI HẠN: nếu câu hỏi đòi hỏi dữ liệu không có trong context —{limitation_tool_note} (a) nếu là thông tin cụ thể có thể tra cứu được (số liệu/sự kiện/tổ chức, không phải suy đoán), dùng công cụ web_search để tìm rồi trả lời dựa trên kết quả đó; (b) nếu không tra được hoặc câu hỏi mang tính suy luận/giả định, nói rõ giới hạn dữ liệu (VD "Dữ liệu hiện có chưa đề cập chi tiết X") rồi PHÂN TÍCH DỰA TRÊN NHỮNG GÌ BIẾT ĐƯỢC thay vì chỉ nói "không biết" và dừng.
-5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng thông tin từ Mục 1/2/3 của báo cáo (ngoài đoạn trích), ghi rõ mục đã dùng — vd "(Báo cáo ngày {report_date}, Mục 3)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
+5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng thông tin từ 1 mục của báo cáo (ngoài đoạn trích, lấy qua get_report_section), ghi rõ mục đã dùng — vd "(Báo cáo ngày {report_date}, Mục 3)" hoặc "(Báo cáo ngày {report_date}, Mục Gợi ý kinh doanh)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
 6. NGẮN GỌN, TRẢ LỜI THẲNG VÀO TRỌNG TÂM (ưu tiên cao nhất, áp dụng cho MỌI loại câu hỏi kể cả mục B/C/D ở trên): TỪ ĐẦU TIÊN của câu trả lời phải là nội dung trả lời thật sự.
    - CẤM mọi câu/cụm mở đầu kiểu dẫn nhập, rào đón, hay tự thuật lại quá trình suy nghĩ — vd "Để trả lời...", "Để trả lời chính xác, tôi cần...", "Trước khi trả lời...", "Đây là...", "Về vấn đề này...", "Câu hỏi hay...". QUY TẮC NÀY ÁP DỤNG CẢ KHI CẦN GỌI TOOL: nếu cần dữ liệu từ tool, GỌI TOOL NGAY LẬP TỨC — TUYỆT ĐỐI KHÔNG viết bất kỳ câu text nào trước/xen giữa lúc gọi tool để tường thuật ý định (CẤM tuyệt đối kiểu "Tôi cần lấy thêm dữ liệu...", "Hãy để tôi kiểm tra...", "Khối lượng này có thể phản ánh nhiều tín hiệu, để tôi xem thêm..."). Bản thân hành động gọi tool (không kèm text) KHÔNG tính là vi phạm — chỉ cấm PHẦN TEXT tường thuật, không cấm việc gọi tool. Chỉ viết text SAU KHI đã có đủ dữ liệu từ tool, và text đó PHẢI là câu trả lời thật, không phải lời dẫn.
    - CÂU HỎI MƠ HỒ NHƯNG GIẢI QUYẾT ĐƯỢC TỪ NGỮ CẢNH SẴN CÓ (đoạn trích, dữ liệu nền, lịch sử hội thoại, hoặc tra thêm được qua tool): TỰ CHỌN cách hiểu hợp lý nhất rồi trả lời thẳng luôn — KHÔNG hỏi ngược người dùng ("bạn đề cập là gì?", "ý bạn là...?"). VD "xu hướng này" mà ngữ cảnh chỉ đang nhắc tới đúng 1 xu hướng — hiểu theo đó, có thể nêu ngắn gọn cách hiểu trong câu trả lời (VD "Nếu xu hướng giảm của EUA tiếp diễn...") thay vì hỏi ngược.
@@ -504,6 +662,44 @@ async def retrieve_context_for_quote(
         report_date=report_date,
         only_source_type="article",
         min_relevance_score=MIN_RERANK_SCORE,
+    )
+
+
+async def _tool_search_news_text(
+    retrieval_service: RetrievalService, query: str, date: Optional[str] = None
+) -> str:
+    """Tìm kiếm CHỦ ĐỘNG (hybrid search + rerank, giống `retrieve_context_for_quote`
+    ở trên) trong kho tin tức đã crawl — khác với DỮ LIỆU NỀN tự động (chỉ embed
+    ĐÚNG 1 LẦN theo quote+câu hỏi ĐẦU TIÊN của lượt hỏi này, và luôn giới hạn
+    đúng ngày `report_date` đang xem), tool này cho model CHỦ ĐỘNG tra lại với
+    query khác/ngày khác giữa vòng lặp hội thoại — vd câu hỏi thứ 2 trong cùng
+    phiên lệch chủ đề khỏi DỮ LIỆU NỀN ban đầu, hoặc cần tin của 1 NGÀY KHÁC
+    report_date.
+
+    `date=None`: tìm KHÔNG giới hạn ngày, trên toàn bộ kho tin đã crawl (mọi
+    report_date) — không hỗ trợ khoảng ngày (from/to), chỉ 1 ngày cụ thể hoặc
+    không giới hạn."""
+    results = await retrieval_service.retrieve(
+        query=query,
+        top_k=MAX_CONTEXT_CHUNKS,
+        hybrid_limit=HYBRID_SEARCH_LIMIT,
+        report_date=date,
+        only_source_type="article",
+        min_relevance_score=MIN_RERANK_SCORE,
+    )
+    if not results:
+        scope = f"trong ngày {date}" if date else "trên toàn bộ kho tin đã crawl"
+        return f"Không tìm thấy bài báo nào khớp với \"{query}\" {scope}. Có thể thử từ khoá khác hoặc không giới hạn ngày."
+
+    lines = []
+    for i, r in enumerate(results, start=1):
+        label = _format_source_label(r, date or "")
+        url_part = f" — {r.url}" if r.url else ""
+        lines.append(f"[{i}] ({label}){url_part}\n{r.content.strip()}")
+    return (
+        "\n\n".join(lines)
+        + "\n\nLƯU Ý: khi dùng thông tin ở trên, trích dẫn ĐÚNG nhãn nguồn kèm theo (tên nguồn, thời "
+        "gian) — TUYỆT ĐỐI KHÔNG bịa thêm bài báo/nguồn không có trong danh sách này."
     )
 
 
@@ -567,33 +763,107 @@ CLIENT_TOOLS = [
     {
         "name": "get_report_section",
         "description": (
-            "Lấy toàn văn 1 mục của báo cáo ngày đang xem: '1' = Tóm tắt điều hành, '2' = Bảng giá "
-            "nhanh (yếu tố hỗ trợ tăng/giảm giá), '3' = Phân tích chuyên sâu + kịch bản giao dịch. Gọi "
-            "khi câu hỏi nhắc tới nội dung 1 mục KHÁC ngoài đoạn trích người dùng đang bôi đen (vd 'Mục "
-            "3 nói gì về...'), hoặc khi cần ngữ cảnh xung quanh đoạn trích để hiểu đại từ quy chiếu "
-            "('nhóm này'/'xu hướng này'...)."
+            "Lấy toàn văn 1 mục BẤT KỲ của báo cáo ngày đang xem (hoặc ngày cụ thể truyền qua "
+            "`date`, nếu báo cáo ngày đó đã published): '1' = Tóm tắt điều hành, "
+            "'2' = Bảng giá nhanh (yếu tố hỗ trợ tăng/giảm giá), '3' = Phân tích chuyên sâu + kịch bản "
+            "giao dịch, '4' = Cập nhật tín chỉ carbon & CBAM (VCM/thép xanh/CBAM), "
+            "'5' = Tín hiệu liên thị trường, '6' = Chi tiết toàn bộ tin tức trong ngày (quốc tế + Việt "
+            "Nam, kèm tóm tắt từng bài), '7' = Quan điểm trái chiều đáng chú ý, "
+            "'8' = Lịch sự kiện 7 ngày tới (EIA/Baker Hughes/họp chính sách), '9' = Danh sách nguồn "
+            "tham khảo (tên nguồn + URL), 'biz' = Gợi ý kinh doanh & giải pháp cho SIM (ngắn hạn/dài "
+            "hạn). Gọi khi câu hỏi nhắc tới nội dung 1 mục KHÁC ngoài đoạn trích người dùng đang bôi "
+            "đen (vd 'Mục 3 nói gì về...', 'sắp tới có sự kiện gì', 'gợi ý kinh doanh là gì', 'nguồn "
+            "tin lấy từ đâu', 'so với báo cáo hôm qua thì...'), hoặc khi cần ngữ cảnh xung quanh đoạn "
+            "trích để hiểu đại từ quy chiếu ('nhóm này'/'xu hướng này'...)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "section": {
                     "type": "string",
-                    "enum": ["1", "2", "3"],
-                    "description": "Số mục cần lấy: '1', '2' hoặc '3'.",
-                }
+                    "enum": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "biz"],
+                    "description": "Số mục cần lấy: '1' đến '9', hoặc 'biz'.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": (
+                        "TUỲ CHỌN — định dạng YYYY-MM-DD. CHỈ truyền khi người dùng hỏi về báo cáo của "
+                        "1 NGÀY KHÁC ngày đang xem (vd 'so với báo cáo hôm qua'). Không truyền = mặc "
+                        "định lấy báo cáo ngày đang xem. Nếu ngày đó chưa có báo cáo đã published, tool "
+                        "sẽ báo rõ không có dữ liệu thay vì trả nhầm ngày khác."
+                    ),
+                },
             },
             "required": ["section"],
         },
     },
+    {
+        "name": "get_price_history",
+        "description": (
+            "Lấy lịch sử OHLC (mở/cao/thấp/đóng, kèm khối lượng nếu có) của 1 instrument BẤT KỲ hệ "
+            "thống đang theo dõi (EUA, TTF, Brent, WTI, than API2/API4, điện Đức DEBY1, Gasoil...) qua "
+            "NHIỀU phiên gần nhất — dùng khi cần XU HƯỚNG/lịch sử giá theo thời gian của 1 mã, khác "
+            "get_market_prices (chỉ trả giá CỦA 1 NGÀY). Với EUA, ưu tiên get_eua_details/"
+            "get_eua_volume_history trước (có thêm mốc kỹ thuật/khối lượng chi tiết); dùng tool này "
+            "cho EUA chỉ khi cần đơn thuần dãy OHLC nhiều phiên. Nếu không chắc đúng mã hệ thống đang "
+            "dùng, cứ thử tên gần đúng (vd \"than\", \"dầu Brent\") — tool sẽ trả về danh sách mã đúng "
+            "nếu không khớp được."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instrument": {
+                    "type": "string",
+                    "description": "Mã hoặc tên instrument cần xem lịch sử giá, vd \"TTF\", \"WTI\", \"than\", \"điện Đức\".",
+                },
+                "sessions": {
+                    "type": "integer",
+                    "description": f"Số phiên gần nhất cần lấy (mặc định {PRICE_HISTORY_DEFAULT_SESSIONS}, tối đa {PRICE_HISTORY_MAX_SESSIONS}).",
+                },
+                "date": _DATE_PARAM_SCHEMA,
+            },
+            "required": ["instrument"],
+        },
+    },
+    {
+        "name": "search_news",
+        "description": (
+            "Tìm kiếm CHỦ ĐỘNG (semantic + full-text) trong TOÀN BỘ kho tin tức đã crawl — KHÁC với "
+            "DỮ LIỆU NỀN đã có sẵn ở trên (DỮ LIỆU NỀN chỉ tìm ĐÚNG 1 LẦN theo quote+câu hỏi ĐẦU TIÊN "
+            "của lượt hỏi này, luôn giới hạn đúng ngày báo cáo đang xem, KHÔNG tự cập nhật theo các "
+            "câu hỏi tiếp theo trong cùng hội thoại). CHỈ gọi khi DỮ LIỆU NỀN không đủ — vd câu hỏi "
+            "lệch chủ đề khỏi quote ban đầu, hoặc cần tin của 1 NGÀY KHÁC report_date đang xem ('tin "
+            "tuần trước về CBAM', 'hôm qua có tin gì về OPEC'). KHÔNG gọi nếu thông tin cần đã có "
+            "trong DỮ LIỆU NỀN hoặc lịch sử hội thoại."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Từ khoá/câu hỏi tìm kiếm, càng cụ thể càng tốt."},
+                "date": {
+                    "type": "string",
+                    "description": (
+                        "TUỲ CHỌN — định dạng YYYY-MM-DD, giới hạn tìm đúng 1 NGÀY tin tức cụ thể "
+                        "(khung 07:00 giờ VN ngày đó đến 07:00 ngày hôm sau). Không truyền = tìm trên "
+                        "TOÀN BỘ kho tin đã crawl, không giới hạn ngày — KHÔNG hỗ trợ khoảng ngày."
+                    ),
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
-# Chặn lặp vô hạn nếu model cứ liên tục gọi tool. 6 (không phải 4) vì prompt
-# hướng dẫn model "thử mục có khả năng chứa đoạn trích nhất trước, thử mục
-# khác nếu không thấy" (xem data_block trong _build_static_instructions) — nếu
-# model dò tuần tự cả 3 mục get_report_section ("1","2","3") ở 3 lượt riêng
-# rồi còn cần gọi thêm 1 tool giá, MAX_TOOL_ITERATIONS=4 sẽ hết trước khi kịp
-# sinh câu trả lời cuối — 6 chừa dư ít nhất 2 lượt cho tình huống đó.
-MAX_TOOL_ITERATIONS = 6
+# Chặn lặp vô hạn nếu model cứ liên tục gọi tool. Báo cáo có tới 10 mục
+# (get_report_section: "1".."9" + "biz") — nếu model cần dò vài mục để tìm
+# đúng vị trí đoạn trích bị thiếu ngữ cảnh (xem "LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH
+# THIẾU NGỮ CẢNH" trong data_block) RỒI còn gọi thêm 1-2 tool giá, số lượt cần
+# thiết cao hơn hẳn so với khi chỉ có 3 mục — 8 chừa dư đủ cho tình huống dò
+# 4-5 mục + 2 tool giá mà vẫn còn ít nhất 1 lượt sinh câu trả lời cuối.
+MAX_TOOL_ITERATIONS = 8
+
+
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history")
 
 
 async def _execute_client_tool(
@@ -604,6 +874,7 @@ async def _execute_client_tool(
     *,
     tool_cache: Dict[tuple, str],
     chart_cache: Dict[str, List[Any]],
+    retrieval_service: Optional[RetrievalService] = None,
 ) -> str:
     """`tool_cache`: nhớ lại kết quả TRONG PHẠM VI 1 câu hỏi (1 lượt gọi
     `_stream_anthropic`) — hệ thống prompt đã yêu cầu model "KHÔNG gọi lại 1
@@ -614,7 +885,11 @@ async def _execute_client_tool(
     cache, để lần gọi lại sau có cơ hội thử lại thật).
     """
     if name == "get_report_section":
-        cache_key = (name, tool_input.get("section"))
+        cache_key = (name, tool_input.get("section"), tool_input.get("date"))
+    elif name == "get_price_history":
+        cache_key = (name, tool_input.get("instrument"), tool_input.get("date"), tool_input.get("sessions"))
+    elif name == "search_news":
+        cache_key = (name, tool_input.get("query"), tool_input.get("date"))
     elif name in ("get_market_prices", "get_eua_details", "get_eua_volume_history"):
         cache_key = (name, tool_input.get("date"))
     else:
@@ -626,7 +901,8 @@ async def _execute_client_tool(
     # cáo đang xem (xem mô tả tool + rule trong data_block của _build_static_instructions) —
     # validate format trước khi đưa vào query string-compare trên Price.price_date (cột Text,
     # xem db/models.py), tránh so sánh lexicographic sai lệch nếu model gửi format khác
-    # "YYYY-MM-DD" (vd "09/09/2026").
+    # "YYYY-MM-DD" (vd "09/09/2026"). search_news dùng `date` khác ngữ nghĩa (lọc đúng 1 ngày
+    # crawl, không phải "ngày báo cáo mặc định") nên xử lý fallback riêng bên dưới.
     raw_date = tool_input.get("date")
     invalid_date_note = None
     if raw_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(raw_date)):
@@ -642,7 +918,24 @@ async def _execute_client_tool(
         elif name == "get_eua_volume_history":
             result = await _tool_eua_volume_history_text(session, target_date, chart_cache)
         elif name == "get_report_section":
-            result = await _tool_report_section_text(session, report_date, str(tool_input.get("section", "")))
+            result = await _tool_report_section_text(session, target_date, str(tool_input.get("section", "")))
+        elif name == "get_price_history":
+            raw_sessions = tool_input.get("sessions")
+            try:
+                sessions = int(raw_sessions) if raw_sessions else PRICE_HISTORY_DEFAULT_SESSIONS
+            except (TypeError, ValueError):
+                sessions = PRICE_HISTORY_DEFAULT_SESSIONS
+            sessions = max(1, min(sessions, PRICE_HISTORY_MAX_SESSIONS))
+            result = await _tool_price_history_text(
+                session, str(tool_input.get("instrument", "")), target_date, sessions, requested_date=raw_date
+            )
+        elif name == "search_news":
+            if retrieval_service is None:
+                return "Tool search_news hiện không khả dụng trong phiên này."
+            # search_news: KHÔNG truyền date -> tìm KHÔNG giới hạn ngày (khác các tool giá/report ở
+            # trên, nơi không truyền date nghĩa là "dùng report_date") — date sai định dạng thì bỏ
+            # qua, coi như không giới hạn ngày thay vì áp nhầm report_date.
+            result = await _tool_search_news_text(retrieval_service, str(tool_input.get("query", "")), date=raw_date)
         else:
             return f"Tool không xác định: {name}"
     except Exception:
@@ -650,9 +943,10 @@ async def _execute_client_tool(
         return "Đã xảy ra lỗi khi tra cứu dữ liệu này — trả lời dựa trên thông tin đã có, có thể nói rõ không tra cứu được nếu cần."
 
     if invalid_date_note:
+        fallback_desc = f"theo ngày báo cáo đang xem ({report_date})" if name in _DATE_ANCHORED_TOOLS else "KHÔNG giới hạn ngày"
         result = (
             f"LƯU Ý: tham số date=\"{invalid_date_note}\" không đúng định dạng YYYY-MM-DD nên bị bỏ qua — "
-            f"dữ liệu dưới đây là theo ngày báo cáo đang xem ({report_date}), KHÔNG phải ngày đã yêu cầu. "
+            f"dữ liệu dưới đây lấy {fallback_desc}, KHÔNG phải ngày đã yêu cầu. "
             "Gọi lại tool với date đúng định dạng YYYY-MM-DD nếu vẫn cần đúng ngày đó.\n" + result
         )
 
@@ -670,6 +964,7 @@ async def _stream_anthropic(
     report_date: str = "",
     enable_web_search: bool = False,
     enable_client_tools: bool = False,
+    retrieval_service: Optional[RetrievalService] = None,
 ) -> AsyncIterator[str]:
     """PROMPT CACHING (2 breakpoint, tối đa cho phép là 4):
     1. `system` tách 2 block — `static_instructions` (role/kiến thức/quy tắc,
@@ -780,7 +1075,8 @@ async def _stream_anthropic(
         tool_results = []
         for call in client_tool_calls:
             result_text = await _execute_client_tool(
-                call.name, call.input, session, report_date, tool_cache=tool_cache, chart_cache=chart_cache
+                call.name, call.input, session, report_date,
+                tool_cache=tool_cache, chart_cache=chart_cache, retrieval_service=retrieval_service,
             )
             tool_results.append({"type": "tool_result", "tool_use_id": call.id, "content": result_text})
         anthropic_messages.append({"role": "user", "content": tool_results})
@@ -806,19 +1102,27 @@ async def astream_quote_chat(
     history: Sequence[ChatTurn],
     context_chunks: Sequence[RetrievedDocument],
     session: AsyncSession,
+    retrieval_service: Optional[RetrievalService] = None,
     eua_framework_overrides: Optional[Dict[str, str]] = None,
     few_shot_block: str = "",
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta). Luôn dùng backend
     Anthropic (client tools + server tool web_search) — Cohere trong repo này
-    chỉ dùng cho embedding/rerank, không còn dùng cho chat/completion.
+    chỉ dùng cho embedding/rerank (kể cả tool search_news bên dưới), không
+    còn dùng cho chat/completion.
 
     KHÔNG nhận `prices_text`/`report_text` đã fetch sẵn — model TỰ GỌI TOOL
-    (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section,
-    xem CLIENT_TOOLS) khi câu hỏi thực sự cần, thay vì luôn fetch + tiêm sẵn
-    vào MỌI request như trước (tốn context ngay cả với câu hỏi thuần suy
-    luận/giải thích không cần số liệu). `session` truyền xuống để tool tự
-    query DB khi được model gọi.
+    (get_market_prices/get_eua_details/get_eua_volume_history/get_price_history/
+    get_report_section/search_news, xem CLIENT_TOOLS) khi câu hỏi thực sự cần,
+    thay vì luôn fetch + tiêm sẵn vào MỌI request như trước (tốn context ngay
+    cả với câu hỏi thuần suy luận/giải thích không cần số liệu). `session`
+    truyền xuống để tool tự query DB khi được model gọi.
+
+    `retrieval_service`: cùng instance router đã dùng cho
+    `retrieve_context_for_quote()` (DỮ LIỆU NỀN ban đầu) — truyền thêm xuống
+    đây để tool `search_news` có thể CHỦ ĐỘNG tìm lại giữa vòng lặp hội thoại
+    (query/ngày khác), không giới hạn ở đúng 1 lần retrieve lúc đầu câu hỏi.
+    None = tắt tool search_news (không có cách nào thực thi).
 
     `eua_framework_overrides`: nội dung admin đã custom cho khung tri thức EUA
     (xem services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở
@@ -846,6 +1150,7 @@ async def astream_quote_chat(
         report_date=report_date,
         enable_web_search=True,
         enable_client_tools=True,
+        retrieval_service=retrieval_service,
     )
 
     async for delta in stream:

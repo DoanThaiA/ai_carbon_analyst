@@ -252,6 +252,7 @@ async def quote_chat_stream(
                 history=history,
                 context_chunks=context_chunks,
                 session=session,
+                retrieval_service=retrieval_service,
                 eua_framework_overrides=eua_framework_overrides,
                 few_shot_block=few_shot_block,
             ):
