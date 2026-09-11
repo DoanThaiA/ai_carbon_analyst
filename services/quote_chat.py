@@ -102,6 +102,32 @@ def _format_context(chunks: Sequence[RetrievedDocument], report_date: str) -> st
     return "\n\n".join(parts)
 
 
+# Số phiên tối đa hiện trong bảng khối lượng theo từng ngày (xem
+# `_eua_volume_history_text`) — đủ để trả lời so sánh khối lượng trong vài
+# tuần gần nhất mà không phình prompt quá mức (30 phiên là toàn bộ chart_data
+# đang có sẵn — không cần fetch thêm).
+EUA_VOLUME_HISTORY_SESSIONS = 30
+
+
+def _eua_volume_history_text(chart_data: List[Any]) -> str:
+    """Bảng khối lượng giao dịch EUA theo TỪNG phiên (ngày: khối lượng).
+
+    `_eua_volume_summary` (report_generator.py) chỉ có 1 dòng tóm tắt (phiên
+    liền trước so với TB N phiên) — đủ cho báo cáo gốc nhưng KHÔNG đủ để trả
+    lời câu hỏi so sánh khối lượng GIỮA CÁC NGÀY CỤ THỂ (vd "khối lượng hôm
+    nay so với đầu tuần trước thế nào") vì model không có số liệu từng ngày để
+    đối chiếu, dễ bịa số. Liệt kê nguyên văn từng phiên (mới nhất trước) từ
+    chính `chart_data` đã fetch sẵn cho `_eua_volume_summary`/`_eua_technical_levels_summary`
+    ở trên — không cần query thêm.
+    """
+    with_volume = [c for c in chart_data if c.get("volume") is not None]
+    if not with_volume:
+        return "Không có dữ liệu khối lượng giao dịch EUA theo từng phiên."
+    recent = with_volume[-EUA_VOLUME_HISTORY_SESSIONS:]
+    lines = [f"  - {c['date']}: {c['volume']:,.0f} hợp đồng" for c in reversed(recent)]
+    return f"Khối lượng giao dịch EUA theo từng phiên ({len(recent)} phiên gần nhất, mới nhất trước):\n" + "\n".join(lines)
+
+
 async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> str:
     """Lấy dữ liệu giá (đóng cửa + Δ ngày/Δ tuần) của ngày báo cáo — CÙNG nguồn dữ
     liệu report_generator.py dùng để sinh báo cáo gốc.
@@ -127,6 +153,11 @@ async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> s
     vỡ, hỗ trợ/điểm bắt đáy — `_eua_technical_levels_summary`, tính từ đỉnh/đáy
     30 phiên gần nhất CÙNG bộ OHLC vừa lấy ở trên) — CHỈ cho EUA theo yêu cầu,
     không mở rộng sang 5 instrument còn lại.
+
+    Nối thêm BẢNG khối lượng EUA theo từng phiên (`_eua_volume_history_text`,
+    CÙNG `chart_data` vừa lấy ở trên, không query thêm) — dòng volume ở trên
+    chỉ tóm tắt phiên liền trước so với TB, không đủ để trả lời câu hỏi so
+    sánh khối lượng GIỮA CÁC NGÀY CỤ THỂ.
     """
     prices, _ = await get_prices_for_report(session, report_date)
     prices_text = _summarize_prices(prices)
@@ -134,7 +165,11 @@ async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> s
     ohlc_text = _eua_session_range_summary(chart_data)
     volume_text = _eua_volume_summary(chart_data)
     technical_text = _eua_technical_levels_summary(chart_data)
-    return f"{prices_text}\n  - {ohlc_text}\n  - {volume_text}\n  - {technical_text}"
+    volume_history_text = _eua_volume_history_text(chart_data)
+    return (
+        f"{prices_text}\n  - {ohlc_text}\n  - {volume_text}\n  - {technical_text}\n\n"
+        f"{volume_history_text}"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -331,6 +366,7 @@ def _build_static_instructions(
 LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức). Khi được hỏi về giá/biến động của 1 trong 6 mã này, PHẢI dùng ĐÚNG số ở trên (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay mô tả định tính mơ hồ ("biến động nhẹ", "chưa dứt khoát"...) thay cho con số thật đã có sẵn. Khi được hỏi về giá 1 mã KHÔNG nằm trong danh sách trên (vd giá than cốc, giá kim loại, giá điện nước khác Đức), nói rõ hệ thống không theo dõi giá đó — có thể dùng web_search nếu người dùng cần số liệu cụ thể — KHÔNG suy đoán con số.
 LƯU Ý VỀ OHLC: dòng thứ 3 từ cuối ở trên là giá MỞ CỬA/CAO/THẤP/ĐÓNG CỬA (OHLC) phiên liền trước của EUA (tính trực tiếp từ dữ liệu giá thật) — hệ thống CHỈ có OHLC chi tiết theo phiên cho EUA, KHÔNG có cho 5 instrument còn lại (chỉ có giá đóng cửa + Δ ngày/Δ tuần ở bảng trên). Khi được hỏi giá mở cửa/cao nhất/thấp nhất trong phiên của EUA, PHẢI dùng ĐÚNG số ở dòng này, KHÔNG tự bịa hay suy đoán từ Δ ngày/Δ tuần.
 LƯU Ý VỀ VOLUME: dòng thứ 2 từ cuối ở trên là khối lượng giao dịch EUA (hợp đồng) phiên liền trước so với TB các phiên gần nhất — hệ thống CHỈ theo dõi volume cho EUA, KHÔNG có volume cho 5 instrument còn lại. Khi được hỏi về khối lượng/volume EUA, PHẢI dùng ĐÚNG con số này (không tự bịa); dùng làm căn cứ suy luận volume có "xác nhận" xu hướng giá hay không (volume tăng cùng chiều giá = tín hiệu mạnh; volume cao nhưng giá đi ngang/ngược chiều, hoặc giá biến động mạnh mà volume thấp = tín hiệu yếu/đáng nghi ngờ) — nhưng đây CHỈ LÀ SUY LUẬN, không phải kết luận chắc chắn.
+Ngay sau khối DỮ LIỆU GIÁ ở trên (cách 1 dòng trắng) còn có BẢNG "Khối lượng giao dịch EUA theo từng phiên" — liệt kê khối lượng của từng ngày riêng lẻ (tối đa 30 phiên gần nhất). Khi được hỏi SO SÁNH khối lượng GIỮA CÁC NGÀY CỤ THỂ (vd "hôm nay so với hôm qua/tuần trước/ngày X"), PHẢI tra đúng ngày cần so sánh trong bảng này rồi nêu số liệu thật — TUYỆT ĐỐI KHÔNG tự bịa số của 1 ngày không có trong bảng; nếu ngày người dùng hỏi không có trong bảng (ngoài phạm vi phiên đã liệt kê), nói rõ hệ thống không có dữ liệu ngày đó thay vì đoán.
 LƯU Ý VỀ MỐC KỸ THUẬT: dòng cuối cùng ở trên là mốc hỗ trợ/kháng cự kỹ thuật của EUA (đỉnh/đáy 30 phiên gần nhất, tính từ giá thật) — hệ thống CHỈ tính mốc kỹ thuật cho EUA, KHÔNG có cho 5 instrument còn lại (nếu được hỏi mốc kỹ thuật của mã khác, nói rõ hệ thống chưa hỗ trợ, KHÔNG tự bịa mốc). Xem chi tiết cách dùng ở mục F (NĂNG LỰC CỦA BẠN) bên dưới.
 
 === NỘI DUNG MỤC 1-3 CỦA BÁO CÁO NGÀY {report_date} (Tóm tắt điều hành, Bảng giá nhanh, Phân tích chuyên sâu — để trả lời câu hỏi liên quan tới nội dung các mục này ngoài đoạn trích người dùng đang bôi đen) ===
