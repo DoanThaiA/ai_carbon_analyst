@@ -381,7 +381,7 @@ async def get_historical_ohlc_for_report(
     session: AsyncSession, instrument_code: str, target_date_str: str, limit: int = 30
 ) -> List[Dict]:
     """Lấy dữ liệu OHLC của `limit` ngày gần nhất (mặc định 30, đúng cỡ biểu đồ
-    Mục 2). `limit` lớn hơn dùng bởi services/quote_chat.py::get_prices_text_for_chat
+    Mục 2). `limit` lớn hơn dùng bởi services/quote_chat.py::_tool_eua_volume_history_text
     để có thêm phiên đệm phía trước, tính TB khối lượng cho cả những phiên cũ
     nhất trong 30 phiên hiển thị (xem `_eua_volume_history_text`) — KHÔNG đổi
     hành vi ở đây, các lời gọi khác vẫn dùng mặc định 30."""
@@ -697,7 +697,7 @@ def _eua_technical_levels_summary(chart_data: List[Dict]) -> str:
     """Mốc hỗ trợ/kháng cự kỹ thuật của EUA — tính trực tiếp từ đỉnh/đáy 30
     phiên gần nhất trong OHLC thật (KHÔNG để LLM tự bịa mốc), dùng cho Quote
     Chat khi người dùng hỏi về "điểm chốt lời kỹ thuật" (kháng cự) và "điểm
-    bắt đáy" (hỗ trợ) — xem services/quote_chat.py::get_prices_text_for_chat.
+    bắt đáy" (hỗ trợ) — xem services/quote_chat.py::_tool_eua_details_text.
 
     Mục tiêu giá nếu phá kháng cự dùng kỹ thuật "đo biên độ" (measured move)
     chuẩn trong phân tích kỹ thuật: mục tiêu = kháng cự + (kháng cự - hỗ trợ).

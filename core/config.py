@@ -19,9 +19,9 @@ class Settings:
     vector_dimension: int
     rerank_model: str
 
-    # Quote Chat (hỏi đáp đoạn bôi đen) — tạm dùng Cohere (đã có key/config sẵn),
-    # đổi sang "anthropic" khi lên production bằng ENV, không cần sửa code.
-    quote_chat_backend: str
+    # Quote Chat (hỏi đáp đoạn bôi đen) — luôn dùng Anthropic (client tools +
+    # web_search cần backend Anthropic, xem services/quote_chat.py). Model có
+    # thể đổi qua ENV nếu cần, không cần sửa code.
     quote_chat_model: str
 
     # Auth — để trống nếu không dùng API/admin panel (vd script crawl/report
@@ -61,11 +61,6 @@ class Settings:
         # Haiku 4.5: siêu rẻ, siêu nhanh — đủ cho tác vụ phân loại JSON.
         default_model = "claude-haiku-4-5"
 
-        quote_chat_backend = os.environ.get("QUOTE_CHAT_BACKEND", "anthropic").lower()
-        default_quote_chat_model = (
-            "command-a-03-2025" if quote_chat_backend == "cohere" else "claude-haiku-4-5"
-        )
-
         return cls(
             database_url=database_url,
             classifier_backend=backend,
@@ -77,8 +72,7 @@ class Settings:
             embedding_model=os.environ.get("EMBEDDING_MODEL", "embed-v4.0"),
             vector_dimension=int(os.environ.get("VECTOR_DIMENSION", "1536")),
             rerank_model=os.environ.get("RERANK_MODEL", "rerank-v3.5"),
-            quote_chat_backend=quote_chat_backend,
-            quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", default_quote_chat_model),
+            quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", "claude-haiku-4-5"),
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),
             jwt_expire_minutes=int(os.environ.get("JWT_EXPIRE_MINUTES", str(60 * 24 * 7))),

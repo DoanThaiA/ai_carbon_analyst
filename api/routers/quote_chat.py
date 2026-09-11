@@ -45,8 +45,6 @@ from services.embedding import CohereEmbedder
 from services.eua_framework_admin import get_overrides_map
 from services.quote_chat import (
     astream_quote_chat,
-    get_prices_text_for_chat,
-    get_report_text_for_chat,
     retrieve_context_for_quote,
     suggest_questions,
 )
@@ -224,8 +222,6 @@ async def quote_chat_stream(
     async def event_stream() -> AsyncIterator[str]:
         try:
             context_chunks = await retrieve_context_for_quote(retrieval_service, quote, body.question, date)
-            prices_text = await get_prices_text_for_chat(session, date)
-            report_text = await get_report_text_for_chat(session, date)
             eua_framework_overrides = await get_overrides_map(session)
             few_shot_block = await build_few_shot_prompt_block(session)
             # Gửi session_id + nguồn tham khảo trước khi bắt đầu stream câu trả
@@ -255,10 +251,9 @@ async def quote_chat_stream(
                 report_date=date,
                 history=history,
                 context_chunks=context_chunks,
-                prices_text=prices_text,
+                session=session,
                 eua_framework_overrides=eua_framework_overrides,
                 few_shot_block=few_shot_block,
-                report_text=report_text,
             ):
                 answer_parts.append(delta)
                 yield _sse("delta", delta)
