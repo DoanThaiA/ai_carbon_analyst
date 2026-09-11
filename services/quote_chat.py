@@ -1066,11 +1066,22 @@ async def _stream_anthropic(
         # dòng model 4.6+) — truyền lên sẽ bị lỗi 400 "temperature is deprecated
         # for this model". Không có tham số sampling thay thế; nếu cần giảm biến
         # thiên câu trả lời thì điều chỉnh qua system prompt.
+        # `output_config.effort` (mặc định "high" nếu bỏ qua) — Sonnet 5 tự chạy adaptive thinking
+        # NGAY CẢ KHI KHÔNG truyền `thinking` (khác Opus 4.7/4.8, nơi bỏ qua = tắt thinking), nên nếu
+        # không hạ effort thì MỌI câu trả lời — kể cả 1 câu chat ngắn theo đúng rule 6 — đều tốn thời
+        # gian "suy nghĩ" ở mức effort cao (tính vào output_tokens, dù `thinking.display` mặc định
+        # "omitted" nên không hiển thị). Quote Chat là chat ngắn, độ trễ nhạy cảm (user chờ trực
+        # tiếp) — đúng loại việc Anthropic khuyến nghị effort thấp hơn ("chat/latency-sensitive
+        # routes often do well at low, medium as cost-saving step-down"), KHÔNG phải loại việc cần
+        # effort cao (coding/agentic dài hơi). "medium" chọn làm mặc định thay vì "low" vì đây vẫn là
+        # phân tích chuyên môn tài chính/carbon, ưu tiên an toàn hơn tốc độ tối đa — có thể hạ xuống
+        # "low" nếu đo thực tế thấy chất lượng vẫn ổn.
         async with client.messages.stream(
             model=model,
             max_tokens=MAX_ANSWER_TOKENS,
             system=system,
             messages=anthropic_messages,
+            output_config={"effort": "medium"},
             **extra,
         ) as stream:
             leaked_chars = 0
