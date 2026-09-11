@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_CHUNKS = 8
 HYBRID_SEARCH_LIMIT = 20
 MAX_QUOTE_CHARS = 2000  # đủ cho 1 đoạn/gạch đầu dòng của báo cáo
-MAX_ANSWER_TOKENS = 1000  # chặn cứng độ dài — bổ trợ cho rule ngắn gọn trong system prompt
+MAX_ANSWER_TOKENS = 2048  # chặn cứng độ dài — bổ trợ cho rule ngắn gọn trong system prompt (không
+# phải cơ chế ép ngắn chính — đó là rule 6 trong system prompt; giá trị này chỉ là lưới an toàn
+# tránh model chạy lố quá xa). TỪNG là 1000 — quá sát với các câu trả lời hợp lệ theo đúng ngoại lệ
+# rule 6 ("chỉ viết dài hơn khi user CHỦ ĐỘNG yêu cầu giải thích chi tiết hơn") hoặc các chuỗi nhân
+# quả ít được luyện/rehearse hơn FUEL_SWITCHING (vd MACRO) — khiến `stop_reason == "max_tokens"`
+# cắt cụt câu trả lời giữa chừng mà KHÔNG có dấu hiệu gì báo cho user (xem xử lý stop_reason bên
+# dưới trong _stream_anthropic).
 
 # Chặn trên độ dài text của 1 MỤC báo cáo sau khi format (xem
 # `_tool_report_section_text`) — 1 mục thật thường không tới ngưỡng này, đây
@@ -567,7 +573,7 @@ def _build_static_instructions(
     few_shot_section = f"\n{few_shot_block}\n" if few_shot_block else ""
 
     data_block = f"""=== DỮ LIỆU GIÁ / NỘI DUNG BÁO CÁO — TRA CỨU QUA TOOL, KHÔNG CÓ SẴN Ở ĐÂY ===
-Bạn CÓ CÁC TOOL sau — gọi khi câu hỏi THỰC SỰ cần, KHÔNG gọi "cho chắc" nếu thông tin đã có sẵn trong đoạn trích/dữ liệu nền/lịch sử hội thoại:
+Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬT (round-trip DB/API), người dùng đang chờ trực tiếp — chỉ gọi khi câu hỏi THỰC SỰ cần dữ liệu đó, KHÔNG gọi "cho chắc"/"để minh hoạ thêm bằng số" nếu thông tin đã có sẵn trong đoạn trích/DỮ LIỆU NỀN/lịch sử hội thoại. ĐẶC BIỆT với câu hỏi THUẦN SUY LUẬN ("vì sao", "cơ chế nào", "tại sao X tác động Y") mà đoạn trích/DỮ LIỆU NỀN đã nêu đủ dữ kiện định tính để giải thích — TRẢ LỜI NGAY bằng suy luận (xem NĂNG LỰC mục C bên dưới), KHÔNG gọi get_market_prices/get_eua_details/get_price_history "cho có số liệu minh hoạ" nếu người dùng không hỏi rõ 1 con số cụ thể; chỉ gọi tool giá khi câu hỏi trực tiếp cần SỐ (giá bao nhiêu, tăng/giảm bao nhiêu %, mốc kỹ thuật ở đâu...).
 - get_market_prices(date tuỳ chọn): giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức).
 - get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
@@ -593,7 +599,7 @@ QUY TẮC TUYỆT ĐỐI QUAN TRỌNG NHẤT, ÁP DỤNG CHO MỌI CÂU TRẢ L�
 NĂNG LỰC CỦA BẠN — bạn có thể và NÊN thực hiện khi người dùng yêu cầu, nhưng LUÔN ở dạng CÔ ĐỌNG (xem QUY TẮC TRẢ LỜI mục 6 — độ dài luôn ưu tiên hơn độ đầy đủ):
 A. TRẢ LỜI THỰC TẾ: giải thích, tóm tắt, làm rõ nội dung đoạn trích dựa trên dữ liệu nền — thẳng vào ý chính, không diễn giải lan man.
 B. PHÂN TÍCH GIẢ ĐỊNH (what-if): khi người dùng đặt câu hỏi giả định (VD "Nếu giá gas tăng 20% thì..."), trả lời NGẮN GỌN theo đúng 1 mạch: mở đầu bằng "Trong kịch bản giả định..." rồi nêu chuỗi nhân quả cô đọng (2-3 bước chính, dựa trên KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên) và chốt HƯỚNG tác động (mạnh/vừa/nhẹ) — KHÔNG liệt kê tách riêng từng bước thành nhiều gạch đầu dòng, KHÔNG đưa con số giá cụ thể (không thể dự đoán chính xác). Chỉ khai triển dài hơn nếu người dùng chủ động yêu cầu "giải thích chi tiết"/"phân tích sâu hơn".
-C. SUY LUẬN CHUYÊN SÂU: khi người dùng hỏi "tại sao", "cơ chế nào", "mối liên hệ giữa X và Y", giải thích cơ chế truyền dẫn NGẮN GỌN, đủ hiểu bản chất — không cần liệt kê mọi khía cạnh (ngắn/dài hạn, điều kiện kích hoạt...) trừ khi câu hỏi hỏi rõ về khía cạnh đó.
+C. SUY LUẬN CHUYÊN SÂU: khi người dùng hỏi "tại sao", "cơ chế nào", "mối liên hệ giữa X và Y", giải thích cơ chế truyền dẫn NGẮN GỌN, đủ hiểu bản chất — không cần liệt kê mọi khía cạnh (ngắn/dài hạn, điều kiện kích hoạt...) trừ khi câu hỏi hỏi rõ về khía cạnh đó. Đây là câu hỏi SUY LUẬN LOGIC dựa trên KIẾN THỨC CHUYÊN MÔN NỀN TẢNG + dữ kiện định tính đã có trong đoạn trích/DỮ LIỆU NỀN — KHÔNG cần gọi thêm get_market_prices/get_eua_details/get_price_history để lấy số liệu "minh hoạ" nếu bản thân câu hỏi không đòi hỏi 1 con số cụ thể; gọi tool giá chỉ tốn thời gian chờ mà không đổi nội dung suy luận.
 D. SO SÁNH & ĐÁNH GIÁ: khi hỏi về ảnh hưởng đến doanh nghiệp/ngành/quốc gia, nêu thẳng kênh tác động chính và mức độ chắc chắn trong 1 đoạn ngắn — không cần liệt kê đầy đủ mọi kênh truyền dẫn nếu không được hỏi.
 E. TRA CỨU WEB (chỉ khi thực sự cần, không lạm dụng): bạn có công cụ tìm kiếm web (web_search). CHỈ dùng khi ĐOẠN TRÍCH + DỮ LIỆU NỀN (đưa ra ngay bên dưới các quy tắc này) + KIẾN THỨC CHUYÊN MÔN NỀN TẢNG ở trên KHÔNG đủ để trả lời{web_search_order_note} — ví dụ người dùng hỏi 1 số liệu/sự kiện/tổ chức cụ thể ngoài phạm vi hệ thống theo dõi, hoặc tin tức rất mới không có trong DỮ LIỆU NỀN đã crawl. KHÔNG dùng web_search để tra lại thứ đã có sẵn, và KHÔNG dùng cho câu hỏi giả định/suy luận thuần (mục B, C) — những câu đó dùng kiến thức nền tảng, không cần tra cứu.
 F. PHÂN TÍCH KỸ THUẬT EUA (mốc chốt lời/bắt đáy): khi người dùng hỏi về mốc kỹ thuật/điểm chốt lời/điểm bắt đáy/kháng cự/hỗ trợ của EUA, {price_ref} mốc kỹ thuật (tính từ đỉnh/đáy 30 phiên thật, KHÔNG tự bịa mốc khác):
@@ -1015,6 +1021,24 @@ async def _stream_anthropic(
     tool_cache: Dict[tuple, str] = {}
     chart_cache: Dict[str, List[Any]] = {}
 
+    # Gom lại để log 1 dòng TỔNG KẾT duy nhất khi câu hỏi này kết thúc (dù kết thúc ở nhánh nào —
+    # refusal/max_tokens/bình thường/hết MAX_TOOL_ITERATIONS) — `tools_used` là TÊN tool theo đúng
+    # thứ tự gọi (không dedupe, để thấy rõ nếu model lỡ gọi lặp lại dù đã được dặn không nên), `usage`
+    # cộng dồn `input_tokens`/`output_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens`
+    # qua TỪNG lượt gọi Anthropic của câu hỏi này (mỗi lượt tool là 1 lần gọi riêng, cache_read cao
+    # tức cache đang có tác dụng thật, không chỉ đúng cú pháp — xem docstring đầu hàm).
+    tools_used: List[str] = []
+    usage_totals = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+
+    def _log_usage_summary(outcome: str) -> None:
+        logger.info(
+            "[QUOTE-CHAT] Câu hỏi kết thúc (%s) sau %d lượt gọi API — tools đã dùng: %s — "
+            "token: input=%d output=%d cache_creation=%d cache_read=%d",
+            outcome, iteration, tools_used or "(không tool nào)",
+            usage_totals["input_tokens"], usage_totals["output_tokens"],
+            usage_totals["cache_creation_input_tokens"], usage_totals["cache_read_input_tokens"],
+        )
+
     anthropic_messages = list(messages)
     if len(anthropic_messages) > 1:
         last_history_turn = anthropic_messages[-2]
@@ -1025,7 +1049,11 @@ async def _stream_anthropic(
             ],
         }
 
-    for _ in range(MAX_TOOL_ITERATIONS):
+    # Đếm số lượt gọi API thật (KHÔNG tính lượt tool execute) đã dùng cho câu hỏi này — mỗi lượt là
+    # 1 round-trip đầy đủ tới Anthropic, nguồn chính gây chậm khi model gọi nhiều tool tuần tự. Log
+    # lại lúc trả lời xong để đo hiệu quả thật của việc siết "không gọi tool khi không cần" ở
+    # data_block, thay vì đoán mò — xem `iteration` tăng dần bên dưới.
+    for iteration in range(1, MAX_TOOL_ITERATIONS + 1):
         # Stream trực tiếp (yield ngay khi có delta) — ưu tiên UX real-time.
         # ĐÁNH ĐỔI ĐÃ CHỌN: nếu model lỡ chèn text tường thuật trước/xen giữa
         # lúc gọi tool (vi phạm rule 6, xem prompt), phần đó vẫn hiện cho user
@@ -1051,6 +1079,11 @@ async def _stream_anthropic(
                 yield text
             final_message = await stream.get_final_message()
 
+        msg_usage = getattr(final_message, "usage", None)
+        if msg_usage is not None:
+            for key in usage_totals:
+                usage_totals[key] += getattr(msg_usage, key, None) or 0
+
         # `stop_reason == "refusal"` (HTTP 200, KHÔNG phải exception — bộ lọc an toàn của model từ
         # chối trả lời, vd nội dung nhắc xung đột địa chính trị dù trong ngữ cảnh phân tích thị
         # trường thuần tuý) trước đây bị coi như "end_turn" bình thường ở nhánh `return` ngay dưới —
@@ -1068,9 +1101,22 @@ async def _stream_anthropic(
                 "nhạy cảm, dù đây chỉ là phân tích thị trường) — bạn thử diễn đạt lại câu hỏi tập trung vào số "
                 "liệu/tác động giá thay vì mô tả sự kiện, hoặc hỏi lại theo cách khác giúp mình nhé."
             )
+            _log_usage_summary("refusal")
+            return
+
+        # `stop_reason == "max_tokens"`: câu trả lời bị CẮT CỤT giữa chừng vì chạm
+        # `MAX_ANSWER_TOKENS` — text đã stream ra (đoạn dang dở) vẫn hiển thị cho user, nhưng nếu
+        # không báo gì thêm thì y hệt "trả lời được 1 đoạn rồi ngừng" không rõ lý do. Trường hợp này
+        # KHÔNG tự động gọi tiếp (continue) vì model đã hiểu sai độ dài — nói rõ hơn là hữu ích hơn
+        # cố "vá" 1 câu trả lời đã lỡ quá dài.
+        if final_message.stop_reason == "max_tokens":
+            logger.warning("[QUOTE-CHAT] Câu trả lời chạm giới hạn MAX_ANSWER_TOKENS=%d, bị cắt cụt.", MAX_ANSWER_TOKENS)
+            yield "\n\n[Câu trả lời đã bị cắt do quá dài — bạn có thể hỏi lại \"tiếp tục\" hoặc yêu cầu tóm tắt ngắn gọn hơn.]"
+            _log_usage_summary("max_tokens")
             return
 
         if final_message.stop_reason != "tool_use":
+            _log_usage_summary("answered")
             return
 
         if leaked_chars:
@@ -1081,7 +1127,9 @@ async def _stream_anthropic(
 
         client_tool_calls = [b for b in final_message.content if b.type == "tool_use"]
         if not client_tool_calls:
+            _log_usage_summary("answered_no_tool_calls")
             return
+        tools_used.extend(call.name for call in client_tool_calls)
 
         # Giữ NGUYÊN các content block object trả về (KHÔNG tự model_dump()) —
         # `stream.get_final_message()` trả về block đã bị lớp streaming của SDK
@@ -1091,6 +1139,14 @@ async def _stream_anthropic(
         # SDK tự loại field đó (theo `__api_exclude__`) khi encode request nếu
         # ta truyền thẳng object — không cần tự serialize lại.
         anthropic_messages.append({"role": "assistant", "content": final_message.content})
+        # CHỦ Ý chạy TUẦN TỰ (không asyncio.gather) dù model có thể gộp nhiều tool_use vào CÙNG 1
+        # lượt: mọi tool ở đây dùng CHUNG 1 `session: AsyncSession` (session theo request, xem
+        # api/deps.py::get_db) — AsyncSession KHÔNG an toàn khi bị gọi đồng thời từ nhiều coroutine
+        # (SQLAlchemy tự raise `IllegalStateChangeError`/lỗi tương tự nếu 2 coroutine cùng
+        # `session.execute()` trên 1 session đang có 1 lệnh khác chưa xong) — kể cả `search_news` qua
+        # `retrieval_service` cũng dùng lại session này. Chạy song song ở đây sẽ CRASH thay vì nhanh
+        # hơn. Muốn song song thật sự cần refactor cấp router để mỗi tool tự mở session riêng từ 1
+        # sessionmaker (như crawl_news/pipeline.py đang làm), không hợp lý để đổi riêng ở đây.
         tool_results = []
         for call in client_tool_calls:
             result_text = await _execute_client_tool(
@@ -1107,6 +1163,7 @@ async def _stream_anthropic(
     # lỗi cụ thể thay vì im lặng — router lưu câu này vào lịch sử chat như câu
     # trả lời bình thường (không phải "error" SSE, vì đây không phải exception).
     logger.warning("[QUOTE-CHAT] Đạt giới hạn %d lượt gọi tool liên tiếp — dừng vòng lặp.", MAX_TOOL_ITERATIONS)
+    _log_usage_summary("max_iterations")
     yield (
         "Câu hỏi này cần tra cứu nhiều dữ liệu hơn mức xử lý được trong 1 lượt — "
         "bạn có thể hỏi lại với câu hỏi cụ thể/ngắn gọn hơn giúp mình không?"
