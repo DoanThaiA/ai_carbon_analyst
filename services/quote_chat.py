@@ -626,9 +626,14 @@ async def _stream_anthropic(
         if not client_tool_calls:
             return
 
-        anthropic_messages.append(
-            {"role": "assistant", "content": [b.model_dump() for b in final_message.content]}
-        )
+        # Giữ NGUYÊN các content block object trả về (KHÔNG tự model_dump()) —
+        # `stream.get_final_message()` trả về block đã bị lớp streaming của SDK
+        # gắn thêm field tiện ích nội bộ (vd "parsed_output" trên text block,
+        # xem anthropic/types/parsed_message.py::ParsedTextBlock) mà input
+        # schema từ chối ("Extra inputs are not permitted") nếu tự dump thô.
+        # SDK tự loại field đó (theo `__api_exclude__`) khi encode request nếu
+        # ta truyền thẳng object — không cần tự serialize lại.
+        anthropic_messages.append({"role": "assistant", "content": final_message.content})
         tool_results = []
         for call in client_tool_calls:
             result_text = await _execute_client_tool(call.name, call.input, session, report_date)
