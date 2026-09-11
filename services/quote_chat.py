@@ -19,6 +19,9 @@ from services.report_generator import (
     _eua_volume_summary,
     _eua_technical_levels_summary,
     _eua_session_range_summary,
+    EUA_VOLUME_SESSIONS_FOR_AVG,
+    EUA_VOLUME_SPIKE_PCT,
+    EUA_VOLUME_DROP_PCT,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,7 +45,7 @@ MAX_REPORT_CHARS = 40000
 # đề, nhưng không quá gắt tới mức loại luôn cả chunk liên quan gián tiếp (tin
 # tức ít khi trùng khớp từ khoá 100% với câu hỏi tự do của người dùng). Tuỳ
 # chỉnh dựa trên log "[RETRIEVAL] Lọc ngưỡng relevance_score..." nếu cần.
-MIN_RERANK_SCORE = 0.3
+MIN_RERANK_SCORE = 0.5
 
 # Lazy singleton clients — tránh crash khi import module lúc chưa có .env (giống
 # pattern report_generator.py / embedding.py). Backend chọn qua QUOTE_CHAT_BACKEND
@@ -109,23 +112,60 @@ def _format_context(chunks: Sequence[RetrievedDocument], report_date: str) -> st
 EUA_VOLUME_HISTORY_SESSIONS = 30
 
 
-def _eua_volume_history_text(chart_data: List[Any]) -> str:
-    """Bảng khối lượng giao dịch EUA theo TỪNG phiên (ngày: khối lượng).
+def _eua_volume_history_text(chart_data_buffered: List[Any]) -> str:
+    """Bảng khối lượng giao dịch EUA theo TỪNG phiên, MỖI phiên kèm % chênh
+    lệch so với TB đúng `EUA_VOLUME_SESSIONS_FOR_AVG` phiên NGAY TRƯỚC phiên đó
+    — tính bằng Python theo ĐÚNG công thức của `_eua_volume_summary`
+    (report_generator.py), không để LLM tự cộng/chia trung bình từ bảng số thô.
 
-    `_eua_volume_summary` (report_generator.py) chỉ có 1 dòng tóm tắt (phiên
-    liền trước so với TB N phiên) — đủ cho báo cáo gốc nhưng KHÔNG đủ để trả
-    lời câu hỏi so sánh khối lượng GIỮA CÁC NGÀY CỤ THỂ (vd "khối lượng hôm
-    nay so với đầu tuần trước thế nào") vì model không có số liệu từng ngày để
-    đối chiếu, dễ bịa số. Liệt kê nguyên văn từng phiên (mới nhất trước) từ
-    chính `chart_data` đã fetch sẵn cho `_eua_volume_summary`/`_eua_technical_levels_summary`
-    ở trên — không cần query thêm.
+    Lý do cần tính sẵn %chênh lệch cho MỌI phiên (không chỉ phiên liền trước
+    report_date đang xem, như `_eua_volume_summary` ở trên): nếu chỉ đưa bảng
+    số thô rồi để model tự tính TB khi người dùng hỏi 1 ngày CỤ THỂ trong quá
+    khứ (vd đang xem báo cáo 10/9 nhưng hỏi "khối lượng 9/9 so với 20 phiên
+    liền trước"), model dễ tính sai cửa sổ 20 phiên (lệch 1 ngày, hoặc gộp
+    nhầm cả phiên đang hỏi vào TB) — kết quả sẽ KHÔNG khớp với con số báo cáo
+    ngày 9/9 đã công bố. Tính sẵn ở đây dùng CHÍNH XÁC cửa sổ 20 phiên trước
+    MỖI ngày (không phụ thuộc report_date của phiên chat hiện tại), nên hỏi về
+    ngày nào trong bất kỳ báo cáo nào cũng luôn ra đúng 1 con số.
+
+    `chart_data_buffered`: PHẢI có thêm `EUA_VOLUME_SESSIONS_FOR_AVG` phiên đệm
+    phía trước `EUA_VOLUME_HISTORY_SESSIONS` phiên hiển thị (xem
+    `get_prices_text_for_chat`) — nếu không, các phiên CŨ NHẤT trong bảng hiển
+    thị sẽ thiếu dữ liệu phiên trước để tính đủ TB 20 phiên, cho kết quả TB
+    thấp hơn thực tế (chỉ tính được trên ít phiên hơn).
     """
-    with_volume = [c for c in chart_data if c.get("volume") is not None]
+    with_volume = [c for c in chart_data_buffered if c.get("volume") is not None]
     if not with_volume:
         return "Không có dữ liệu khối lượng giao dịch EUA theo từng phiên."
-    recent = with_volume[-EUA_VOLUME_HISTORY_SESSIONS:]
-    lines = [f"  - {c['date']}: {c['volume']:,.0f} hợp đồng" for c in reversed(recent)]
-    return f"Khối lượng giao dịch EUA theo từng phiên ({len(recent)} phiên gần nhất, mới nhất trước):\n" + "\n".join(lines)
+
+    to_display = with_volume[-EUA_VOLUME_HISTORY_SESSIONS:]
+    start_idx = len(with_volume) - len(to_display)
+
+    lines = []
+    for offset, day in enumerate(to_display):
+        prior = with_volume[: start_idx + offset][-EUA_VOLUME_SESSIONS_FOR_AVG:]
+        if not prior:
+            lines.append(f"  - {day['date']}: {day['volume']:,.0f} hợp đồng (chưa đủ dữ liệu phiên trước để so TB)")
+            continue
+        avg_volume = sum(p["volume"] for p in prior) / len(prior)
+        pct_diff = ((day["volume"] - avg_volume) / avg_volume * 100) if avg_volume else 0
+        if pct_diff >= EUA_VOLUME_SPIKE_PCT:
+            level = "tăng đột biến"
+        elif pct_diff <= EUA_VOLUME_DROP_PCT:
+            level = "giảm mạnh"
+        else:
+            level = "bình thường"
+        lines.append(
+            f"  - {day['date']}: {day['volume']:,.0f} hợp đồng | TB {len(prior)} phiên ngay trước: "
+            f"{avg_volume:,.0f} | chênh {pct_diff:+.1f}% ({level})"
+        )
+    lines.reverse()  # mới nhất trước, giữ nguyên format cũ
+
+    return (
+        f"Khối lượng giao dịch EUA theo từng phiên ({len(to_display)} phiên gần nhất, mới nhất trước — "
+        f"mỗi phiên đã so sẵn với TB {EUA_VOLUME_SESSIONS_FOR_AVG} phiên NGAY TRƯỚC nó, cố định theo NGÀY "
+        f"đó chứ KHÔNG đổi theo ngày báo cáo đang xem):\n" + "\n".join(lines)
+    )
 
 
 async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> str:
@@ -154,18 +194,26 @@ async def get_prices_text_for_chat(session: AsyncSession, report_date: str) -> s
     30 phiên gần nhất CÙNG bộ OHLC vừa lấy ở trên) — CHỈ cho EUA theo yêu cầu,
     không mở rộng sang 5 instrument còn lại.
 
-    Nối thêm BẢNG khối lượng EUA theo từng phiên (`_eua_volume_history_text`,
-    CÙNG `chart_data` vừa lấy ở trên, không query thêm) — dòng volume ở trên
-    chỉ tóm tắt phiên liền trước so với TB, không đủ để trả lời câu hỏi so
-    sánh khối lượng GIỮA CÁC NGÀY CỤ THỂ.
+    Nối thêm BẢNG khối lượng EUA theo từng phiên (`_eua_volume_history_text`) —
+    dòng volume ở trên chỉ tóm tắt phiên liền trước report_date so với TB,
+    không đủ để trả lời câu hỏi so sánh khối lượng GIỮA CÁC NGÀY CỤ THỂ. Fetch
+    `chart_data` với `limit` LỚN HƠN 30 (thêm đệm `EUA_VOLUME_SESSIONS_FOR_AVG`
+    phiên phía trước) rồi CẮT lại đúng 30 phiên cuối cho OHLC/volume/technical
+    ở trên (giữ nguyên ý nghĩa "30 phiên gần nhất" như report gốc) — phần đệm
+    chỉ dùng riêng cho `_eua_volume_history_text` để tính đúng TB 20 phiên
+    trước cho cả những phiên CŨ NHẤT trong bảng hiển thị, không bị thiếu dữ
+    liệu do giới hạn fetch.
     """
     prices, _ = await get_prices_for_report(session, report_date)
     prices_text = _summarize_prices(prices)
-    chart_data = await get_historical_ohlc_for_report(session, "EUA", report_date)
+    chart_data_buffered = await get_historical_ohlc_for_report(
+        session, "EUA", report_date, limit=EUA_VOLUME_HISTORY_SESSIONS + EUA_VOLUME_SESSIONS_FOR_AVG
+    )
+    chart_data = chart_data_buffered[-30:]  # 30 phiên gần nhất — khớp mặc định của report_generator.py
     ohlc_text = _eua_session_range_summary(chart_data)
     volume_text = _eua_volume_summary(chart_data)
     technical_text = _eua_technical_levels_summary(chart_data)
-    volume_history_text = _eua_volume_history_text(chart_data)
+    volume_history_text = _eua_volume_history_text(chart_data_buffered)
     return (
         f"{prices_text}\n  - {ohlc_text}\n  - {volume_text}\n  - {technical_text}\n\n"
         f"{volume_history_text}"
@@ -366,7 +414,7 @@ def _build_static_instructions(
 LƯU Ý BẮT BUỘC: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức). Khi được hỏi về giá/biến động của 1 trong 6 mã này, PHẢI dùng ĐÚNG số ở trên (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay mô tả định tính mơ hồ ("biến động nhẹ", "chưa dứt khoát"...) thay cho con số thật đã có sẵn. Khi được hỏi về giá 1 mã KHÔNG nằm trong danh sách trên (vd giá than cốc, giá kim loại, giá điện nước khác Đức), nói rõ hệ thống không theo dõi giá đó — có thể dùng web_search nếu người dùng cần số liệu cụ thể — KHÔNG suy đoán con số.
 LƯU Ý VỀ OHLC: dòng thứ 3 từ cuối ở trên là giá MỞ CỬA/CAO/THẤP/ĐÓNG CỬA (OHLC) phiên liền trước của EUA (tính trực tiếp từ dữ liệu giá thật) — hệ thống CHỈ có OHLC chi tiết theo phiên cho EUA, KHÔNG có cho 5 instrument còn lại (chỉ có giá đóng cửa + Δ ngày/Δ tuần ở bảng trên). Khi được hỏi giá mở cửa/cao nhất/thấp nhất trong phiên của EUA, PHẢI dùng ĐÚNG số ở dòng này, KHÔNG tự bịa hay suy đoán từ Δ ngày/Δ tuần.
 LƯU Ý VỀ VOLUME: dòng thứ 2 từ cuối ở trên là khối lượng giao dịch EUA (hợp đồng) phiên liền trước so với TB các phiên gần nhất — hệ thống CHỈ theo dõi volume cho EUA, KHÔNG có volume cho 5 instrument còn lại. Khi được hỏi về khối lượng/volume EUA, PHẢI dùng ĐÚNG con số này (không tự bịa); dùng làm căn cứ suy luận volume có "xác nhận" xu hướng giá hay không (volume tăng cùng chiều giá = tín hiệu mạnh; volume cao nhưng giá đi ngang/ngược chiều, hoặc giá biến động mạnh mà volume thấp = tín hiệu yếu/đáng nghi ngờ) — nhưng đây CHỈ LÀ SUY LUẬN, không phải kết luận chắc chắn.
-Ngay sau khối DỮ LIỆU GIÁ ở trên (cách 1 dòng trắng) còn có BẢNG "Khối lượng giao dịch EUA theo từng phiên" — liệt kê khối lượng của từng ngày riêng lẻ (tối đa 30 phiên gần nhất). Khi được hỏi SO SÁNH khối lượng GIỮA CÁC NGÀY CỤ THỂ (vd "hôm nay so với hôm qua/tuần trước/ngày X"), PHẢI tra đúng ngày cần so sánh trong bảng này rồi nêu số liệu thật — TUYỆT ĐỐI KHÔNG tự bịa số của 1 ngày không có trong bảng; nếu ngày người dùng hỏi không có trong bảng (ngoài phạm vi phiên đã liệt kê), nói rõ hệ thống không có dữ liệu ngày đó thay vì đoán.
+Ngay sau khối DỮ LIỆU GIÁ ở trên (cách 1 dòng trắng) còn có BẢNG "Khối lượng giao dịch EUA theo từng phiên" — mỗi dòng là 1 ngày, ĐÃ KÈM SẴN mức chênh lệch % so với TB 20 phiên NGAY TRƯỚC ngày đó (tính cố định theo đúng ngày, KHÔNG đổi theo ngày báo cáo {report_date} đang xem — vd hỏi về 1 ngày trong quá khứ ở báo cáo hôm nay vẫn ra đúng số như hỏi ở đúng báo cáo ngày đó). Khi được hỏi về khối lượng 1 ngày cụ thể hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY (vd "hôm nay so với hôm qua/tuần trước/ngày X", "ngày X so với 20 phiên liền trước"), PHẢI tra đúng dòng của ngày đó và DÙNG NGUYÊN con số volume + %chênh lệch đã tính sẵn — TUYỆT ĐỐI KHÔNG tự cộng/chia lại trung bình từ các dòng khác (dễ lệch cửa sổ 20 phiên) và KHÔNG bịa số của ngày không có trong bảng; nếu ngày hỏi không có trong bảng, nói rõ hệ thống không có dữ liệu ngày đó thay vì đoán.
 LƯU Ý VỀ MỐC KỸ THUẬT: dòng cuối cùng ở trên là mốc hỗ trợ/kháng cự kỹ thuật của EUA (đỉnh/đáy 30 phiên gần nhất, tính từ giá thật) — hệ thống CHỈ tính mốc kỹ thuật cho EUA, KHÔNG có cho 5 instrument còn lại (nếu được hỏi mốc kỹ thuật của mã khác, nói rõ hệ thống chưa hỗ trợ, KHÔNG tự bịa mốc). Xem chi tiết cách dùng ở mục F (NĂNG LỰC CỦA BẠN) bên dưới.
 
 === NỘI DUNG MỤC 1-3 CỦA BÁO CÁO NGÀY {report_date} (Tóm tắt điều hành, Bảng giá nhanh, Phân tích chuyên sâu — để trả lời câu hỏi liên quan tới nội dung các mục này ngoài đoạn trích người dùng đang bôi đen) ===

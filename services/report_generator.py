@@ -377,8 +377,14 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
     return prices, max_date
 
 
-async def get_historical_ohlc_for_report(session: AsyncSession, instrument_code: str, target_date_str: str) -> List[Dict]:
-    """Lấy dữ liệu OHLC của 30 ngày gần nhất cho biểu đồ."""
+async def get_historical_ohlc_for_report(
+    session: AsyncSession, instrument_code: str, target_date_str: str, limit: int = 30
+) -> List[Dict]:
+    """Lấy dữ liệu OHLC của `limit` ngày gần nhất (mặc định 30, đúng cỡ biểu đồ
+    Mục 2). `limit` lớn hơn dùng bởi services/quote_chat.py::get_prices_text_for_chat
+    để có thêm phiên đệm phía trước, tính TB khối lượng cho cả những phiên cũ
+    nhất trong 30 phiên hiển thị (xem `_eua_volume_history_text`) — KHÔNG đổi
+    hành vi ở đây, các lời gọi khác vẫn dùng mặc định 30."""
     stmt = (
         select(Price)
         .join(Instrument, Price.instrument_id == Instrument.id)
@@ -389,7 +395,7 @@ async def get_historical_ohlc_for_report(session: AsyncSession, instrument_code:
             )
         )
         .order_by(desc(Price.price_date))
-        .limit(30)
+        .limit(limit)
     )
     result = await session.execute(stmt)
     prices = result.scalars().all()
