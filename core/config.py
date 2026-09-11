@@ -19,6 +19,16 @@ class Settings:
     vector_dimension: int
     rerank_model: str
 
+    # Throttle SAU MỖI lần gọi Cohere Embed API thành công (xem
+    # services/embedding.py::CohereEmbedder.embed) — cộng thêm ngay cả khi call
+    # không hề bị rate limit, ban đầu để né giới hạn 40 calls/phút của gói Free
+    # Cohere. Đổi qua ENV (không cần sửa code) một khi đã nâng cấp lên gói trả
+    # phí — kiểm tra dashboard Cohere trước khi hạ về 0, vì hàm này DÙNG CHUNG
+    # cho cả embed lúc index bài báo (crawl, có thể gọi dồn dập) lẫn embed query
+    # (Quote Chat RAG, mỗi câu hỏi 1 lần) — hạ sai khi vẫn ở gói Free có thể gây
+    # 429 hàng loạt lúc crawl dù Quote Chat trông vẫn ổn.
+    cohere_embed_throttle_seconds: float
+
     # Quote Chat (hỏi đáp đoạn bôi đen) — luôn dùng Anthropic (client tools +
     # web_search cần backend Anthropic, xem services/quote_chat.py). Model có
     # thể đổi qua ENV nếu cần, không cần sửa code.
@@ -72,6 +82,7 @@ class Settings:
             embedding_model=os.environ.get("EMBEDDING_MODEL", "embed-v4.0"),
             vector_dimension=int(os.environ.get("VECTOR_DIMENSION", "1536")),
             rerank_model=os.environ.get("RERANK_MODEL", "rerank-v3.5"),
+            cohere_embed_throttle_seconds=float(os.environ.get("COHERE_EMBED_THROTTLE_SECONDS", "1.5")),
             quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", "claude-sonnet-5"),
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),

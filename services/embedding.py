@@ -47,6 +47,7 @@ class CohereEmbedder(Embedder):
         _settings = Settings.from_env()
         self.api_key = api_key or _settings.cohere_api_key
         self.model_name = model_name or _settings.embedding_model
+        self.throttle_seconds = _settings.cohere_embed_throttle_seconds
         if not self.api_key:
             raise ValueError("Cohere API key chưa được cấu hình.")
         self._client = cohere.AsyncClient(api_key=self.api_key)
@@ -79,9 +80,14 @@ class CohereEmbedder(Embedder):
                     input_type=input_type,
                 )
                 
-                # Tránh lỗi rate limit của bản Free (40 calls/min)
-                await asyncio.sleep(1.5)
-                
+                # Tránh lỗi rate limit của bản Free (40 calls/min) — mức nghỉ đổi qua ENV
+                # `COHERE_EMBED_THROTTLE_SECONDS` (core/config.py), 0 = tắt hẳn. Đặt 0 chỉ khi
+                # chắc chắn key đã ở gói trả phí (rate limit cao hơn nhiều) — hàm này dùng chung cho
+                # cả embed lúc index bài báo (crawl, có thể gọi dồn dập) lẫn embed query (mỗi câu
+                # hỏi Quote Chat 1 lần, đang là phần cộng thêm ~1.5s vào MỌI câu hỏi).
+                if self.throttle_seconds > 0:
+                    await asyncio.sleep(self.throttle_seconds)
+
                 return response.embeddings
 
             except (cohere.TooManyRequestsError, cohere.ServiceUnavailableError) as e:
