@@ -167,11 +167,29 @@ def _eua_volume_history_text(chart_data_buffered: List[Any]) -> str:
 # prompt tĩnh (trước đây luôn tốn context dù không dùng tới).
 # ─────────────────────────────────────────────────────────────────────
 
-async def _tool_market_prices_text(session: AsyncSession, report_date: str) -> str:
-    prices, _ = await get_prices_for_report(session, report_date)
+async def _tool_market_prices_text(session: AsyncSession, target_date: str, requested_date: Optional[str] = None) -> str:
+    """`target_date`: ngày dùng để tra cứu (report_date của phiên, hoặc ngày cụ thể model
+    truyền qua tham số `date` của tool). `requested_date`: ngày model THỰC SỰ truyền vào tool
+    (None nếu model không truyền, tức đang hỏi về ngày báo cáo mặc định) — dùng để cảnh báo lệch
+    ngày, xem comment ở CLIENT_TOOLS: trước đây hàm này vứt bỏ `max_date` trả về từ
+    `get_prices_for_report`, khiến model không biết dữ liệu trả về thực sự là của ngày nào và có
+    thể trình bày nhầm dữ liệu ngày khác như thể là ngày người dùng hỏi."""
+    prices, max_date = await get_prices_for_report(session, target_date)
     prices_text = _summarize_prices(prices)
+    max_date_str = str(max_date) if max_date else None
+    if requested_date and max_date_str and max_date_str != requested_date:
+        date_note = (
+            f"LƯU Ý QUAN TRỌNG: hệ thống KHÔNG có dữ liệu giá cho đúng ngày {requested_date} bạn/người dùng yêu "
+            f"cầu (có thể do cuối tuần/nghỉ lễ/chưa crawl) — dữ liệu dưới đây là của phiên gần nhất TRƯỚC đó, "
+            f"ngày {max_date_str}. PHẢI nói rõ ràng trong câu trả lời rằng đây là giá ngày {max_date_str}, "
+            "KHÔNG được trình bày như thể đây là giá của ngày người dùng hỏi."
+        )
+    elif max_date_str:
+        date_note = f"Dữ liệu dưới đây là giá đóng cửa ngày {max_date_str}."
+    else:
+        date_note = ""
     return (
-        f"{prices_text}\n"
+        f"{date_note}\n{prices_text}\n"
         "LƯU Ý: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, "
         "Brent, WTI, DEBY1/điện Đức). Dùng ĐÚNG số này (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay "
         "mô tả định tính mơ hồ thay cho con số thật. Hỏi về mã KHÔNG nằm trong 6 mã này → hệ thống "
@@ -394,11 +412,12 @@ def _build_static_instructions(
 
     data_block = f"""=== DỮ LIỆU GIÁ / NỘI DUNG BÁO CÁO — TRA CỨU QUA TOOL, KHÔNG CÓ SẴN Ở ĐÂY ===
 Bạn CÓ CÁC TOOL sau — gọi khi câu hỏi THỰC SỰ cần, KHÔNG gọi "cho chắc" nếu thông tin đã có sẵn trong đoạn trích/dữ liệu nền/lịch sử hội thoại:
-- get_market_prices: giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức).
-- get_eua_details: OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
-- get_eua_volume_history: khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
+- get_market_prices(date tuỳ chọn): giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức).
+- get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
+- get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
 - get_report_section(section="1"|"2"|"3"): toàn văn Mục 1 (Tóm tắt điều hành) / Mục 2 (Bảng giá nhanh) / Mục 3 (Phân tích chuyên sâu) của báo cáo ngày {report_date}, NGOÀI đoạn trích người dùng đang bôi đen.
-Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng trong CÙNG hội thoại (dữ liệu 1 ngày là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
+QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history): mặc định (không truyền `date`) 3 tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về giá/khối lượng của 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "hôm qua", "tuần trước"), PHẢI tự quy đổi ra định dạng YYYY-MM-DD và truyền qua tham số `date` — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Nếu ngày yêu cầu không có dữ liệu, tool sẽ trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo rõ ràng — PHẢI đọc và nêu đúng ngày thực tế đó trong câu trả lời, không im lặng coi như đúng ngày đã hỏi.
+Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng CÙNG `date` trong CÙNG hội thoại (dữ liệu 1 ngày là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ; gọi lại NẾU đổi sang ngày khác). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
 LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen được cắt ra từ Mục 1, 2 hoặc 3 của báo cáo — có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Gặp trường hợp này: GỌI get_report_section (thử mục có khả năng chứa đoạn trích nhất trước, dựa vào văn phong — Mục 1 là các gạch đầu dòng tóm tắt, Mục 2 có "yếu tố hỗ trợ tăng/giảm giá", Mục 3 là phân tích chuyên sâu có tiêu đề từng khối; thử mục khác nếu không thấy) để tìm đúng vị trí đoạn trích, đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong kết quả trả về để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì, rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi có thể tự tra ra bằng tool."""
     price_ref = "gọi tool get_eua_details (hoặc get_market_prices/get_eua_volume_history tuỳ loại dữ liệu) rồi dùng"
     report_ref = "PHẢI gọi tool get_report_section lấy đúng mục cần rồi dùng nội dung trả về"
@@ -496,35 +515,54 @@ WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_use
 # điểm cốt lõi của việc "chỉ lấy dữ liệu khi thực sự cần": trước đây
 # prices/report luôn được fetch + tiêm vào MỌI request; giờ chỉ fetch khi
 # model chủ động gọi tool tương ứng.
+
+# Property `date` dùng chung cho get_market_prices/get_eua_details/get_eua_volume_history —
+# mặc định (không truyền) các tool này tra cứu theo ngày báo cáo đang xem; truyền `date` khi
+# người dùng hỏi cụ thể về 1 ngày KHÁC ngày báo cáo (vd đang xem báo cáo 10/09 nhưng hỏi "giá
+# ngày 09/09") để tránh trả nhầm dữ liệu ngày báo cáo mà không nói rõ (xem comment ở
+# `_execute_client_tool`/`_tool_market_prices_text`).
+_DATE_PARAM_SCHEMA = {
+    "type": "string",
+    "description": (
+        "TUỲ CHỌN — định dạng YYYY-MM-DD. CHỈ truyền khi người dùng hỏi rõ về 1 ngày CỤ THỂ khác "
+        "với ngày báo cáo đang xem. Không truyền = mặc định lấy theo ngày báo cáo đang xem. Nếu "
+        "ngày truyền vào không có dữ liệu (cuối tuần/nghỉ lễ/chưa crawl), tool trả về dữ liệu của "
+        "phiên gần nhất TRƯỚC đó kèm cảnh báo — PHẢI đọc kỹ và nêu đúng ngày thực tế trong câu trả lời."
+    ),
+}
+
 CLIENT_TOOLS = [
     {
         "name": "get_market_prices",
         "description": (
             "Lấy giá đóng cửa + Δ ngày + Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, "
-            "API2/than, Brent, WTI, DEBY1/điện Đức) cho ngày báo cáo đang xem. Gọi khi câu trả lời "
-            "cần SỐ LIỆU GIÁ CỤ THỂ chưa có sẵn trong đoạn trích/dữ liệu nền đã cung cấp."
+            "API2/than, Brent, WTI, DEBY1/điện Đức) cho ngày báo cáo đang xem (hoặc ngày cụ thể "
+            "truyền qua `date`). Gọi khi câu trả lời cần SỐ LIỆU GIÁ CỤ THỂ chưa có sẵn trong đoạn "
+            "trích/dữ liệu nền đã cung cấp."
         ),
-        "input_schema": {"type": "object", "properties": {}},
+        "input_schema": {"type": "object", "properties": {"date": _DATE_PARAM_SCHEMA}},
     },
     {
         "name": "get_eua_details",
         "description": (
-            "Lấy chi tiết phiên liền trước của EUA: biên độ OHLC (mở/cao/thấp/đóng), khối lượng giao "
-            "dịch so với TB gần đây, và mốc kỹ thuật hỗ trợ/kháng cự (đỉnh/đáy 30 phiên). Gọi khi được "
-            "hỏi về giá mở/cao/thấp trong phiên, khối lượng phiên GẦN NHẤT, hoặc mốc kỹ thuật của EUA. "
-            "Nếu cần khối lượng theo NHIỀU NGÀY cụ thể để so sánh, dùng get_eua_volume_history thay vì "
-            "tool này."
+            "Lấy chi tiết phiên (mặc định phiên liền trước ngày báo cáo, hoặc phiên gần nhất tính "
+            "đến ngày cụ thể truyền qua `date`) của EUA: biên độ OHLC (mở/cao/thấp/đóng), khối lượng "
+            "giao dịch so với TB gần đây, và mốc kỹ thuật hỗ trợ/kháng cự (đỉnh/đáy 30 phiên). Gọi "
+            "khi được hỏi về giá mở/cao/thấp trong phiên, khối lượng 1 phiên, hoặc mốc kỹ thuật của "
+            "EUA. Nếu cần khối lượng theo NHIỀU NGÀY cụ thể để so sánh, dùng get_eua_volume_history "
+            "thay vì tool này."
         ),
-        "input_schema": {"type": "object", "properties": {}},
+        "input_schema": {"type": "object", "properties": {"date": _DATE_PARAM_SCHEMA}},
     },
     {
         "name": "get_eua_volume_history",
         "description": (
-            "Lấy bảng khối lượng giao dịch EUA theo TỪNG phiên (tối đa 30 phiên gần nhất), mỗi phiên "
-            "đã kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC phiên đó. Gọi khi người dùng hỏi về "
-            "khối lượng của 1 NGÀY CỤ THỂ trong quá khứ, hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY."
+            "Lấy bảng khối lượng giao dịch EUA theo TỪNG phiên (tối đa 30 phiên gần nhất tính đến "
+            "ngày báo cáo đang xem, hoặc tính đến ngày cụ thể truyền qua `date`), mỗi phiên đã kèm "
+            "sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC phiên đó. Gọi khi người dùng hỏi về khối "
+            "lượng của 1 NGÀY CỤ THỂ trong quá khứ, hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY."
         ),
-        "input_schema": {"type": "object", "properties": {}},
+        "input_schema": {"type": "object", "properties": {"date": _DATE_PARAM_SCHEMA}},
     },
     {
         "name": "get_report_section",
@@ -575,17 +613,34 @@ async def _execute_client_tool(
     DB — chỉ cache kết quả THÀNH CÔNG (lỗi tạm thời/transient không nên bị
     cache, để lần gọi lại sau có cơ hội thử lại thật).
     """
-    cache_key = (name, tool_input.get("section")) if name == "get_report_section" else (name,)
+    if name == "get_report_section":
+        cache_key = (name, tool_input.get("section"))
+    elif name in ("get_market_prices", "get_eua_details", "get_eua_volume_history"):
+        cache_key = (name, tool_input.get("date"))
+    else:
+        cache_key = (name,)
     if cache_key in tool_cache:
         return tool_cache[cache_key]
 
+    # `date` là tham số tuỳ chọn model truyền khi người dùng hỏi về 1 ngày CỤ THỂ khác ngày báo
+    # cáo đang xem (xem mô tả tool + rule trong data_block của _build_static_instructions) —
+    # validate format trước khi đưa vào query string-compare trên Price.price_date (cột Text,
+    # xem db/models.py), tránh so sánh lexicographic sai lệch nếu model gửi format khác
+    # "YYYY-MM-DD" (vd "09/09/2026").
+    raw_date = tool_input.get("date")
+    invalid_date_note = None
+    if raw_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(raw_date)):
+        invalid_date_note = str(raw_date)
+        raw_date = None
+    target_date = raw_date or report_date
+
     try:
         if name == "get_market_prices":
-            result = await _tool_market_prices_text(session, report_date)
+            result = await _tool_market_prices_text(session, target_date, requested_date=raw_date)
         elif name == "get_eua_details":
-            result = await _tool_eua_details_text(session, report_date, chart_cache)
+            result = await _tool_eua_details_text(session, target_date, chart_cache)
         elif name == "get_eua_volume_history":
-            result = await _tool_eua_volume_history_text(session, report_date, chart_cache)
+            result = await _tool_eua_volume_history_text(session, target_date, chart_cache)
         elif name == "get_report_section":
             result = await _tool_report_section_text(session, report_date, str(tool_input.get("section", "")))
         else:
@@ -593,6 +648,13 @@ async def _execute_client_tool(
     except Exception:
         logger.exception("[QUOTE-CHAT] Lỗi khi thực thi tool %s", name)
         return "Đã xảy ra lỗi khi tra cứu dữ liệu này — trả lời dựa trên thông tin đã có, có thể nói rõ không tra cứu được nếu cần."
+
+    if invalid_date_note:
+        result = (
+            f"LƯU Ý: tham số date=\"{invalid_date_note}\" không đúng định dạng YYYY-MM-DD nên bị bỏ qua — "
+            f"dữ liệu dưới đây là theo ngày báo cáo đang xem ({report_date}), KHÔNG phải ngày đã yêu cầu. "
+            "Gọi lại tool với date đúng định dạng YYYY-MM-DD nếu vẫn cần đúng ngày đó.\n" + result
+        )
 
     tool_cache[cache_key] = result
     return result
