@@ -314,7 +314,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
         <button
           style={{ position: "fixed", left: trigger.x, top: trigger.y - 44, transform: "translateX(-50%)" }}
           onClick={openChat}
-          className="z-50 flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-3 py-2 rounded-full shadow-[var(--shadow-medium)] hover:bg-primary-dark transition-colors"
+          className="z-50 flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-3 py-2 rounded-full shadow-[var(--shadow-medium)] hover:bg-primary-dark transition-colors print:hidden"
         >
           <MessageCircleQuestion size={14} />
           Hỏi AI
@@ -322,7 +322,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       )}
 
       {!chatOpen && (
-        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2 print:hidden">
           <button
             onClick={() => setFeedbackOpen(true)}
             title="Phản ánh thái độ của Jenny"
@@ -344,7 +344,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       <JennyFeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
 
       {chatOpen && (
-        <div className="fixed inset-0 z-[60] flex justify-end">
+        <div className="fixed inset-0 z-[60] flex justify-end print:hidden">
           <div className="absolute inset-0 bg-black/20" onClick={() => closeChat()} />
           <div className="relative h-full flex shadow-[var(--shadow-medium)]">
             {/* Sidebar lịch sử chat — trên desktop hiện song song bên cạnh khung chat;

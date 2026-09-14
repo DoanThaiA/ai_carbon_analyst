@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, AlertCircle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, AlertCircle, CheckCircle2, Download } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
@@ -65,14 +65,23 @@ export default function ReportDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 print:hidden">
         <Link href="/dashboard" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />
           Quay lại Dashboard
         </Link>
-        <div className="px-2.5 py-1 text-xs font-mono font-semibold rounded flex items-center gap-2 bg-tint text-primary-dark border border-primary/20">
-          <CheckCircle2 size={14} />
-          PUBLISHED
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border border-border-soft text-body hover:border-primary hover:text-primary-dark transition-colors"
+          >
+            <Download size={14} />
+            Tải PDF
+          </button>
+          <div className="px-2.5 py-1 text-xs font-mono font-semibold rounded flex items-center gap-2 bg-tint text-primary-dark border border-primary/20">
+            <CheckCircle2 size={14} />
+            PUBLISHED
+          </div>
         </div>
       </div>
 

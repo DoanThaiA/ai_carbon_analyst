@@ -93,6 +93,19 @@ body {
   }
 }
 
+/* Xuất PDF qua hộp thoại in của trình duyệt (window.print()) — giữ màu nền/badge
+   thay vì bị trình duyệt strip mặc định khi in, và ép layout full-width vì
+   report dùng nhiều class lg:/sm: theo viewport, còn khổ in không đổi theo đó. */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    background: #fff;
+  }
+}
+
 /* Custom Utilities based on user template */
 @layer utilities {
   .ticker-track {

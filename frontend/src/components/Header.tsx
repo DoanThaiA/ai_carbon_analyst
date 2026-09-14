@@ -30,7 +30,7 @@ export function Header() {
   const isAuthenticated = !isLogin && role !== null;
 
   return (
-    <header className="bg-primary-dark px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+    <header className="bg-primary-dark px-6 py-4 flex items-center justify-between sticky top-0 z-50 print:hidden">
       <Link href={logoHref} className="flex items-center gap-3">
         <Image src="/stavian_logo.png" alt="Stavian" width={100} height={28} className="h-7 w-auto block" />
         <div className="w-[1px] h-5 bg-white/25 mx-1"></div>
