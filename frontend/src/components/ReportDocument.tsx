@@ -147,7 +147,7 @@ const SECTION_ICON: Record<string, typeof Sparkles> = {
 function SectionHeading({ number, title }: { number: string; title: string }) {
   const Icon = SECTION_ICON[number] ?? Sparkles;
   return (
-    <div className="relative mb-5">
+    <div className="relative mb-5 print:break-after-avoid">
       <span
         aria-hidden="true"
         className="pointer-events-none select-none absolute -top-3 right-0 font-mono text-[52px] sm:text-[64px] font-extrabold leading-none text-primary/[0.05]"
@@ -510,18 +510,13 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* SECTION 2 */}
         <section className="py-5">
-          <SectionHeading number="02" title="Bảng giá nhanh" />
-          {report.content["2"]?.price_timestamp && (
-            <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
-          )}
+          <div className="print:break-inside-avoid">
+            <SectionHeading number="02" title="Bảng giá nhanh" />
+            {report.content["2"]?.price_timestamp && (
+              <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
+            )}
 
-          {/* Bảng giá full-width; nến + số liệu chính đứng cùng hàng bên phải trên desktop
-              (lg:flex-row), xếp chồng trên mobile (chart trước, số liệu chính sau, giữ nguyên
-              thứ tự cũ). table-fixed + width cố định theo %: cột Hợp đồng rộng nhất (tên hợp
-              đồng dài như "German Power" không bị ép xuống dòng nhiều), 4 cột còn lại
-              (Giá/Δ Ngày/Δ Tuần/Ghi chú) rộng bằng nhau — tránh 1 cột co hẹp bất thường làm
-              hàng cao lên, giữ giao diện gọn trên mobile. */}
-          <div className="flex flex-col gap-5">
+            {/* Bảng giá full-width */}
             <div className="overflow-x-auto">
               <table className="w-full table-fixed border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
                 <thead>
@@ -535,11 +530,6 @@ export function ReportDocument({ report }: { report: Report }) {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {priceRows.map((r: any, i: number) => {
-                    // "price" từ backend là 1 chuỗi "<số> <đơn vị>" (vd "72.4000 EUR/tCO2e") —
-                    // đơn vị thường không có khoảng trắng nên trình duyệt không tự ngắt dòng
-                    // được, dễ tràn sang cột Δ Ngày bên cạnh trên màn hình hẹp. Tách riêng số
-                    // (dòng trên, rút gọn 2 số thập phân cho ngắn) và đơn vị (dòng dưới, nhỏ
-                    // hơn) thay vì hiện chung 1 dòng.
                     const [rawPriceNumber, ...priceUnitParts] = String(r.price || "").split(" ");
                     const priceNumber = formatCompactPriceNumber(rawPriceNumber);
                     const priceUnit = priceUnitParts.join(" ");
@@ -583,8 +573,9 @@ export function ReportDocument({ report }: { report: Report }) {
                 </tbody>
               </table>
             </div>
+          </div>
 
-            <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+          <div className="flex flex-col lg:flex-row gap-4 items-stretch mt-5">
               <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
                 <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
                   <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
@@ -597,10 +588,6 @@ export function ReportDocument({ report }: { report: Report }) {
                 <div className="lg:flex-1 lg:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
                   <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
                   <div className="space-y-1 text-[13px] leading-snug text-body">
-                    {/* Mỗi câu (tách theo dấu chấm cuối câu) xuống 1 dòng riêng thay vì
-                        dồn thành 1 đoạn dài — dễ quét mắt hơn, khoảng cách space-y-1 +
-                        leading-snug giữ tổng chiều cao vừa khít khung (bằng chiều cao
-                        biểu đồ nến bên cạnh) thay vì leading-relaxed cũ làm rộng hàng. */}
                     {report.content["2"].key_facts
                       .split(/(?<=\.)\s+/)
                       .filter((s: string) => s.trim())
@@ -610,7 +597,6 @@ export function ReportDocument({ report }: { report: Report }) {
                   </div>
                 </div>
               )}
-            </div>
           </div>
 
           {(report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0) && (
