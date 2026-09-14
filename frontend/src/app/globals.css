@@ -116,17 +116,9 @@ body {
     margin: 12mm 10mm 12mm 10mm;
   }
 
-  /* ---- Mỗi section bắt đầu trang mới (trừ section đầu tiên) ---- */
+  /* ---- Section: cho nội dung chảy liên tục, chỉ ngắt trang khi tràn ---- */
   section {
-    page-break-inside: avoid;
-  }
-  /* Section đầu tiên không cần ngắt trang — nó nằm ngay sau masthead */
-  section:first-of-type {
-    page-break-before: avoid;
-  }
-  /* Các section tiếp theo: luôn bắt đầu ở trang mới */
-  section ~ section {
-    page-break-before: always;
+    page-break-inside: auto;
   }
 
   /* ---- Không cắt ngang các block quan trọng ---- */
@@ -197,10 +189,15 @@ body {
     border-radius: 0 !important;
   }
 
-  /* ---- Spacing giữa các section nhất quán hơn ---- */
+  /* ---- Spacing giữa các section gọn hơn ---- */
   section.py-5 {
-    padding-top: 12px !important;
-    padding-bottom: 8px !important;
+    padding-top: 8px !important;
+    padding-bottom: 4px !important;
+  }
+
+  /* ---- Giảm margin-bottom của container ngoài ---- */
+  .mb-10 {
+    margin-bottom: 0 !important;
   }
 }
 
