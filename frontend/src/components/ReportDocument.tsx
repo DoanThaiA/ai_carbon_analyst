@@ -6,7 +6,7 @@ import Image from "next/image";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, FileText, AlignLeft, Newspaper, Scale, CalendarDays, Lightbulb, Link2,
-  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, Activity, Gauge, Radar,
+  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck,
 } from "lucide-react";
 import type { Report } from "@/lib/types";
 
@@ -398,81 +398,6 @@ function CandlestickChart({ report }: { report: Report }) {
   );
 }
 
-// Dải chỉ số tổng quan (stat strip) ngay dưới ticker — nén 4 con số quan trọng
-// nhất của cả báo cáo (giá EUA, số hợp đồng tăng/giảm, số bài tin đã xử lý)
-// thành dạng "terminal" quét nhanh trong 2 giây, trước khi đọc chi tiết từng
-// mục bên dưới. Toàn bộ suy ra từ dữ liệu đã có sẵn trong report, không gọi
-// thêm API/field mới.
-function StatTile({
-  icon: Icon, label, value, sub, accent,
-}: {
-  icon: typeof Activity; label: string; value: string; sub?: string; accent?: "up" | "down" | "neutral";
-}) {
-  const accentClass =
-    accent === "up" ? "text-up" : accent === "down" ? "text-down" : "text-primary-dark";
-  return (
-    <div className="flex-1 min-w-[140px] border border-border rounded-lg bg-background px-3.5 py-3 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-light">
-        <Icon size={12} strokeWidth={2.5} className={accentClass} />
-        {label}
-      </div>
-      <div className={clsx("font-mono text-[20px] sm:text-[22px] font-extrabold tabular-nums leading-none", accentClass)}>
-        {value}
-      </div>
-      {sub && <div className="text-[11px] text-muted-light leading-snug">{sub}</div>}
-    </div>
-  );
-}
-
-function StatStrip({ report, priceRows }: { report: Report; priceRows: any[] }) {
-  const euaRow = priceRows.find((r: any) => /EUA/i.test(r.name)) || priceRows[0];
-  const nonFlat = priceRows.filter((r: any) => r.dday && r.dday !== "-");
-  const upCount = nonFlat.filter((r: any) => isPositiveDelta(r.dday)).length;
-  const downCount = nonFlat.length - upCount;
-
-  const newsSection = report.content["6"];
-  const newsCount = (newsSection?.international?.length || 0) + (newsSection?.vietnam?.length || 0);
-  const sourcesCount = report.content["9"]?.items?.length ?? 0;
-
-  if (!euaRow && newsCount === 0) return null;
-
-  const [euaPriceNumber, ...euaUnitParts] = String(euaRow?.price || "").split(" ");
-
-  return (
-    <div className="flex flex-wrap gap-3 mb-6">
-      {euaRow && (
-        <StatTile
-          icon={Gauge}
-          label={`${euaRow.name} · Giá chốt`}
-          value={formatCompactPriceNumber(euaPriceNumber)}
-          sub={euaUnitParts.join(" ") || undefined}
-          accent={euaRow.dday === "-" ? "neutral" : isPositiveDelta(euaRow.dday) ? "up" : "down"}
-        />
-      )}
-      <StatTile
-        icon={TrendingUp}
-        label="Hợp đồng tăng"
-        value={`${upCount}/${nonFlat.length || priceRows.length}`}
-        sub="so với phiên trước"
-        accent={upCount >= downCount ? "up" : "neutral"}
-      />
-      <StatTile
-        icon={TrendingDown}
-        label="Hợp đồng giảm"
-        value={`${downCount}/${nonFlat.length || priceRows.length}`}
-        sub="so với phiên trước"
-        accent={downCount > upCount ? "down" : "neutral"}
-      />
-      <StatTile
-        icon={Radar}
-        label="Tin đã phân tích"
-        value={String(newsCount)}
-        sub={sourcesCount ? `từ ${sourcesCount} nguồn trong 48h` : "trong kỳ báo cáo"}
-      />
-    </div>
-  );
-}
-
 /**
  * Toàn bộ nội dung "tờ báo cáo" (masthead → footer) — dùng chung cho cả màn
  * hình user (chỉ xem báo cáo đã published) và màn hình admin duyệt báo cáo,
@@ -546,8 +471,6 @@ export function ReportDocument({ report }: { report: Report }) {
       </div>
 
       <div className="px-6 sm:px-10 pt-5 pb-10">
-
-        <StatStrip report={report} priceRows={priceRows} />
 
         {/* SECTION 1 */}
         <section className="py-5">
