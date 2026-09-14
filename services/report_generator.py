@@ -1191,9 +1191,9 @@ Cấu trúc: {{"bullish": [...], "bearish": [...]}}. Mỗi phần tử gồm "ta
 - "tag": "FACT" hoặc "OPINION" — phân biệt theo ĐỘ CHẮC CHẮN:
   + "FACT" = thông tin ĐÃ XÁC NHẬN: (a) từ DỮ LIỆU GIÁ hệ thống (nêu instrument, giá, Δ ngày + Δ tuần, source_index=null) hoặc (b) từ TIN TỨC đánh số nêu sự kiện/số liệu đã xảy ra (BẮT BUỘC kèm source_index).
   + "OPINION" = nhận định/suy luận/dự báo từ tin tức hoặc phân tích của bạn (NÊN kèm source_index nếu gắn bài cụ thể, null nếu suy luận chung).
-- "text": 1 câu fact + 1–2 câu chuỗi nhân quả → kết luận hướng tác động EUA. Nêu Δ ngày + Δ tuần khi trích dữ liệu giá.
+- "text": CHỈ liệt kê fact (số liệu/sự kiện) — KHÔNG giải thích/suy luận tác động, KHÔNG viết chuỗi nhân quả hay kết luận hướng ảnh hưởng tới EUA. Nêu Δ ngày + Δ tuần khi trích dữ liệu giá.
 - "source_index": số [N] có thật trong danh sách, hoặc null.
-Xếp bullish/bearish theo ĐÚNG chuỗi nhân quả tới EUA (không theo chiều tăng/giảm bề ngoài của instrument). CHỈ đưa yếu tố có dữ liệu/tin hỗ trợ, không bịa thêm.
+Xếp bullish/bearish theo ĐÚNG chuỗi nhân quả tới EUA (không theo chiều tăng/giảm bề ngoài của instrument) — chuỗi nhân quả CHỈ dùng để QUYẾT ĐỊNH xếp vào bullish hay bearish, KHÔNG viết ra trong "text". CHỈ đưa yếu tố có dữ liệu/tin hỗ trợ, không bịa thêm.
 - KHỐI LƯỢNG GIAO DỊCH EUA: dùng đúng số liệu khối lượng phiên liền trước so với TB các phiên gần nhất đã nêu trong "SỐ LIỆU EUA" ở trên (KHÔNG tự tính lại/bịa số khác) để BẮT BUỘC thêm 1 mục "FACT" riêng suy luận từ khối lượng vào bullish/bearish, theo đúng logic "khối lượng xác nhận xu hướng giá":
   + Khối lượng tăng đột biến CÙNG chiều với giá tăng/giảm phiên đó → tín hiệu xác nhận lực mua/bán mạnh, xếp cùng chiều bullish/bearish tương ứng.
   + Khối lượng giảm mạnh trong khi giá vẫn biến động mạnh, hoặc khối lượng tăng đột biến nhưng giá gần như đi ngang → tín hiệu YẾU/thiếu xác nhận, ghi rõ là "OPINION" và nêu rủi ro đảo chiều/thiếu động lực thay vì kết luận dứt khoát.

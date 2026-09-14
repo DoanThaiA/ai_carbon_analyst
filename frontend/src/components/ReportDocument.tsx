@@ -6,7 +6,7 @@ import Image from "next/image";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, FileText, AlignLeft, Newspaper, Scale, CalendarDays, Lightbulb, Link2,
-  Crosshair, ChevronDown, ChevronUp, Info,
+  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, Activity, Gauge, Radar,
 } from "lucide-react";
 import type { Report } from "@/lib/types";
 
@@ -141,17 +141,29 @@ const SECTION_ICON: Record<string, typeof Sparkles> = {
 
 // Đầu mục section: icon nổi bật trong khối bo tròn để phân biệt rõ ràng từng
 // phần trong báo cáo dài, tiêu đề lớn/đậm hơn để tạo phân cấp thị giác rõ.
+// Số thứ tự khổng lồ mờ phía sau (kiểu whitepaper/tạp chí khoa học) + vạch
+// gradient bên dưới giúp mắt định vị ngay ranh giới giữa các mục khi lướt
+// nhanh 1 báo cáo dài nhiều section.
 function SectionHeading({ number, title }: { number: string; title: string }) {
   const Icon = SECTION_ICON[number] ?? Sparkles;
   return (
-    <div className="flex items-center gap-3 mb-4">
-      <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-tint text-primary-dark shrink-0">
-        <Icon size={18} strokeWidth={2.25} />
+    <div className="relative mb-5">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none select-none absolute -top-3 right-0 font-mono text-[52px] sm:text-[64px] font-extrabold leading-none text-primary/[0.05]"
+      >
+        {number}
       </span>
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-[20px] font-extrabold tracking-tight text-foreground">{title}</span>
-        <span className="font-mono text-[10px] font-semibold text-muted-light tracking-wider">{number}</span>
+      <div className="relative flex items-center gap-3">
+        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-tint text-primary-dark shrink-0">
+          <Icon size={18} strokeWidth={2.25} />
+        </span>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-[20px] font-extrabold tracking-tight text-foreground">{title}</span>
+          <span className="font-mono text-[10px] font-semibold text-muted-light tracking-wider">{number}</span>
+        </div>
       </div>
+      <div className="relative mt-3 h-[2px] w-full bg-gradient-to-r from-primary/40 via-border to-transparent" />
     </div>
   );
 }
@@ -386,6 +398,81 @@ function CandlestickChart({ report }: { report: Report }) {
   );
 }
 
+// Dải chỉ số tổng quan (stat strip) ngay dưới ticker — nén 4 con số quan trọng
+// nhất của cả báo cáo (giá EUA, số hợp đồng tăng/giảm, số bài tin đã xử lý)
+// thành dạng "terminal" quét nhanh trong 2 giây, trước khi đọc chi tiết từng
+// mục bên dưới. Toàn bộ suy ra từ dữ liệu đã có sẵn trong report, không gọi
+// thêm API/field mới.
+function StatTile({
+  icon: Icon, label, value, sub, accent,
+}: {
+  icon: typeof Activity; label: string; value: string; sub?: string; accent?: "up" | "down" | "neutral";
+}) {
+  const accentClass =
+    accent === "up" ? "text-up" : accent === "down" ? "text-down" : "text-primary-dark";
+  return (
+    <div className="flex-1 min-w-[140px] border border-border rounded-lg bg-background px-3.5 py-3 flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-light">
+        <Icon size={12} strokeWidth={2.5} className={accentClass} />
+        {label}
+      </div>
+      <div className={clsx("font-mono text-[20px] sm:text-[22px] font-extrabold tabular-nums leading-none", accentClass)}>
+        {value}
+      </div>
+      {sub && <div className="text-[11px] text-muted-light leading-snug">{sub}</div>}
+    </div>
+  );
+}
+
+function StatStrip({ report, priceRows }: { report: Report; priceRows: any[] }) {
+  const euaRow = priceRows.find((r: any) => /EUA/i.test(r.name)) || priceRows[0];
+  const nonFlat = priceRows.filter((r: any) => r.dday && r.dday !== "-");
+  const upCount = nonFlat.filter((r: any) => isPositiveDelta(r.dday)).length;
+  const downCount = nonFlat.length - upCount;
+
+  const newsSection = report.content["6"];
+  const newsCount = (newsSection?.international?.length || 0) + (newsSection?.vietnam?.length || 0);
+  const sourcesCount = report.content["9"]?.items?.length ?? 0;
+
+  if (!euaRow && newsCount === 0) return null;
+
+  const [euaPriceNumber, ...euaUnitParts] = String(euaRow?.price || "").split(" ");
+
+  return (
+    <div className="flex flex-wrap gap-3 mb-6">
+      {euaRow && (
+        <StatTile
+          icon={Gauge}
+          label={`${euaRow.name} · Giá chốt`}
+          value={formatCompactPriceNumber(euaPriceNumber)}
+          sub={euaUnitParts.join(" ") || undefined}
+          accent={euaRow.dday === "-" ? "neutral" : isPositiveDelta(euaRow.dday) ? "up" : "down"}
+        />
+      )}
+      <StatTile
+        icon={TrendingUp}
+        label="Hợp đồng tăng"
+        value={`${upCount}/${nonFlat.length || priceRows.length}`}
+        sub="so với phiên trước"
+        accent={upCount >= downCount ? "up" : "neutral"}
+      />
+      <StatTile
+        icon={TrendingDown}
+        label="Hợp đồng giảm"
+        value={`${downCount}/${nonFlat.length || priceRows.length}`}
+        sub="so với phiên trước"
+        accent={downCount > upCount ? "down" : "neutral"}
+      />
+      <StatTile
+        icon={Radar}
+        label="Tin đã phân tích"
+        value={String(newsCount)}
+        sub={sourcesCount ? `từ ${sourcesCount} nguồn trong 48h` : "trong kỳ báo cáo"}
+      />
+    </div>
+  );
+}
+
 /**
  * Toàn bộ nội dung "tờ báo cáo" (masthead → footer) — dùng chung cho cả màn
  * hình user (chỉ xem báo cáo đã published) và màn hình admin duyệt báo cáo,
@@ -408,15 +495,32 @@ export function ReportDocument({ report }: { report: Report }) {
     <div className="bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
       {/* Masthead — nền riêng (brand dark) để tách rõ khỏi phần nội dung trắng bên dưới.
+          Lưới chấm nền (dot-grid) + badge "nguồn đã kiểm chứng" gợi cảm giác tờ báo cáo
+          khoa học/định lượng (kiểu Bloomberg terminal) thay vì 1 banner marketing thuần.
           Ngày báo cáo được cân bằng thị giác với title bên trái: cùng cỡ chữ/độ đậm,
           chỉ khác màu (accent) để nổi bật và dễ nhận diện ngay lập tức. */}
-      <div className="bg-primary-dark px-6 sm:px-10 pt-6 pb-6">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <Image src="/stavian_logo.png" alt="Stavian" width={337} height={191} className="h-9 w-auto block" />
-            <div className="w-[1px] h-7 bg-white/25" />
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-none">
-              Daily Carbon <span className="text-accent">Intelligence</span>
+      <div className="relative overflow-hidden bg-primary-dark px-6 sm:px-10 pt-6 pb-6">
+        <div
+          className="absolute inset-0 opacity-[0.08] pointer-events-none"
+          style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "18px 18px" }}
+          aria-hidden="true"
+        />
+        <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-accent via-primary to-accent" aria-hidden="true" />
+
+        <div className="relative flex justify-between items-start flex-wrap gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <Image src="/stavian_logo.png" alt="Stavian" width={337} height={191} className="h-9 w-auto block" />
+              <div className="w-[1px] h-7 bg-white/25" />
+              <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-none">
+                Daily Carbon <span className="text-accent">Intelligence</span>
+              </div>
+            </div>
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1">
+              <ShieldCheck size={12} className="text-accent shrink-0" />
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-white/70">
+                Tổng hợp AI · Nguồn Tier A/B/C đã kiểm chứng
+              </span>
             </div>
           </div>
           <div className="text-right">
@@ -442,6 +546,8 @@ export function ReportDocument({ report }: { report: Report }) {
       </div>
 
       <div className="px-6 sm:px-10 pt-5 pb-10">
+
+        <StatStrip report={report} priceRows={priceRows} />
 
         {/* SECTION 1 */}
         <section className="py-5">
@@ -531,12 +637,22 @@ export function ReportDocument({ report }: { report: Report }) {
                         </td>
                         <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center">
                           <div className="flex flex-col items-center leading-tight">
-                            <span className="break-words">{priceNumber}</span>
+                            <span className="break-words tabular-nums">{priceNumber}</span>
                             {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
                           </div>
                         </td>
-                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", r.dday === "-" ? "text-muted-light" : isPositiveDelta(r.dday) ? "text-up" : "text-down")}>{r.dday}</td>
-                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center break-words", r.dweek === "-" ? "text-muted-light" : isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>{r.dweek}</td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center", r.dday === "-" ? "text-muted-light" : isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
+                          <span className="inline-flex items-center gap-1 tabular-nums break-words">
+                            {r.dday !== "-" && (isPositiveDelta(r.dday) ? <TrendingUp size={11} className="shrink-0" /> : <TrendingDown size={11} className="shrink-0" />)}
+                            {r.dday}
+                          </span>
+                        </td>
+                        <td className={clsx("px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center", r.dweek === "-" ? "text-muted-light" : isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>
+                          <span className="inline-flex items-center gap-1 tabular-nums break-words">
+                            {r.dweek !== "-" && (isPositiveDelta(r.dweek) ? <TrendingUp size={11} className="shrink-0" /> : <TrendingDown size={11} className="shrink-0" />)}
+                            {r.dweek}
+                          </span>
+                        </td>
                         <td className="px-1.5 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">{r.note}</td>
                       </tr>
                     );
