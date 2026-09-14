@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, User, Lock } from "lucide-react";
 import clsx from "clsx";
 import Image from "next/image";
-import { api } from "@/lib/api";
+import { api, setAuthRole } from "@/lib/api";
 
 type Mode = "user" | "admin";
 
@@ -62,6 +62,7 @@ function UserLoginForm() {
     setError("");
     try {
       await api.post("/api/auth/otp/verify", { email, code });
+      setAuthRole("user");
       router.push("/dashboard");
     } catch (err: any) {
       setError(err.response?.data?.detail || "Mã OTP không đúng.");
@@ -147,6 +148,7 @@ function AdminLoginForm() {
     setError("");
     try {
       await api.post("/api/admin/auth/login", { username, password });
+      setAuthRole("admin");
       router.push("/admin/reports");
     } catch (err: any) {
       setError(err.response?.data?.detail || "Đăng nhập thất bại.");

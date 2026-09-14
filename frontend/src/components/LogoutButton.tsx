@@ -2,7 +2,7 @@
 
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, setAuthRole } from "@/lib/api";
 
 export function LogoutButton() {
   const router = useRouter();
@@ -12,6 +12,7 @@ export function LogoutButton() {
       // Both admin and user logout endpoints can be called, or just clear cookies via API
       await api.post("/api/auth/logout").catch(() => {});
       await api.post("/api/admin/auth/logout").catch(() => {});
+      setAuthRole(null);
       router.push("/login");
     } catch (err) {
       console.error(err);

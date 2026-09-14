@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, refreshSession } from "@/lib/api";
 import type { ChatSource } from "@/lib/types";
 
 interface QuoteChatStreamArgs {
@@ -29,15 +29,24 @@ export async function streamQuoteChat({
   onError,
   signal,
 }: QuoteChatStreamArgs): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE_URL}/api/reports/${reportDate}/quote-chat`, {
+  const doFetch = () =>
+    fetch(`${API_BASE_URL}/api/reports/${reportDate}/quote-chat`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, session_id: sessionId ?? null, quote }),
       signal,
     });
+
+  let res: Response;
+  try {
+    res = await doFetch();
+    if (res.status === 401) {
+      // access_token vừa hết hạn — thử refresh bằng refresh_token (còn hạn
+      // dài hơn nhiều) rồi gọi lại đúng 1 lần, thay vì báo lỗi ngay.
+      const refreshed = await refreshSession();
+      if (refreshed) res = await doFetch();
+    }
   } catch {
     onError("Không thể kết nối đến server.");
     return;

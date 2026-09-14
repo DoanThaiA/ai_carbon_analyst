@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, Radar, Users, LogOut, MessageSquareText, BrainCircuit, Sparkles, MessageSquareWarning } from "lucide-react";
 import clsx from "clsx";
-import { api } from "@/lib/api";
+import { api, setAuthRole } from "@/lib/api";
 
 const NAV_ITEMS = [
   { href: "/admin/reports", label: "Báo cáo", icon: FileText },
@@ -33,6 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const handleLogout = async () => {
     await api.post("/api/admin/auth/logout");
+    setAuthRole(null);
     router.replace("/login?as=admin");
   };
 
