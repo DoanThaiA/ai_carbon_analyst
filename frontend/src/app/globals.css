@@ -178,15 +178,18 @@ body {
     flex: unset !important;
   }
 
-  /* ---- Shadow / bo tròn bớt trên PDF ---- */
-  .shadow-\[var\(--shadow-soft\)\] {
-    box-shadow: none !important;
+  /* ---- Layout: bỏ padding bọc ngoài để nội dung full-page ---- */
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
   }
-  .shadow-\[var\(--shadow-medium\)\] {
-    box-shadow: none !important;
-  }
+
+  /* ---- Container báo cáo: bỏ viền card, trở thành tài liệu thuần ---- */
   .rounded-2xl {
+    border: none !important;
     border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
   }
 
   /* ---- Spacing giữa các section gọn hơn ---- */
