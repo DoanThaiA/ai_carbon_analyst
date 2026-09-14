@@ -25,7 +25,9 @@ services:
   # (biến MINIO_ENDPOINT trong .env), không qua tên service 'minio' nội bộ —
   # xem comment ở core/config.py::Settings.minio_endpoint.
   minio:
-    image: minio/minio:latest
+    # MinIO đã ngừng cập nhật image trên Docker Hub (minio/minio) từ giữa 2024
+    # — dùng quay.io (registry chính thức hiện tại), KHÔNG dùng docker.io/minio/minio.
+    image: quay.io/minio/minio:latest
     container_name: carbon_analyst_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
