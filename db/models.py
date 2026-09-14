@@ -297,6 +297,10 @@ class ChatMessage(Base):
     )
     role: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Danh sách file đính kèm (ảnh/PDF/Word) — mảng [{file_name, file_key,
+    # media_type}], xem schemas/chat_models.py::Attachment. NULL cho hầu hết
+    # tin nhắn (không đính kèm gì) và luôn NULL cho role='assistant'.
+    attachments: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

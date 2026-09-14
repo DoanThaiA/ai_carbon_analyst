@@ -15,13 +15,23 @@ import {
   ThumbsUp,
   ThumbsDown,
   MessageSquareWarning,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
 } from "lucide-react";
 import clsx from "clsx";
 import { formatDistanceToNow, format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { api } from "@/lib/api";
-import type { ChatRating, ChatSessionSummary, ChatSource, ChatTurn } from "@/lib/types";
+import type { Attachment, ChatRating, ChatSessionSummary, ChatSource, ChatTurn } from "@/lib/types";
 import { streamQuoteChat } from "@/lib/quoteChatStream";
+import {
+  ACCEPT_ATTR,
+  MAX_ATTACHMENTS_PER_TURN,
+  fetchAttachmentViewUrl,
+  uploadFileToMinIO,
+  validateFile,
+} from "@/lib/minioUpload";
 import { JennyFeedbackModal } from "@/components/JennyFeedbackModal";
 
 interface FloatingTrigger {
@@ -30,9 +40,101 @@ interface FloatingTrigger {
   quote: string;
 }
 
-interface DisplayMessage extends ChatTurn {
+// `previewUrl`: objectURL cục bộ (client-side) của file ẢNH vừa upload trong
+// PHIÊN HIỆN TẠI — cho hiện thumbnail ngay không cần round-trip xin view-url.
+// Tin nhắn tải lại từ lịch sử (GET .../sessions/{id}) không có field này —
+// AttachmentBadge tự fetch qua fetchAttachmentViewUrl khi cần.
+interface DisplayAttachment extends Attachment {
+  previewUrl?: string;
+}
+
+interface DisplayMessage extends Omit<ChatTurn, "attachments"> {
   streaming?: boolean;
   sources?: ChatSource[];
+  attachments?: DisplayAttachment[] | null;
+}
+
+// 1 file người dùng vừa chọn, đang/đã upload nền lên MinIO — chưa gửi kèm câu hỏi.
+interface PendingAttachment {
+  id: string;
+  file: File;
+  status: "uploading" | "done" | "error";
+  attachment?: Attachment;
+  previewUrl?: string;
+  error?: string;
+}
+
+/** 1 file đính kèm hiện trong bong bóng chat — ảnh hiện thumbnail (lazy-load
+ * view URL nếu không có sẵn `previewUrl` cục bộ), PDF/Word hiện icon + tên,
+ * bấm vào để mở file trong tab mới. */
+function AttachmentBadge({ attachment }: { attachment: DisplayAttachment }) {
+  const [viewUrl, setViewUrl] = useState<string | null>(attachment.previewUrl || null);
+  const [opening, setOpening] = useState(false);
+  const isImage = attachment.media_type.startsWith("image/");
+
+  useEffect(() => {
+    if (!isImage || viewUrl) return;
+    let cancelled = false;
+    fetchAttachmentViewUrl(attachment.file_key)
+      .then((url) => {
+        if (!cancelled) setViewUrl(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isImage, viewUrl, attachment.file_key]);
+
+  async function openFile() {
+    if (viewUrl) {
+      window.open(viewUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setOpening(true);
+    try {
+      const url = await fetchAttachmentViewUrl(attachment.file_key);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      // Bỏ qua — có thể URL đã hết hạn hoặc file không còn tồn tại.
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  if (isImage) {
+    return (
+      <button
+        type="button"
+        onClick={openFile}
+        title={attachment.file_name}
+        className="block w-16 h-16 rounded-lg overflow-hidden border border-border-soft shrink-0 bg-tint/30"
+      >
+        {viewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={viewUrl} alt={attachment.file_name} className="w-full h-full object-cover" />
+        ) : (
+          <span className="w-full h-full flex items-center justify-center">
+            <ImageIcon size={18} className="text-muted-light" />
+          </span>
+        )}
+      </button>
+    );
+  }
+
+  const isPdf = attachment.media_type === "application/pdf";
+  return (
+    <button
+      type="button"
+      onClick={openFile}
+      disabled={opening}
+      title={attachment.file_name}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-soft bg-surface text-[11.5px] max-w-[170px] hover:border-primary transition-colors disabled:opacity-60"
+    >
+      <FileText size={14} className={clsx("shrink-0", isPdf ? "text-red-500" : "text-blue-500")} />
+      <span className="truncate">{attachment.file_name}</span>
+      {opening && <Loader2 size={11} className="animate-spin shrink-0" />}
+    </button>
+  );
 }
 
 // LLM hay tự chèn "**đậm**" để nhấn mạnh dù không được yêu cầu — bong bóng chat
@@ -62,6 +164,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
   const containerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [trigger, setTrigger] = useState<FloatingTrigger | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -72,6 +175,9 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
@@ -135,6 +241,71 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     }
   }
 
+  function clearPendingAttachments() {
+    setPendingAttachments((prev) => {
+      prev.forEach((p) => p.previewUrl && URL.revokeObjectURL(p.previewUrl));
+      return [];
+    });
+    setAttachmentError("");
+  }
+
+  function handleAttachClick() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // cho phép chọn lại đúng file đó lần sau
+    if (files.length === 0) return;
+
+    setAttachmentError("");
+    if (pendingAttachments.length + files.length > MAX_ATTACHMENTS_PER_TURN) {
+      setAttachmentError(`Chỉ được đính kèm tối đa ${MAX_ATTACHMENTS_PER_TURN} file cho mỗi lượt hỏi.`);
+      return;
+    }
+
+    const accepted: File[] = [];
+    for (const file of files) {
+      const error = validateFile(file);
+      if (error) {
+        setAttachmentError(error);
+        continue;
+      }
+      accepted.push(file);
+    }
+    if (accepted.length === 0) return;
+
+    const newPending: PendingAttachment[] = accepted.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      status: "uploading",
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+    }));
+    setPendingAttachments((prev) => [...prev, ...newPending]);
+
+    newPending.forEach((pending) => {
+      uploadFileToMinIO(pending.file)
+        .then((attachment) => {
+          setPendingAttachments((prev) =>
+            prev.map((p) => (p.id === pending.id ? { ...p, status: "done", attachment } : p))
+          );
+        })
+        .catch((err: Error) => {
+          setPendingAttachments((prev) =>
+            prev.map((p) => (p.id === pending.id ? { ...p, status: "error", error: err.message } : p))
+          );
+        });
+    });
+  }
+
+  function removePendingAttachment(id: string) {
+    setPendingAttachments((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
+  }
+
   function resetRatingState() {
     setRating(null);
     setShowReasonBox(false);
@@ -153,6 +324,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     setInput("");
     setTrigger(null);
     resetRatingState();
+    clearPendingAttachments();
     window.getSelection()?.removeAllRanges();
     fetchSuggestions(quote);
   }
@@ -168,6 +340,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     setSending(false);
     setHistoryOpen(false);
     resetRatingState();
+    clearPendingAttachments();
   }
 
   async function fetchSessions() {
@@ -218,6 +391,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       setMessages(detail.messages);
       setSuggestions([]);
       setInput("");
+      clearPendingAttachments();
       // Lịch sử KHÔNG tự đóng khi chọn phiên — chỉ đóng khi người dùng bấm lại
       // biểu tượng đồng hồ (toggleHistory), để có thể chọn xem nhiều phiên liên tiếp.
       resetRatingState();
@@ -230,10 +404,27 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
 
   async function sendQuestion(question: string) {
     const q = question.trim();
-    if (!q || !activeQuote || sending) return;
+    const isUploadingAttachment = pendingAttachments.some((p) => p.status === "uploading");
+    if (!q || !activeQuote || sending || isUploadingAttachment) return;
 
-    setMessages((prev) => [...prev, { role: "user", content: q }, { role: "assistant", content: "", streaming: true }]);
+    // Chỉ những file upload thành công (status "done") mới có file_key để gửi
+    // kèm — file lỗi bị bỏ qua lặng lẽ (đã có cảnh báo lúc chọn/upload).
+    const readyAttachments = pendingAttachments.filter(
+      (p): p is PendingAttachment & { attachment: Attachment } => p.status === "done" && !!p.attachment
+    );
+    const bubbleAttachments: DisplayAttachment[] = readyAttachments.map((p) => ({
+      ...p.attachment,
+      previewUrl: p.previewUrl,
+    }));
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: q, attachments: bubbleAttachments.length > 0 ? bubbleAttachments : undefined },
+      { role: "assistant", content: "", streaming: true },
+    ]);
     setInput("");
+    setPendingAttachments([]);
+    setAttachmentError("");
     setSending(true);
 
     const controller = new AbortController();
@@ -264,6 +455,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       question: q,
       sessionId,
       quote: sessionId ? undefined : activeQuote,
+      attachments: readyAttachments.map((p) => p.attachment),
       signal: controller.signal,
       onMeta: (meta) => {
         setSessionId(meta.sessionId);
@@ -482,6 +674,14 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                     ) : null}
                   </div>
 
+                  {!!m.attachments?.length && (
+                    <div className={clsx("mt-1.5 flex flex-wrap gap-1.5 max-w-[85%]", m.role === "user" ? "justify-end" : "justify-start")}>
+                      {m.attachments.map((att, ai) => (
+                        <AttachmentBadge key={ai} attachment={att} />
+                      ))}
+                    </div>
+                  )}
+
                   {m.role === "assistant" && !!m.sources?.length && (
                     <div className="mt-1.5 max-w-[85%] w-full rounded-xl border border-border-soft bg-tint/30 px-3 py-2.5">
                       <p className="flex items-center gap-1.5 text-[11px] font-semibold text-label mb-1.5">
@@ -600,6 +800,42 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               </div>
             )}
 
+            {pendingAttachments.length > 0 && (
+              <div className="px-4 pt-2 flex flex-wrap gap-2 shrink-0">
+                {pendingAttachments.map((p) => (
+                  <div
+                    key={p.id}
+                    className={clsx(
+                      "flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 rounded-lg border text-[11px] max-w-[170px]",
+                      p.status === "error" ? "border-down/40 bg-down/5" : "border-border-soft bg-surface"
+                    )}
+                    title={p.status === "error" ? p.error : p.file.name}
+                  >
+                    {p.previewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.previewUrl} alt={p.file.name} className="w-6 h-6 rounded object-cover shrink-0" />
+                    ) : (
+                      <FileText
+                        size={13}
+                        className={clsx("shrink-0", p.file.type === "application/pdf" ? "text-red-500" : "text-blue-500")}
+                      />
+                    )}
+                    <span className="truncate">{p.file.name}</span>
+                    {p.status === "uploading" && <Loader2 size={11} className="animate-spin text-muted-light shrink-0" />}
+                    <button
+                      type="button"
+                      onClick={() => removePendingAttachment(p.id)}
+                      className="text-muted-light hover:text-foreground shrink-0"
+                      aria-label="Xoá file đính kèm"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {attachmentError && <p className="px-4 pt-1.5 text-[11px] text-down shrink-0">{attachmentError}</p>}
+
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -607,6 +843,23 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               }}
               className="flex items-center gap-2 px-4 py-3 border-t border-border shrink-0"
             >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPT_ATTR}
+                multiple
+                hidden
+                onChange={handleFilesSelected}
+              />
+              <button
+                type="button"
+                onClick={handleAttachClick}
+                disabled={sending || !activeQuote || pendingAttachments.length >= MAX_ATTACHMENTS_PER_TURN}
+                title="Đính kèm ảnh/PDF/Word"
+                className="w-9 h-9 flex items-center justify-center rounded-full border border-border-soft text-muted-light hover:text-primary hover:border-primary disabled:opacity-40 transition-colors shrink-0"
+              >
+                <Paperclip size={16} />
+              </button>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -616,7 +869,12 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               />
               <button
                 type="submit"
-                disabled={sending || !activeQuote || !input.trim()}
+                disabled={
+                  sending ||
+                  !activeQuote ||
+                  !input.trim() ||
+                  pendingAttachments.some((p) => p.status === "uploading")
+                }
                 className="w-9 h-9 flex items-center justify-center rounded-full bg-primary text-white disabled:opacity-40 hover:bg-primary-dark transition-colors shrink-0"
               >
                 {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={15} />}

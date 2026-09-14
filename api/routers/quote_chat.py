@@ -139,7 +139,7 @@ async def get_session_detail(
         id=chat_session.id,
         quote=chat_session.quote,
         created_at=chat_session.created_at,
-        messages=[ChatTurn(role=m.role, content=m.content) for m in messages],
+        messages=[ChatTurn(role=m.role, content=m.content, attachments=m.attachments) for m in messages],
         rating=chat_session.rating,
         rating_reason=chat_session.rating_reason,
     )
@@ -255,6 +255,7 @@ async def quote_chat_stream(
                 retrieval_service=retrieval_service,
                 eua_framework_overrides=eua_framework_overrides,
                 few_shot_block=few_shot_block,
+                attachments=body.attachments,
             ):
                 answer_parts.append(delta)
                 yield _sse("delta", delta)
@@ -264,6 +265,7 @@ async def quote_chat_stream(
                 session_id=chat_session.id,
                 question=body.question,
                 answer="".join(answer_parts),
+                attachments=[a.model_dump() for a in body.attachments] if body.attachments else None,
             )
 
             yield _sse("done", {"session_id": chat_session.id})

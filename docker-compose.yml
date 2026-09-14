@@ -17,8 +17,34 @@ services:
       timeout: 5s
       retries: 5
 
+  # File đính kèm Quote Chat (ảnh/PDF/Word) — S3-compatible object storage.
+  # QUAN TRỌNG: port 9000 (API) cần được reverse-proxy ra 1 domain/subpath
+  # PUBLIC-reachable từ trình duyệt (vd storage.mcv.network) — FE PUT thẳng
+  # file lên đây bằng presigned URL, KHÔNG đi qua backend. Cấu hình nginx đó
+  # nằm NGOÀI repo này. Backend cũng gọi MinIO qua ĐÚNG endpoint public đó
+  # (biến MINIO_ENDPOINT trong .env), không qua tên service 'minio' nội bộ —
+  # xem comment ở core/config.py::Settings.minio_endpoint.
+  minio:
+    image: minio/minio:latest
+    container_name: carbon_analyst_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:9000:9000"   # API — cần reverse-proxy ra ngoài, xem comment trên
+      - "127.0.0.1:9001:9001"   # Console quản trị — chỉ cần truy cập nội bộ/qua SSH tunnel
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: carbon_analyst_api
@@ -32,6 +58,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:Doanthai288%40@postgres:5432/carbon_analyst
     depends_on:
       postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   crawler_scheduler:
@@ -70,3 +98,4 @@ services:
 volumes:
   pgdata:
   scheduler_logs:
+  minio_data:

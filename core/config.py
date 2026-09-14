@@ -34,6 +34,21 @@ class Settings:
     # thể đổi qua ENV nếu cần, không cần sửa code.
     quote_chat_model: str
 
+    # File đính kèm Quote Chat (ảnh/PDF/Word) lưu trên MinIO (S3-compatible).
+    # QUAN TRỌNG: `minio_endpoint` PHẢI là host:port PUBLIC-reachable từ trình
+    # duyệt (vd "storage.mcv.network" hoặc "sim.mcv.network:9000") — KHÔNG
+    # phải hostname nội bộ docker (vd "minio:9000") — vì frontend PUT thẳng
+    # file lên MinIO qua presigned URL do backend cấp (services/minio_service.py).
+    # Backend cũng dùng CHÍNH endpoint này (không phải hostname nội bộ) để tự
+    # tải file về lúc chat — tránh lệch host giữa lúc ký presigned URL và lúc
+    # dùng, đổi lại backend gọi MinIO qua internet thay vì mạng nội bộ docker
+    # (chấp nhận được, traffic này không lớn/không cần độ trễ thấp).
+    minio_endpoint: str
+    minio_access_key: str
+    minio_secret_key: str
+    minio_bucket: str
+    minio_secure: bool
+
     # Auth — để trống nếu không dùng API/admin panel (vd script crawl/report
     # generator độc lập không cần các giá trị này). core/security.py và các
     # router auth tự raise lỗi rõ ràng nếu thiếu khi thực sự cần dùng.
@@ -84,6 +99,11 @@ class Settings:
             rerank_model=os.environ.get("RERANK_MODEL", "rerank-v3.5"),
             cohere_embed_throttle_seconds=float(os.environ.get("COHERE_EMBED_THROTTLE_SECONDS", "1.5")),
             quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", "claude-sonnet-5"),
+            minio_endpoint=os.environ.get("MINIO_ENDPOINT", ""),
+            minio_access_key=os.environ.get("MINIO_ACCESS_KEY", ""),
+            minio_secret_key=os.environ.get("MINIO_SECRET_KEY", ""),
+            minio_bucket=os.environ.get("MINIO_BUCKET", "quote-chat-attachments"),
+            minio_secure=os.environ.get("MINIO_SECURE", "false").lower() == "true",
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),
             jwt_expire_minutes=int(os.environ.get("JWT_EXPIRE_MINUTES", str(60 * 24 * 7))),

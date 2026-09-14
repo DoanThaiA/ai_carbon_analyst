@@ -30,6 +30,7 @@ from api.routers import (
     feedback,
     hot_news,
     quote_chat,
+    upload,
 )
 from db.models import Report
 from services.hot_news_broadcast import start_listening, stop_listening
@@ -67,6 +68,7 @@ app.include_router(admin_chat_reviews.router)
 app.include_router(admin_eua_framework.router)
 app.include_router(admin_quote_chat_examples.router)
 app.include_router(quote_chat.router)
+app.include_router(upload.router)
 app.include_router(hot_news.router)
 app.include_router(feedback.router)
 app.include_router(admin_feedback.router)

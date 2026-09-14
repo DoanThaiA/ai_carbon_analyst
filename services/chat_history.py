@@ -70,10 +70,15 @@ async def load_recent_turns(
 
 
 async def append_turn(
-    session: AsyncSession, *, session_id: int, question: str, answer: str
+    session: AsyncSession, *, session_id: int, question: str, answer: str, attachments: Optional[list] = None
 ) -> None:
-    """Lưu lại 1 lượt hỏi-đáp sau khi đã stream xong câu trả lời đầy đủ."""
-    session.add(ChatMessage(session_id=session_id, role="user", content=question))
+    """Lưu lại 1 lượt hỏi-đáp sau khi đã stream xong câu trả lời đầy đủ.
+
+    `attachments`: file đính kèm (nếu có) CỦA CÂU HỎI NÀY — chỉ gắn vào tin
+    nhắn 'user', lưu nguyên dạng list[dict] (Pydantic .model_dump()) vào cột
+    JSONB để FE hiện lại thẻ file trong lịch sử; KHÔNG được nạp lại làm context
+    cho LLM ở các câu hỏi sau (xem `load_recent_turns` — chỉ lấy `content`)."""
+    session.add(ChatMessage(session_id=session_id, role="user", content=question, attachments=attachments or None))
     session.add(ChatMessage(session_id=session_id, role="assistant", content=answer))
     await session.execute(
         ChatSession.__table__.update()

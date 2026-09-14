@@ -1,4 +1,7 @@
 
+import asyncio
+import base64
+import io
 import logging
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
@@ -8,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
 from db.models import Report, Instrument
-from schemas.chat_models import ChatTurn
+from schemas.chat_models import MAX_ATTACHMENTS_PER_TURN, Attachment, ChatTurn
 from schemas.retrieval_models import RetrievedDocument
+from services import minio_service
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services.report_generator import (
@@ -76,6 +80,84 @@ def _get_anthropic_client():
 def _truncate(text: str, max_chars: int) -> str:
     text = text.strip()
     return text if len(text) <= max_chars else text[:max_chars].rstrip() + "…"
+
+
+# Đủ cho nội dung 1 file Word thông thường (vài trang), tránh phình prompt nếu
+# người dùng lỡ đính kèm 1 file .docx rất dài — giống tinh thần
+# MAX_TEXT_CHARS_FOR_CLASSIFICATION bên crawl_news/classification.py.
+MAX_DOCX_CHARS_FOR_PROMPT = 6000
+
+
+def _extract_docx_text(data: bytes) -> str:
+    import docx
+
+    document = docx.Document(io.BytesIO(data))
+    paragraphs = [p.text for p in document.paragraphs if p.text.strip()]
+    return _truncate("\n".join(paragraphs), MAX_DOCX_CHARS_FOR_PROMPT)
+
+
+async def _build_attachment_content_blocks(attachments: Optional[Sequence[Attachment]]) -> List[dict]:
+    """Tải từng file đính kèm về từ MinIO + build content block theo ĐÚNG
+    format Anthropic content API: Ảnh/PDF -> block base64 (model đọc trực
+    tiếp, Claude hỗ trợ vision + PDF gốc), Word (.docx) -> Claude KHÔNG có
+    content-type gốc cho Word nên BACKEND tự trích chữ bằng python-docx rồi
+    nhét vào 1 block text thường kèm tiêu đề "[Nội dung file: ...]".
+
+    Chạy các lệnh MinIO/parse (đều là thư viện đồng bộ, blocking) qua
+    `asyncio.to_thread` — event loop của FastAPI không được block bởi I/O
+    mạng/CPU của việc tải+parse file, khớp tinh thần "Async throughout" của
+    dự án dù bản thân `minio`/`python-docx` không có bản async.
+
+    Lỗi ở 1 file (không tải được / vượt dung lượng thật khi kiểm tra lại trên
+    MinIO / .docx hỏng) KHÔNG làm hỏng cả câu hỏi — chèn 1 dòng text báo lỗi
+    thay cho file đó và tiếp tục xử lý các file còn lại.
+    """
+    if not attachments:
+        return []
+
+    blocks: List[dict] = []
+    for att in attachments[:MAX_ATTACHMENTS_PER_TURN]:
+        error = await asyncio.to_thread(minio_service.check_uploaded_object, att.file_key, att.media_type)
+        if error:
+            logger.warning("[QUOTE-CHAT] Bỏ qua file đính kèm \"%s\": %s", att.file_name, error)
+            blocks.append({"type": "text", "text": f'[Không thể đọc file đính kèm "{att.file_name}": {error}.]'})
+            continue
+
+        try:
+            data = await asyncio.to_thread(minio_service.get_file_as_bytes, att.file_key)
+        except Exception:
+            logger.exception("[QUOTE-CHAT] Lỗi khi tải file đính kèm \"%s\" từ MinIO.", att.file_name)
+            blocks.append(
+                {"type": "text", "text": f'[Không thể tải file đính kèm "{att.file_name}" — vui lòng đính kèm lại.]'}
+            )
+            continue
+
+        if att.media_type in minio_service.IMAGE_MEDIA_TYPES:
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": att.media_type, "data": base64.b64encode(data).decode()},
+                }
+            )
+        elif att.media_type == minio_service.PDF_MEDIA_TYPE:
+            blocks.append(
+                {
+                    "type": "document",
+                    "source": {"type": "base64", "media_type": minio_service.PDF_MEDIA_TYPE, "data": base64.b64encode(data).decode()},
+                }
+            )
+        elif att.media_type == minio_service.DOCX_MEDIA_TYPE:
+            try:
+                text = await asyncio.to_thread(_extract_docx_text, data)
+            except Exception:
+                logger.exception("[QUOTE-CHAT] Lỗi khi trích chữ từ file Word \"%s\".", att.file_name)
+                blocks.append(
+                    {"type": "text", "text": f'[Không thể đọc nội dung file Word "{att.file_name}" — file có thể bị hỏng.]'}
+                )
+                continue
+            blocks.append({"type": "text", "text": f'[Nội dung file: {att.file_name}]\n{text or "(file rỗng)"}'})
+
+    return blocks
 
 
 def _format_source_label(chunk: RetrievedDocument, report_date: str) -> str:
@@ -1196,11 +1278,17 @@ async def astream_quote_chat(
     retrieval_service: Optional[RetrievalService] = None,
     eua_framework_overrides: Optional[Dict[str, str]] = None,
     few_shot_block: str = "",
+    attachments: Optional[Sequence[Attachment]] = None,
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta). Luôn dùng backend
     Anthropic (client tools + server tool web_search) — Cohere trong repo này
     chỉ dùng cho embedding/rerank (kể cả tool search_news bên dưới), không
     còn dùng cho chat/completion.
+
+    `attachments`: file đính kèm (ảnh/PDF/Word) CỦA CÂU HỎI NÀY — xem
+    `_build_attachment_content_blocks`. Chỉ áp dụng cho message user MỚI NHẤT
+    (không tiêm lại vào các lượt lịch sử cũ trong `history`), tránh resend
+    ảnh/PDF nặng vào context ở mọi câu hỏi tiếp theo trong cùng phiên.
 
     KHÔNG nhận `prices_text`/`report_text` đã fetch sẵn — model TỰ GỌI TOOL
     (get_market_prices/get_eua_details/get_eua_volume_history/get_price_history/
@@ -1228,7 +1316,11 @@ async def astream_quote_chat(
     context_block = _format_context(context_chunks, report_date)
 
     messages = [{"role": turn.role, "content": turn.content} for turn in history]
-    messages.append({"role": "user", "content": question})
+    attachment_blocks = await _build_attachment_content_blocks(attachments)
+    if attachment_blocks:
+        messages.append({"role": "user", "content": [*attachment_blocks, {"type": "text", "text": question}]})
+    else:
+        messages.append({"role": "user", "content": question})
 
     # Tách static/dynamic (thay vì ghép sẵn thành 1 chuỗi) để bật prompt
     # caching — xem docstring _stream_anthropic.

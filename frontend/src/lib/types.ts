@@ -19,9 +19,25 @@ export interface ReportSummary {
   published_at: string | null;
 }
 
+// Định dạng file đính kèm cho phép trong Quote Chat — khớp với
+// ALLOWED_ATTACHMENT_MEDIA_TYPES bên schemas/chat_models.py.
+export type AttachmentMediaType =
+  | "image/jpeg"
+  | "image/png"
+  | "image/webp"
+  | "application/pdf"
+  | "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+export interface Attachment {
+  file_name: string;
+  file_key: string;
+  media_type: AttachmentMediaType;
+}
+
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[] | null;
 }
 
 export interface ChatSource {

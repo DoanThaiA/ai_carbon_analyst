@@ -1,5 +1,5 @@
 import { API_BASE_URL, refreshSession } from "@/lib/api";
-import type { ChatSource } from "@/lib/types";
+import type { Attachment, ChatSource } from "@/lib/types";
 
 interface QuoteChatStreamArgs {
   reportDate: string;
@@ -9,6 +9,9 @@ interface QuoteChatStreamArgs {
   // tự nạp lại từ Postgres (bộ nhớ ngắn hạn), không cần gửi lại.
   sessionId?: number | null;
   quote?: string;
+  // File đính kèm CỦA CÂU HỎI NÀY (đã upload lên MinIO trước đó, chỉ gửi
+  // file_key/file_name/media_type — không gửi lại nội dung file).
+  attachments?: Attachment[];
   onMeta: (meta: { sessionId: number; sources: ChatSource[] }) => void;
   onDelta: (text: string) => void;
   onDone: () => void;
@@ -23,6 +26,7 @@ export async function streamQuoteChat({
   question,
   sessionId,
   quote,
+  attachments,
   onMeta,
   onDelta,
   onDone,
@@ -34,7 +38,12 @@ export async function streamQuoteChat({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, session_id: sessionId ?? null, quote }),
+      body: JSON.stringify({
+        question,
+        session_id: sessionId ?? null,
+        quote,
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
+      }),
       signal,
     });
 
