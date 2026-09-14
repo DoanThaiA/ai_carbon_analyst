@@ -104,6 +104,104 @@ body {
   body {
     background: #fff;
   }
+
+  /* ---- Ẩn ticker (thanh giá chạy) — animation không hiển thị được trong PDF ---- */
+  .ticker {
+    display: none !important;
+  }
+
+  /* ---- Khổ giấy & margin ---- */
+  @page {
+    size: A4;
+    margin: 12mm 10mm 12mm 10mm;
+  }
+
+  /* ---- Mỗi section bắt đầu trang mới (trừ section đầu tiên) ---- */
+  section {
+    page-break-inside: avoid;
+  }
+  /* Section đầu tiên không cần ngắt trang — nó nằm ngay sau masthead */
+  section:first-of-type {
+    page-break-before: avoid;
+  }
+  /* Các section tiếp theo: luôn bắt đầu ở trang mới */
+  section ~ section {
+    page-break-before: always;
+  }
+
+  /* ---- Không cắt ngang các block quan trọng ---- */
+  table, thead, tbody, tr {
+    page-break-inside: avoid;
+  }
+  /* Card kịch bản, timeline event, biz recommendation — giữ nguyên trên 1 trang */
+  .border.border-border.rounded-lg {
+    page-break-inside: avoid;
+  }
+  /* Khối phân tích / conclusion box */
+  .rounded-md.border {
+    page-break-inside: avoid;
+  }
+
+  /* ---- Heading section luôn đi kèm nội dung phía sau, không bị lẻ cuối trang ---- */
+  h4, .relative.mb-5 {
+    page-break-after: avoid;
+  }
+
+  /* ---- Masthead: thu gọn padding cho trang đầu gọn hơn ---- */
+  .bg-primary-dark {
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
+  }
+
+  /* ---- Nội dung chính: giảm padding ngang cho vừa khổ A4 ---- */
+  .px-6.sm\:px-10 {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  /* ---- Footer: luôn nằm cuối, không bị tách ---- */
+  footer {
+    page-break-inside: avoid;
+    page-break-before: auto;
+  }
+
+  /* ---- Ẩn nút collapse/expand (Ẩn phân tích / Hiện phân tích) — không có tác dụng trên PDF ---- */
+  button[type="button"] {
+    display: none !important;
+  }
+
+  /* ---- SVG chart: giới hạn chiều cao để không chiếm quá nhiều diện tích trang ---- */
+  svg {
+    max-height: 200px;
+  }
+
+  /* ---- Biểu đồ nến + key facts: xếp dọc trên PDF thay vì flex-row ---- */
+  .lg\:flex-row {
+    flex-direction: column !important;
+  }
+  .lg\:flex-\[1\.6\] {
+    flex: unset !important;
+  }
+  .lg\:flex-1 {
+    flex: unset !important;
+  }
+
+  /* ---- Shadow / bo tròn bớt trên PDF ---- */
+  .shadow-\[var\(--shadow-soft\)\] {
+    box-shadow: none !important;
+  }
+  .shadow-\[var\(--shadow-medium\)\] {
+    box-shadow: none !important;
+  }
+  .rounded-2xl {
+    border-radius: 0 !important;
+  }
+
+  /* ---- Spacing giữa các section nhất quán hơn ---- */
+  section.py-5 {
+    padding-top: 12px !important;
+    padding-bottom: 8px !important;
+  }
 }
 
 /* Custom Utilities based on user template */
