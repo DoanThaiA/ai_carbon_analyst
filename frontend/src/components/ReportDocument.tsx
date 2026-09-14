@@ -871,10 +871,14 @@ export function ReportDocument({ report }: { report: Report }) {
                 <div className="mt-5">
                   <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-label mb-3">Kịch bản chiến lược</h4>
 
-                  {/* Mobile: mỗi khung thời gian là 1 card xếp dọc (label/giá trị theo hàng)
-                      thay vì bảng 4 cột — bảng 4 cột luôn cần kéo ngang trên màn hình hẹp,
-                      xếp card tránh hẳn thanh cuộn ngang. */}
-                  <div className="sm:hidden space-y-4">
+                  {/* Mobile VÀ khi in/xuất PDF: mỗi khung thời gian là 1 card xếp dọc
+                      (label/giá trị theo hàng) thay vì bảng 4 cột — bảng 4 cột luôn cần
+                      kéo ngang trên màn hình hẹp, và trên giấy in không có thanh cuộn để
+                      kéo nên cột cuối (Dài hạn) sẽ bị cắt mất chữ. Card tránh hẳn việc đó.
+                      print:block! ép hiện card bất kể đang ở breakpoint sm+ nào (đè
+                      sm:hidden bằng !important vì thứ tự CSS giữa 2 variant không đảm
+                      bảo lúc nào cũng thắng). */}
+                  <div className="sm:hidden print:block! space-y-4">
                     {columns.map(h => {
                       const meta = HORIZON_META[h];
                       const Icon = meta.icon;
@@ -908,8 +912,10 @@ export function ReportDocument({ report }: { report: Report }) {
                     })}
                   </div>
 
-                  {/* sm+: giữ bảng so sánh 4 cột như cũ (đủ rộng để không cần kéo ngang) */}
-                  <div className="hidden sm:block overflow-x-auto border border-border rounded-lg">
+                  {/* sm+ trên màn hình: giữ bảng so sánh 4 cột như cũ (đủ rộng để không
+                      cần kéo ngang). print:hidden!: ẩn khi in — xem lý do ở khối card
+                      phía trên. */}
+                  <div className="hidden sm:block print:hidden! overflow-x-auto border border-border rounded-lg">
                     <table className="w-full border-collapse text-[13px]">
                       <thead>
                         <tr>
