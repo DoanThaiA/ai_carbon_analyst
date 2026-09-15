@@ -476,6 +476,17 @@ function CandlestickChart({ report }: { report: Report }) {
   );
 }
 
+function formatVietnameseDate(dateStr: string) {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  if (isNaN(d.getTime())) return dateStr;
+  
+  return `Ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
+}
+
 /**
  * Toàn bộ nội dung "tờ báo cáo" (masthead → footer) — dùng chung cho cả màn
  * hình user (chỉ xem báo cáo đã published) và màn hình admin duyệt báo cáo,
@@ -507,39 +518,22 @@ export function ReportDocument({ report }: { report: Report }) {
     // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
     <div className="max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
-      {/* Masthead — nền riêng (brand dark) để tách rõ khỏi phần nội dung trắng bên dưới.
-          Lưới chấm nền (dot-grid) + badge "nguồn đã kiểm chứng" gợi cảm giác tờ báo cáo
-          khoa học/định lượng (kiểu Bloomberg terminal) thay vì 1 banner marketing thuần.
-          Ngày báo cáo được cân bằng thị giác với title bên trái: cùng cỡ chữ/độ đậm,
-          chỉ khác màu (accent) để nổi bật và dễ nhận diện ngay lập tức. */}
-      <div className="relative overflow-hidden bg-primary-dark px-6 sm:px-10 pt-6 pb-6">
-        <div
-          className="absolute inset-0 opacity-[0.08] pointer-events-none"
-          style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "18px 18px" }}
-          aria-hidden="true"
-        />
-        <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-accent via-primary to-accent" aria-hidden="true" />
-
-        <div className="relative flex justify-between items-start flex-wrap gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <Image src="/stavian_logo.png" alt="Stavian" width={337} height={191} className="h-9 w-auto block" />
-              <div className="w-[1px] h-7 bg-white/25" />
-              <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-none">
-                Daily Carbon <span className="text-accent">Intelligence</span>
-              </div>
+      {/* Masthead */}
+      <div className="relative overflow-hidden bg-[#245851] pt-8 pb-0">
+        <div className="relative flex flex-col items-center text-center">
+          <Image src="/stavian_logo.png" alt="Stavian" width={337} height={191} className="h-16 sm:h-20 w-auto block mb-6" />
+          
+          <h1 className="text-[22px] sm:text-[28px] font-bold tracking-wide text-white leading-none mb-1.5">
+            TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON
+          </h1>
+          <h2 className="text-[12px] sm:text-[14px] font-medium tracking-[0.1em] text-[#a1d6b2] uppercase mb-5">
+            Carbon Market Daily News
+          </h2>
+          
+          <div className="w-full bg-[#2f8749] py-2">
+            <div className="text-[13px] sm:text-[15px] font-bold text-white">
+              {formatVietnameseDate(report.report_date)}
             </div>
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1">
-              <ShieldCheck size={12} className="text-accent shrink-0" />
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-white/70">
-                Tổng hợp AI · Nguồn Tier A/B/C đã kiểm chứng
-              </span>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-widest text-white/50 mb-1">Báo cáo ngày</div>
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-accent leading-none">{report.report_date}</div>
-            <div className="font-mono text-[11px] text-white/60 mt-1.5">Giá chốt 18:00 CET · Cập nhật 06:30 ICT</div>
           </div>
         </div>
       </div>
