@@ -168,17 +168,15 @@ function isPositiveDelta(value: string) {
 // không ngắt trang ngay sau heading.
 
 function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: string; icon: typeof Sparkles }) {
+  const label = eyebrow ? `${eyebrow}: ${title}` : title;
   return (
     <div className="report-heading relative mb-6 print:break-after-avoid">
       <div className="flex items-center gap-3">
         <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary-dark text-white shrink-0 shadow-[0_2px_10px_rgba(15,95,90,0.28)]">
           <Icon size={19} strokeWidth={2.25} />
         </span>
-        <div>
-          {eyebrow && (
-            <div className="font-mono text-[10.5px] font-bold uppercase tracking-[0.25em] text-primary mb-0.5">{eyebrow}</div>
-          )}
-          <div className="text-[20px] sm:text-[23px] font-extrabold tracking-tight text-foreground leading-tight">{title}</div>
+        <div className="text-[17px] sm:text-[20px] font-extrabold uppercase tracking-tight text-primary-dark leading-tight">
+          {label}
         </div>
       </div>
       <div className="mt-3 h-[3px] w-full bg-gradient-to-r from-primary via-primary/30 to-transparent rounded-full" />
@@ -222,18 +220,20 @@ function FramedHighlight({
   );
 }
 
-// Đầu mục con (trong 1 Phần) — chấm tròn đặc trưng đứng đầu dòng (theo yêu
-// cầu: không dùng gạch đầu dòng "-" cho các đầu mục) + icon + tiêu đề in đậm.
+// Đầu mục con (trong 1 Phần) — không dùng chấm/gạch đầu dòng, thay bằng icon +
+// tiêu đề in đậm có khung nền xanh dương nhạt phía sau chữ (kiểu highlight/marker)
+// để tạo điểm nhấn riêng biệt với "Phần".
 function SubHeading({ icon: Icon, children }: { icon?: typeof Sparkles; children: React.ReactNode }) {
   return (
     <div className="report-heading flex items-center gap-2.5 mb-4 print:break-after-avoid">
-      <span className="w-2 h-2 rounded-full bg-primary shrink-0" aria-hidden="true" />
       {Icon && (
-        <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-tint text-primary-dark shrink-0">
+        <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 shrink-0">
           <Icon size={15} strokeWidth={2.25} />
         </span>
       )}
-      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-foreground">{children}</h3>
+      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-foreground bg-sky-100 rounded-md px-2 py-0.5 -mx-2">
+        {children}
+      </h3>
     </div>
   );
 }
