@@ -501,7 +501,11 @@ export function ReportDocument({ report }: { report: Report }) {
   }));
 
   return (
-    <div className="bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
+    // max-w-[210mm]: khổ A4 — trên màn hình rộng báo cáo hiển thị như 1 trang PDF
+    // thật (căn giữa, có viền/bóng đổ), thay vì kéo giãn hết chiều ngang trình
+    // duyệt. Khi in (@media print trong globals.css), khổ A4 thật (@page) luôn
+    // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
+    <div className="max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
       {/* Masthead — nền riêng (brand dark) để tách rõ khỏi phần nội dung trắng bên dưới.
           Lưới chấm nền (dot-grid) + badge "nguồn đã kiểm chứng" gợi cảm giác tờ báo cáo
