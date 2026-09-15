@@ -92,33 +92,47 @@ const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận)\s*:?\*\*/;
 
 // Riêng dòng "**Tổng hợp:**" cuối mục 3 (kết luận chung về giá EUA — xem
 // _prompt_section3/KẾT LUẬN CHUNG CHO CẢ MỤC "PHÂN TÍCH" trong report_generator.py)
-// cần TÁCH RA khỏi các block phân tích để đưa lên đầu Phần 2 làm khối "Tổng hợp"
-// nổi bật riêng — không dùng chung CONCLUSION_TAG_RE vì regex đó match luôn cả
-// "**Kết luận:**" của từng nhóm nhỏ (những dòng đó vẫn phải ở lại trong block,
-// vẫn được tô nổi bật tại chỗ như cũ qua ConclusionAware).
+// và các dòng "**Kết luận:**" đứng riêng cuối mỗi nhóm (Nhóm 1/2/3) trong CÙNG
+// block đó cần TÁCH RA khỏi các block phân tích để đưa lên đầu Phần 2, gộp vào
+// khối "🚨 ĐIỂM NHẤN": các "**Kết luận:**" từng nhóm trở thành danh sách "yếu
+// tố", còn "**Tổng hợp:**" trở thành phần "Nhận định" (suy ra liên hệ EUA từ
+// các yếu tố đó) — không dùng chung CONCLUSION_TAG_RE vì regex đó còn được
+// dùng để tô nổi bật tại chỗ cho các "**Kết luận:**"/"**Tổng hợp:**" khác nằm
+// lồng trong 1 câu dài ở những mục khác (Mục 5, Chuỗi Logic liên thị trường...).
 const EUA_SUMMARY_TAG_RE = /\*\*Tổng hợp\s*:?\*\*/;
+// "**Kết luận:**" của từng nhóm LUÔN là 1 đoạn văn bản riêng, đứng đầu dòng
+// (không có gạch đầu dòng phía trước) — anchor ^ để không khớp nhầm các dòng
+// khác vô tình chứa cụm này giữa câu.
+const GROUP_CONCLUSION_TAG_RE = /^\*\*Kết luận\s*:?\*\*/;
 
-// Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung: rút đúng 1 dòng "**Tổng
-// hợp:**" (nếu có) ra khỏi analysis_blocks, phần còn lại của block giữ nguyên.
-function extractEuaSummary(blocks: any[] | undefined): { cleanedBlocks: any[]; summary: string | null } {
-  if (!blocks || blocks.length === 0) return { cleanedBlocks: blocks || [], summary: null };
+// Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung chữ: rút các dòng "**Kết
+// luận:**" (mỗi nhóm) và dòng "**Tổng hợp:**" ra khỏi analysis_blocks, phần
+// còn lại của block giữ nguyên.
+function extractEuaHighlights(blocks: any[] | undefined): { cleanedBlocks: any[]; factors: string[]; summary: string | null } {
+  if (!blocks || blocks.length === 0) return { cleanedBlocks: blocks || [], factors: [], summary: null };
   let summary: string | null = null;
+  const factors: string[] = [];
   const cleanedBlocks = blocks.map((block: any) => {
     const lines: string[] = (block.content || "").split("\n").filter((l: string) => l.trim());
     const keptLines: string[] = [];
     lines.forEach((line) => {
-      const match = line.match(EUA_SUMMARY_TAG_RE);
-      if (match && match.index !== undefined && !summary) {
-        const before = line.slice(0, match.index).trim();
+      const trimmed = line.trim();
+      const summaryMatch = line.match(EUA_SUMMARY_TAG_RE);
+      if (summaryMatch && summaryMatch.index !== undefined && !summary) {
+        const before = line.slice(0, summaryMatch.index).trim();
         if (before) keptLines.push(before);
-        summary = line.slice(match.index).trim();
-      } else {
-        keptLines.push(line);
+        summary = line.slice(summaryMatch.index).replace(EUA_SUMMARY_TAG_RE, "").trim();
+        return;
       }
+      if (GROUP_CONCLUSION_TAG_RE.test(trimmed)) {
+        factors.push(trimmed.replace(GROUP_CONCLUSION_TAG_RE, "").trim());
+        return;
+      }
+      keptLines.push(line);
     });
     return { ...block, content: keptLines.join("\n") };
   });
-  return { cleanedBlocks, summary };
+  return { cleanedBlocks, factors, summary };
 }
 
 // Placeholder outcome mà backend cố tình ghi (xem _prompt_section8 /
@@ -188,25 +202,38 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
 
 // Khung viền + tiêu đề "đè" lên viền trên, canh giữa — tạo điểm nhấn thị giác
 // mạnh nhất trong báo cáo, dùng cho đúng 2 khối quan trọng nhất: Tóm tắt điều
-// hành (đầu báo cáo) và Tổng hợp giá EUA (đầu Phần 2).
+// hành (đầu báo cáo, variant mặc định "primary") và 🚨 ĐIỂM NHẤN giá EUA (đầu
+// Phần 2, variant "danger" — khung/nhãn màu đỏ #7A1E1E để tách bạch mức độ
+// cảnh báo so với các khối còn lại của báo cáo).
 function FramedHighlight({
   title,
   children,
   className,
+  variant = "primary",
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
+  variant?: "primary" | "danger";
 }) {
+  const isDanger = variant === "danger";
   return (
     <div
       className={clsx(
-        "report-heading report-frame relative rounded-2xl border-2 border-primary/25 bg-gradient-to-b from-tint/70 to-background px-5 sm:px-7 pt-8 pb-6 shadow-[var(--shadow-soft)]",
+        "report-heading report-frame relative rounded-2xl border-2 px-5 sm:px-7 pt-8 pb-6 shadow-[var(--shadow-soft)]",
+        isDanger
+          ? "border-[#7A1E1E]/30 bg-gradient-to-b from-[#7A1E1E]/[0.07] to-background"
+          : "border-primary/25 bg-gradient-to-b from-tint/70 to-background",
         className
       )}
     >
       <div className="absolute -top-[15px] left-1/2 -translate-x-1/2">
-        <span className="inline-flex items-center gap-2 rounded-full bg-primary-dark text-white px-4 py-[7px] shadow-[0_3px_10px_rgba(15,95,90,0.32)] whitespace-nowrap">
+        <span
+          className={clsx(
+            "inline-flex items-center gap-2 rounded-full text-white px-4 py-[7px] shadow-[0_3px_10px_rgba(15,95,90,0.32)] whitespace-nowrap",
+            isDanger ? "bg-[#7A1E1E]" : "bg-primary-dark"
+          )}
+        >
           <span className="font-extrabold text-[12.5px] sm:text-[13.5px] tracking-wide uppercase">{title}</span>
         </span>
       </div>
@@ -498,9 +525,10 @@ export function ReportDocument({ report }: { report: Report }) {
   // user chỉ cần xem nhanh bảng Kịch bản chiến lược, không cần đọc hết phần phân tích.
   const [showAnalysis, setShowAnalysis] = useState(true);
 
-  // Rút riêng dòng "**Tổng hợp:**" (kết luận chung giá EUA) ra khỏi các block
-  // phân tích để đưa lên đầu Phần 2 — xem extractEuaSummary ở trên.
-  const { cleanedBlocks: analysisBlocks, summary: euaSummary } = extractEuaSummary(report.content["3"]?.analysis_blocks);
+  // Rút các dòng "**Kết luận:**" (mỗi nhóm) và "**Tổng hợp:**" (kết luận
+  // chung giá EUA) ra khỏi các block phân tích để đưa lên đầu Phần 2, gộp vào
+  // khối "🚨 ĐIỂM NHẤN" — xem extractEuaHighlights ở trên.
+  const { cleanedBlocks: analysisBlocks, factors: euaFactors, summary: euaSummary } = extractEuaHighlights(report.content["3"]?.analysis_blocks);
   const hasMarketDrivers =
     report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0;
 
@@ -689,13 +717,32 @@ export function ReportDocument({ report }: { report: Report }) {
         <section className="py-5">
           <PartHeading eyebrow="Phần 2" title="Phân tích và khuyến nghị giao dịch" icon={BarChart3} />
 
-          {/* Tổng hợp về giá EUA — đóng khung nổi bật, đứng đầu Phần 2 */}
-          {euaSummary && (
+          {/* 🚨 ĐIỂM NHẤN — đóng khung đỏ nổi bật, đứng đầu Phần 2: liệt kê các
+              yếu tố (kết luận từng nhóm ở Mục 3 "Phân tích"), rồi tới Nhận
+              định — suy ra liên hệ với EUA từ chính các yếu tố đó. */}
+          {(euaFactors.length > 0 || euaSummary) && (
             <div className="mb-6">
-              <FramedHighlight title="Tổng hợp về giá EUA">
-                <p className="text-[14.5px] sm:text-[15.5px] leading-relaxed font-bold text-primary-dark text-center sm:text-left">
-                  <RichText text={euaSummary} />
-                </p>
+              <FramedHighlight title="🚨 ĐIỂM NHẤN" variant="danger">
+                {euaFactors.length > 0 && (
+                  <ul className="list-none space-y-2">
+                    {euaFactors.map((factor, i) => (
+                      <li key={i} className="flex gap-2.5">
+                        <span className="mt-[8px] w-1.5 h-1.5 rounded-full bg-[#7A1E1E] shrink-0" aria-hidden="true" />
+                        <p className="flex-1 text-[13.5px] leading-relaxed text-[#7A1E1E]">
+                          <RichText text={factor} />
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {euaSummary && (
+                  <div className={clsx(euaFactors.length > 0 && "mt-4 pt-3 border-t border-[#7A1E1E]/20")}>
+                    <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-[#7A1E1E] mb-1.5">Nhận định</h4>
+                    <p className="text-[14.5px] sm:text-[15.5px] leading-relaxed font-bold text-[#7A1E1E] text-center sm:text-left">
+                      <RichText text={euaSummary} />
+                    </p>
+                  </div>
+                )}
               </FramedHighlight>
             </div>
           )}
