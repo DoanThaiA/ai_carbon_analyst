@@ -323,6 +323,19 @@ async def _fetch_cbam_price() -> Optional[Dict]:
         
     return None
 
+def _format_pct_with_abs(pct: Optional[float], close_price: float) -> str:
+    """Format % kèm số tuyệt đối tăng/giảm, vd '+2.34% (+1.05)' — suy ngược giá
+    kỳ trước từ close_price và pct (không lưu giá kỳ trước riêng trong DB)."""
+    if pct is None:
+        return "-"
+    denom = 1 + pct / 100
+    if denom == 0:
+        return f"{pct:+.2f}%"
+    prev_close = close_price / denom
+    abs_change = close_price - prev_close
+    return f"{pct:+.2f}% ({abs_change:+.2f})"
+
+
 async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> tuple[List[Dict], str]:
     """Lấy dữ liệu giá của ngày gần nhất có dữ liệu (<= target_date_str)."""
     # Tìm ngày gần nhất có dữ liệu
@@ -352,8 +365,8 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             "name": instrument.name,
             "code": instrument.code,
             "price": f"{price.close_price:,.4f} {instrument.unit}",
-            "dday": f"{price.day_change_pct:+.2f}%" if price.day_change_pct is not None else "-",
-            "dweek": f"{price.week_change_pct:+.2f}%" if price.week_change_pct is not None else "-",
+            "dday": _format_pct_with_abs(price.day_change_pct, price.close_price),
+            "dweek": _format_pct_with_abs(price.week_change_pct, price.close_price),
             "up": is_up,
             "note": note,
             "close": price.close_price,
@@ -1518,7 +1531,22 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     if eua_prices and chart_data:
         latest_close = eua_prices[0]["close"]
         week_change_pct = eua_prices[0].get("week_change_pct")
-        week_change_str = f"{week_change_pct:+.2f}%" if week_change_pct is not None else "không có dữ liệu"
+        # Tìm phiên cách >= 7 ngày (theo lịch) trước phiên mới nhất trong chart_data,
+        # cùng logic với week_change_pct đã tính ở crawl_barchart.py, để lấy được số
+        # tuyệt đối tăng/giảm — không chỉ %.
+        week_close = None
+        latest_date = date.fromisoformat(chart_data[-1]["date"])
+        for row in reversed(chart_data[:-1]):
+            if (latest_date - date.fromisoformat(row["date"])).days >= 7:
+                week_close = row["close"]
+                break
+        if week_change_pct is not None and week_close:
+            week_delta = latest_close - week_close
+            week_change_str = f"{'tăng' if week_delta > 0 else ('giảm' if week_delta < 0 else 'đi ngang')} {abs(week_delta):.2f} ({week_change_pct:+.2f}%)"
+        elif week_change_pct is not None:
+            week_change_str = f"{week_change_pct:+.2f}%"
+        else:
+            week_change_str = "không có dữ liệu"
         prev_close = chart_data[-2]["close"] if len(chart_data) >= 2 else None
         if prev_close:
             delta = latest_close - prev_close
