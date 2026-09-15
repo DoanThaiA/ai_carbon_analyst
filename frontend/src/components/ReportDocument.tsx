@@ -516,7 +516,7 @@ export function ReportDocument({ report }: { report: Report }) {
     // thật (căn giữa, có viền/bóng đổ), thay vì kéo giãn hết chiều ngang trình
     // duyệt. Khi in (@media print trong globals.css), khổ A4 thật (@page) luôn
     // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
-    <div className="max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
+    <div className="report-shell max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
       {/* Masthead */}
       <div className="relative overflow-hidden bg-[#245851] pt-8 pb-0">

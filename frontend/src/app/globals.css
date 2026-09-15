@@ -158,10 +158,17 @@ body {
     page-break-after: avoid;
   }
 
-  /* ---- Khung nổi bật: KHÔNG ép page-break-inside:avoid cho cả khung — khung
-     "Tóm tắt điều hành" có thể dài (5-8 bullet) nên nếu ép cả khối, khi không
-     vừa phần trang còn lại nó sẽ bị đẩy nguyên sang trang mới, để trống gần
-     hết trang trước đó. Từng bullet đã được bảo vệ riêng bằng rule `li` ở trên. */
+  /* ---- Khung nổi bật (Tóm tắt điều hành / Tổng hợp giá EUA): BẮT BUỘC không
+     cắt ngang. Tiêu đề khung là 1 badge position:absolute đè lên viền trên
+     (xem FramedHighlight, ReportDocument.tsx) — nếu để trình duyệt ngắt trang
+     giữa khung này, badge bị render lặp/lệch ngay đầu phần nội dung tiếp theo
+     (đè chữ lên dòng đầu, mất viền) thay vì chỉ đơn thuần lãng phí khoảng
+     trắng như 1 khối thường. Chấp nhận đánh đổi (khung dài có thể để trống
+     cuối trang trước) để tránh lỗi hiển thị vỡ layout nghiêm trọng hơn. */
+  .report-frame {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 
   /* ---- Masthead: thu gọn padding cho trang đầu gọn hơn ---- */
   .bg-primary-dark {
@@ -208,8 +215,12 @@ body {
     margin: 0 !important;
   }
 
-  /* ---- Container báo cáo: bỏ viền card, trở thành tài liệu thuần ---- */
-  .rounded-2xl {
+  /* ---- Container báo cáo: bỏ viền card, trở thành tài liệu thuần ----
+     Dùng class riêng (.report-shell) thay vì chọn theo "rounded-2xl" — khung
+     "Tóm tắt điều hành"/"Tổng hợp giá EUA" (FramedHighlight) cũng dùng chung
+     class Tailwind "rounded-2xl" nên trước đây bị vô tình mất luôn viền/khung
+     của chính nó theo rule này. */
+  .report-shell {
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
