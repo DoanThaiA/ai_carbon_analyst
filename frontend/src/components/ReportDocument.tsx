@@ -217,15 +217,14 @@ function FramedHighlight({
 
 // Đầu mục con (trong 1 Phần) — không dùng chấm/gạch đầu dòng hay icon (icon chỉ
 // giữ lại ở PartHeading: Phần 1/2/3, Nguồn tham khảo), thay bằng dải nền xanh
-// dương nhạt rộng bằng đúng chiều ngang nội dung (khớp với vạch gạch dưới của
+// lá nhạt rộng bằng đúng chiều ngang nội dung (khớp với vạch gạch dưới của
 // PartHeading, không tràn ra ngoài viền báo cáo) để tạo điểm nhấn riêng biệt
-// với "Phần". Màu chữ dùng xanh lá nhạt (green-600) để phân biệt rõ với màu
-// xanh dương nhạt của khung nền phía sau và màu xanh lá đậm (primary-dark) của
-// tiêu đề "Phần".
+// với "Phần". Chữ màu xanh lá đậm trên nền xanh lá nhạt (không dùng tông xanh
+// dương).
 function SubHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="report-heading flex items-center w-full mb-4 px-3 py-2 bg-sky-100 rounded-md print:break-after-avoid">
-      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-green-600">
+    <div className="report-heading flex items-center w-full mb-4 px-3 py-2 bg-green-100 rounded-md print:break-after-avoid">
+      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-green-800">
         {children}
       </h3>
     </div>
@@ -239,7 +238,7 @@ function DotBullets({ items, render }: { items: any[]; render: (item: any, i: nu
     <ul className="list-none space-y-2.5">
       {items.map((item, i) => (
         <li key={i} className="flex gap-2.5">
-          <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-primary shrink-0" aria-hidden="true" />
+          <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-black shrink-0" aria-hidden="true" />
           <div className="flex-1 min-w-0">{render(item, i)}</div>
         </li>
       ))}
@@ -740,7 +739,7 @@ export function ReportDocument({ report }: { report: Report }) {
                         }
                         return (
                           <div key={j} className="flex gap-2.5">
-                            <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-primary shrink-0" aria-hidden="true" />
+                            <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-black shrink-0" aria-hidden="true" />
                             <div className="flex-1 min-w-0">
                               <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-[14px] leading-relaxed text-body" />
                             </div>
