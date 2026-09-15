@@ -90,6 +90,37 @@ function stripMarkdown(text: string) {
 // luận:**" (xem report_generator.py), ở đây chỉ cần tìm tag đó và render khác đi.
 const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận)\s*:?\*\*/;
 
+// Riêng dòng "**Tổng hợp:**" cuối mục 3 (kết luận chung về giá EUA — xem
+// _prompt_section3/KẾT LUẬN CHUNG CHO CẢ MỤC "PHÂN TÍCH" trong report_generator.py)
+// cần TÁCH RA khỏi các block phân tích để đưa lên đầu Phần 2 làm khối "Tổng hợp"
+// nổi bật riêng — không dùng chung CONCLUSION_TAG_RE vì regex đó match luôn cả
+// "**Kết luận:**" của từng nhóm nhỏ (những dòng đó vẫn phải ở lại trong block,
+// vẫn được tô nổi bật tại chỗ như cũ qua ConclusionAware).
+const EUA_SUMMARY_TAG_RE = /\*\*Tổng hợp\s*:?\*\*/;
+
+// Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung: rút đúng 1 dòng "**Tổng
+// hợp:**" (nếu có) ra khỏi analysis_blocks, phần còn lại của block giữ nguyên.
+function extractEuaSummary(blocks: any[] | undefined): { cleanedBlocks: any[]; summary: string | null } {
+  if (!blocks || blocks.length === 0) return { cleanedBlocks: blocks || [], summary: null };
+  let summary: string | null = null;
+  const cleanedBlocks = blocks.map((block: any) => {
+    const lines: string[] = (block.content || "").split("\n").filter((l: string) => l.trim());
+    const keptLines: string[] = [];
+    lines.forEach((line) => {
+      const match = line.match(EUA_SUMMARY_TAG_RE);
+      if (match && match.index !== undefined && !summary) {
+        const before = line.slice(0, match.index).trim();
+        if (before) keptLines.push(before);
+        summary = line.slice(match.index).trim();
+      } else {
+        keptLines.push(line);
+      }
+    });
+    return { ...block, content: keptLines.join("\n") };
+  });
+  return { cleanedBlocks, summary };
+}
+
 // Placeholder outcome mà backend cố tình ghi (xem _prompt_section8 /
 // _split_prev_events trong services/report_generator.py) khi tin tức KHÔNG xác
 // nhận được kết quả thực tế — dùng nội bộ để đánh dấu sự kiện "đã xử lý xong,
@@ -124,47 +155,101 @@ function isPositiveDelta(value: string) {
   return typeof value === "string" ? !value.trim().startsWith("-") : true;
 }
 
-// Icon riêng cho từng section giúp người đọc nhận diện ngay loại nội dung
-// (giá/tin tức/lịch/gợi ý...) thay vì chỉ dựa vào số thứ tự.
-const SECTION_ICON: Record<string, typeof Sparkles> = {
-  "01": Sparkles,
-  "02": LineChart,
-  "03": BarChart3,
-  "04": FileText,
-  "05": AlignLeft,
-  "06": Newspaper,
-  "07": Scale,
-  "08": CalendarDays,
-  "SIM": Lightbulb,
-  "09": Link2,
-};
+// Bố cục báo cáo không còn đánh số thứ tự dạng "01"/"02" như trước — thay bằng
+// 3 cấp heading rõ ràng theo phân cấp thị giác:
+//  - PartHeading: đầu mục lớn nhất ("Phần 1/2/3", hoặc đứng riêng như "Tóm tắt
+//    điều hành"/"Nguồn tham khảo" không cần nhãn "Phần").
+//  - FramedHighlight: khung viền nổi bật có tiêu đề dạng "nhãn" nằm đè lên viền
+//    trên (kiểu legend/fieldset) — dùng cho các khối cần nhấn mạnh nhất (Tóm
+//    tắt điều hành, Tổng hợp giá EUA).
+//  - SubHeading: đầu mục con trong 1 Phần, in đậm + chấm tròn + icon để dễ
+//    quét mắt mà không cần số thứ tự.
+// Class "report-heading" dùng chung để CSS in ấn (globals.css) nhận diện, ép
+// không ngắt trang ngay sau heading.
 
-// Đầu mục section: icon nổi bật trong khối bo tròn để phân biệt rõ ràng từng
-// phần trong báo cáo dài, tiêu đề lớn/đậm hơn để tạo phân cấp thị giác rõ.
-// Số thứ tự khổng lồ mờ phía sau (kiểu whitepaper/tạp chí khoa học) + vạch
-// gradient bên dưới giúp mắt định vị ngay ranh giới giữa các mục khi lướt
-// nhanh 1 báo cáo dài nhiều section.
-function SectionHeading({ number, title }: { number: string; title: string }) {
-  const Icon = SECTION_ICON[number] ?? Sparkles;
+function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: string; icon: typeof Sparkles }) {
   return (
-    <div className="relative mb-5 print:break-after-avoid">
-      <span
-        aria-hidden="true"
-        className="pointer-events-none select-none absolute -top-3 right-0 font-mono text-[52px] sm:text-[64px] font-extrabold leading-none text-primary/[0.05]"
-      >
-        {number}
-      </span>
-      <div className="relative flex items-center gap-3">
-        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-tint text-primary-dark shrink-0">
-          <Icon size={18} strokeWidth={2.25} />
+    <div className="report-heading relative mb-6 print:break-after-avoid">
+      <div className="flex items-center gap-3">
+        <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary-dark text-white shrink-0 shadow-[0_2px_10px_rgba(15,95,90,0.28)]">
+          <Icon size={19} strokeWidth={2.25} />
         </span>
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-[20px] font-extrabold tracking-tight text-foreground">{title}</span>
-          <span className="font-mono text-[10px] font-semibold text-muted-light tracking-wider">{number}</span>
+        <div>
+          {eyebrow && (
+            <div className="font-mono text-[10.5px] font-bold uppercase tracking-[0.25em] text-primary mb-0.5">{eyebrow}</div>
+          )}
+          <div className="text-[20px] sm:text-[23px] font-extrabold tracking-tight text-foreground leading-tight">{title}</div>
         </div>
       </div>
-      <div className="relative mt-3 h-[2px] w-full bg-gradient-to-r from-primary/40 via-border to-transparent" />
+      <div className="mt-3 h-[3px] w-full bg-gradient-to-r from-primary via-primary/30 to-transparent rounded-full" />
     </div>
+  );
+}
+
+// Khung viền + tiêu đề "đè" lên viền trên, canh giữa — tạo điểm nhấn thị giác
+// mạnh nhất trong báo cáo, dùng cho đúng 2 khối quan trọng nhất: Tóm tắt điều
+// hành (đầu báo cáo) và Tổng hợp giá EUA (đầu Phần 2).
+function FramedHighlight({
+  title,
+  icon: Icon,
+  children,
+  className,
+}: {
+  title: string;
+  icon?: typeof Sparkles;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={clsx(
+        "report-heading report-frame relative rounded-2xl border-2 border-primary/25 bg-gradient-to-b from-tint/70 to-background px-5 sm:px-7 pt-8 pb-6 shadow-[var(--shadow-soft)]",
+        className
+      )}
+    >
+      <div className="absolute -top-[15px] left-1/2 -translate-x-1/2">
+        <span className="inline-flex items-center gap-2 rounded-full bg-primary-dark text-white pl-3 pr-4 py-[7px] shadow-[0_3px_10px_rgba(15,95,90,0.32)] whitespace-nowrap">
+          {Icon && (
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white/15 shrink-0">
+              <Icon size={12} strokeWidth={2.75} />
+            </span>
+          )}
+          <span className="font-extrabold text-[12.5px] sm:text-[13.5px] tracking-wide uppercase">{title}</span>
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// Đầu mục con (trong 1 Phần) — chấm tròn đặc trưng đứng đầu dòng (theo yêu
+// cầu: không dùng gạch đầu dòng "-" cho các đầu mục) + icon + tiêu đề in đậm.
+function SubHeading({ icon: Icon, children }: { icon?: typeof Sparkles; children: React.ReactNode }) {
+  return (
+    <div className="report-heading flex items-center gap-2.5 mb-4 print:break-after-avoid">
+      <span className="w-2 h-2 rounded-full bg-primary shrink-0" aria-hidden="true" />
+      {Icon && (
+        <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-tint text-primary-dark shrink-0">
+          <Icon size={15} strokeWidth={2.25} />
+        </span>
+      )}
+      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-foreground">{children}</h3>
+    </div>
+  );
+}
+
+// Danh sách chấm tròn dùng chung cho các mục bullet trong Phần 2 (thay cho
+// gạch đầu dòng "-").
+function DotBullets({ items, render }: { items: any[]; render: (item: any, i: number) => React.ReactNode }) {
+  return (
+    <ul className="list-none space-y-2.5">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2.5">
+          <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-primary shrink-0" aria-hidden="true" />
+          <div className="flex-1 min-w-0">{render(item, i)}</div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -409,6 +494,12 @@ export function ReportDocument({ report }: { report: Report }) {
   // user chỉ cần xem nhanh bảng Kịch bản chiến lược, không cần đọc hết phần phân tích.
   const [showAnalysis, setShowAnalysis] = useState(true);
 
+  // Rút riêng dòng "**Tổng hợp:**" (kết luận chung giá EUA) ra khỏi các block
+  // phân tích để đưa lên đầu Phần 2 — xem extractEuaSummary ở trên.
+  const { cleanedBlocks: analysisBlocks, summary: euaSummary } = extractEuaSummary(report.content["3"]?.analysis_blocks);
+  const hasMarketDrivers =
+    report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0;
+
   const tickerData = priceRows.map((r: any) => ({
     name: r.name,
     price: r.price,
@@ -472,46 +563,49 @@ export function ReportDocument({ report }: { report: Report }) {
 
       <div className="px-6 sm:px-10 pt-5 pb-10">
 
-        {/* SECTION 1 */}
+        {/* TÓM TẮT ĐIỀU HÀNH — đóng khung nổi bật, không đánh số thứ tự */}
         <section className="py-5">
-          <SectionHeading number="01" title="Tóm tắt điều hành" />
-          <ul className="list-none">
-            {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
-              const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
-              const isMatch = b.includes(':');
-              const tag = stripMarkdown(isMatch ? b.split(':')[0] : 'Note');
-              const text = isMatch ? b.split(':').slice(1).join(':') : b;
-              const sourceName = typeof bullet === "object" ? bullet.source_name : null;
-              const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
+          <FramedHighlight title="Tóm tắt điều hành" icon={Sparkles}>
+            <ul className="list-none">
+              {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
+                const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
+                const isMatch = b.includes(':');
+                const tag = stripMarkdown(isMatch ? b.split(':')[0] : 'Note');
+                const text = isMatch ? b.split(':').slice(1).join(':') : b;
+                const sourceName = typeof bullet === "object" ? bullet.source_name : null;
+                const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
 
-              return (
-                <li key={i} className="py-2.5 border-t border-border text-[14.5px] first:border-t-0">
-                  <p className="text-foreground leading-[1.1]">
-                    <span className={clsx("font-mono text-[10.5px] border rounded-[3px] px-1 py-px mr-2", tagColorClass(tag.trim()))}>
-                      {tag.trim().substring(0, 15)}
-                    </span>
-                    <RichText text={text.trim()} />
-                  </p>
-                  {sourceName && (
-                    <a
-                      href={sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
-                    >
-                      Nguồn: {sourceName} ↗
-                    </a>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                return (
+                  <li key={i} className="py-2.5 border-t border-border-soft text-[14.5px] first:border-t-0 first:pt-0">
+                    <p className="text-foreground leading-[1.1]">
+                      <span className={clsx("font-mono text-[10.5px] border rounded-[3px] px-1 py-px mr-2", tagColorClass(tag.trim()))}>
+                        {tag.trim().substring(0, 15)}
+                      </span>
+                      <RichText text={text.trim()} />
+                    </p>
+                    {sourceName && (
+                      <a
+                        href={sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
+                      >
+                        Nguồn: {sourceName} ↗
+                      </a>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </FramedHighlight>
         </section>
 
-        {/* SECTION 2 */}
+        {/* PHẦN 1 — TIN TỨC CHÍNH / NỔI BẬT TRONG NGÀY */}
         <section className="py-5">
+          <PartHeading eyebrow="Phần 1" title="Tin tức chính / nổi bật trong ngày" icon={LineChart} />
+
           <div className="print:break-inside-avoid">
-            <SectionHeading number="02" title="Bảng giá nhanh" />
+            <SubHeading icon={LineChart}>Bảng giá nhanh</SubHeading>
             {report.content["2"]?.price_timestamp && (
               <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
             )}
@@ -598,10 +692,90 @@ export function ReportDocument({ report }: { report: Report }) {
                 </div>
               )}
           </div>
+        </section>
 
-          {(report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0) && (
-            <div className="mt-4">
-              <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Động lực thị trường</h4>
+        {/* PHẦN 2 — PHÂN TÍCH VÀ KHUYẾN NGHỊ GIAO DỊCH */}
+        <section className="py-5">
+          <PartHeading eyebrow="Phần 2" title="Phân tích và khuyến nghị giao dịch" icon={BarChart3} />
+
+          {/* Tổng hợp về giá EUA — đóng khung nổi bật, đứng đầu Phần 2 */}
+          {euaSummary && (
+            <div className="mb-6">
+              <FramedHighlight title="Tổng hợp về giá EUA" icon={Target}>
+                <p className="text-[14.5px] sm:text-[15.5px] leading-relaxed font-bold text-primary-dark text-center sm:text-left">
+                  <RichText text={euaSummary} />
+                </p>
+              </FramedHighlight>
+            </div>
+          )}
+
+          {report.content["3"] && (
+            <div className="mb-6">
+              <SubHeading icon={BarChart3}>Phân tích</SubHeading>
+              {report.content["3"].title && (
+                <p className="-mt-2.5 mb-4 ml-[38px] text-[12px] text-muted-light italic">{report.content["3"].title}</p>
+              )}
+
+            {(analysisBlocks?.length > 0 || report.content["3"].correlation_analysis) && (
+              <button
+                type="button"
+                onClick={() => setShowAnalysis(v => !v)}
+                className="mb-4 flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-primary border border-primary/30 bg-tint/50 hover:bg-tint rounded-md px-2.5 py-1.5 transition-colors"
+              >
+                {showAnalysis ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                {showAnalysis ? "Ẩn phân tích" : "Hiện phân tích"}
+              </button>
+            )}
+
+            {showAnalysis && (
+              <>
+                {analysisBlocks?.map((block: any, i: number) => (
+                  <div key={i} className="mb-5">
+                    <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
+                    <div className="space-y-1.5">
+                      {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
+                        <ConclusionAware key={j} text={line} className="text-[14px] leading-relaxed text-body" />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {report.content["3"].correlation_analysis && (
+                  <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg pl-4 pr-4 py-3 my-5 space-y-2">
+                    <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">Chuỗi Logic: Gas + Coal + Power → EUA</h4>
+                    {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
+                      <div className="space-y-2.5 mb-1">
+                        {report.content["3"].correlation_analysis.gas_comment && (
+                          <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
+                        )}
+                        {report.content["3"].correlation_analysis.coal_comment && (
+                          <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
+                        )}
+                        {report.content["3"].correlation_analysis.power_comment && (
+                          <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
+                        )}
+                      </div>
+                    )}
+                    <ConclusionAware
+                      text={report.content["3"].correlation_analysis.fuel_switching_chain || report.content["3"].correlation_analysis.gas_coal_power}
+                      className="text-[14px] leading-relaxed text-body"
+                    />
+                    <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
+                      <p className="text-[14px] leading-relaxed font-bold text-primary-dark">
+                        <RichText text={report.content["3"].correlation_analysis.eua_conclusion} />
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            </div>
+          )}
+
+          {/* Động lực thị trường — chuyển từ Bảng giá nhanh (Phần 1) sang đây */}
+          {hasMarketDrivers && (
+            <div className="mb-6">
+              <SubHeading icon={TrendingUp}>Động lực thị trường</SubHeading>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="border border-up/25 bg-up/[0.04] rounded-lg overflow-hidden">
                   <div className="flex items-center gap-1.5 bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
@@ -670,68 +844,9 @@ export function ReportDocument({ report }: { report: Report }) {
               </div>
             </div>
           )}
-        </section>
 
-        {/* SECTION 3 */}
-        {report.content["3"] && (
-          <section className="py-5">
-            <SectionHeading number="03" title={report.content["3"].title} />
-
-            {(report.content["3"].analysis_blocks?.length > 0 || report.content["3"].correlation_analysis) && (
-              <button
-                type="button"
-                onClick={() => setShowAnalysis(v => !v)}
-                className="mb-4 flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-primary border border-primary/30 bg-tint/50 hover:bg-tint rounded-md px-2.5 py-1.5 transition-colors"
-              >
-                {showAnalysis ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                {showAnalysis ? "Ẩn phân tích" : "Hiện phân tích"}
-              </button>
-            )}
-
-            {showAnalysis && (
-              <>
-                {report.content["3"].analysis_blocks?.map((block: any, i: number) => (
-                  <div key={i} className="mb-5">
-                    <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
-                    <div className="space-y-1.5">
-                      {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
-                        <ConclusionAware key={j} text={line} className="text-[14px] leading-relaxed text-body" />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-
-                {report.content["3"].correlation_analysis && (
-                  <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg pl-4 pr-4 py-3 my-5 space-y-2">
-                    <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">Chuỗi Logic: Gas + Coal + Power → EUA</h4>
-                    {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
-                      <div className="space-y-2.5 mb-1">
-                        {report.content["3"].correlation_analysis.gas_comment && (
-                          <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
-                        )}
-                        {report.content["3"].correlation_analysis.coal_comment && (
-                          <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
-                        )}
-                        {report.content["3"].correlation_analysis.power_comment && (
-                          <p className="text-[13.5px] leading-relaxed text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
-                        )}
-                      </div>
-                    )}
-                    <ConclusionAware
-                      text={report.content["3"].correlation_analysis.fuel_switching_chain || report.content["3"].correlation_analysis.gas_coal_power}
-                      className="text-[14px] leading-relaxed text-body"
-                    />
-                    <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
-                      <p className="text-[14px] leading-relaxed font-bold text-primary-dark">
-                        <RichText text={report.content["3"].correlation_analysis.eua_conclusion} />
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            {report.content["3"].trading_scenarios?.length > 0 && (() => {
+          {/* Kịch bản chiến lược */}
+          {report.content["3"]?.trading_scenarios?.length > 0 && (() => {
               const HORIZON_ORDER = ["ngắn hạn", "trung hạn", "dài hạn"];
               const byHorizon: Record<string, any> = {};
               report.content["3"].trading_scenarios.forEach((sc: any) => { byHorizon[sc.horizon] = sc; });
@@ -777,8 +892,8 @@ export function ReportDocument({ report }: { report: Report }) {
               ];
 
               return (
-                <div className="mt-5">
-                  <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-label mb-3">Kịch bản chiến lược</h4>
+                <div className="mb-6">
+                  <SubHeading icon={Crosshair}>Kịch bản chiến lược</SubHeading>
 
                   {/* Mobile VÀ khi in/xuất PDF: mỗi khung thời gian là 1 card xếp dọc
                       (label/giá trị theo hàng) thay vì bảng 4 cột — bảng 4 cột luôn cần
@@ -886,79 +1001,78 @@ export function ReportDocument({ report }: { report: Report }) {
                 </div>
               );
             })()}
-          </section>
-        )}
 
-        {/* SECTIONS 4, 5 (text/bullets) */}
-        {["4", "5"].map(key => {
-          const section = report.content[key];
-          if (!section) return null;
-          return (
-            <section key={key} className="py-5">
-              <SectionHeading number={`0${key}`} title={section.title} />
-              <div className="space-y-2.5">
+          {/* SECTIONS 4, 5 (text/bullets) — Cập nhật tín chỉ carbon & CBAM / Tín hiệu liên thị trường */}
+          {["4", "5"].map(key => {
+            const section = report.content[key];
+            if (!section) return null;
+            return (
+              <div key={key} className="mb-6">
+                <SubHeading icon={key === "4" ? FileText : AlignLeft}>{section.title}</SubHeading>
                 {section.bullets ? (
-                  section.bullets.map((bullet: any, i: number) => {
-                    const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
-                    const sourceName = typeof bullet === "object" ? bullet.source_name : null;
-                    const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
-                    return (
-                      <div key={i}>
-                        <ConclusionAware text={b} className="text-[14px] leading-relaxed text-body" />
-                        {sourceName && (
-                          <a
-                            href={sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
-                          >
-                            Nguồn: {sourceName} ↗
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })
+                  <DotBullets
+                    items={section.bullets}
+                    render={(bullet: any) => {
+                      const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
+                      const sourceName = typeof bullet === "object" ? bullet.source_name : null;
+                      const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
+                      return (
+                        <div>
+                          <ConclusionAware text={b} className="text-[14px] leading-relaxed text-body" />
+                          {sourceName && (
+                            <a
+                              href={sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
+                            >
+                              Nguồn: {sourceName} ↗
+                            </a>
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
                 ) : (
                   <ConclusionAware text={section.text} className="text-[14px] leading-relaxed text-body" />
                 )}
               </div>
-            </section>
-          );
-        })}
+            );
+          })}
 
-        {/* SECTION 7 (badge 06) — Quan điểm trái chiều */}
-        {report.content["7"] && (
-          <section className="py-5">
-            <SectionHeading number="06" title={report.content["7"].title} />
-            {report.content["7"].points?.length > 0 ? (
-              <div className="space-y-5">
-                {report.content["7"].points.map((pt: any, i: number) => (
-                  <div key={i} className="pb-5 border-b border-border-soft last:border-b-0 last:pb-0">
-                    <p className="text-[14px] leading-relaxed text-body"><RichText text={pt.viewpoint} /></p>
-                    {pt.source_url && (
-                      <a
-                        href={pt.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-block font-mono text-[11.5px] text-primary hover:underline"
-                      >
-                        Nguồn: {pt.source_name} ↗
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[14px] text-muted-light italic">{report.content["7"].text}</p>
-            )}
-          </section>
-        )}
+          {/* Quan điểm trái chiều đáng chú ý */}
+          {report.content["7"] && (
+            <div className="mb-6">
+              <SubHeading icon={Scale}>{report.content["7"].title}</SubHeading>
+              {report.content["7"].points?.length > 0 ? (
+                <div className="space-y-5">
+                  {report.content["7"].points.map((pt: any, i: number) => (
+                    <div key={i} className="pb-5 border-b border-border-soft last:border-b-0 last:pb-0">
+                      <p className="text-[14px] leading-relaxed text-body"><RichText text={pt.viewpoint} /></p>
+                      {pt.source_url && (
+                        <a
+                          href={pt.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-block font-mono text-[11.5px] text-primary hover:underline"
+                        >
+                          Nguồn: {pt.source_name} ↗
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[14px] text-muted-light italic">{report.content["7"].text}</p>
+              )}
+            </div>
+          )}
 
-        {/* SECTION 8 (badge 07) — Lịch sự kiện */}
-        {report.content["8"] && (
-          <section className="py-5">
-            <SectionHeading number="07" title={report.content["8"].title} />
-            {report.content["8"].events?.length > 0 ? (() => {
+          {/* Lịch sự kiện 7 ngày tới */}
+          {report.content["8"] && (
+            <div className="mb-6">
+              <SubHeading icon={CalendarDays}>{report.content["8"].title}</SubHeading>
+              {report.content["8"].events?.length > 0 ? (() => {
               // Tách rõ 2 nhóm thay vì 1 timeline gộp lẫn lộn: sự kiện ĐÃ có "outcome"
               // (đã diễn ra, đã cập nhật kết quả) đứng riêng khỏi sự kiện CHƯA diễn ra —
               // nhóm "sắp tới" sắp xếp theo "date" tăng dần để luôn đúng trình tự thời
@@ -997,42 +1111,43 @@ export function ReportDocument({ report }: { report: Report }) {
                 <p key={i} className="text-[14px] leading-relaxed text-body"><RichText text={b} /></p>
               ))
             )}
-          </section>
-        )}
-
-        {/* SECTION BIZ — Gợi ý kinh doanh */}
-        {report.content["biz"] && (
-          <section className="py-5">
-            <SectionHeading number="SIM" title={report.content["biz"].title} />
-            <div className="flex flex-col gap-6">
-              <BizRecommendationTable
-                heading="Ngắn hạn"
-                accent="text-label"
-                rows={report.content["biz"].short_term}
-                columns={[
-                  { key: "trigger", label: "Tình huống kích hoạt" },
-                  { key: "action", label: "Hành động đề xuất" },
-                  { key: "reason", label: "Lý do" },
-                ]}
-              />
-              <BizRecommendationTable
-                heading="Dài hạn"
-                accent="text-primary"
-                rows={report.content["biz"].long_term}
-                columns={[
-                  { key: "opportunity", label: "Cơ hội" },
-                  { key: "solution", label: "Giải pháp đề xuất" },
-                  { key: "expectation", label: "Kỳ vọng" },
-                ]}
-              />
             </div>
-          </section>
-        )}
+          )}
 
-        {/* SECTION 6 (badge 08) — Chi tiết các tin tức chính */}
+          {/* Gợi ý kinh doanh & giải pháp cho SIM */}
+          {report.content["biz"] && (
+            <div className="mb-2">
+              <SubHeading icon={Lightbulb}>{report.content["biz"].title}</SubHeading>
+              <div className="flex flex-col gap-6">
+                <BizRecommendationTable
+                  heading="Ngắn hạn"
+                  accent="text-label"
+                  rows={report.content["biz"].short_term}
+                  columns={[
+                    { key: "trigger", label: "Tình huống kích hoạt" },
+                    { key: "action", label: "Hành động đề xuất" },
+                    { key: "reason", label: "Lý do" },
+                  ]}
+                />
+                <BizRecommendationTable
+                  heading="Dài hạn"
+                  accent="text-primary"
+                  rows={report.content["biz"].long_term}
+                  columns={[
+                    { key: "opportunity", label: "Cơ hội" },
+                    { key: "solution", label: "Giải pháp đề xuất" },
+                    { key: "expectation", label: "Kỳ vọng" },
+                  ]}
+                />
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* PHẦN 3 — CHI TIẾT CÁC TIN TỨC CHÍNH */}
         {report.content["6"] && (
           <section className="py-5">
-            <SectionHeading number="08" title={report.content["6"].title} />
+            <PartHeading eyebrow="Phần 3" title={report.content["6"].title || "Chi tiết các tin tức chính"} icon={Newspaper} />
             {[
               { key: "international", label: "Quốc tế" },
               { key: "vietnam", label: "Việt Nam" },
@@ -1067,10 +1182,10 @@ export function ReportDocument({ report }: { report: Report }) {
           </section>
         )}
 
-        {/* SECTION 9 — Nguồn */}
+        {/* NGUỒN THAM KHẢO — đứng độc lập cuối báo cáo, không thuộc Phần nào */}
         {report.content["9"] && (
           <section className="py-5">
-            <SectionHeading number="09" title={report.content["9"].title} />
+            <PartHeading title={report.content["9"].title || "Nguồn tham khảo"} icon={Link2} />
             {report.content["9"].items?.length > 0 ? (
               <ul className="space-y-1.5">
                 {report.content["9"].items.map((it: any, i: number) => (

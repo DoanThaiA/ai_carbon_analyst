@@ -135,8 +135,13 @@ body {
   }
 
   /* ---- Heading section luôn đi kèm nội dung phía sau, không bị lẻ cuối trang ---- */
-  h4, .relative.mb-5 {
+  h4, h3, .report-heading {
     page-break-after: avoid;
+  }
+
+  /* ---- Khung nổi bật (Tóm tắt điều hành / Tổng hợp giá EUA): không cắt ngang khung ---- */
+  .report-frame {
+    page-break-inside: avoid;
   }
 
   /* ---- Masthead: thu gọn padding cho trang đầu gọn hơn ---- */
