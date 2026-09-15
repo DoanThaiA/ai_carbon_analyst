@@ -661,7 +661,7 @@ export function ReportDocument({ report }: { report: Report }) {
           </div>
 
           <div className="flex flex-col lg:flex-row gap-4 items-stretch mt-5">
-              <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
+              <div className="print-keep-together lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
                 <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
                   <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
                   <span>EUR/tCO₂e</span>
@@ -916,7 +916,7 @@ export function ReportDocument({ report }: { report: Report }) {
                       const Icon = meta.icon;
                       const sc = byHorizon[h];
                       return (
-                        <div key={h} className="border border-border rounded-lg overflow-hidden">
+                        <div key={h} className="print-keep-together border border-border rounded-lg overflow-hidden">
                           <div className={clsx("flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2", meta.iconBg)}>
                             <Icon size={13} /> {h}
                           </div>
