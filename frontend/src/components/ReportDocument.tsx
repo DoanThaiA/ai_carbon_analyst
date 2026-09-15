@@ -217,12 +217,13 @@ function FramedHighlight({
 
 // Đầu mục con (trong 1 Phần) — không dùng chấm/gạch đầu dòng hay icon (icon chỉ
 // giữ lại ở PartHeading: Phần 1/2/3, Nguồn tham khảo), thay bằng dải nền xanh
-// dương chạy hết chiều ngang trang (bleed ra ngoài phần padding nội dung) để
-// tạo điểm nhấn riêng biệt với "Phần".
+// dương nhạt rộng bằng đúng chiều ngang nội dung (khớp với vạch gạch dưới của
+// PartHeading, không tràn ra ngoài viền báo cáo) để tạo điểm nhấn riêng biệt
+// với "Phần". Màu chữ dùng chung màu xanh lá đậm với tiêu đề "Phần" (primary-dark).
 function SubHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="report-heading flex items-center mb-4 -mx-6 sm:-mx-10 px-6 sm:px-10 py-2 bg-sky-100 print:break-after-avoid">
-      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-sky-700">
+    <div className="report-heading flex items-center w-full mb-4 px-3 py-2 bg-sky-100 rounded-md print:break-after-avoid">
+      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-primary-dark">
         {children}
       </h3>
     </div>
@@ -593,7 +594,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* PHẦN 1 — TIN TỨC CHÍNH / NỔI BẬT TRONG NGÀY */}
         <section className="py-5">
-          <PartHeading eyebrow="Phần 1" title="Tin tức chính / nổi bật trong ngày" icon={LineChart} />
+          <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
 
           <div className="print:break-inside-avoid">
             <SubHeading>Bảng giá nhanh</SubHeading>
