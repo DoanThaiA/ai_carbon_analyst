@@ -519,7 +519,7 @@ export function ReportDocument({ report }: { report: Report }) {
     <div className="report-shell max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-relaxed rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
       {/* Masthead */}
-      <div className="relative overflow-hidden bg-[#245851] pt-8 pb-0">
+      <div className="relative overflow-hidden bg-[#245851] pt-8 print:pt-4 pb-0">
         <div className="relative flex flex-col items-center text-center">
           <Image src="/stavian_logo.png" alt="Stavian" width={337} height={191} className="h-16 sm:h-20 w-auto block mb-6" />
           

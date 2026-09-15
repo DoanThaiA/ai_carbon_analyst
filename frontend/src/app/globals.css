@@ -170,11 +170,7 @@ body {
     break-inside: avoid;
   }
 
-  /* ---- Masthead: thu gọn padding cho trang đầu gọn hơn ---- */
-  .bg-primary-dark {
-    padding-top: 16px !important;
-    padding-bottom: 16px !important;
-  }
+  /* ---- Masthead: thu gọn padding cho trang đầu gọn hơn (Đã chuyển sang dùng print:pt-4 trong JSX) ---- */
 
   /* ---- Nội dung chính: giảm padding ngang cho vừa khổ A4 ---- */
   .px-6.sm\:px-10 {
