@@ -219,11 +219,13 @@ function FramedHighlight({
 // giữ lại ở PartHeading: Phần 1/2/3, Nguồn tham khảo), thay bằng dải nền xanh
 // dương nhạt rộng bằng đúng chiều ngang nội dung (khớp với vạch gạch dưới của
 // PartHeading, không tràn ra ngoài viền báo cáo) để tạo điểm nhấn riêng biệt
-// với "Phần". Màu chữ dùng chung màu xanh lá đậm với tiêu đề "Phần" (primary-dark).
+// với "Phần". Màu chữ dùng xanh lá nhạt (green-600) để phân biệt rõ với màu
+// xanh dương nhạt của khung nền phía sau và màu xanh lá đậm (primary-dark) của
+// tiêu đề "Phần".
 function SubHeading({ children }: { children: React.ReactNode }) {
   return (
     <div className="report-heading flex items-center w-full mb-4 px-3 py-2 bg-sky-100 rounded-md print:break-after-avoid">
-      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-primary">
+      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-green-600">
         {children}
       </h3>
     </div>
@@ -725,9 +727,26 @@ export function ReportDocument({ report }: { report: Report }) {
                   <div key={i} className="mb-5">
                     <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
                     <div className="space-y-1.5">
-                      {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
-                        <ConclusionAware key={j} text={line} className="text-[14px] leading-relaxed text-body" />
-                      ))}
+                      {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => {
+                        // Backend đôi khi tự chèn gạch đầu dòng thô ("- ...", có thể kèm
+                        // dấu cách/tab thừa hoặc en-dash "–") cho từng mã/ý trong 1 nhóm,
+                        // ở BẤT KỲ heading nào (Diễn biến chính, Phân tích...) — đổi hiển
+                        // thị sang chấm tròn thay vì gạch ngang, không đổi nội dung chữ
+                        // (chỉ bỏ đúng phần tiền tố gạch đầu dòng khớp được).
+                        const trimmed = line.trim();
+                        const dashMatch = trimmed.match(/^[-–—]\s+/);
+                        if (!dashMatch) {
+                          return <ConclusionAware key={j} text={line} className="text-[14px] leading-relaxed text-body" />;
+                        }
+                        return (
+                          <div key={j} className="flex gap-2.5">
+                            <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-primary shrink-0" aria-hidden="true" />
+                            <div className="flex-1 min-w-0">
+                              <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-[14px] leading-relaxed text-body" />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
