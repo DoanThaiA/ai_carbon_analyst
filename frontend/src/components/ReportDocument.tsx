@@ -223,7 +223,7 @@ function FramedHighlight({
 function SubHeading({ children }: { children: React.ReactNode }) {
   return (
     <div className="report-heading flex items-center w-full mb-4 px-3 py-2 bg-sky-100 rounded-md print:break-after-avoid">
-      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-primary-dark">
+      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-primary">
         {children}
       </h3>
     </div>
