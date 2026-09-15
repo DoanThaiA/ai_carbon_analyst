@@ -5,7 +5,7 @@ import clsx from "clsx";
 import Image from "next/image";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
-  Sparkles, LineChart, BarChart3, FileText, AlignLeft, Newspaper, Scale, CalendarDays, Lightbulb, Link2,
+  Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck,
 } from "lucide-react";
 import type { Report } from "@/lib/types";
@@ -162,8 +162,10 @@ function isPositiveDelta(value: string) {
 //  - FramedHighlight: khung viền nổi bật có tiêu đề dạng "nhãn" nằm đè lên viền
 //    trên (kiểu legend/fieldset) — dùng cho các khối cần nhấn mạnh nhất (Tóm
 //    tắt điều hành, Tổng hợp giá EUA).
-//  - SubHeading: đầu mục con trong 1 Phần, in đậm + chấm tròn + icon để dễ
-//    quét mắt mà không cần số thứ tự.
+//  - SubHeading: đầu mục con trong 1 Phần, dải nền xanh dương full-width + in
+//    đậm để dễ quét mắt mà không cần số thứ tự.
+// Icon chỉ giữ lại ở PartHeading (Phần 1/2/3, Nguồn tham khảo) — FramedHighlight
+// và SubHeading không có icon.
 // Class "report-heading" dùng chung để CSS in ấn (globals.css) nhận diện, ép
 // không ngắt trang ngay sau heading.
 
@@ -189,12 +191,10 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
 // hành (đầu báo cáo) và Tổng hợp giá EUA (đầu Phần 2).
 function FramedHighlight({
   title,
-  icon: Icon,
   children,
   className,
 }: {
   title: string;
-  icon?: typeof Sparkles;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -206,12 +206,7 @@ function FramedHighlight({
       )}
     >
       <div className="absolute -top-[15px] left-1/2 -translate-x-1/2">
-        <span className="inline-flex items-center gap-2 rounded-full bg-primary-dark text-white pl-3 pr-4 py-[7px] shadow-[0_3px_10px_rgba(15,95,90,0.32)] whitespace-nowrap">
-          {Icon && (
-            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white/15 shrink-0">
-              <Icon size={12} strokeWidth={2.75} />
-            </span>
-          )}
+        <span className="inline-flex items-center gap-2 rounded-full bg-primary-dark text-white px-4 py-[7px] shadow-[0_3px_10px_rgba(15,95,90,0.32)] whitespace-nowrap">
           <span className="font-extrabold text-[12.5px] sm:text-[13.5px] tracking-wide uppercase">{title}</span>
         </span>
       </div>
@@ -220,18 +215,14 @@ function FramedHighlight({
   );
 }
 
-// Đầu mục con (trong 1 Phần) — không dùng chấm/gạch đầu dòng, thay bằng icon +
-// tiêu đề in đậm có khung nền xanh dương nhạt phía sau chữ (kiểu highlight/marker)
-// để tạo điểm nhấn riêng biệt với "Phần".
-function SubHeading({ icon: Icon, children }: { icon?: typeof Sparkles; children: React.ReactNode }) {
+// Đầu mục con (trong 1 Phần) — không dùng chấm/gạch đầu dòng hay icon (icon chỉ
+// giữ lại ở PartHeading: Phần 1/2/3, Nguồn tham khảo), thay bằng dải nền xanh
+// dương chạy hết chiều ngang trang (bleed ra ngoài phần padding nội dung) để
+// tạo điểm nhấn riêng biệt với "Phần".
+function SubHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="report-heading flex items-center gap-2.5 mb-4 print:break-after-avoid">
-      {Icon && (
-        <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 shrink-0">
-          <Icon size={15} strokeWidth={2.25} />
-        </span>
-      )}
-      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-foreground bg-sky-100 rounded-md px-2 py-0.5 -mx-2">
+    <div className="report-heading flex items-center mb-4 -mx-6 sm:-mx-10 px-6 sm:px-10 py-2 bg-sky-200 print:break-after-avoid">
+      <h3 className="text-[15.5px] sm:text-[16.5px] font-extrabold tracking-tight text-foreground">
         {children}
       </h3>
     </div>
@@ -565,7 +556,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* TÓM TẮT ĐIỀU HÀNH — đóng khung nổi bật, không đánh số thứ tự */}
         <section className="py-5">
-          <FramedHighlight title="Tóm tắt điều hành" icon={Sparkles}>
+          <FramedHighlight title="Tóm tắt điều hành">
             <ul className="list-none">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
                 const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
@@ -605,7 +596,7 @@ export function ReportDocument({ report }: { report: Report }) {
           <PartHeading eyebrow="Phần 1" title="Tin tức chính / nổi bật trong ngày" icon={LineChart} />
 
           <div className="print:break-inside-avoid">
-            <SubHeading icon={LineChart}>Bảng giá nhanh</SubHeading>
+            <SubHeading>Bảng giá nhanh</SubHeading>
             {report.content["2"]?.price_timestamp && (
               <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
             )}
@@ -701,7 +692,7 @@ export function ReportDocument({ report }: { report: Report }) {
           {/* Tổng hợp về giá EUA — đóng khung nổi bật, đứng đầu Phần 2 */}
           {euaSummary && (
             <div className="mb-6">
-              <FramedHighlight title="Tổng hợp về giá EUA" icon={Target}>
+              <FramedHighlight title="Tổng hợp về giá EUA">
                 <p className="text-[14.5px] sm:text-[15.5px] leading-relaxed font-bold text-primary-dark text-center sm:text-left">
                   <RichText text={euaSummary} />
                 </p>
@@ -711,7 +702,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
           {report.content["3"] && (
             <div className="mb-6">
-              <SubHeading icon={BarChart3}>Phân tích</SubHeading>
+              <SubHeading>Phân tích</SubHeading>
               {report.content["3"].title && (
                 <p className="-mt-2.5 mb-4 ml-[38px] text-[12px] text-muted-light italic">{report.content["3"].title}</p>
               )}
@@ -775,7 +766,7 @@ export function ReportDocument({ report }: { report: Report }) {
           {/* Động lực thị trường — chuyển từ Bảng giá nhanh (Phần 1) sang đây */}
           {hasMarketDrivers && (
             <div className="mb-6">
-              <SubHeading icon={TrendingUp}>Động lực thị trường</SubHeading>
+              <SubHeading>Động lực thị trường</SubHeading>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="border border-up/25 bg-up/[0.04] rounded-lg overflow-hidden">
                   <div className="flex items-center gap-1.5 bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
@@ -893,7 +884,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
               return (
                 <div className="mb-6">
-                  <SubHeading icon={Crosshair}>Kịch bản chiến lược</SubHeading>
+                  <SubHeading>Kịch bản chiến lược</SubHeading>
 
                   {/* Mobile VÀ khi in/xuất PDF: mỗi khung thời gian là 1 card xếp dọc
                       (label/giá trị theo hàng) thay vì bảng 4 cột — bảng 4 cột luôn cần
@@ -1008,7 +999,7 @@ export function ReportDocument({ report }: { report: Report }) {
             if (!section) return null;
             return (
               <div key={key} className="mb-6">
-                <SubHeading icon={key === "4" ? FileText : AlignLeft}>{section.title}</SubHeading>
+                <SubHeading>{section.title}</SubHeading>
                 {section.bullets ? (
                   <DotBullets
                     items={section.bullets}
@@ -1043,7 +1034,7 @@ export function ReportDocument({ report }: { report: Report }) {
           {/* Quan điểm trái chiều đáng chú ý */}
           {report.content["7"] && (
             <div className="mb-6">
-              <SubHeading icon={Scale}>{report.content["7"].title}</SubHeading>
+              <SubHeading>{report.content["7"].title}</SubHeading>
               {report.content["7"].points?.length > 0 ? (
                 <div className="space-y-5">
                   {report.content["7"].points.map((pt: any, i: number) => (
@@ -1071,7 +1062,7 @@ export function ReportDocument({ report }: { report: Report }) {
           {/* Lịch sự kiện 7 ngày tới */}
           {report.content["8"] && (
             <div className="mb-6">
-              <SubHeading icon={CalendarDays}>{report.content["8"].title}</SubHeading>
+              <SubHeading>{report.content["8"].title}</SubHeading>
               {report.content["8"].events?.length > 0 ? (() => {
               // Tách rõ 2 nhóm thay vì 1 timeline gộp lẫn lộn: sự kiện ĐÃ có "outcome"
               // (đã diễn ra, đã cập nhật kết quả) đứng riêng khỏi sự kiện CHƯA diễn ra —
@@ -1117,7 +1108,7 @@ export function ReportDocument({ report }: { report: Report }) {
           {/* Gợi ý kinh doanh & giải pháp cho SIM */}
           {report.content["biz"] && (
             <div className="mb-2">
-              <SubHeading icon={Lightbulb}>{report.content["biz"].title}</SubHeading>
+              <SubHeading>{report.content["biz"].title}</SubHeading>
               <div className="flex flex-col gap-6">
                 <BizRecommendationTable
                   heading="Ngắn hạn"
