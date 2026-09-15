@@ -688,73 +688,7 @@ export function ReportDocument({ report }: { report: Report }) {
         <section className="py-5">
           <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
 
-          <div className="print:break-inside-avoid">
-            <SubHeading>Bảng giá nhanh</SubHeading>
-            {report.content["2"]?.price_timestamp && (
-              <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
-            )}
-
-            {/* Bảng giá full-width */}
-            <div className="overflow-x-auto">
-              <table className="w-full table-fixed border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
-                <thead>
-                  <tr>
-                    <th className="w-[22%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
-                    <th className="w-[22%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
-                    <th className="w-[56%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2.5 py-2 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {priceRows.map((r: any, i: number) => {
-                    const [rawPriceNumber, ...priceUnitParts] = String(r.price || "").split(" ");
-                    const priceNumber = formatCompactPriceNumber(rawPriceNumber);
-                    const priceUnit = priceUnitParts.join(" ");
-                    return (
-                      <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                        <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border font-sans font-semibold text-label">
-                          {r.source_url ? (
-                            <a
-                              href={r.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary hover:underline"
-                            >
-                              {r.name}
-                            </a>
-                          ) : (
-                            r.name
-                          )}
-                        </td>
-                        <td className="px-1.5 sm:px-2.5 py-2.5 border-r border-border text-center">
-                          <div className="flex flex-col items-center leading-tight">
-                            <span className="break-words tabular-nums">{priceNumber}</span>
-                            {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
-                          </div>
-                        </td>
-                        <td className="px-1.5 sm:px-2.5 py-2.5 font-sans text-[12px] text-body">
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] mb-1">
-                            <span className={clsx("inline-flex items-center gap-1 tabular-nums", r.dday === "-" ? "text-muted-light" : isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
-                              Δ Ngày:
-                              {r.dday !== "-" && (isPositiveDelta(r.dday) ? <TrendingUp size={11} className="shrink-0" /> : <TrendingDown size={11} className="shrink-0" />)}
-                              {r.dday}
-                            </span>
-                            <span className={clsx("inline-flex items-center gap-1 tabular-nums", r.dweek === "-" ? "text-muted-light" : isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>
-                              Δ Tuần:
-                              {r.dweek !== "-" && (isPositiveDelta(r.dweek) ? <TrendingUp size={11} className="shrink-0" /> : <TrendingDown size={11} className="shrink-0" />)}
-                              {r.dweek}
-                            </span>
-                          </div>
-                          {r.note}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch mt-5">
+          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
             <div className="print-keep-together lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
               <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
                 <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
@@ -776,6 +710,74 @@ export function ReportDocument({ report }: { report: Report }) {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="print:break-inside-avoid mt-5">
+            <SubHeading>Bảng giá nhanh</SubHeading>
+            {report.content["2"]?.price_timestamp && (
+              <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
+            )}
+
+            {/* Bảng giá full-width */}
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
+                <thead>
+                  <tr>
+                    <th className="w-[20%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
+                    <th className="w-[15%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
+                    <th className="w-[65%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {priceRows.map((r: any, i: number) => {
+                    const [rawPriceNumber, ...priceUnitParts] = String(r.price || "").split(" ");
+                    const priceNumber = formatCompactPriceNumber(rawPriceNumber);
+                    const priceUnit = priceUnitParts.join(" ");
+                    return (
+                      <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
+                        <td className="px-1.5 sm:px-2 py-1.5 border-r border-border font-sans font-semibold text-label">
+                          {r.source_url ? (
+                            <a
+                              href={r.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              {r.name}
+                            </a>
+                          ) : (
+                            r.name
+                          )}
+                        </td>
+                        <td className="px-1.5 sm:px-2 py-1.5 border-r border-border text-center">
+                          <div className="flex flex-col items-center leading-tight">
+                            <span className="break-words tabular-nums">{priceNumber}</span>
+                            {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
+                          </div>
+                        </td>
+                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[12px] text-body">
+                          {(r.dday !== "-" || r.dweek !== "-") && (
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] mb-1">
+                              {r.dday !== "-" && (
+                                <span className={clsx("tabular-nums", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
+                                  Δ Ngày: {r.dday}
+                                </span>
+                              )}
+                              {r.dweek !== "-" && (
+                                <span className={clsx("tabular-nums", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>
+                                  Δ Tuần: {r.dweek}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {r.note}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -803,11 +805,11 @@ export function ReportDocument({ report }: { report: Report }) {
                       {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light">—</span>}
                     </p>
                   </div>
-                  <div>
-                    <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-primary-dark mb-1">Độ tin cậy</h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-primary-dark shrink-0">Độ tin cậy</h4>
                     {todaySignal.probability ? (
                       <span className={clsx(
-                        "inline-block font-mono text-[11px] uppercase tracking-wider rounded px-2 py-0.5 border",
+                        "inline-block font-mono text-[11px] uppercase tracking-wider rounded px-2 py-0.5 border whitespace-nowrap",
                         todaySignal.probability === "Cao" ? "text-up border-up/30 bg-up/10" :
                           todaySignal.probability === "Thấp" ? "text-muted-light border-border" :
                             "text-warn border-warn/30 bg-warn-tint"
