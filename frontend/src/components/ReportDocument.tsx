@@ -42,6 +42,23 @@ const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: strin
   "đi ngang": { icon: Minus, className: "text-muted-light border-border bg-surface-alt" },
 };
 
+// Nhãn xu hướng dạng mũi tên + chữ cho "Bảng tín hiệu nhanh" (Phần 2) — chỉ là
+// cách gọi tên khác của cùng "direction" (tăng/giảm/đi ngang) đã có sẵn trong
+// trading_scenarios, KHÔNG phải trường dữ liệu mới/suy diễn thêm.
+const TREND_META: Record<string, { arrow: string; label: string; className: string }> = {
+  "tăng": { arrow: "↗", label: "NGHIÊNG TĂNG", className: "text-up" },
+  "giảm": { arrow: "↘", label: "NGHIÊNG GIẢM", className: "text-down" },
+  "đi ngang": { arrow: "↔", label: "GIẰNG CO", className: "text-muted-light" },
+};
+
+// "Khuyến nghị vị thế" cũng suy ra trực tiếp từ "direction" có sẵn của kịch
+// bản "ngắn hạn" — không phải khuyến nghị đầu tư mới do LLM tự sinh riêng.
+const POSITION_META: Record<string, string> = {
+  "tăng": "MUA (LONG) — theo xu hướng ngắn hạn",
+  "giảm": "BÁN (SHORT) — theo xu hướng ngắn hạn",
+  "đi ngang": "CHỜ — không mở mới, không đóng vị thế đang có",
+};
+
 // Mục 1: mỗi bullet mở đầu bằng 1 tag tự do do LLM đặt tên (EUA, Chính sách, Địa
 // chính trị...) — không phải enum cố định nên không thể map tay từng giá trị.
 // Băm tên tag thành 1 màu trong bảng màu cố định để CÙNG 1 tag luôn ra cùng màu
@@ -522,6 +539,63 @@ export function ReportDocument({ report }: { report: Report }) {
   // trong trading_scenarios (Mục 3) — không cần trường dữ liệu riêng cho
   // "hôm nay" từ backend.
   const todaySignal = report.content["3"]?.trading_scenarios?.find((sc: any) => sc.horizon === "ngắn hạn");
+  // Bảng tín hiệu nhanh (ngay dưới TÍN HIỆU HÔM NAY) tái dùng kịch bản "trung
+  // hạn" cho dòng xu hướng 1-3 tháng.
+  const midTermSignal = report.content["3"]?.trading_scenarios?.find((sc: any) => sc.horizon === "trung hạn");
+  // Hỗ trợ/Kháng cự/Mục tiêu — tính trực tiếp từ OHLC thật 30 phiên
+  // (report.content["2"].chart_data), ĐÚNG công thức với backend
+  // services/report_generator.py::_eua_technical_levels_summary() (đỉnh/đáy
+  // 30 phiên + đo biên độ dao động cho mục tiêu breakout) — không qua LLM suy
+  // diễn. "Cắt lỗ" không có công thức xác nhận từ dữ liệu thật nên để trống
+  // (hiển thị "—") thay vì tự bịa mốc.
+  const chartData = report.content["2"]?.chart_data || [];
+  const technicalLevels = chartData.length > 0 ? (() => {
+    const resistance = Math.max(...chartData.map((c: any) => c.high));
+    const support = Math.min(...chartData.map((c: any) => c.low));
+    return { support, resistance, target: resistance + (resistance - support) };
+  })() : null;
+  const fmtEua = (n: number) => `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR/tCO₂`;
+  const NO_DATA = <span className="text-muted-light">—</span>;
+  const quickSignalRows: { label: string; value: React.ReactNode }[] = [
+    {
+      label: "Xu hướng ngắn hạn (1–2 tuần)",
+      value: todaySignal ? (
+        <span className={TREND_META[todaySignal.direction]?.className}>
+          {TREND_META[todaySignal.direction]?.arrow} {TREND_META[todaySignal.direction]?.label}
+          {todaySignal.condition && <> — <RichText text={todaySignal.condition} /></>}
+        </span>
+      ) : NO_DATA,
+    },
+    {
+      label: "Xu hướng trung hạn (1–3 tháng)",
+      value: midTermSignal ? (
+        <span className={TREND_META[midTermSignal.direction]?.className}>
+          {TREND_META[midTermSignal.direction]?.arrow} {TREND_META[midTermSignal.direction]?.label}
+          {midTermSignal.condition && <> — <RichText text={midTermSignal.condition} /></>}
+        </span>
+      ) : NO_DATA,
+    },
+    {
+      label: "Khuyến nghị vị thế",
+      value: todaySignal ? POSITION_META[todaySignal.direction] ?? NO_DATA : NO_DATA,
+    },
+    {
+      label: "Vùng mua tham chiếu",
+      value: todaySignal?.price_zone ? <RichText text={todaySignal.price_zone} /> : NO_DATA,
+    },
+    {
+      label: "Hỗ trợ",
+      value: technicalLevels ? `${fmtEua(technicalLevels.support)} (đáy 30 phiên gần nhất)` : NO_DATA,
+    },
+    {
+      label: "Kháng cự",
+      value: technicalLevels ? `${fmtEua(technicalLevels.resistance)} (đỉnh 30 phiên gần nhất)` : NO_DATA,
+    },
+    {
+      label: "Mục tiêu",
+      value: technicalLevels ? `${fmtEua(technicalLevels.target)} (đo biên độ nếu phá kháng cự)` : NO_DATA,
+    },
+  ];
 
   const tickerData = priceRows.map((r: any) => ({
     name: r.name,
@@ -756,6 +830,32 @@ export function ReportDocument({ report }: { report: Report }) {
               </FramedHighlight>
             </div>
           )}
+
+          {/* Bảng tín hiệu nhanh — nằm dưới TÍN HIỆU HÔM NAY, trên Phân tích:
+              các chỉ số nào có sẵn từ dữ liệu (trading_scenarios, OHLC 30
+              phiên) thì lấy đúng giá trị thật; chỉ số nào chưa có công thức
+              xác nhận (Cắt lỗ) thì để trống, không suy diễn qua LLM. */}
+          <div className="mb-6">
+            <SubHeading>Bảng tín hiệu nhanh</SubHeading>
+            <div className="overflow-x-auto border border-border rounded-lg">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr>
+                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[42%] sm:w-[34%]">Chỉ số</th>
+                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 bg-tint">Giá trị</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {quickSignalRows.map((row, i) => (
+                    <tr key={i} className="align-top even:bg-surface/60">
+                      <td className="px-3 py-2.5 border-r border-border font-sans font-semibold text-label">{row.label}</td>
+                      <td className="px-3 py-2.5 leading-relaxed text-body">{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           {report.content["3"] && (
             <div className="mb-6">
