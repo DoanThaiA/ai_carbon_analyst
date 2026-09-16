@@ -104,16 +104,27 @@ function stripMarkdown(text: string) {
 // Tách câu "chốt" (tổng hợp/kết luận) ra khỏi phần phân tích để tô nổi bật riêng
 // trong 1 ô đậm — backend đánh dấu các câu này bằng tag "**Tổng hợp:**"/"**Kết
 // luận:**" (xem report_generator.py), ở đây chỉ cần tìm tag đó và render khác đi.
+// (Từ khi có GROUP_HEADLINE_PREFIXES bên dưới, kết luận của TỪNG NHÓM trong Mục
+// 3 không còn dùng tag "**Kết luận:**" nữa — đã gộp thẳng vào dòng tiêu đề đầu
+// nhóm, xem renderAnalysisLine — nhưng regex này vẫn giữ "Kết luận" để tương
+// thích các nơi khác trong báo cáo còn dùng tag đó.)
 const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận)\s*:?\*\*/;
 
 // Riêng dòng "**Tổng hợp:**" cuối mục 3 (kết luận chung về giá EUA — xem
 // _prompt_section3/KẾT LUẬN CHUNG CHO CẢ MỤC "PHÂN TÍCH" trong report_generator.py)
 // cần TÁCH RA khỏi các block phân tích để đưa lên đầu báo cáo, làm phần "Nhận
-// định" trong khối "🚨 ĐIỂM NHẤN" gộp chung với "Tóm tắt điều hành" — không
-// dùng chung CONCLUSION_TAG_RE vì regex đó match luôn cả "**Kết luận:**" của
-// từng nhóm nhỏ (những dòng đó vẫn ở lại trong block, vẫn tô nổi bật tại chỗ
-// như cũ qua ConclusionAware).
+// định" trong khối "🚨 ĐIỂM NHẤN" gộp chung với "Tóm tắt điều hành".
 const EUA_SUMMARY_TAG_RE = /\*\*Tổng hợp\s*:?\*\*/;
+
+// Dòng tiêu đề-kết luận đầu mỗi nhóm trong Mục 3, heading "Phân tích" (xem
+// _prompt_section3::ĐỊNH DẠNG trong report_generator.py — dòng đầu tiên của
+// mỗi nhóm PHẢI viết liền "Tên nhóm: <kết luận>") — đóng khung nổi bật NGUYÊN
+// dòng này (tên nhóm + kết luận) thay vì hiện như 1 dòng chữ thường.
+const GROUP_HEADLINE_PREFIXES = [
+  "Năng lượng & nhiên liệu hóa thạch:",
+  "Hạn ngạch & tín chỉ carbon:",
+  "Chính sách:",
+];
 
 // Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung: rút đúng 1 dòng "**Tổng
 // hợp:**" (nếu có) ra khỏi analysis_blocks, phần còn lại của block giữ nguyên.
@@ -136,6 +147,18 @@ function extractEuaSummary(blocks: any[] | undefined): { cleanedBlocks: any[]; s
     return { ...block, content: keptLines.join("\n") };
   });
   return { cleanedBlocks, summary };
+}
+
+// Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung: rút NGUYÊN block có
+// heading "Cần theo dõi" ra khỏi analysis_blocks của Mục 3 để hiển thị dưới
+// "Lịch sự kiện 7 ngày tới" (Mục 8) thay vì trong Mục 3 — nội dung watchpoint
+// do backend sinh giữ nguyên (vẫn liệt kê "1.", "2."... không có ngày giờ cụ
+// thể vì đây không phải sự kiện có lịch, chỉ là điểm cần theo dõi).
+function extractWatchpoints(blocks: any[] | undefined): { cleanedBlocks: any[]; watchpoints: string | null } {
+  if (!blocks || blocks.length === 0) return { cleanedBlocks: blocks || [], watchpoints: null };
+  const watchBlock = blocks.find((b: any) => b.heading === "Cần theo dõi");
+  const cleanedBlocks = blocks.filter((b: any) => b.heading !== "Cần theo dõi");
+  return { cleanedBlocks, watchpoints: watchBlock?.content || null };
 }
 
 // Placeholder outcome mà backend cố tình ghi (xem _prompt_section8 /
@@ -531,7 +554,10 @@ export function ReportDocument({ report }: { report: Report }) {
   // Rút dòng "**Tổng hợp:**" (kết luận chung giá EUA) ra khỏi các block phân
   // tích để đưa lên đầu báo cáo, làm phần "Nhận định" trong khối "🚨 ĐIỂM
   // NHẤN" gộp chung với "Tóm tắt điều hành" cũ — xem extractEuaSummary ở trên.
-  const { cleanedBlocks: analysisBlocks, summary: euaSummary } = extractEuaSummary(report.content["3"]?.analysis_blocks);
+  const { cleanedBlocks: blocksAfterSummary, summary: euaSummary } = extractEuaSummary(report.content["3"]?.analysis_blocks);
+  // "Cần theo dõi" giờ hiển thị ở Mục 8 (Lịch sự kiện 7 ngày tới) — xem
+  // extractWatchpoints ở trên.
+  const { cleanedBlocks: analysisBlocks, watchpoints } = extractWatchpoints(blocksAfterSummary);
   const hasMarketDrivers =
     report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0;
   // TÍN HIỆU HÔM NAY (đầu Phần 2) tái dùng đúng kịch bản "ngắn hạn" đã có
@@ -878,6 +904,18 @@ export function ReportDocument({ report }: { report: Report }) {
                           // thị sang chấm tròn thay vì gạch ngang, không đổi nội dung chữ
                           // (chỉ bỏ đúng phần tiền tố gạch đầu dòng khớp được).
                           const trimmed = line.trim();
+                          // Mục 3 / heading "Phân tích": dòng đầu mỗi nhóm gộp sẵn "Tên nhóm:
+                          // <kết luận>" (xem ĐỊNH DẠNG trong _prompt_section3) — đóng khung nổi
+                          // bật NGUYÊN dòng này thay vì hiện như chữ thường.
+                          if (block.heading === "Phân tích" && GROUP_HEADLINE_PREFIXES.some((p) => trimmed.startsWith(p))) {
+                            return (
+                              <div key={j} className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
+                                <p className="text-[14px] leading-[1.55] font-bold text-primary-dark">
+                                  <RichText text={trimmed} />
+                                </p>
+                              </div>
+                            );
+                          }
                           const dashMatch = trimmed.match(/^[-–—]\s+/);
                           if (!dashMatch) {
                             return <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.55] text-body" />;
@@ -1161,8 +1199,8 @@ export function ReportDocument({ report }: { report: Report }) {
             );
           })()}
 
-          {/* SECTIONS 4, 5 (text/bullets) — Cập nhật tín chỉ carbon & CBAM / Tín hiệu liên thị trường */}
-          {["4", "5"].map(key => {
+          {/* SECTION 4 (text/bullets) — Cập nhật tín chỉ carbon & CBAM */}
+          {["4"].map(key => {
             const section = report.content[key];
             if (!section) return null;
             return (
@@ -1198,34 +1236,6 @@ export function ReportDocument({ report }: { report: Report }) {
               </div>
             );
           })}
-
-          {/* Quan điểm trái chiều đáng chú ý */}
-          {report.content["7"] && (
-            <div className="mb-6">
-              <SubHeading>{report.content["7"].title}</SubHeading>
-              {report.content["7"].points?.length > 0 ? (
-                <div className="space-y-5">
-                  {report.content["7"].points.map((pt: any, i: number) => (
-                    <div key={i} className="pb-5 border-b border-border-soft last:border-b-0 last:pb-0">
-                      <p className="text-[14px] leading-[1.55] text-body"><RichText text={pt.viewpoint} /></p>
-                      {pt.source_url && (
-                        <a
-                          href={pt.source_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-2 inline-block font-mono text-[11.5px] text-primary hover:underline"
-                        >
-                          Nguồn: {pt.source_name} ↗
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[14px] text-muted-light italic">{report.content["7"].text}</p>
-              )}
-            </div>
-          )}
 
           {/* Lịch sự kiện 7 ngày tới */}
           {report.content["8"] && (
@@ -1269,6 +1279,17 @@ export function ReportDocument({ report }: { report: Report }) {
                 report.content["8"].bullets?.map((b: string, i: number) => (
                   <p key={i} className="text-[14px] leading-[1.55] text-body"><RichText text={b} /></p>
                 ))
+              )}
+
+              {watchpoints && (
+                <div className={clsx((report.content["8"].events?.length > 0 || report.content["8"].bullets?.length > 0) && "mt-5")}>
+                  <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Cần theo dõi</h4>
+                  <div className="space-y-1.5">
+                    {watchpoints.split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
+                      <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.55] text-body" />
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}

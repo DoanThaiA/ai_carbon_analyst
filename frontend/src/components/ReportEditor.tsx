@@ -568,7 +568,7 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
             </SectionShell>
           )}
 
-          {["4", "5"].map((key) => {
+          {["4"].map((key) => {
             const section = content[key];
             if (!section) return null;
             return (
@@ -617,32 +617,6 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                   />
                 </div>
               ))}
-            </SectionShell>
-          )}
-
-          {content["7"] && (
-            <SectionShell number="07" title={content["7"].title || "Quan điểm trái chiều"}>
-              <div>
-                <FieldLabel>Tiêu đề mục</FieldLabel>
-                <TextInput value={content["7"].title} onChange={(v) => patchSection("7", { title: v })} />
-              </div>
-              <div>
-                <FieldLabel>Các quan điểm</FieldLabel>
-                <CardRowsEditor
-                  columns={[
-                    { key: "viewpoint", label: "Nội dung quan điểm", type: "textarea" },
-                    { key: "source_name", label: "Tên nguồn" },
-                    { key: "source_url", label: "URL nguồn" },
-                  ]}
-                  rows={content["7"].points}
-                  onChange={(rows) => patchSection("7", { points: rows })}
-                  addLabel="Thêm quan điểm"
-                />
-              </div>
-              <div>
-                <FieldLabel>Text dự phòng (hiện khi không có quan điểm nào)</FieldLabel>
-                <TextArea value={content["7"].text} onChange={(v) => patchSection("7", { text: v })} rows={2} />
-              </div>
             </SectionShell>
           )}
 

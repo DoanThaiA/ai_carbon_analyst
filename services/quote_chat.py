@@ -440,12 +440,6 @@ def _format_section4(sec: dict) -> str:
     return f"{sec.get('title', 'Cập nhật tín chỉ carbon & CBAM')}\n{_format_bullets(sec.get('bullets'))}"
 
 
-def _format_section5(sec: dict) -> str:
-    # "bullets" ở Mục 5 là mảng string thuần (không phải object {text,
-    # source_index} như Mục 1/4) — `_format_bullets` xử lý được cả 2 dạng.
-    return f"{sec.get('title', 'Tín hiệu liên thị trường')}\n{_format_bullets(sec.get('bullets'))}"
-
-
 def _format_section6(sec: dict) -> str:
     def _list(articles: Optional[List[dict]]) -> str:
         lines = [
@@ -459,16 +453,6 @@ def _format_section6(sec: dict) -> str:
         f"Tin quốc tế:\n{_list(sec.get('international'))}\n\n"
         f"Tin Việt Nam:\n{_list(sec.get('vietnam'))}"
     )
-
-
-def _format_section7(sec: dict) -> str:
-    if not sec.get("has_content") or not sec.get("points"):
-        return f"{sec.get('title', 'Quan điểm trái chiều đáng chú ý')}\n{sec.get('text', 'Không có quan điểm trái chiều có cơ sở trong kỳ này.')}"
-    lines = []
-    for p in sec["points"]:
-        source_name = p.get("source_name")
-        lines.append(f"- {p.get('viewpoint', '')}" + (f" (Nguồn: {source_name})" if source_name else ""))
-    return f"{sec.get('title', 'Quan điểm trái chiều đáng chú ý')}\n" + "\n".join(lines)
 
 
 def _format_section8(sec: dict) -> str:
@@ -507,9 +491,7 @@ _REPORT_SECTION_FORMATTERS = {
     "2": _format_section2,
     "3": _format_section3,
     "4": _format_section4,
-    "5": _format_section5,
     "6": _format_section6,
-    "7": _format_section7,
     "8": _format_section8,
     "9": _format_section9,
     "biz": _format_section_biz,
@@ -517,12 +499,12 @@ _REPORT_SECTION_FORMATTERS = {
 
 
 async def _tool_report_section_text(session: AsyncSession, report_date: str, section: str) -> str:
-    """Lấy + format 1 mục (Mục 1-9 hoặc "biz") của báo cáo `report_date` (đã
-    published) — CHỈ mục được yêu cầu, không cả báo cáo cùng lúc (khác bản
-    trước khi có tool calling, luôn tiêm cả 3 mục dù chỉ cần 1)."""
+    """Lấy + format 1 mục (Mục 1, 2, 3, 4, 6, 8, 9 hoặc "biz") của báo cáo
+    `report_date` (đã published) — CHỈ mục được yêu cầu, không cả báo cáo cùng
+    lúc (khác bản trước khi có tool calling, luôn tiêm cả 3 mục dù chỉ cần 1)."""
     formatter = _REPORT_SECTION_FORMATTERS.get(section)
     if not formatter:
-        return "Mục không hợp lệ — chỉ hỗ trợ '1' đến '9' hoặc 'biz'."
+        return "Mục không hợp lệ — chỉ hỗ trợ '1', '2', '3', '4', '6', '8', '9' hoặc 'biz'."
     stmt = select(Report.content).where(Report.report_date == report_date, Report.status == "published")
     result = await session.execute(stmt)
     content = result.scalar_one_or_none()
@@ -545,7 +527,7 @@ def _build_domain_knowledge(overrides: Optional[Dict[str, str]] = None) -> str:
     gb = chains.get_block
     return f"""
 === KIẾN THỨC CHUYÊN MÔN NỀN TẢNG (dùng khi suy luận / phân tích giả định) ===
-Đây là bản RÚT GỌN của KHUNG PHÂN TÍCH CHUẨN (dùng chung với báo cáo Mục 3/5) — PHẢI bám sát
+Đây là bản RÚT GỌN của KHUNG PHÂN TÍCH CHUẨN (dùng chung với báo cáo Mục 3) — PHẢI bám sát
 đúng chiều mũi tên, TUYỆT ĐỐI KHÔNG tự sinh thêm bước trung gian khác hay đảo chiều so với khung
 này. Mọi suy luận PHẢI đi tới kết luận cuối cùng về tác động lên CUNG/CẦU và GIÁ EUA — không dừng
 giữa chừng ở 1 thị trường trung gian (gas/dầu/điện...) mà không kết luận tác động lên EUA.
@@ -659,12 +641,12 @@ Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬ
 - get_market_prices(date tuỳ chọn): giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức).
 - get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
-- get_report_section(section="1".."9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 5 (Tín hiệu liên thị trường), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 7 (Quan điểm trái chiều đáng chú ý), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
+- get_report_section(section="1".."4"|"6"|"8"|"9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu — bao gồm cả tín hiệu liên thị trường và quan điểm thị trường nếu có + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
 - get_price_history(instrument, sessions tuỳ chọn, date tuỳ chọn): lịch sử OHLC nhiều phiên của 1 instrument BẤT KỲ hệ thống theo dõi (không chỉ EUA) — dùng khi hỏi XU HƯỚNG/lịch sử giá qua thời gian của TTF/than/dầu/điện Đức..., khác get_market_prices (chỉ 1 ngày). EUA thì ưu tiên get_eua_details/get_eua_volume_history trước.
 - search_news(query, date tuỳ chọn): tìm CHỦ ĐỘNG trong TOÀN BỘ kho tin đã crawl (không giới hạn ngày báo cáo đang xem như DỮ LIỆU NỀN tự động bên dưới) — dùng khi câu hỏi lệch chủ đề khỏi DỮ LIỆU NỀN ban đầu hoặc cần tin của NGÀY KHÁC.
 QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section/get_price_history): mặc định (không truyền `date`) các tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "báo cáo hôm qua", "tuần trước"), PHẢI tự quy đổi ra định dạng YYYY-MM-DD và truyền qua tham số `date` — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Với get_market_prices/get_eua_details/get_eua_volume_history/get_price_history, nếu ngày yêu cầu không có dữ liệu, tool trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo — PHẢI đọc và nêu đúng ngày thực tế trong câu trả lời. Với get_report_section, nếu báo cáo ngày yêu cầu chưa published, tool báo rõ không có — KHÔNG tự suy diễn nội dung ngày đó. RIÊNG search_news: không truyền `date` = tìm KHÔNG giới hạn ngày (khác các tool trên, nơi không truyền `date` nghĩa là dùng {report_date}) — chỉ truyền `date` khi cần giới hạn đúng 1 ngày tin tức cụ thể.
 Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng CÙNG tham số (date/section/instrument/query...) trong CÙNG hội thoại (dữ liệu là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ; gọi lại NẾU đổi tham số). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
-LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen có thể được cắt ra từ BẤT KỲ mục nào của báo cáo (không chỉ Mục 1/2/3) — có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Gặp trường hợp này: GỌI get_report_section (ưu tiên thử mục có khả năng chứa đoạn trích nhất trước, dựa vào văn phong/nội dung — Mục 1 là các gạch đầu dòng tóm tắt, Mục 2 có "yếu tố hỗ trợ tăng/giảm giá", Mục 3 là phân tích chuyên sâu có tiêu đề từng khối, Mục 4 nhắc CBAM/VCM/thép xanh, Mục 5 là các tín hiệu dạng "X → EUA", Mục 7 là quan điểm trái chiều, Mục 8 là sự kiện có ngày giờ, "biz" là gợi ý dạng bảng kích hoạt/hành động/lý do; thử mục khác nếu không thấy, nhưng ưu tiên các mục có văn phong khớp nhất trước để không tốn lượt gọi tool vô ích) để tìm đúng vị trí đoạn trích, đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong kết quả trả về để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì, rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi có thể tự tra ra bằng tool."""
+LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen có thể được cắt ra từ BẤT KỲ mục nào của báo cáo (không chỉ Mục 1/2/3) — có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Gặp trường hợp này: GỌI get_report_section (ưu tiên thử mục có khả năng chứa đoạn trích nhất trước, dựa vào văn phong/nội dung — Mục 1 là các gạch đầu dòng tóm tắt, Mục 2 có "yếu tố hỗ trợ tăng/giảm giá", Mục 3 là phân tích chuyên sâu có tiêu đề từng khối (bao gồm cả các tín hiệu dạng "X → EUA" và quan điểm thị trường trái chiều nếu có), Mục 4 nhắc CBAM/VCM/thép xanh, Mục 8 là sự kiện có ngày giờ, "biz" là gợi ý dạng bảng kích hoạt/hành động/lý do; thử mục khác nếu không thấy, nhưng ưu tiên các mục có văn phong khớp nhất trước để không tốn lượt gọi tool vô ích) để tìm đúng vị trí đoạn trích, đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong kết quả trả về để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì, rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi có thể tự tra ra bằng tool."""
     price_ref = "gọi tool get_eua_details (hoặc get_market_prices/get_eua_volume_history tuỳ loại dữ liệu) rồi dùng"
     report_ref = "PHẢI gọi tool get_report_section lấy đúng mục cần rồi dùng nội dung trả về"
     web_search_order_note = " (ưu tiên các tool dữ liệu ở trên trước — dữ liệu hệ thống luôn chính xác hơn tìm trên web cho các mã/mục đang theo dõi)"
@@ -857,10 +839,11 @@ CLIENT_TOOLS = [
         "description": (
             "Lấy toàn văn 1 mục BẤT KỲ của báo cáo ngày đang xem (hoặc ngày cụ thể truyền qua "
             "`date`, nếu báo cáo ngày đó đã published): '1' = Tóm tắt điều hành, "
-            "'2' = Bảng giá nhanh (yếu tố hỗ trợ tăng/giảm giá), '3' = Phân tích chuyên sâu + kịch bản "
-            "giao dịch, '4' = Cập nhật tín chỉ carbon & CBAM (VCM/thép xanh/CBAM), "
-            "'5' = Tín hiệu liên thị trường, '6' = Chi tiết toàn bộ tin tức trong ngày (quốc tế + Việt "
-            "Nam, kèm tóm tắt từng bài), '7' = Quan điểm trái chiều đáng chú ý, "
+            "'2' = Bảng giá nhanh (yếu tố hỗ trợ tăng/giảm giá), '3' = Phân tích chuyên sâu (bao gồm cả "
+            "tín hiệu liên thị trường và quan điểm thị trường trái chiều nếu có) + kịch bản giao dịch, "
+            "'4' = Cập nhật tín chỉ carbon & CBAM (VCM/thép xanh/CBAM), "
+            "'6' = Chi tiết toàn bộ tin tức trong ngày (quốc tế + Việt "
+            "Nam, kèm tóm tắt từng bài), "
             "'8' = Lịch sự kiện 7 ngày tới (EIA/Baker Hughes/họp chính sách), '9' = Danh sách nguồn "
             "tham khảo (tên nguồn + URL), 'biz' = Gợi ý kinh doanh & giải pháp cho SIM (ngắn hạn/dài "
             "hạn). Gọi khi câu hỏi nhắc tới nội dung 1 mục KHÁC ngoài đoạn trích người dùng đang bôi "
@@ -873,8 +856,8 @@ CLIENT_TOOLS = [
             "properties": {
                 "section": {
                     "type": "string",
-                    "enum": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "biz"],
-                    "description": "Số mục cần lấy: '1' đến '9', hoặc 'biz'.",
+                    "enum": ["1", "2", "3", "4", "6", "8", "9", "biz"],
+                    "description": "Số mục cần lấy: '1', '2', '3', '4', '6', '8', '9', hoặc 'biz'.",
                 },
                 "date": {
                     "type": "string",
