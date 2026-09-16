@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
 import { ReportEditor } from "@/components/ReportEditor";
+import { QuoteChat } from "@/components/QuoteChat";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -242,7 +243,9 @@ export default function AdminReportReview() {
           </button>
         </div>
       ) : (
-        <ReportDocument report={report} />
+        <QuoteChat reportDate={date}>
+          <ReportDocument report={report} />
+        </QuoteChat>
       )}
     </div>
   );

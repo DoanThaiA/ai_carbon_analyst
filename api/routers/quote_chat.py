@@ -74,10 +74,14 @@ def _get_embedder() -> CohereEmbedder:
     return _embedder
 
 
-async def _ensure_report_published(date: str, session: AsyncSession) -> None:
-    """Chỉ cho hỏi đáp trên báo cáo đã published — khớp quyền truy cập với
-    GET /api/reports/{date} của user (tránh lộ nội dung draft chưa duyệt)."""
-    stmt = select(Report.id).where(Report.report_date == date, Report.status == "published")
+async def _ensure_report_accessible(date: str, payload: dict, session: AsyncSession) -> None:
+    """User: chỉ cho hỏi đáp trên báo cáo đã published — khớp quyền truy cập với
+    GET /api/reports/{date} (tránh lộ nội dung draft chưa duyệt). Admin: cho phép
+    trên mọi trạng thái báo cáo (kể cả draft) — khớp GET /api/admin/reports/{date},
+    để admin dùng Quote Chat ngay lúc đang duyệt bản draft, trước khi publish."""
+    stmt = select(Report.id).where(Report.report_date == date)
+    if payload.get("role") != "admin":
+        stmt = stmt.where(Report.status == "published")
     result = await session.execute(stmt)
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -94,9 +98,9 @@ async def get_suggested_questions(
     date: str,
     body: SuggestedQuestionsRequest,
     session: AsyncSession = Depends(get_db),
-    _payload: dict = Depends(get_current_user),
+    payload: dict = Depends(get_current_user),
 ):
-    await _ensure_report_published(date, session)
+    await _ensure_report_accessible(date, payload, session)
     return SuggestedQuestionsResponse(questions=suggest_questions(body.quote))
 
 
@@ -183,7 +187,7 @@ async def quote_chat_stream(
     session: AsyncSession = Depends(get_db),
     payload: dict = Depends(get_current_user),
 ):
-    await _ensure_report_published(date, session)
+    await _ensure_report_accessible(date, payload, session)
     user_email = payload["sub"]
 
     # Chặn TRƯỚC khi tạo session mới/gọi LLM — tránh tạo session mồ côi khi user
