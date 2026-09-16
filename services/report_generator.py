@@ -563,6 +563,20 @@ def _filter_news_with_index(
     return "\n".join(lines), index_lookup
 
 
+def _first_source_index(raw: Any) -> Optional[int]:
+    """Chuẩn hoá "source_index" LLM trả về thành 1 int hợp lệ hoặc None, PHÒNG
+    TRƯỜNG HỢP LLM lỡ trả về dạng khác spec (vd 1 list số [1, 2] thay vì 1 số
+    duy nhất/null) — dict.get() với key là list sẽ raise "TypeError: unhashable
+    type: 'list'" nếu dùng thẳng, làm hỏng cả lần sinh báo cáo. Lấy phần tử ĐẦU
+    TIÊN nếu là list, bỏ qua nếu không phải int hợp lệ (kể cả bool, vì bool là
+    subclass của int trong Python nhưng không phải giá trị source_index thật)."""
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw
+
+
 def _resolve_bullet_sources(items: Optional[List[Any]], index_lookup: Dict[int, Dict]) -> List[Dict]:
     """Chuẩn hoá mảng "bullets" (mỗi phần tử {"text", "source_index"} do LLM trả
     về, dùng chung cơ chế đánh số [N] với Mục 2/7 — LLM chỉ chọn số có thật,
@@ -575,7 +589,7 @@ def _resolve_bullet_sources(items: Optional[List[Any]], index_lookup: Dict[int, 
         if isinstance(it, str):
             resolved.append({"text": it, "source_name": None, "source_url": None})
             continue
-        src_art = index_lookup.get(it.get("source_index"))
+        src_art = index_lookup.get(_first_source_index(it.get("source_index")))
         resolved.append({
             "text": it.get("text", ""),
             "source_name": src_art["source"] if src_art else None,
@@ -1641,7 +1655,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
     def _resolve_driver_items(items: List[dict]) -> List[dict]:
         resolved = []
         for it in items or []:
-            src_art = section2_index_lookup.get(it.get("source_index"))
+            src_art = section2_index_lookup.get(_first_source_index(it.get("source_index")))
             resolved.append({
                 "tag": it.get("tag", "OPINION"),
                 "text": it.get("text", ""),
