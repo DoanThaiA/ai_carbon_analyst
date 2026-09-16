@@ -361,7 +361,11 @@ function BizRecommendationTable({
       <h4 className={clsx("font-mono text-[11.5px] font-bold uppercase tracking-widest mb-3", accent)}>{heading}</h4>
       {rows && rows.length > 0 ? (
         <div className="overflow-x-auto border border-border rounded-lg">
-          <table className="w-full border-collapse text-[13px]">
+          {/* table-fixed + w-1/3 trên 3 cột nội dung: mỗi trường trong prompt tối đa
+              1 câu ngắn (xem _prompt_biz_recommendation) nên độ dài tương đương nhau
+              — chia đều tránh cột auto-size lệch nhau theo độ dài chữ thực tế, giống
+              cách "Bảng giá nhanh"/"Bảng tín hiệu nhanh" đã làm ở trên. */}
+          <table className="w-full table-fixed border-collapse text-[13px]">
             <thead>
               <tr>
                 <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[32px] sm:w-[36px]">#</th>
@@ -369,7 +373,7 @@ function BizRecommendationTable({
                   <th
                     key={col.key}
                     className={clsx(
-                      "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 bg-tint",
+                      "w-1/3 text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 bg-tint",
                       i < columns.length - 1 && "border-r border-border"
                     )}
                   >
@@ -385,7 +389,7 @@ function BizRecommendationTable({
                   {columns.map((col, i) => (
                     <td
                       key={col.key}
-                      className={clsx("px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-[1.55]", i < columns.length - 1 && "border-r border-border")}
+                      className={clsx("px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-[1.55] break-words", i < columns.length - 1 && "border-r border-border")}
                     >
                       <RichText text={row[col.key] || ""} />
                     </td>
@@ -873,6 +877,80 @@ export function ReportDocument({ report }: { report: Report }) {
             </div>
           </div>
 
+          {/* Động lực thị trường — nằm dưới Bảng tín hiệu nhanh, trên Phân tích
+              (chuyển từ Bảng giá nhanh (Phần 1) sang đây trước đó). */}
+          {hasMarketDrivers && (
+            <div className="mb-6">
+              <SubHeading>Động lực thị trường</SubHeading>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="border border-up/25 bg-up/[0.04] rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-1.5 bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
+                    <TrendingUp size={14} strokeWidth={2.5} /> Động lực tăng
+                  </div>
+                  <div className="p-3 space-y-3">
+                    {report.content["2"].market_drivers.bullish?.length > 0 ? (
+                      report.content["2"].market_drivers.bullish.map((d: any, i: number) => (
+                        <div key={i}>
+                          <p className="text-[13px] leading-[1.55] text-body">
+                            <span className={clsx(
+                              "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
+                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
+                            )}>{d.tag}</span>
+                            <RichText text={d.text} />
+                          </p>
+                          {d.source_url && (
+                            <a
+                              href={d.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
+                            >
+                              Nguồn: {d.source_name} ↗
+                            </a>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-[12.5px] text-muted-light italic">Không có động lực tăng đáng chú ý.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="border border-down/25 bg-down/[0.04] rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-1.5 bg-down/10 text-down font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-down/20">
+                    <TrendingDown size={14} strokeWidth={2.5} /> Động lực giảm
+                  </div>
+                  <div className="p-3 space-y-3">
+                    {report.content["2"].market_drivers.bearish?.length > 0 ? (
+                      report.content["2"].market_drivers.bearish.map((d: any, i: number) => (
+                        <div key={i}>
+                          <p className="text-[13px] leading-[1.55] text-body">
+                            <span className={clsx(
+                              "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
+                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
+                            )}>{d.tag}</span>
+                            <RichText text={d.text} />
+                          </p>
+                          {d.source_url && (
+                            <a
+                              href={d.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
+                            >
+                              Nguồn: {d.source_name} ↗
+                            </a>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-[12.5px] text-muted-light italic">Không có động lực giảm đáng chú ý.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {report.content["3"] && (
             <div className="mb-6">
               <SubHeading>Phân tích</SubHeading>
@@ -962,79 +1040,6 @@ export function ReportDocument({ report }: { report: Report }) {
                   )}
                 </>
               )}
-            </div>
-          )}
-
-          {/* Động lực thị trường — chuyển từ Bảng giá nhanh (Phần 1) sang đây */}
-          {hasMarketDrivers && (
-            <div className="mb-6">
-              <SubHeading>Động lực thị trường</SubHeading>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="border border-up/25 bg-up/[0.04] rounded-lg overflow-hidden">
-                  <div className="flex items-center gap-1.5 bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
-                    <TrendingUp size={14} strokeWidth={2.5} /> Động lực tăng
-                  </div>
-                  <div className="p-3 space-y-3">
-                    {report.content["2"].market_drivers.bullish?.length > 0 ? (
-                      report.content["2"].market_drivers.bullish.map((d: any, i: number) => (
-                        <div key={i}>
-                          <p className="text-[13px] leading-[1.55] text-body">
-                            <span className={clsx(
-                              "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
-                            )}>{d.tag}</span>
-                            <RichText text={d.text} />
-                          </p>
-                          {d.source_url && (
-                            <a
-                              href={d.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
-                            >
-                              Nguồn: {d.source_name} ↗
-                            </a>
-                          )}
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-[12.5px] text-muted-light italic">Không có động lực tăng đáng chú ý.</p>
-                    )}
-                  </div>
-                </div>
-                <div className="border border-down/25 bg-down/[0.04] rounded-lg overflow-hidden">
-                  <div className="flex items-center gap-1.5 bg-down/10 text-down font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-down/20">
-                    <TrendingDown size={14} strokeWidth={2.5} /> Động lực giảm
-                  </div>
-                  <div className="p-3 space-y-3">
-                    {report.content["2"].market_drivers.bearish?.length > 0 ? (
-                      report.content["2"].market_drivers.bearish.map((d: any, i: number) => (
-                        <div key={i}>
-                          <p className="text-[13px] leading-[1.55] text-body">
-                            <span className={clsx(
-                              "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
-                            )}>{d.tag}</span>
-                            <RichText text={d.text} />
-                          </p>
-                          {d.source_url && (
-                            <a
-                              href={d.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
-                            >
-                              Nguồn: {d.source_name} ↗
-                            </a>
-                          )}
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-[12.5px] text-muted-light italic">Không có động lực giảm đáng chú ý.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
