@@ -1340,7 +1340,20 @@ export function ReportDocument({ report }: { report: Report }) {
                     <div className="space-y-4">
                       {items.map((art: any, i: number) => (
                         <div key={i} className="pb-4 border-b border-border-soft last:border-b-0 last:pb-0">
-                          <p className="text-[14px] font-semibold text-label leading-snug">{i + 1}. {art.title}</p>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <p className="text-[14px] font-semibold text-label leading-snug">{i + 1}. {art.title}</p>
+                            {art.topics?.map((topic: string, ti: number) => (
+                              <span
+                                key={ti}
+                                className={clsx(
+                                  "font-mono text-[9.5px] font-bold uppercase tracking-wide border rounded-[3px] px-1.5 py-0.5 whitespace-nowrap shrink-0",
+                                  tagColorClass(topic)
+                                )}
+                              >
+                                {topic}
+                              </span>
+                            ))}
+                          </div>
                           <p className="mt-1 text-[13.5px] leading-[1.55] text-body"><RichText text={art.summary} /></p>
                           <a
                             href={art.url}

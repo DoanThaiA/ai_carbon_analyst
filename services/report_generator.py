@@ -74,6 +74,26 @@ SECTION_MAX_TOKENS: Dict[str, int] = {
     "biz": 3072,  # 2 bảng nhỏ
 }
 
+# Nhãn hiển thị cho từng topic (khớp NewsTopic trong schemas/crawl_models.py) —
+# dùng để gắn thẻ topic cạnh tiêu đề bài viết ở Mục 6 (Chi tiết các tin tức
+# chính, xem get_news_for_report bên dưới). Giữ nguyên dạng chữ thường/hoa tự
+# nhiên ở đây — frontend tự viết hoa bằng CSS (uppercase), không cần format lại.
+TOPIC_DISPLAY_LABELS: Dict[str, str] = {
+    "eua_ets": "EUA/ETS",
+    "energy_gas": "Khí gas",
+    "energy_power_eu": "Điện châu Âu",
+    "energy_coal": "Than",
+    "energy_oil": "Dầu",
+    "energy_renewable": "Năng lượng tái tạo",
+    "energy_hydrogen": "Hydrogen",
+    "geopolitics": "Địa chính trị",
+    "eu_policy": "Chính sách EU",
+    "cbam": "CBAM",
+    "vcm": "VCM",
+    "global_carbon_market": "Thị trường carbon toàn cầu",
+    "vietnam_carbon_policy": "Chính sách carbon VN",
+}
+
 # ─────────────────────────────────────────────────────────────────────
 # Khung phân tích giá EUA — tiêm ĐỘNG vào prompt Mục 2/3
 #
@@ -463,6 +483,9 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
         if not article.topic:
             continue
         sources.add(article.source)
+        # Nhãn topic hiển thị (Mục 6) — TOÀN BỘ topic đã gắn cho bài (tối đa 3,
+        # xem NewsTopic), không chỉ topic đang lặp ở vòng for bên dưới.
+        topic_labels = [TOPIC_DISPLAY_LABELS.get(t, t) for t in article.topic]
         for topic in article.topic:
             if topic not in news_by_topic:
                 news_by_topic[topic] = []
@@ -473,6 +496,7 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
                 "source": article.source,
                 "url": article.url,
                 "region": article.region,
+                "topics": topic_labels,
             })
 
     return news_by_topic, list(sources)
