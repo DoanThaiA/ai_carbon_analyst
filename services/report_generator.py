@@ -71,7 +71,12 @@ SECTION_MAX_TOKENS: Dict[str, int] = {
     "3": 8192,    # mục phân tích sâu nhất — JSON lồng sâu nhất, giữ nguyên để tránh cắt cụt
     "4": 2048,    # 3 bullet ngắn
     "8": 2048,    # danh sách events
-    "biz": 3072,  # 2 bảng nhỏ
+    # 4096 (tăng từ 3072) — 3072 từng không đủ vào ngày có nhiều tin CBAM/VCM/
+    # chính sách, khiến LLM sinh nhiều gợi ý hơn dự kiến rồi bị cắt giữa chừng
+    # (response.stop_reason="max_tokens"), làm JSON lỗi và cả mục rơi về fallback
+    # rỗng. Đi kèm giới hạn số lượng gợi ý tối đa trong _prompt_biz_recommendation
+    # để output không phình to không kiểm soát được nữa.
+    "biz": 4096,
 }
 
 # Nhãn hiển thị cho từng topic (khớp NewsTopic trong schemas/crawl_models.py) —
@@ -1077,7 +1082,7 @@ async def _call_llm(
     tắc không đổi theo ngày, chỉ user message chứa DATA mới đổi) nên tận dụng
     được prompt caching thật sự của Anthropic (KHÔNG tự động nếu chỉ truyền
     chuỗi thường — phải khai báo cache_control tường minh như dưới đây).
-    model mặc định Opus cho các mục phân tích chuyên sâu (Mục 1-5, 7, 8, biz);
+    model mặc định Opus cho các mục phân tích chuyên sâu (Mục 1-4, 8, biz);
     Mục 6 (tóm tắt từng bài) gọi với model=REPORT_MODEL_HAIKU — rẻ hơn, đủ dùng.
     """
     client = _get_anthropic_client()
@@ -1096,6 +1101,17 @@ async def _call_llm(
                     {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
                 ]
             response = await client.messages.create(**kwargs)
+            if response.stop_reason == "max_tokens":
+                # Output bị CẮT NGANG do hết max_tokens — với JSON có cấu trúc,
+                # phần bị cắt gần như chắc chắn làm JSON không hợp lệ (thiếu dấu
+                # đóng ngoặc), khiến _extract_json() ở nơi gọi thất bại và rơi về
+                # fallback. Log rõ nguyên nhân ở đây thay vì để nơi gọi tự đoán
+                # "JSON lỗi" chung chung — dấu hiệu trực tiếp để tăng max_tokens.
+                logger.warning(
+                    f"[LLM] Response bị CẮT do đạt max_tokens={max_tokens} (model={model}) "
+                    "— JSON trả về nhiều khả năng không hợp lệ do thiếu phần cuối; "
+                    "cân nhắc tăng max_tokens hoặc giới hạn độ dài/số lượng output yêu cầu trong prompt."
+                )
             return _extract_message_text(response)
         except (anthropic.RateLimitError, anthropic.APIStatusError, anthropic.APIError) as e:
             logger.error(f"Lỗi Anthropic (lần {attempt + 1}/{max_retries}): {e}")
@@ -1424,7 +1440,7 @@ B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân 
    - "solution": giải pháp/hướng đi đề xuất cho SIM để tận dụng cơ hội đó.
    - "expectation": kỳ vọng/kết quả nếu triển khai giải pháp này.
 
-QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng.
+QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng. TỐI ĐA 3 gợi ý MỖI bảng (short_term và long_term riêng biệt) — nếu có nhiều hơn 3 gợi ý đủ căn cứ, CHỈ giữ lại ĐÚNG 3 gợi ý TRỌNG TÂM/có căn cứ mạnh nhất, bỏ phần còn lại (KHÔNG cố nhồi hết vào 1 bảng, sẽ làm output quá dài và bị cắt).
 Lưu ý: KHÔNG dùng câu lệnh mua/bán tài chính trực tiếp.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
@@ -1611,7 +1627,10 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
                 sec_data = parsed[sec_key]
                 logger.info(f"[REPORT] Mục {sec_key} OK.")
             else:
-                logger.warning(f"[REPORT] Mục {sec_key} thất bại, dùng fallback. Raw: {raw[:200] if raw else 'None'}")
+                logger.warning(
+                    f"[REPORT] Mục {sec_key} thất bại, dùng fallback. "
+                    f"Raw ({len(raw) if raw else 0} ký tự): {raw[-500:] if raw else 'None'}"
+                )
                 sec_data = FALLBACKS[sec_key]
 
             return sec_key, sec_data
