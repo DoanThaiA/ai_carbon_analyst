@@ -715,37 +715,35 @@ export function ReportDocument({ report }: { report: Report }) {
         </section>
 
         {/* PHẦN 1 — TIN TỨC CHÍNH / NỔI BẬT TRONG NGÀY */}
-        <section className="py-5">
-          {/* Bọc chung tiêu đề + biểu đồ nến/số liệu chính trong 1 khối
-              print:break-inside-avoid — nếu không, "page-break-after: avoid"
-              trên riêng PartHeading không đủ để giữ 2 phần này cùng trang khi
-              tiêu đề rơi đúng cuối trang (Chrome vẫn tách trang ngay sau tiêu đề). */}
-          <div className="print:break-inside-avoid">
-            <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
+        {/* print:break-before-page: khi in PDF, luôn bắt đầu Phần 1 ở 1 trang mới
+            (trang 1 chỉ gồm ngày tháng + khối ĐIỂM NHẤN), thay vì cố canh
+            break-inside-avoid cho tiêu đề + biểu đồ nến (gây xuống dòng loạn do
+            trình duyệt phải co giãn nội dung để tránh ngắt trang giữa khối đó). */}
+        <section className="py-5 print:break-before-page">
+          <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
 
-            <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-              <div className="print-keep-together lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
-                <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
-                  <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
-                  <span>EUR/tCO₂e</span>
-                </div>
-                <CandlestickChart report={report} />
+          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+            <div className="print-keep-together lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
+              <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
+                <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
+                <span>EUR/tCO₂e</span>
               </div>
-
-              {report.content["2"]?.key_facts && (
-                <div className="lg:flex-1 lg:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
-                  <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
-                  <div className="space-y-1 text-[13px] leading-snug text-body">
-                    {report.content["2"].key_facts
-                      .split(/(?<=\.)\s+/)
-                      .filter((s: string) => s.trim())
-                      .map((s: string, i: number) => (
-                        <p key={i}><RichText text={s} /></p>
-                      ))}
-                  </div>
-                </div>
-              )}
+              <CandlestickChart report={report} />
             </div>
+
+            {report.content["2"]?.key_facts && (
+              <div className="lg:flex-1 lg:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
+                <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
+                <div className="space-y-1 text-[13px] leading-snug text-body">
+                  {report.content["2"].key_facts
+                    .split(/(?<=\.)\s+/)
+                    .filter((s: string) => s.trim())
+                    .map((s: string, i: number) => (
+                      <p key={i}><RichText text={s} /></p>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="print:break-inside-avoid mt-5">
