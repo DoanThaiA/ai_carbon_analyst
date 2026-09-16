@@ -434,6 +434,13 @@ async def get_historical_ohlc_for_report(
     result = await session.execute(stmt)
     prices = result.scalars().all()
 
+    # Nguồn của mỗi phiên giá — dùng chung symbol Barchart của cả instrument
+    # (không đổi theo ngày) để dựng link, giống cách get_prices_for_report() làm
+    # cho bảng giá nhanh.
+    barchart_symbols = await _get_barchart_symbols(session)
+    symbol = barchart_symbols.get(instrument_code)
+    source_url = _barchart_url(symbol) if symbol else None
+
     chart_data = []
     for p in reversed(prices):
         open_p = p.open_price if p.open_price is not None else p.close_price
@@ -446,6 +453,8 @@ async def get_historical_ohlc_for_report(
             "low": low_p,
             "close": p.close_price,
             "volume": p.volume,
+            "source_name": p.source_name,
+            "source_url": source_url,
         })
     return chart_data
 

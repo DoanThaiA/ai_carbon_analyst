@@ -527,6 +527,16 @@ function CandlestickChart({ report }: { report: Report }) {
               {hovered.close.toFixed(2)}
             </span>
           </div>
+          {hovered.source_url && (
+            <a
+              href={hovered.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1.5 pt-1.5 border-t border-border block pointer-events-auto whitespace-nowrap text-primary hover:underline"
+            >
+              Nguồn: {hovered.source_name} ↗
+            </a>
+          )}
         </div>
       )}
     </div>
