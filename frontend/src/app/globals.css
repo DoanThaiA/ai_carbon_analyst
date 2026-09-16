@@ -156,6 +156,15 @@ body {
   h4, h3, .report-heading {
     page-break-after: avoid;
   }
+  /* .report-heading (PartHeading: Phần 1/2/3, Nguồn tham khảo) chứa icon badge
+     40x40px trong div flex — "page-break-after: avoid" ở trên chỉ chặn ngắt
+     trang NGAY SAU heading, không chặn ngắt trang NGAY GIỮA heading. Nếu
+     heading rơi đúng ranh giới trang, icon badge (và cả eyebrow/title) bị cắt
+     đôi. Thêm break-inside: avoid để cả khối heading luôn nằm trọn 1 trang. */
+  .report-heading {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 
   /* ---- Khung nổi bật (Tóm tắt điều hành / Tổng hợp giá EUA): BẮT BUỘC không
      cắt ngang. Tiêu đề khung là 1 badge position:absolute đè lên viền trên
