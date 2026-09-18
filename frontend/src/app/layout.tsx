@@ -6,11 +6,11 @@ import clsx from "clsx";
 import { Header } from "@/components/Header";
 
 const inter = Inter({
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext", "vietnamese"],
   weight: ["400", "600", "700", "800"],
   variable: "--font-inter",
 });
-const ibmPlexMono = IBM_Plex_Mono({ weight: ["400", "500", "600", "700"], subsets: ["latin"], variable: "--font-ibm-plex-mono" });
+const ibmPlexMono = IBM_Plex_Mono({ weight: ["400", "500", "600", "700"], subsets: ["latin", "latin-ext", "vietnamese"], variable: "--font-ibm-plex-mono" });
 
 export const metadata: Metadata = {
   title: "Carbon Analyst Dashboard",

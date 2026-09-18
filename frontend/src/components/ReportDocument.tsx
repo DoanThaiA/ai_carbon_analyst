@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import clsx from "clsx";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
@@ -410,20 +410,6 @@ function CandlestickChart({ report }: { report: Report }) {
   const rawData = report?.content["2"]?.chart_data;
   const candles = rawData && rawData.length > 0 ? rawData : [];
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  // Trễ 200ms trước khi đóng cửa sổ nổi, để chuột có thể di từ nến sang bên trong
-  // cửa sổ (iframe Barchart / link) mà không bị mất hover ngay lập tức.
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelClose = () => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  };
-  const scheduleClose = () => {
-    cancelClose();
-    closeTimerRef.current = setTimeout(() => setHoverIndex(null), 200);
-  };
-  useEffect(() => () => cancelClose(), []);
 
   if (candles.length === 0) {
     return (
@@ -455,7 +441,6 @@ function CandlestickChart({ report }: { report: Report }) {
     if (clientX === undefined) return;
     const xInSvg = (clientX - rect.left) * (W / rect.width);
     const idx = Math.min(candles.length - 1, Math.max(0, Math.floor((xInSvg - padL) / cw)));
-    cancelClose();
     setHoverIndex(idx);
   };
 
@@ -470,7 +455,7 @@ function CandlestickChart({ report }: { report: Report }) {
       <svg
         width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-[200px] sm:h-[260px] cursor-crosshair"
         onMouseMove={handlePointer}
-        onMouseLeave={scheduleClose}
+        onMouseLeave={() => setHoverIndex(null)}
         onTouchMove={handlePointer}
         onTouchEnd={() => setHoverIndex(null)}
       >
@@ -525,9 +510,7 @@ function CandlestickChart({ report }: { report: Report }) {
 
       {hovered && (
         <div
-          className="absolute top-1 bg-background border border-border rounded-md shadow-[var(--shadow-medium)] px-3 py-2 font-mono text-[11px] z-10 min-w-[128px]"
-          onMouseEnter={cancelClose}
-          onMouseLeave={scheduleClose}
+          className="absolute top-1 pointer-events-none bg-background border border-border rounded-md shadow-[var(--shadow-medium)] px-3 py-2 font-mono text-[11px] z-10 min-w-[128px]"
           style={
             flipTooltip
               ? { right: `${100 - tooltipLeftPct}%`, marginRight: 8 }
@@ -544,33 +527,6 @@ function CandlestickChart({ report }: { report: Report }) {
               {hovered.close.toFixed(2)}
             </span>
           </div>
-          {hovered.source_url && (
-            <div className="mt-1.5 pt-1.5 border-t border-border">
-              <div className="flex items-center justify-between gap-2 mb-1 whitespace-nowrap">
-                <span className="text-muted-light text-[10px]">Trực tiếp từ {hovered.source_name ?? "Barchart"}</span>
-                <a
-                  href={hovered.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline text-[10px] shrink-0"
-                >
-                  Mở tab mới ↗
-                </a>
-              </div>
-              <div className="w-[260px] h-[170px] rounded border border-border overflow-hidden bg-background-secondary">
-                <iframe
-                  key={hovered.source_url}
-                  src={hovered.source_url}
-                  title={`Bảng giá trực tiếp ${hovered.source_name ?? "Barchart"}`}
-                  className="w-full h-full"
-                  loading="lazy"
-                />
-              </div>
-              <div className="mt-1 text-[9px] text-muted-light leading-snug whitespace-normal">
-                Barchart có thể chặn nhúng trực tiếp (chính sách bảo mật) — nếu khung trống, dùng nút &quot;Mở tab mới&quot;.
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
