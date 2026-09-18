@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import clsx from "clsx";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
@@ -330,7 +330,7 @@ function EventTimeline({ events }: { events: any[] }) {
                 )}>{ev.impact}</span>
               </div>
               {ev.outcome && (
-                <p className="mt-1.5 text-[12.5px] text-body italic">
+                <p className="mt-1.5 text-[12.5px] leading-[1.55] text-body italic">
                   <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
                 </p>
               )}
@@ -410,6 +410,20 @@ function CandlestickChart({ report }: { report: Report }) {
   const rawData = report?.content["2"]?.chart_data;
   const candles = rawData && rawData.length > 0 ? rawData : [];
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  // Trễ 200ms trước khi đóng cửa sổ nổi, để chuột có thể di từ nến sang bên trong
+  // cửa sổ (iframe Barchart / link) mà không bị mất hover ngay lập tức.
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => setHoverIndex(null), 200);
+  };
+  useEffect(() => () => cancelClose(), []);
 
   if (candles.length === 0) {
     return (
@@ -441,6 +455,7 @@ function CandlestickChart({ report }: { report: Report }) {
     if (clientX === undefined) return;
     const xInSvg = (clientX - rect.left) * (W / rect.width);
     const idx = Math.min(candles.length - 1, Math.max(0, Math.floor((xInSvg - padL) / cw)));
+    cancelClose();
     setHoverIndex(idx);
   };
 
@@ -455,7 +470,7 @@ function CandlestickChart({ report }: { report: Report }) {
       <svg
         width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-[200px] sm:h-[260px] cursor-crosshair"
         onMouseMove={handlePointer}
-        onMouseLeave={() => setHoverIndex(null)}
+        onMouseLeave={scheduleClose}
         onTouchMove={handlePointer}
         onTouchEnd={() => setHoverIndex(null)}
       >
@@ -510,7 +525,9 @@ function CandlestickChart({ report }: { report: Report }) {
 
       {hovered && (
         <div
-          className="absolute top-1 pointer-events-none bg-background border border-border rounded-md shadow-[var(--shadow-medium)] px-3 py-2 font-mono text-[11px] z-10 min-w-[128px]"
+          className="absolute top-1 bg-background border border-border rounded-md shadow-[var(--shadow-medium)] px-3 py-2 font-mono text-[11px] z-10 min-w-[128px]"
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
           style={
             flipTooltip
               ? { right: `${100 - tooltipLeftPct}%`, marginRight: 8 }
@@ -528,14 +545,31 @@ function CandlestickChart({ report }: { report: Report }) {
             </span>
           </div>
           {hovered.source_url && (
-            <a
-              href={hovered.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1.5 pt-1.5 border-t border-border block pointer-events-auto whitespace-nowrap text-primary hover:underline"
-            >
-              Nguồn: {hovered.source_name} ↗
-            </a>
+            <div className="mt-1.5 pt-1.5 border-t border-border">
+              <div className="flex items-center justify-between gap-2 mb-1 whitespace-nowrap">
+                <span className="text-muted-light text-[10px]">Trực tiếp từ {hovered.source_name ?? "Barchart"}</span>
+                <a
+                  href={hovered.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline text-[10px] shrink-0"
+                >
+                  Mở tab mới ↗
+                </a>
+              </div>
+              <div className="w-[260px] h-[170px] rounded border border-border overflow-hidden bg-background-secondary">
+                <iframe
+                  key={hovered.source_url}
+                  src={hovered.source_url}
+                  title={`Bảng giá trực tiếp ${hovered.source_name ?? "Barchart"}`}
+                  className="w-full h-full"
+                  loading="lazy"
+                />
+              </div>
+              <div className="mt-1 text-[9px] text-muted-light leading-snug whitespace-normal">
+                Barchart có thể chặn nhúng trực tiếp (chính sách bảo mật) — nếu khung trống, dùng nút &quot;Mở tab mới&quot;.
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -799,7 +833,7 @@ export function ReportDocument({ report }: { report: Report }) {
                             {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
                           </div>
                         </td>
-                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[12px] text-body">
+                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[12px] leading-[1.55] text-body">
                           {(r.dday !== "-" || r.dweek !== "-") && (
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] mb-1">
                               {r.dday !== "-" && (
