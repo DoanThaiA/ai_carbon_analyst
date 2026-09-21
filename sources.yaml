@@ -439,7 +439,7 @@ sources:
     bloomberg_feeds:
       - "https://www.bloomberg.com/feeds/markets/news.rss"
       - "https://www.bloomberg.com/feeds/politics/news.rss"
-    max_articles: 10
+    max_articles: 40
     confidence: medium
     note: "Lấy tiêu đề từ RSS ẩn của Bloomberg, search bài syndicated trên các trang dễ crawl (Energy Connects, gCaptain, worldoil.com, Montel News, CarbonCredits.com, Yahoo/Reuters/CNBC...) để lấy full-text. pubDate từ RSS Bloomberg được dùng cho date filter. Bỏ feed 'technology' (AI/Big Tech, không liên quan energy/carbon)."
 
