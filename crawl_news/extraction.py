@@ -53,24 +53,37 @@ def extract_article(item: CrawledItem) -> Optional[ExtractedArticle]:
         return None
 
     title = parsed.get("title") or item.title
-    published_at = _parse_date(parsed.get("date"))
 
-    # Nếu trafilatura không tìm được ngày hoặc ngày = hôm nay (có thể sai —
-    # nhiều site VN hiển thị ngày hiện tại trên sidebar/header), thử fallback.
-    if not published_at or _is_likely_today(published_at):
-        fallback = _extract_date_from_html(item.raw_html)
-        if fallback:
-            if published_at and _is_likely_today(published_at) and not _is_likely_today(fallback):
-                # trafilatura trả về hôm nay nhưng HTML có ngày khác → ưu tiên HTML
-                logger.debug(
-                    "[DATE-FIX] Override trafilatura date (%s) bằng HTML date (%s): %s",
-                    published_at.date(), fallback.date(), item.url,
-                )
-                published_at = fallback
-            elif not published_at:
-                published_at = fallback
+    # ƯU TIÊN ngày từ RSS nếu có (chính xác hơn trafilatura trên trang trung gian,
+    # ví dụ Bloomberg RSS → bài trên Yahoo Finance có thể đăng muộn hơn vài giờ)
+    if item.rss_published_at is not None:
+        published_at = item.rss_published_at
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        date_confidence: DateConfidence = "metadata"
+        logger.debug(
+            "[DATE] Dùng rss_published_at=%s thay trafilatura cho %s",
+            published_at.strftime("%Y-%m-%d %H:%M UTC"), item.url,
+        )
+    else:
+        published_at = _parse_date(parsed.get("date"))
 
-    date_confidence: DateConfidence = "metadata" if published_at is not None else "unknown"
+        # Nếu trafilatura không tìm được ngày hoặc ngày = hôm nay (có thể sai —
+        # nhiều site VN hiển thị ngày hiện tại trên sidebar/header), thử fallback.
+        if not published_at or _is_likely_today(published_at):
+            fallback = _extract_date_from_html(item.raw_html)
+            if fallback:
+                if published_at and _is_likely_today(published_at) and not _is_likely_today(fallback):
+                    # trafilatura trả về hôm nay nhưng HTML có ngày khác → ưu tiên HTML
+                    logger.debug(
+                        "[DATE-FIX] Override trafilatura date (%s) bằng HTML date (%s): %s",
+                        published_at.date(), fallback.date(), item.url,
+                    )
+                    published_at = fallback
+                elif not published_at:
+                    published_at = fallback
+
+        date_confidence: DateConfidence = "metadata" if published_at is not None else "unknown"
 
     return ExtractedArticle(
         url=item.url,

@@ -47,6 +47,9 @@ async def crawl_source(
     Bài viết riêng lẻ luôn dùng fetcher (curl_cffi) để tiết kiệm tài nguyên.
     """
     try:
+        if source.type == "bloomberg_rss":
+            from crawl_news.bloomberg_crawler import crawl_bloomberg_rss
+            return await crawl_bloomberg_rss(fetcher, playwright_fetcher, source, seen_urls)
         if source.type == "rss" and source.rss_url:
             return await _crawl_rss(fetcher, source, seen_urls)
         return await _crawl_html_listing(fetcher, source, seen_urls, playwright_fetcher)

@@ -47,7 +47,16 @@ class PoliteFetcher:
         return parsed.netloc or url
 
     async def fetch(self, url: str) -> Optional[str]:
-        """Fetch 1 URL, trả về HTML string hoặc None nếu lỗi/không đọc được."""
+        """Fetch 1 URL (GET), trả về HTML string hoặc None nếu lỗi/không đọc được."""
+        return await self._request("GET", url)
+
+    async def post(self, url: str, data: Optional[dict] = None) -> Optional[str]:
+        """POST 1 request (form-encoded), trả về response text hoặc None nếu lỗi.
+        Dùng cho các API cần POST (vd endpoint giải mã link Google News trong
+        bloomberg_crawler.py) — tôn trọng cùng throttle/retry theo domain như fetch()."""
+        return await self._request("POST", url, data=data)
+
+    async def _request(self, method: str, url: str, **kwargs) -> Optional[str]:
         domain = self._domain_of(url)
         semaphore = self._domain_semaphores[domain]
 
@@ -55,7 +64,7 @@ class PoliteFetcher:
             await self._respect_delay(domain)
             for attempt in range(1, MAX_RETRIES + 2):
                 try:
-                    resp = await self._client.get(url, allow_redirects=True)
+                    resp = await self._client.request(method, url, allow_redirects=True, **kwargs)
                     if resp.status_code == 200:
                         return resp.text
                     if resp.status_code in (403, 404):
@@ -71,7 +80,7 @@ class PoliteFetcher:
                     )
                 await asyncio.sleep(1.5 * attempt)
 
-            logger.error("[FAILED] %s sau %d lần thử", url, MAX_RETRIES + 1)
+            logger.error("[FAILED] %s %s sau %d lần thử", method, url, MAX_RETRIES + 1)
             return None
 
     async def _respect_delay(self, domain: str):

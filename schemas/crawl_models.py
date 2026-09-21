@@ -18,7 +18,7 @@ class SourceConfig:
     tier: Tier
     category: str  # ví dụ: energy_official, eu_climate_policy, carbon_market_voluntary...
     region: Region = "international"  # phân biệt nguồn Việt Nam / quốc tế — dùng cho Mục 6 báo cáo
-    type: Literal["rss", "html"] = "html"
+    type: Literal["rss", "html", "bloomberg_rss"] = "html"
     rss_url: Optional[str] = None
     listing_url: Optional[str] = None
     exclude_path_patterns: List[str] = field(
@@ -35,6 +35,7 @@ class SourceConfig:
     link_pattern: Optional[str] = None                    # regex khớp URL bài viết (None = dùng heuristic)
     max_articles: Optional[int] = None                    # giới hạn bài/lần crawl (None = dùng MAX_LINKS_PER_LISTING_PAGE)
     use_playwright: bool = False                          # True → dùng Playwright để render JS trước khi parse link
+    bloomberg_feeds: List[str] = field(default_factory=list)  # danh sách Bloomberg RSS feed URLs (chỉ dùng khi type="bloomberg_rss")
 
 
 @dataclass
@@ -46,6 +47,7 @@ class CrawledItem:
     raw_html: str
     discovered_at: datetime
     region: Region = "international"
+    rss_published_at: Optional[datetime] = None  # Ngày đăng từ RSS feed gốc (ưu tiên hơn trafilatura)
 
 
 @dataclass

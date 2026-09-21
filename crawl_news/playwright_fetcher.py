@@ -126,9 +126,21 @@ class PlaywrightFetcher:
         Fetch 1 URL bằng Playwright, chờ JS render xong, trả về HTML.
         Trả về None nếu timeout hoặc lỗi.
         """
+        html, _final_url = await self.fetch_with_url(url)
+        return html
+
+    async def fetch_with_url(self, url: str) -> tuple:
+        """
+        Giống fetch() nhưng trả thêm URL cuối cùng sau khi JS redirect xong
+        (page.url) — cần cho link Google News (news.google.com/rss/articles/...)
+        vì trang đó tự redirect qua JS sang bài gốc; lưu lại URL redirect gốc
+        thay vì URL thật sẽ sai dữ liệu trong DB.
+
+        Trả về (html, final_url), hoặc (None, None) nếu timeout/lỗi.
+        """
         if self._context is None:
             logger.error("[Playwright] Chưa gọi start(). Hãy dùng async with hoặc await pf.start().")
-            return None
+            return None, None
 
         domain = self._domain_of(url)
         async with self._page_semaphore:
@@ -155,7 +167,7 @@ class PlaywrightFetcher:
                 #   DOM có sẵn để JS framework (React/Next.js) render, rồi chờ thêm vài giây.
                 try:
                     await page.goto(url, wait_until="domcontentloaded")
-                    
+
                     # Auto-accept / dismiss cookie banners
                     cookie_selectors = [
                         "#onetrust-accept-btn-handler", # OneTrust
@@ -172,23 +184,24 @@ class PlaywrightFetcher:
                             logger.debug("[Playwright] Đã tự động click Cookie Banner: %s", selector)
                         except PlaywrightTimeoutError:
                             pass
-                    
+
                     # Chờ JS framework render xong content (article links)
                     await asyncio.sleep(PLAYWRIGHT_JS_SETTLE_SECONDS)
                 except PlaywrightTimeoutError:
                     logger.warning("[Playwright] Timeout ngay cả domcontentloaded: %s", url)
-                    return None
+                    return None, None
 
                 html = await page.content()
-                logger.debug("[Playwright] Fetch OK (%d bytes): %s", len(html), url)
-                return html
+                final_url = page.url
+                logger.debug("[Playwright] Fetch OK (%d bytes): %s -> %s", len(html), url, final_url)
+                return html, final_url
 
             except PlaywrightTimeoutError:
                 logger.warning("[Playwright] Timeout: %s", url)
-                return None
+                return None, None
             except Exception as e:
                 logger.warning("[Playwright] Lỗi fetch %s: %s", url, e)
-                return None
+                return None, None
             finally:
                 if page and not page.is_closed():
                     await page.close()

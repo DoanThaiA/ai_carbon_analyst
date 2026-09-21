@@ -61,6 +61,7 @@ def load_sources(yaml_path: Path) -> List[SourceConfig]:
                 link_pattern=entry.get("link_pattern"),
                 max_articles=entry.get("max_articles"),
                 use_playwright=entry.get("use_playwright", False),
+                bloomberg_feeds=entry.get("bloomberg_feeds", []),
             )
         )
     return sources
