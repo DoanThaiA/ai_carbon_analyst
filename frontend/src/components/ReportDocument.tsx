@@ -715,11 +715,14 @@ export function ReportDocument({ report }: { report: Report }) {
         </section>
 
         {/* PHẦN 1 — TIN TỨC CHÍNH / NỔI BẬT TRONG NGÀY */}
-        {/* print:break-before-page: khi in PDF, luôn bắt đầu Phần 1 ở 1 trang mới
-            (trang 1 chỉ gồm ngày tháng + khối ĐIỂM NHẤN), thay vì cố canh
-            break-inside-avoid cho tiêu đề + biểu đồ nến (gây xuống dòng loạn do
-            trình duyệt phải co giãn nội dung để tránh ngắt trang giữa khối đó). */}
-        <section className="py-5 print:break-before-page">
+        {/* Không còn ép "print:break-before-page" — trước đây luôn đẩy Phần 1
+            sang trang mới bất kể khối ĐIỂM NHẤN phía trên còn chừa bao nhiêu
+            chỗ trống, gây khoảng trắng lớn cuối trang 1. Giờ để Phần 1 chảy
+            tiếp ngay sau ĐIỂM NHẤN như các section khác; PartHeading (class
+            "report-heading") đã có page-break-after: avoid nên tiêu đề không
+            bị mồ côi cuối trang, còn ".print-keep-together" trên card biểu đồ
+            nến giữ nguyên khối chart khi cần đẩy sang trang sau. */}
+        <section className="py-5">
           <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
 
           <div className="flex flex-col lg:flex-row gap-4 items-stretch">
