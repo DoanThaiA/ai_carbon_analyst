@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { FileText, Radar, Users, LogOut, MessageSquareText, BrainCircuit, Sparkles, MessageSquareWarning } from "lucide-react";
+import { FileText, Radar, Users, LogOut, MessageSquareText, BrainCircuit, Sparkles, MessageSquareWarning, ClipboardList } from "lucide-react";
 import clsx from "clsx";
 import { api, setAuthRole } from "@/lib/api";
 
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/admin/quote-chat-examples", label: "Đoạn chat tham khảo", icon: Sparkles },
   { href: "/admin/eua-framework", label: "Khung phân tích EUA", icon: BrainCircuit },
   { href: "/admin/feedback", label: "Phản ánh về Jenny", icon: MessageSquareWarning },
+  { href: "/admin/release-notes", label: "Release Note", icon: ClipboardList },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

@@ -23,6 +23,7 @@ from api.routers import (
     admin_feedback,
     admin_price_sources,
     admin_quote_chat_examples,
+    admin_release_notes,
     admin_reports,
     admin_users,
     auth_admin,
@@ -72,6 +73,7 @@ app.include_router(upload.router)
 app.include_router(hot_news.router)
 app.include_router(feedback.router)
 app.include_router(admin_feedback.router)
+app.include_router(admin_release_notes.router)
 
 
 @app.get("/api/reports")

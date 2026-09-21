@@ -392,3 +392,33 @@ class AssistantFeedback(Base):
 
     def __repr__(self) -> str:
         return f"AssistantFeedback(id={self.id!r}, user_email={self.user_email!r})"
+
+
+class ReleaseNote(Base):
+    """1 dòng = 1 mục trong bảng theo dõi yêu cầu khách hàng / release note,
+    hiển thị ở /admin/release-notes — admin CRUD trực tiếp qua
+    /api/admin/release-notes (xem api/routers/admin_release_notes.py).
+    order_index quyết định thứ tự hiển thị (cột STT ở UI là số thứ tự tính từ
+    order_index, không lưu cứng trong DB để tránh phải renumber khi xoá/chèn
+    giữa bảng)."""
+
+    __tablename__ = "release_notes"
+    __table_args__ = (
+        CheckConstraint("status IN ('dat', 'chua_dat')", name="ck_release_notes_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    customer_request: Mapped[str] = mapped_column(Text, nullable=False)  # YÊU CẦU KHÁCH HÀNG
+    change_description: Mapped[str] = mapped_column(Text, nullable=False)  # NỘI DUNG ĐÃ CHỈNH SỬA
+    test_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # KẾT QUẢ KIỂM TRA THỰC TẾ TRÊN BÁO CÁO
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="chua_dat")  # KẾT LUẬN: 'dat' | 'chua_dat'
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"ReleaseNote(id={self.id!r}, status={self.status!r})"
