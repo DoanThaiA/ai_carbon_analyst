@@ -128,6 +128,23 @@ body {
   tr {
     page-break-inside: avoid;
   }
+  /* Bảng dài bị ngắt giữa chừng qua trang mới: lặp lại đúng hàng tên cột
+     (thead) ở đầu phần bảng tiếp theo, rồi bảng vẫn hiển thị bình thường —
+     "table-header-group" là hành vi mặc định của <thead> khi in ở hầu hết
+     trình duyệt, khai báo tường minh ở đây để không phụ thuộc UA stylesheet. */
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  /* overflow-x-auto chỉ cần cho cuộn ngang trên mobile — khi in, overflow
+     khác "visible" có thể khiến trình duyệt coi bảng bên trong là 1 khối bị
+     giới hạn chiều cao thay vì cho chảy/ngắt trang tự nhiên, gây bảng bị cắt
+     cụt giữa chừng thay vì lặp header sang trang sau. */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
   /* Card kịch bản (kịch bản chiến lược, biểu đồ nến) — dùng class riêng thay vì
      dựa vào tổ hợp class Tailwind (border + border-border + rounded-lg) vì tổ
      hợp đó vô tình trùng luôn với wrapper bảng gợi ý kinh doanh (dài, nhiều
@@ -140,10 +157,12 @@ body {
     page-break-inside: avoid;
   }
 
-  /* ---- Chống mồ côi dòng: không để 1 dòng lẻ loi trên/dưới trang ---- */
+  /* ---- Chống mồ côi dòng: chỉ ngắt trang khi phần còn lại của trang không đủ
+     5 dòng — orphans/widows tính bằng đơn vị dòng, đúng nghĩa "diện tích còn
+     lại < 5 dòng thì mới ngắt trang, còn lại thì phải viết tiếp". ---- */
   p, li {
-    orphans: 3;
-    widows: 3;
+    orphans: 5;
+    widows: 5;
   }
   /* Từng bullet (Tóm tắt điều hành, Phần 4/5...) không bị cắt ngang giữa
      chừng — nhưng KHÔNG áp cho cả <ul>/khung bao ngoài, để danh sách dài vẫn
@@ -156,27 +175,31 @@ body {
   h4, h3, .report-heading {
     page-break-after: avoid;
   }
-  /* .report-heading (PartHeading: Phần 1/2/3, Nguồn tham khảo) chứa icon badge
-     40x40px trong div flex — "page-break-after: avoid" ở trên chỉ chặn ngắt
-     trang NGAY SAU heading, không chặn ngắt trang NGAY GIỮA heading. Nếu
-     heading rơi đúng ranh giới trang, icon badge (và cả eyebrow/title) bị cắt
-     đôi. Thêm break-inside: avoid để cả khối heading luôn nằm trọn 1 trang. */
-  .report-heading {
+  /* .report-heading (PartHeading: Phần 1/2/3, Nguồn tham khảo — SubHeading dải
+     nền xanh) chứa icon badge 40x40px trong div flex — "page-break-after:
+     avoid" ở trên chỉ chặn ngắt trang NGAY SAU heading, không chặn ngắt trang
+     NGAY GIỮA heading. Nếu heading rơi đúng ranh giới trang, icon badge (và cả
+     eyebrow/title) bị cắt đôi. Thêm break-inside: avoid để cả khối heading
+     luôn nằm trọn 1 trang.
+     :not(.report-frame): FramedHighlight (🚨 ĐIỂM NHẤN / TÍN HIỆU HÔM NAY)
+     cũng gắn class "report-heading" lên NGUYÊN khung nội dung (không chỉ cái
+     tiêu đề), nên rule avoid ở trên vô tình ép cả khối dài (nhiều bullet) phải
+     nằm trọn 1 trang — hễ không đủ chỗ là đẩy nguyên khối sang trang sau, để
+     lại khoảng trắng lớn dù trang trước còn nhiều dòng. Loại trừ .report-frame
+     khỏi rule này để khối đó được chảy nội dung liên tục qua nhiều trang. */
+  .report-heading:not(.report-frame) {
     page-break-inside: avoid;
     break-inside: avoid;
   }
 
-  /* ---- Khung nổi bật (Tóm tắt điều hành / Tổng hợp giá EUA): BẮT BUỘC không
-     cắt ngang. Tiêu đề khung là 1 badge position:absolute đè lên viền trên
-     (xem FramedHighlight, ReportDocument.tsx) — nếu để trình duyệt ngắt trang
-     giữa khung này, badge bị render lặp/lệch ngay đầu phần nội dung tiếp theo
-     (đè chữ lên dòng đầu, mất viền) thay vì chỉ đơn thuần lãng phí khoảng
-     trắng như 1 khối thường. Chấp nhận đánh đổi (khung dài có thể để trống
-     cuối trang trước) để tránh lỗi hiển thị vỡ layout nghiêm trọng hơn. */
-  .report-frame {
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
+  /* ---- Khung nổi bật (🚨 ĐIỂM NHẤN / TÍN HIỆU HÔM NAY): CHO PHÉP ngắt trang
+     giữa khung để nội dung chảy liên tục, không đẩy nguyên khối (có thể dài,
+     nhiều bullet) sang trang sau và để trống phần còn lại của trang trước.
+     Tiêu đề khung là 1 badge position:absolute đè lên viền trên (xem
+     FramedHighlight, ReportDocument.tsx) — badge chỉ render ở fragment đầu
+     tiên (nơi khung bắt đầu) nên không bị lặp khi khung ngắt trang giữa
+     chừng; phần bullet/nội dung bên trong đã có "li { page-break-inside:
+     avoid }" + orphans/widows ở trên để không cắt ngang 1 dòng/1 bullet. */
 
   /* ---- Masthead: thu gọn padding cho trang đầu gọn hơn (Đã chuyển sang dùng print:pt-4 trong JSX) ---- */
 
