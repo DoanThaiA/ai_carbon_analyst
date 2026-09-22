@@ -50,8 +50,8 @@ export function Header() {
   };
 
   return (
-    <div className="sticky top-0 z-50 print:hidden">
-      <header className="relative bg-primary-dark px-6 py-4 flex items-center justify-between">
+    <>
+      <header className="relative bg-primary-dark px-6 py-4 flex items-center justify-between sticky top-0 z-50 print:hidden">
         <Link href={logoHref} className="flex items-center gap-3 min-w-0">
           <Image src="/jenny.jpg" alt="Jenny AI" width={36} height={36} className="h-9 w-9 rounded-full object-cover shrink-0 border border-white/20" />
           <div className="w-[1px] h-5 bg-white/25 mx-1 shrink-0"></div>
@@ -119,15 +119,17 @@ export function Header() {
         )}
       </header>
 
-      {/* Breadcrumb "Admin/<Tên trang>" — thanh riêng, kích thước nhỏ gọn, nằm
-          ngay dưới header thay vì lấn vào tiêu đề chính "Jenny AI". */}
+      {/* Breadcrumb "Admin/<Tên trang>" — chỉ là chữ, không có thanh nền màu
+          riêng; nằm ngay dưới header, cuộn theo nội dung trang (không sticky)
+          thay vì lấn vào tiêu đề chính "Jenny AI". Màu text-muted-light —
+          đúng token thiết kế đang dùng cho chữ meta/caption trong toàn app. */}
       {isAdmin && (
-        <div className="bg-primary-dark/95 border-t border-white/10 px-6 py-1.5">
-          <p className="text-white/70 text-xs sm:text-sm font-semibold tracking-wide truncate">
+        <div className="px-6 pt-2.5 print:hidden">
+          <p className="text-muted-light text-xs sm:text-sm font-semibold tracking-wide truncate">
             Admin/{adminPageLabel ?? ""}
           </p>
         </div>
       )}
-    </div>
+    </>
   );
 }
