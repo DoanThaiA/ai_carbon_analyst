@@ -667,8 +667,10 @@ export function ReportDocument({ report }: { report: Report }) {
         <h1 className="text-center text-[26px] font-bold text-white tracking-[0.3px] leading-tight mb-1">
           TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON
         </h1>
-        <p className="text-center text-[11px] sm:text-[13px] tracking-[0.2em] uppercase text-white/70">
-          Carbon Market Daily News
+        <p className="text-center text-[11px] sm:text-[13px] uppercase text-white/70">
+          {/* letter-spacing cộng thêm khoảng trắng SAU ký tự cuối, khiến chữ nhìn
+              lệch trái khi text-align: center — bù lại bằng -mr bằng đúng tracking. */}
+          <span className="tracking-[0.2em] -mr-[0.2em] inline-block">Carbon Market Daily News</span>
         </p>
       </div>
 

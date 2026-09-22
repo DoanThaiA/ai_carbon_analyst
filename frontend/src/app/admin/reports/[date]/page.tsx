@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -135,12 +135,22 @@ export default function AdminReportReview() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 print:hidden">
         <Link href="/admin/reports" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />
           Quay lại danh sách
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {!isEditing && report.status !== 'generating' && report.status !== 'failed' && (
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border border-border-soft text-body hover:border-primary hover:text-primary-dark transition-colors"
+            >
+              <Download size={14} />
+              Tải PDF
+            </button>
+          )}
+
           <div className={clsx(
             "px-2.5 py-1 text-xs font-mono font-semibold rounded flex items-center gap-2",
             report.status === 'published' ? "bg-tint text-primary-dark border border-primary/20" :
