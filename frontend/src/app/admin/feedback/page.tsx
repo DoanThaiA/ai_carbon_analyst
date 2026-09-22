@@ -72,7 +72,8 @@ export default function AdminFeedbackPage() {
         </div>
       ) : (
         <>
-          <div className="bg-background border border-border rounded-2xl overflow-hidden overflow-x-auto">
+          {/* Bảng đầy đủ — chỉ hiện từ md trở lên. */}
+          <div className="hidden md:block bg-background border border-border rounded-2xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
@@ -102,6 +103,25 @@ export default function AdminFeedbackPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Dạng card — chỉ hiện dưới md. */}
+          <div className="md:hidden space-y-3">
+            {data.items.map((f) => (
+              <div key={f.id} className="bg-background border border-border rounded-2xl p-4 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-label truncate">{f.user_email}</p>
+                    {f.reporter_name && <p className="text-xs text-muted-light">{f.reporter_name}</p>}
+                  </div>
+                  <span className={clsx("shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold", ROLE_BADGE[f.reporter_role])}>
+                    {ROLE_LABEL[f.reporter_role] ?? f.reporter_role}
+                  </span>
+                </div>
+                <p className="text-sm text-body whitespace-pre-wrap">{f.content}</p>
+                <p className="text-xs text-muted-light">{format(new Date(f.created_at), "HH:mm dd/MM/yyyy")}</p>
+              </div>
+            ))}
           </div>
 
           <div className="flex items-center justify-between text-sm text-body">

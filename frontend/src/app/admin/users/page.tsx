@@ -105,42 +105,71 @@ export default function AdminUsersPage() {
           <p className="text-body">Chưa có user nào được cấp quyền.</p>
         </div>
       ) : (
-        <div className="bg-background border border-border rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                <th className="px-4 py-3 font-semibold">Email</th>
-                <th className="px-4 py-3 font-semibold">Ngày thêm</th>
-                <th className="px-4 py-3 font-semibold">Trạng thái</th>
-                <th className="px-4 py-3 font-semibold text-right">Hành động</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {users.map(u => (
-                <tr key={u.id}>
-                  <td className="px-4 py-2.5 font-semibold text-label">{u.email}</td>
-                  <td className="px-4 py-2.5 text-body">{format(new Date(u.created_at), "dd/MM/yyyy")}</td>
-                  <td className="px-4 py-2.5">
-                    <button
-                      onClick={() => handleToggleActive(u)}
-                      className={clsx(
-                        "px-2 py-0.5 rounded-full text-xs font-semibold transition-colors",
-                        u.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
-                      )}
-                    >
-                      {u.is_active ? "Active" : "Tắt"}
-                    </button>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down">
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
+        <>
+          {/* Bảng đầy đủ — chỉ hiện từ md trở lên. */}
+          <div className="hidden md:block bg-background border border-border rounded-2xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
+                  <th className="px-4 py-3 font-semibold">Email</th>
+                  <th className="px-4 py-3 font-semibold">Ngày thêm</th>
+                  <th className="px-4 py-3 font-semibold">Trạng thái</th>
+                  <th className="px-4 py-3 font-semibold text-right">Hành động</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td className="px-4 py-2.5 font-semibold text-label">{u.email}</td>
+                    <td className="px-4 py-2.5 text-body">{format(new Date(u.created_at), "dd/MM/yyyy")}</td>
+                    <td className="px-4 py-2.5">
+                      <button
+                        onClick={() => handleToggleActive(u)}
+                        className={clsx(
+                          "px-2 py-0.5 rounded-full text-xs font-semibold transition-colors",
+                          u.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
+                        )}
+                      >
+                        {u.is_active ? "Active" : "Tắt"}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down">
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Dạng card — chỉ hiện dưới md. */}
+          <div className="md:hidden space-y-3">
+            {users.map(u => (
+              <div key={u.id} className="bg-background border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-label truncate">{u.email}</p>
+                  <p className="text-xs text-muted-light">Thêm ngày {format(new Date(u.created_at), "dd/MM/yyyy")}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => handleToggleActive(u)}
+                    className={clsx(
+                      "px-2 py-0.5 rounded-full text-xs font-semibold transition-colors",
+                      u.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
+                    )}
+                  >
+                    {u.is_active ? "Active" : "Tắt"}
+                  </button>
+                  <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

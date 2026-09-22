@@ -135,12 +135,12 @@ export default function AdminReportReview() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <Link href="/admin/reports" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />
           Quay lại danh sách
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className={clsx(
             "px-2.5 py-1 text-xs font-mono font-semibold rounded flex items-center gap-2",
             report.status === 'published' ? "bg-tint text-primary-dark border border-primary/20" :
@@ -200,9 +200,9 @@ export default function AdminReportReview() {
 
       {isEditing ? (
         <div className="bg-background rounded-2xl border border-border shadow-[var(--shadow-soft)] p-6 mb-10">
-          <div className="flex justify-between items-center mb-4 sticky top-0 z-10 bg-background pb-2">
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-4 sticky top-0 z-10 bg-background pb-2">
             <h3 className="font-bold text-heading">Chỉnh sửa báo cáo</h3>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setIsEditing(false)}
                 className="flex items-center gap-1.5 text-muted-light hover:text-foreground px-3 py-1.5 rounded-md text-sm font-medium transition-colors"

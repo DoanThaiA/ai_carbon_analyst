@@ -99,7 +99,8 @@ export default function AdminChatReviewsPage() {
         </div>
       ) : (
         <>
-          <div className="bg-background border border-border rounded-2xl overflow-hidden overflow-x-auto">
+          {/* Bảng đầy đủ — chỉ hiện từ md trở lên. */}
+          <div className="hidden md:block bg-background border border-border rounded-2xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
@@ -141,6 +142,36 @@ export default function AdminChatReviewsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Dạng card — chỉ hiện dưới md. */}
+          <div className="md:hidden space-y-3">
+            {data.items.map((s: AdminChatSessionSummary) => {
+              const badge = RATING_BADGE[s.rating ?? "none"];
+              return (
+                <Link
+                  key={s.id}
+                  href={`/admin/chat-reviews/${s.id}`}
+                  className="block bg-background border border-border rounded-2xl p-4 space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-label truncate">{s.user_email}</p>
+                      <p className="text-xs text-muted-light">Báo cáo {s.report_date} · {format(new Date(s.updated_at), "HH:mm dd/MM/yyyy")}</p>
+                    </div>
+                    <span className={clsx("shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold", badge.cls)}>
+                      {badge.icon}
+                      {badge.label}
+                    </span>
+                  </div>
+                  {s.quote && <p className="text-sm text-body line-clamp-2 italic">{s.quote}</p>}
+                  {s.rating === "bad" && s.rating_reason && (
+                    <p className="text-[12px] text-muted-light line-clamp-2">{s.rating_reason}</p>
+                  )}
+                  <p className="text-xs text-muted-light">{s.message_count} tin nhắn</p>
+                </Link>
+              );
+            })}
           </div>
 
           <div className="flex items-center justify-between text-sm text-body">

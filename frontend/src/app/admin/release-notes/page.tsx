@@ -95,12 +95,12 @@ export default function ReleaseNotesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Release Note</h2>
           <p className="text-body">Theo dõi yêu cầu khách hàng và kết quả kiểm tra thực tế trên báo cáo</p>
         </div>
-        <button onClick={() => setShowAddForm(v => !v)} className="btn-pill py-2.5">
+        <button onClick={() => setShowAddForm(v => !v)} className="btn-pill py-2.5 shrink-0">
           <Plus size={18} />
           Thêm mục
         </button>
