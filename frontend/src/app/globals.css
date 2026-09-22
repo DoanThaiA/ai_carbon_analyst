@@ -79,6 +79,11 @@ body {
   font-family: Arial, Helvetica, sans-serif !important;
 }
 
+/* Các đoạn văn trong báo cáo căn đều 2 bên (justify) thay vì căn trái mặc định. */
+.report-shell p {
+  text-align: justify;
+}
+
 /* Signature pill button: solid fill, inverts to outline on hover — components.md */
 @layer components {
   .btn-pill {
