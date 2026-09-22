@@ -679,6 +679,13 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       </div>
 
+      {/* Người báo cáo */}
+      <div className="w-full bg-background py-1.5 text-center">
+        <div className="text-[11px] sm:text-[12px] font-bold text-foreground">
+          Người báo cáo: Jenny AI, Phòng CLPT — Stavian Industrial Metal
+        </div>
+      </div>
+
       {/* Ticker — full-bleed edge to edge inside the card */}
       <div className="border-b border-border overflow-hidden whitespace-nowrap bg-surface ticker group">
         <div className="ticker-track">
