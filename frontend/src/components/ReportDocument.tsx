@@ -696,12 +696,22 @@ export function ReportDocument({ report }: { report: Report }) {
       <div className="px-6 sm:px-10 pt-5 pb-10">
 
         {/* 🚨 ĐIỂM NHẤN — đóng khung đỏ nổi bật, đứng đầu tiên của báo cáo
-            (thay cho vị trí "Tóm tắt điều hành" cũ): gộp danh sách yếu tố nổi
-            bật trong ngày (nội dung y hệt "Tóm tắt điều hành" cũ) với Nhận
-            định — kết luận của "Tổng hợp về giá EUA" cũ (dòng "**Tổng
-            hợp:**" cuối Mục 3, xem extractEuaSummary ở trên). */}
+            (thay cho vị trí "Tóm tắt điều hành" cũ): Nhận định — kết luận của
+            "Tổng hợp về giá EUA" cũ (dòng "**Tổng hợp:**" cuối Mục 3, xem
+            extractEuaSummary ở trên) — đứng trước, chỉ lấy nội dung (không có
+            nhãn "Nhận định"), viết hoa toàn bộ, có vạch ngăn cách bên dưới —
+            rồi mới tới danh sách yếu tố nổi bật trong ngày (nội dung y hệt
+            "Tóm tắt điều hành" cũ), các mục không còn vạch ngăn giữa với nhau. */}
         <section className="py-5">
           <FramedHighlight title="🚨 ĐIỂM NHẤN" variant="danger">
+            {euaSummary && (
+              <div className="mb-1.5 pb-2 border-b border-[#7A1E1E]/20">
+                <p className="text-[14.5px] sm:text-[15.5px] leading-[1.3] font-bold text-[#7A1E1E] uppercase text-center sm:text-left">
+                  <RichText text={euaSummary} />
+                </p>
+              </div>
+            )}
+
             <ul className="list-none">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
                 const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
@@ -712,8 +722,8 @@ export function ReportDocument({ report }: { report: Report }) {
                 const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
 
                 return (
-                  <li key={i} className="py-1.5 border-t border-border-soft text-[14.5px] first:border-t-0 first:pt-0">
-                    <p className="text-foreground leading-[1.5]">
+                  <li key={i} className="py-1 text-[14.5px]">
+                    <p className="text-foreground leading-[1.3]">
                       <span className={clsx("font-mono text-[10.5px] border rounded-[3px] px-1 py-px mr-2", tagColorClass(tag.trim()))}>
                         {tag.trim().substring(0, 15)}
                       </span>
@@ -733,15 +743,6 @@ export function ReportDocument({ report }: { report: Report }) {
                 );
               })}
             </ul>
-
-            {euaSummary && (
-              <div className="mt-1.5 pt-2 border-t border-[#7A1E1E]/20">
-                <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-[#7A1E1E] mb-1.5">Nhận định</h4>
-                <p className="text-[14.5px] sm:text-[15.5px] leading-[1.5] font-bold text-[#7A1E1E] text-center sm:text-left">
-                  <RichText text={euaSummary} />
-                </p>
-              </div>
-            )}
           </FramedHighlight>
         </section>
 
