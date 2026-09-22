@@ -68,6 +68,17 @@ body {
   font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
+/* Báo cáo (ReportDocument.tsx, bọc trong .report-shell) LUÔN dùng Arial cho
+   MỌI chữ — kể cả các đoạn đang gắn font-mono (ticker giá, header bảng, badge,
+   nhãn số liệu — vốn cố tình dùng IBM Plex Mono để căn số liệu thẳng hàng).
+   Yêu cầu riêng cho báo cáo, không áp dụng cho phần còn lại của web (admin,
+   trang chủ...) vẫn dùng Inter/IBM Plex Mono như bình thường — nên override
+   bằng 1 rule riêng, không đổi --font-sans/--font-mono dùng chung toàn site. */
+.report-shell,
+.report-shell * {
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
 /* Signature pill button: solid fill, inverts to outline on hover — components.md */
 @layer components {
   .btn-pill {
