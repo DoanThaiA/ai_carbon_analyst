@@ -8,18 +8,28 @@ import { api } from "@/lib/api";
 interface ReleaseNote {
   id: number;
   order_index: number;
+  note_date: string;
   customer_request: string;
   change_description: string;
   test_result: string | null;
   status: "dat" | "chua_dat";
 }
 
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
 const EMPTY_FORM = {
+  note_date: todayStr(),
   customer_request: "",
   change_description: "",
   test_result: "",
   status: "chua_dat" as "dat" | "chua_dat",
 };
+
+// "YYYY-MM-DD" -> "dd/MM/yyyy" cho hiển thị.
+function formatDate(dateStr: string) {
+  const parts = dateStr.split("-");
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
+}
 
 export default function ReleaseNotesPage() {
   const [notes, setNotes] = useState<ReleaseNote[]>([]);
@@ -66,8 +76,9 @@ export default function ReleaseNotesPage() {
   const handleUpdate = async (id: number) => {
     setError("");
     try {
-      const { customer_request, change_description, test_result, status } = editForm;
+      const { note_date, customer_request, change_description, test_result, status } = editForm;
       await api.put(`/api/admin/release-notes/${id}`, {
+        note_date,
         customer_request,
         change_description,
         test_result,
@@ -115,6 +126,7 @@ export default function ReleaseNotesPage() {
 
       {showAddForm && (
         <form onSubmit={handleCreate} className="bg-background border border-border rounded-2xl p-5 space-y-3">
+          <input required type="date" value={form.note_date} onChange={e => setForm({ ...form, note_date: e.target.value })} className={inputCls + " w-48"} />
           <textarea required placeholder="Yêu cầu khách hàng" value={form.customer_request} onChange={e => setForm({ ...form, customer_request: e.target.value })} className={textareaCls} />
           <textarea required placeholder="Nội dung đã chỉnh sửa" value={form.change_description} onChange={e => setForm({ ...form, change_description: e.target.value })} className={textareaCls} />
           <textarea placeholder="Kết quả kiểm tra thực tế trên báo cáo" value={form.test_result} onChange={e => setForm({ ...form, test_result: e.target.value })} className={textareaCls} />
@@ -140,7 +152,7 @@ export default function ReleaseNotesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold w-12">STT</th>
+                  <th className="px-4 py-3 font-semibold w-28">Ngày</th>
                   <th className="px-4 py-3 font-semibold">Yêu cầu khách hàng</th>
                   <th className="px-4 py-3 font-semibold">Nội dung đã chỉnh sửa</th>
                   <th className="px-4 py-3 font-semibold">Kết quả kiểm tra thực tế</th>
@@ -149,11 +161,17 @@ export default function ReleaseNotesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {notes.map((n, idx) => {
+                {notes.map((n) => {
                   const isEditing = editingId === n.id;
                   return (
                     <tr key={n.id} className="align-top">
-                      <td className="px-4 py-2.5 text-muted-light">{idx + 1}</td>
+                      <td className="px-4 py-2.5 text-muted-light whitespace-nowrap">
+                        {isEditing ? (
+                          <input type="date" value={editForm.note_date} onChange={e => setEditForm({ ...editForm, note_date: e.target.value })} className={inputCls} />
+                        ) : (
+                          formatDate(n.note_date)
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 whitespace-pre-wrap">
                         {isEditing ? <textarea value={editForm.customer_request} onChange={e => setEditForm({ ...editForm, customer_request: e.target.value })} className={textareaCls} /> : n.customer_request}
                       </td>
@@ -204,12 +222,16 @@ export default function ReleaseNotesPage() {
           {/* Dạng card — chỉ hiện dưới md, mỗi mục xếp dọc theo từng trường thay
               vì bảng nhiều cột, tránh phải kéo ngang trên màn hình hẹp. */}
           <div className="md:hidden space-y-3">
-            {notes.map((n, idx) => {
+            {notes.map((n) => {
               const isEditing = editingId === n.id;
               return (
                 <div key={n.id} className="bg-background border border-border rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-light">#{idx + 1}</span>
+                    {isEditing ? (
+                      <input type="date" value={editForm.note_date} onChange={e => setEditForm({ ...editForm, note_date: e.target.value })} className={inputCls + " w-40"} />
+                    ) : (
+                      <span className="text-xs font-semibold text-muted-light">{formatDate(n.note_date)}</span>
+                    )}
                     <div className="flex items-center gap-2">
                       {isEditing ? (
                         <>

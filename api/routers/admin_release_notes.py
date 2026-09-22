@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -14,6 +16,7 @@ router = APIRouter(
 
 
 class ReleaseNoteIn(BaseModel):
+    note_date: date
     customer_request: str
     change_description: str
     test_result: str | None = None
@@ -28,6 +31,7 @@ def _serialize(row: ReleaseNote) -> dict:
     return {
         "id": row.id,
         "order_index": row.order_index,
+        "note_date": row.note_date,
         "customer_request": row.customer_request,
         "change_description": row.change_description,
         "test_result": row.test_result,
@@ -41,7 +45,8 @@ def _serialize(row: ReleaseNote) -> dict:
 async def list_release_notes(session: AsyncSession = Depends(get_db)):
     rows = (
         await session.execute(
-            select(ReleaseNote).order_by(ReleaseNote.order_index, ReleaseNote.id)
+            # Mới nhất lên đầu — note_date thay cho STT/order_index cũ.
+            select(ReleaseNote).order_by(ReleaseNote.note_date.desc(), ReleaseNote.id.desc())
         )
     ).scalars().all()
     return [_serialize(r) for r in rows]

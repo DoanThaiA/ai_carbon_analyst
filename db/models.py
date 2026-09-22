@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 
 from pgvector.sqlalchemy import Vector
@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Computed,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -398,9 +399,9 @@ class ReleaseNote(Base):
     """1 dòng = 1 mục trong bảng theo dõi yêu cầu khách hàng / release note,
     hiển thị ở /admin/release-notes — admin CRUD trực tiếp qua
     /api/admin/release-notes (xem api/routers/admin_release_notes.py).
-    order_index quyết định thứ tự hiển thị (cột STT ở UI là số thứ tự tính từ
-    order_index, không lưu cứng trong DB để tránh phải renumber khi xoá/chèn
-    giữa bảng)."""
+    UI sort theo note_date giảm dần (mới nhất lên đầu) — thay cho cột STT cũ
+    dựa trên order_index (cột order_index vẫn giữ lại trong schema nhưng
+    không còn dùng để quyết định thứ tự hiển thị)."""
 
     __tablename__ = "release_notes"
     __table_args__ = (
@@ -409,6 +410,7 @@ class ReleaseNote(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    note_date: Mapped[date] = mapped_column(Date, nullable=False, server_default=func.current_date())  # NGÀY — thay cho cột STT, dùng để sort mới nhất lên đầu
     customer_request: Mapped[str] = mapped_column(Text, nullable=False)  # YÊU CẦU KHÁCH HÀNG
     change_description: Mapped[str] = mapped_column(Text, nullable=False)  # NỘI DUNG ĐÃ CHỈNH SỬA
     test_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # KẾT QUẢ KIỂM TRA THỰC TẾ TRÊN BÁO CÁO
