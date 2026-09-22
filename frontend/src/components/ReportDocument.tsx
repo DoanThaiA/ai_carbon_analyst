@@ -669,11 +669,11 @@ export function ReportDocument({ report }: { report: Report }) {
             Industrial Metal
           </span>
         </div>
-        {/* Tiêu đề chính */}
-        <h1 className="text-[22px] sm:text-[28px] md:text-[32px] font-extrabold italic tracking-tight leading-tight mb-1">
+        {/* Tiêu đề chính — chữ thẳng (không italic), căn giữa, 26px/bold/trắng theo yêu cầu */}
+        <h1 className="text-center text-[26px] font-bold text-white tracking-[0.3px] leading-tight mb-1">
           TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON
         </h1>
-        <p className="text-[11px] sm:text-[13px] tracking-[0.2em] uppercase text-white/70">
+        <p className="text-center text-[11px] sm:text-[13px] tracking-[0.2em] uppercase text-white/70">
           Carbon Market Daily News
         </p>
       </div>
