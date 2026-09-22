@@ -150,10 +150,11 @@ function extractEuaSummary(blocks: any[] | undefined): { cleanedBlocks: any[]; s
 }
 
 // Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung: rút NGUYÊN block có
-// heading "Cần theo dõi" ra khỏi analysis_blocks của Mục 3 để hiển thị dưới
-// "Lịch sự kiện 7 ngày tới" (Mục 8) thay vì trong Mục 3 — nội dung watchpoint
-// do backend sinh giữ nguyên (vẫn liệt kê "1.", "2."... không có ngày giờ cụ
-// thể vì đây không phải sự kiện có lịch, chỉ là điểm cần theo dõi).
+// heading "Cần theo dõi" ra khỏi analysis_blocks của Mục 3 để hiển thị thành
+// mục riêng, đứng giữa "Kịch bản chiến lược" và "Gợi ý kinh doanh & giải pháp
+// cho SIM" thay vì trong Mục 3 — nội dung watchpoint do backend sinh giữ
+// nguyên (vẫn liệt kê "1.", "2."... không có ngày giờ cụ thể vì đây không
+// phải sự kiện có lịch, chỉ là điểm cần theo dõi).
 function extractWatchpoints(blocks: any[] | undefined): { cleanedBlocks: any[]; watchpoints: string | null } {
   if (!blocks || blocks.length === 0) return { cleanedBlocks: blocks || [], watchpoints: null };
   const watchBlock = blocks.find((b: any) => b.heading === "Cần theo dõi");
@@ -181,7 +182,7 @@ function ConclusionAware({ text, className }: { text: string; className?: string
     <div className="space-y-1.5">
       {before && <p className={className}><RichText text={before} /></p>}
       <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
-        <p className="text-[13.5px] leading-[1.55] font-bold text-primary-dark">
+        <p className="text-[13.5px] leading-[1.5] font-bold text-primary-dark">
           <RichText text={highlight} />
         </p>
       </div>
@@ -217,7 +218,7 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
         <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary-dark text-white shrink-0 shadow-[0_2px_10px_rgba(15,95,90,0.28)]">
           <Icon size={19} strokeWidth={2.25} />
         </span>
-        <div className="text-[17px] sm:text-[20px] font-extrabold uppercase tracking-tight text-primary-dark leading-tight">
+        <div className="text-[17px] sm:text-[20px] font-extrabold uppercase tracking-tight text-primary-dark leading-[1.3]">
           {label}
         </div>
       </div>
@@ -313,7 +314,7 @@ function EventTimeline({ events }: { events: any[] }) {
         return (
           <div key={i} className="flex gap-3 sm:gap-4">
             <div className="w-[52px] sm:w-[60px] shrink-0 flex items-center justify-center rounded-lg border border-border bg-tint/50 py-1.5 mt-0.5">
-              <span className="font-mono text-[11px] font-bold text-primary-dark leading-none">{ev.datetime_vn || "—"}</span>
+              <span className="font-mono text-[11px] font-bold text-primary-dark leading-[1.3]">{ev.datetime_vn || "—"}</span>
             </div>
             <div className="flex flex-col items-center shrink-0">
               <span className={clsx("w-2.5 h-2.5 rounded-full border-2 bg-background mt-3.5 shrink-0", impactDot)} />
@@ -321,7 +322,7 @@ function EventTimeline({ events }: { events: any[] }) {
             </div>
             <div className={clsx("flex-1 min-w-0", !isLast && "pb-4")}>
               <div className="flex items-start justify-between gap-3 pt-1">
-                <span className="text-[13.5px] text-foreground leading-snug">{ev.event}</span>
+                <span className="text-[13.5px] text-foreground leading-[1.3]">{ev.event}</span>
                 <span className={clsx(
                   "shrink-0 font-mono text-[10px] uppercase px-1.5 py-0.5 rounded border",
                   ev.impact === "Cao" ? "text-down border-down/30 bg-red-50" :
@@ -330,7 +331,7 @@ function EventTimeline({ events }: { events: any[] }) {
                 )}>{ev.impact}</span>
               </div>
               {ev.outcome && (
-                <p className="mt-1.5 text-[12.5px] leading-[1.55] text-body italic">
+                <p className="mt-1.5 text-[12.5px] leading-[1.5] text-body italic">
                   <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
                 </p>
               )}
@@ -389,7 +390,7 @@ function BizRecommendationTable({
                   {columns.map((col, i) => (
                     <td
                       key={col.key}
-                      className={clsx("px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-[1.55] break-words", i < columns.length - 1 && "border-r border-border")}
+                      className={clsx("px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-[1.5] break-words", i < columns.length - 1 && "border-r border-border")}
                     >
                       <RichText text={row[col.key] || ""} />
                     </td>
@@ -559,8 +560,8 @@ export function ReportDocument({ report }: { report: Report }) {
   // tích để đưa lên đầu báo cáo, làm phần "Nhận định" trong khối "🚨 ĐIỂM
   // NHẤN" gộp chung với "Tóm tắt điều hành" cũ — xem extractEuaSummary ở trên.
   const { cleanedBlocks: blocksAfterSummary, summary: euaSummary } = extractEuaSummary(report.content["3"]?.analysis_blocks);
-  // "Cần theo dõi" giờ hiển thị ở Mục 8 (Lịch sự kiện 7 ngày tới) — xem
-  // extractWatchpoints ở trên.
+  // "Cần theo dõi" giờ hiển thị thành mục riêng, giữa "Kịch bản chiến lược" và
+  // "Gợi ý kinh doanh & giải pháp cho SIM" — xem extractWatchpoints ở trên.
   const { cleanedBlocks: analysisBlocks, watchpoints } = extractWatchpoints(blocksAfterSummary);
   const hasMarketDrivers =
     report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0;
@@ -591,7 +592,6 @@ export function ReportDocument({ report }: { report: Report }) {
       value: todaySignal ? (
         <span className={TREND_META[todaySignal.direction]?.className}>
           {TREND_META[todaySignal.direction]?.arrow} {TREND_META[todaySignal.direction]?.label}
-          {todaySignal.condition && <> — <RichText text={todaySignal.condition} /></>}
         </span>
       ) : NO_DATA,
     },
@@ -600,7 +600,6 @@ export function ReportDocument({ report }: { report: Report }) {
       value: midTermSignal ? (
         <span className={TREND_META[midTermSignal.direction]?.className}>
           {TREND_META[midTermSignal.direction]?.arrow} {TREND_META[midTermSignal.direction]?.label}
-          {midTermSignal.condition && <> — <RichText text={midTermSignal.condition} /></>}
         </span>
       ) : NO_DATA,
     },
@@ -638,7 +637,7 @@ export function ReportDocument({ report }: { report: Report }) {
     // thật (căn giữa, có viền/bóng đổ), thay vì kéo giãn hết chiều ngang trình
     // duyệt. Khi in (@media print trong globals.css), khổ A4 thật (@page) luôn
     // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
-    <div className="report-shell max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-[1.55] rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
+    <div className="report-shell max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-[1.5] rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
       {/* Thanh ngày — đứng đầu báo cáo, sát header (đã bỏ banner Stavian/tiêu đề
           phía trên nó). */}
@@ -681,8 +680,8 @@ export function ReportDocument({ report }: { report: Report }) {
                 const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
 
                 return (
-                  <li key={i} className="py-2.5 border-t border-border-soft text-[14.5px] first:border-t-0 first:pt-0">
-                    <p className="text-foreground leading-[1.55]">
+                  <li key={i} className="py-1.5 border-t border-border-soft text-[14.5px] first:border-t-0 first:pt-0">
+                    <p className="text-foreground leading-[1.5]">
                       <span className={clsx("font-mono text-[10.5px] border rounded-[3px] px-1 py-px mr-2", tagColorClass(tag.trim()))}>
                         {tag.trim().substring(0, 15)}
                       </span>
@@ -706,7 +705,7 @@ export function ReportDocument({ report }: { report: Report }) {
             {euaSummary && (
               <div className="mt-4 pt-3 border-t border-[#7A1E1E]/20">
                 <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-[#7A1E1E] mb-1.5">Nhận định</h4>
-                <p className="text-[14.5px] sm:text-[15.5px] leading-[1.55] font-bold text-[#7A1E1E] text-center sm:text-left">
+                <p className="text-[14.5px] sm:text-[15.5px] leading-[1.5] font-bold text-[#7A1E1E] text-center sm:text-left">
                   <RichText text={euaSummary} />
                 </p>
               </div>
@@ -737,7 +736,7 @@ export function ReportDocument({ report }: { report: Report }) {
             {report.content["2"]?.key_facts && (
               <div className="lg:flex-1 lg:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
                 <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
-                <div className="space-y-1 text-[13px] leading-snug text-body">
+                <div className="space-y-1 text-[13px] leading-[1.3] text-body">
                   {report.content["2"].key_facts
                     .split(/(?<=\.)\s+/)
                     .filter((s: string) => s.trim())
@@ -787,12 +786,12 @@ export function ReportDocument({ report }: { report: Report }) {
                           )}
                         </td>
                         <td className="px-1.5 sm:px-2 py-1.5 border-r border-border text-center">
-                          <div className="flex flex-col items-center leading-tight">
+                          <div className="flex flex-col items-center leading-[1.3]">
                             <span className="break-words tabular-nums">{priceNumber}</span>
                             {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
                           </div>
                         </td>
-                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[12px] leading-[1.55] text-body">
+                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[12px] leading-[1.5] text-body">
                           {(r.dday !== "-" || r.dweek !== "-") && (
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] mb-1">
                               {r.dday !== "-" && (
@@ -832,13 +831,13 @@ export function ReportDocument({ report }: { report: Report }) {
                 <div className="space-y-3.5">
                   <div>
                     <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-primary-dark mb-1">Hành động</h4>
-                    <p className="text-[14.5px] leading-[1.6] font-bold text-label">
+                    <p className="text-[14.5px] leading-[1.5] font-bold text-label">
                       {todaySignal.trading_strategy ? <RichText text={todaySignal.trading_strategy} /> : <span className="text-muted-light font-normal">—</span>}
                     </p>
                   </div>
                   <div>
                     <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-primary-dark mb-1">Cơ sở</h4>
-                    <p className="text-[13.5px] leading-[1.55] text-body">
+                    <p className="text-[13.5px] leading-[1.5] text-body">
                       {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light">—</span>}
                     </p>
                   </div>
@@ -875,8 +874,8 @@ export function ReportDocument({ report }: { report: Report }) {
                 <tbody className="divide-y divide-border">
                   {quickSignalRows.map((row, i) => (
                     <tr key={i} className="align-top even:bg-surface/60">
-                      <td className="px-3 py-2.5 border-r border-border font-sans font-semibold text-label">{row.label}</td>
-                      <td className="px-3 py-2.5 leading-[1.55] text-body">{row.value}</td>
+                      <td className="px-3 py-1.5 border-r border-border font-sans font-semibold text-label">{row.label}</td>
+                      <td className="px-3 py-1.5 leading-[1.5] text-body">{row.value}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -898,7 +897,7 @@ export function ReportDocument({ report }: { report: Report }) {
                     {report.content["2"].market_drivers.bullish?.length > 0 ? (
                       report.content["2"].market_drivers.bullish.map((d: any, i: number) => (
                         <div key={i}>
-                          <p className="text-[13px] leading-[1.55] text-body">
+                          <p className="text-[13px] leading-[1.5] text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
                               d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
@@ -930,7 +929,7 @@ export function ReportDocument({ report }: { report: Report }) {
                     {report.content["2"].market_drivers.bearish?.length > 0 ? (
                       report.content["2"].market_drivers.bearish.map((d: any, i: number) => (
                         <div key={i}>
-                          <p className="text-[13px] leading-[1.55] text-body">
+                          <p className="text-[13px] leading-[1.5] text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
                               d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
@@ -995,7 +994,7 @@ export function ReportDocument({ report }: { report: Report }) {
                           if (block.heading === "Phân tích" && GROUP_HEADLINE_PREFIXES.some((p) => trimmed.startsWith(p))) {
                             return (
                               <div key={j} className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
-                                <p className="text-[14px] leading-[1.55] font-bold text-primary-dark">
+                                <p className="text-[14px] leading-[1.5] font-bold text-primary-dark">
                                   <RichText text={trimmed} />
                                 </p>
                               </div>
@@ -1003,13 +1002,13 @@ export function ReportDocument({ report }: { report: Report }) {
                           }
                           const dashMatch = trimmed.match(/^[-–—]\s+/);
                           if (!dashMatch) {
-                            return <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.55] text-body" />;
+                            return <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.5] text-body" />;
                           }
                           return (
                             <div key={j} className="flex gap-2.5">
                               <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-black shrink-0" aria-hidden="true" />
                               <div className="flex-1 min-w-0">
-                                <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-[14px] leading-[1.55] text-body" />
+                                <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-[14px] leading-[1.5] text-body" />
                               </div>
                             </div>
                           );
@@ -1024,22 +1023,22 @@ export function ReportDocument({ report }: { report: Report }) {
                       {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
                         <div className="space-y-2.5 mb-1">
                           {report.content["3"].correlation_analysis.gas_comment && (
-                            <p className="text-[13.5px] leading-[1.55] text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
+                            <p className="text-[13.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
                           )}
                           {report.content["3"].correlation_analysis.coal_comment && (
-                            <p className="text-[13.5px] leading-[1.55] text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
+                            <p className="text-[13.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
                           )}
                           {report.content["3"].correlation_analysis.power_comment && (
-                            <p className="text-[13.5px] leading-[1.55] text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
+                            <p className="text-[13.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
                           )}
                         </div>
                       )}
                       <ConclusionAware
                         text={report.content["3"].correlation_analysis.fuel_switching_chain || report.content["3"].correlation_analysis.gas_coal_power}
-                        className="text-[14px] leading-[1.55] text-body"
+                        className="text-[14px] leading-[1.5] text-body"
                       />
                       <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
-                        <p className="text-[14px] leading-[1.55] font-bold text-primary-dark">
+                        <p className="text-[14px] leading-[1.5] font-bold text-primary-dark">
                           <RichText text={report.content["3"].correlation_analysis.eua_conclusion} />
                         </p>
                       </div>
@@ -1132,7 +1131,7 @@ export function ReportDocument({ report }: { report: Report }) {
                                   {RowIcon && <RowIcon size={12} className="shrink-0" />}
                                   {row.label}
                                 </div>
-                                <div className="text-[13px] text-body leading-[1.55]">
+                                <div className="text-[13px] text-body leading-[1.5]">
                                   {sc ? row.render(sc) : <span className="text-muted-light">—</span>}
                                 </div>
                               </div>
@@ -1185,7 +1184,7 @@ export function ReportDocument({ report }: { report: Report }) {
                             </td>
                             {columns.map(h => (
                               <td key={h} className={clsx(
-                                "px-2 sm:px-3 py-2.5 sm:py-3 leading-[1.55] break-words",
+                                "px-2 sm:px-3 py-2.5 sm:py-3 leading-[1.5] break-words",
                                 row.highlight ? "text-label border-l border-primary/10" : "text-body"
                               )}>
                                 {byHorizon[h] ? row.render(byHorizon[h]) : <span className="text-muted-light">—</span>}
@@ -1201,7 +1200,7 @@ export function ReportDocument({ report }: { report: Report }) {
                 {/* Lưu ý — chỉ mang tính tham khảo, không phải khuyến nghị đầu tư trực tiếp. */}
                 <div className="mt-3 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn-tint px-3 py-2.5">
                   <Info size={15} className="text-warn shrink-0 mt-0.5" />
-                  <p className="text-[12.5px] leading-[1.55] text-body">
+                  <p className="text-[12.5px] leading-[1.5] text-body">
                     <b className="text-label">Lưu ý:</b> Đây là các chiến lược dựa trên phân tích của Jenny, chỉ mang tính chất tham khảo.
                     Người đọc cần xem xét kỹ, đối chiếu với bối cảnh thực tế và khẩu vị rủi ro của mình trước khi ra quyết định —
                     không phải khuyến nghị đầu tư/giao dịch trực tiếp.
@@ -1210,6 +1209,48 @@ export function ReportDocument({ report }: { report: Report }) {
               </div>
             );
           })()}
+
+          {/* Cần theo dõi — tách khỏi Mục 3/8, đứng giữa "Kịch bản chiến lược" và
+              "Gợi ý kinh doanh & giải pháp cho SIM" (theo yêu cầu bố cục báo cáo). */}
+          {watchpoints && (
+            <div className="mb-6">
+              <SubHeading>Cần theo dõi</SubHeading>
+              <div className="space-y-1.5">
+                {watchpoints.split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
+                  <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.5] text-body" />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Gợi ý kinh doanh & giải pháp cho SIM */}
+          {report.content["biz"] && (
+            <div className="mb-6">
+              <SubHeading>{report.content["biz"].title}</SubHeading>
+              <div className="flex flex-col gap-6">
+                <BizRecommendationTable
+                  heading="Ngắn hạn"
+                  accent="text-label"
+                  rows={report.content["biz"].short_term}
+                  columns={[
+                    { key: "trigger", label: "Tình huống kích hoạt" },
+                    { key: "action", label: "Hành động đề xuất" },
+                    { key: "reason", label: "Lý do" },
+                  ]}
+                />
+                <BizRecommendationTable
+                  heading="Dài hạn"
+                  accent="text-primary"
+                  rows={report.content["biz"].long_term}
+                  columns={[
+                    { key: "opportunity", label: "Cơ hội" },
+                    { key: "solution", label: "Giải pháp đề xuất" },
+                    { key: "expectation", label: "Kỳ vọng" },
+                  ]}
+                />
+              </div>
+            </div>
+          )}
 
           {/* SECTION 4 (text/bullets) — Cập nhật tín chỉ carbon & CBAM */}
           {["4"].map(key => {
@@ -1227,7 +1268,7 @@ export function ReportDocument({ report }: { report: Report }) {
                       const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
                       return (
                         <div>
-                          <ConclusionAware text={b} className="text-[14px] leading-[1.55] text-body" />
+                          <ConclusionAware text={b} className="text-[14px] leading-[1.5] text-body" />
                           {sourceName && (
                             <a
                               href={sourceUrl}
@@ -1243,7 +1284,7 @@ export function ReportDocument({ report }: { report: Report }) {
                     }}
                   />
                 ) : (
-                  <ConclusionAware text={section.text} className="text-[14px] leading-[1.55] text-body" />
+                  <ConclusionAware text={section.text} className="text-[14px] leading-[1.5] text-body" />
                 )}
               </div>
             );
@@ -1251,7 +1292,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
           {/* Lịch sự kiện 7 ngày tới */}
           {report.content["8"] && (
-            <div className="mb-6">
+            <div className="mb-2">
               <SubHeading>{report.content["8"].title}</SubHeading>
               {report.content["8"].events?.length > 0 ? (() => {
                 // Tách rõ 2 nhóm thay vì 1 timeline gộp lẫn lộn: sự kiện ĐÃ có "outcome"
@@ -1289,49 +1330,9 @@ export function ReportDocument({ report }: { report: Report }) {
                 );
               })() : (
                 report.content["8"].bullets?.map((b: string, i: number) => (
-                  <p key={i} className="text-[14px] leading-[1.55] text-body"><RichText text={b} /></p>
+                  <p key={i} className="text-[14px] leading-[1.5] text-body"><RichText text={b} /></p>
                 ))
               )}
-
-              {watchpoints && (
-                <div className={clsx((report.content["8"].events?.length > 0 || report.content["8"].bullets?.length > 0) && "mt-5")}>
-                  <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Cần theo dõi</h4>
-                  <div className="space-y-1.5">
-                    {watchpoints.split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
-                      <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.55] text-body" />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Gợi ý kinh doanh & giải pháp cho SIM */}
-          {report.content["biz"] && (
-            <div className="mb-2">
-              <SubHeading>{report.content["biz"].title}</SubHeading>
-              <div className="flex flex-col gap-6">
-                <BizRecommendationTable
-                  heading="Ngắn hạn"
-                  accent="text-label"
-                  rows={report.content["biz"].short_term}
-                  columns={[
-                    { key: "trigger", label: "Tình huống kích hoạt" },
-                    { key: "action", label: "Hành động đề xuất" },
-                    { key: "reason", label: "Lý do" },
-                  ]}
-                />
-                <BizRecommendationTable
-                  heading="Dài hạn"
-                  accent="text-primary"
-                  rows={report.content["biz"].long_term}
-                  columns={[
-                    { key: "opportunity", label: "Cơ hội" },
-                    { key: "solution", label: "Giải pháp đề xuất" },
-                    { key: "expectation", label: "Kỳ vọng" },
-                  ]}
-                />
-              </div>
             </div>
           )}
         </section>
@@ -1353,7 +1354,7 @@ export function ReportDocument({ report }: { report: Report }) {
                       {items.map((art: any, i: number) => (
                         <div key={i} className="pb-4 border-b border-border-soft last:border-b-0 last:pb-0">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <p className="text-[14px] font-semibold text-label leading-snug">{i + 1}. {art.title}</p>
+                            <p className="text-[14px] font-semibold text-label leading-[1.3]">{i + 1}. {art.title}</p>
                             {art.topics?.map((topic: string, ti: number) => (
                               <span
                                 key={ti}
@@ -1366,7 +1367,7 @@ export function ReportDocument({ report }: { report: Report }) {
                               </span>
                             ))}
                           </div>
-                          <p className="mt-1 text-[13.5px] leading-[1.55] text-body"><RichText text={art.summary} /></p>
+                          <p className="mt-1 text-[13.5px] leading-[1.5] text-body"><RichText text={art.summary} /></p>
                           <a
                             href={art.url}
                             target="_blank"
@@ -1394,7 +1395,7 @@ export function ReportDocument({ report }: { report: Report }) {
             {report.content["9"].items?.length > 0 ? (
               <ul className="space-y-1.5">
                 {report.content["9"].items.map((it: any, i: number) => (
-                  <li key={i} className="font-mono text-[12px] leading-[1.6] text-muted-light">
+                  <li key={i} className="font-mono text-[12px] leading-[1.5] text-muted-light">
                     [{it.source}]{" "}
                     <a
                       href={it.url}
