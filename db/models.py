@@ -414,6 +414,11 @@ class ReleaseNote(Base):
     customer_request: Mapped[str] = mapped_column(Text, nullable=False)  # YÊU CẦU KHÁCH HÀNG
     change_description: Mapped[str] = mapped_column(Text, nullable=False)  # NỘI DUNG ĐÃ CHỈNH SỬA
     test_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # KẾT QUẢ KIỂM TRA THỰC TẾ TRÊN BÁO CÁO
+    # Ảnh minh chứng cho "Kết quả kiểm tra thực tế" — mảng [{file_name, file_key,
+    # media_type}], cùng dạng dữ liệu với ChatMessage.attachments (xem
+    # services/minio_service.py + schemas/chat_models.py::Attachment). NULL nếu
+    # không đính kèm ảnh nào.
+    evidence_images: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="chua_dat")  # KẾT LUẬN: 'dat' | 'chua_dat'
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

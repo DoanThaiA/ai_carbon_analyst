@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_admin, get_db
 from db.models import ReleaseNote
+from schemas.chat_models import Attachment
 
 router = APIRouter(
     prefix="/api/admin/release-notes",
@@ -20,6 +21,10 @@ class ReleaseNoteIn(BaseModel):
     customer_request: str
     change_description: str
     test_result: str | None = None
+    # Ảnh minh chứng cho "Kết quả kiểm tra thực tế" — cùng shape với file đính
+    # kèm Quote Chat (đã upload lên MinIO qua /api/upload/presigned-url, xem
+    # frontend/src/lib/minioUpload.ts), FE chỉ gửi lại file_key.
+    evidence_images: list[Attachment] | None = None
     status: str = Field(default="chua_dat", pattern="^(dat|chua_dat)$")
 
 
@@ -35,6 +40,7 @@ def _serialize(row: ReleaseNote) -> dict:
         "customer_request": row.customer_request,
         "change_description": row.change_description,
         "test_result": row.test_result,
+        "evidence_images": row.evidence_images,
         "status": row.status,
         "created_at": row.created_at,
         "updated_at": row.updated_at,

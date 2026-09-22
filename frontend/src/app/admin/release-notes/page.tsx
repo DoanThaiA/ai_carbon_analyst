@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Save, X, AlertCircle, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, X, AlertCircle, CheckCircle2, XCircle, ImagePlus, Loader2 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
+import type { Attachment } from "@/lib/types";
+import { uploadFileToMinIO, validateFile } from "@/lib/minioUpload";
+import { AttachmentBadge } from "@/components/AttachmentBadge";
+
+const MAX_EVIDENCE_IMAGES = 3;
 
 interface ReleaseNote {
   id: number;
@@ -12,6 +17,7 @@ interface ReleaseNote {
   customer_request: string;
   change_description: string;
   test_result: string | null;
+  evidence_images: Attachment[] | null;
   status: "dat" | "chua_dat";
 }
 
@@ -22,6 +28,7 @@ const EMPTY_FORM = {
   customer_request: "",
   change_description: "",
   test_result: "",
+  evidence_images: [] as Attachment[],
   status: "chua_dat" as "dat" | "chua_dat",
 };
 
@@ -31,14 +38,118 @@ function formatDate(dateStr: string) {
   return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
 }
 
+/** Upload từng ảnh đã chọn lên MinIO (tối đa MAX_EVIDENCE_IMAGES ảnh/mục),
+ * nối vào mảng ảnh hiện có — dùng chung cho form Thêm mục và form Sửa. */
+async function uploadEvidenceImages(
+  files: FileList,
+  existing: Attachment[],
+  onChange: (next: Attachment[]) => void,
+  onError: (msg: string) => void,
+  onUploadingChange: (uploading: boolean) => void,
+) {
+  const selected = Array.from(files);
+  if (existing.length + selected.length > MAX_EVIDENCE_IMAGES) {
+    onError(`Chỉ được đính kèm tối đa ${MAX_EVIDENCE_IMAGES} ảnh minh chứng cho 1 mục.`);
+    return;
+  }
+  onError("");
+  onUploadingChange(true);
+  const next = [...existing];
+  for (const file of selected) {
+    if (!file.type.startsWith("image/")) {
+      onError(`"${file.name}": chỉ nhận file ảnh (JPEG/PNG/WEBP).`);
+      continue;
+    }
+    const invalid = validateFile(file);
+    if (invalid) {
+      onError(invalid);
+      continue;
+    }
+    try {
+      next.push(await uploadFileToMinIO(file));
+    } catch (err: any) {
+      onError(err?.message || `Upload "${file.name}" thất bại.`);
+    }
+  }
+  onChange(next);
+  onUploadingChange(false);
+}
+
+/** Lưới thumbnail ảnh minh chứng — dùng chung cho form Thêm mục & Sửa
+ * (có nút xoá từng ảnh) và cho khối "Kết quả kiểm tra thực tế" chỉ-xem. */
+function EvidenceImagesField({
+  images,
+  editable,
+  uploading,
+  error,
+  onChange,
+  onError,
+  onUploadingChange,
+}: {
+  images: Attachment[];
+  editable: boolean;
+  uploading?: boolean;
+  error?: string;
+  onChange?: (next: Attachment[]) => void;
+  onError?: (msg: string) => void;
+  onUploadingChange?: (uploading: boolean) => void;
+}) {
+  if (!editable && images.length === 0) return null;
+
+  return (
+    <div className="mt-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        {images.map((img, i) => (
+          <div key={img.file_key} className="relative">
+            <AttachmentBadge attachment={img} />
+            {editable && (
+              <button
+                type="button"
+                onClick={() => onChange?.(images.filter((_, j) => j !== i))}
+                className="absolute -top-1.5 -right-1.5 bg-background border border-border rounded-full p-0.5 text-muted-light hover:text-down"
+                aria-label="Xoá ảnh"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        ))}
+        {editable && images.length < MAX_EVIDENCE_IMAGES && (
+          <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-border-soft text-xs text-muted-light cursor-pointer hover:border-primary hover:text-primary-dark transition-colors">
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+            Đính kèm ảnh minh chứng
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              className="hidden"
+              disabled={uploading}
+              onChange={async (e) => {
+                if (!e.target.files?.length || !onChange || !onError || !onUploadingChange) return;
+                await uploadEvidenceImages(e.target.files, images, onChange, onError, onUploadingChange);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
+      </div>
+      {error && <p className="text-[11px] text-down mt-1">{error}</p>}
+    </div>
+  );
+}
+
 export default function ReleaseNotesPage() {
   const [notes, setNotes] = useState<ReleaseNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [formImageError, setFormImageError] = useState("");
+  const [formImageUploading, setFormImageUploading] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<ReleaseNote>>({});
+  const [editImageError, setEditImageError] = useState("");
+  const [editImageUploading, setEditImageUploading] = useState(false);
 
   const fetchNotes = async () => {
     try {
@@ -61,6 +172,7 @@ export default function ReleaseNotesPage() {
     try {
       await api.post("/api/admin/release-notes", form);
       setForm(EMPTY_FORM);
+      setFormImageError("");
       setShowAddForm(false);
       await fetchNotes();
     } catch (err: any) {
@@ -70,18 +182,20 @@ export default function ReleaseNotesPage() {
 
   const startEdit = (n: ReleaseNote) => {
     setEditingId(n.id);
-    setEditForm(n);
+    setEditForm({ ...n, evidence_images: n.evidence_images ?? [] });
+    setEditImageError("");
   };
 
   const handleUpdate = async (id: number) => {
     setError("");
     try {
-      const { note_date, customer_request, change_description, test_result, status } = editForm;
+      const { note_date, customer_request, change_description, test_result, evidence_images, status } = editForm;
       await api.put(`/api/admin/release-notes/${id}`, {
         note_date,
         customer_request,
         change_description,
         test_result,
+        evidence_images,
         status,
       });
       setEditingId(null);
@@ -130,6 +244,15 @@ export default function ReleaseNotesPage() {
           <textarea required placeholder="Yêu cầu khách hàng" value={form.customer_request} onChange={e => setForm({ ...form, customer_request: e.target.value })} className={textareaCls} />
           <textarea required placeholder="Nội dung đã chỉnh sửa" value={form.change_description} onChange={e => setForm({ ...form, change_description: e.target.value })} className={textareaCls} />
           <textarea placeholder="Kết quả kiểm tra thực tế trên báo cáo" value={form.test_result} onChange={e => setForm({ ...form, test_result: e.target.value })} className={textareaCls} />
+          <EvidenceImagesField
+            images={form.evidence_images}
+            editable
+            uploading={formImageUploading}
+            error={formImageError}
+            onChange={(imgs) => setForm(f => ({ ...f, evidence_images: imgs }))}
+            onError={setFormImageError}
+            onUploadingChange={setFormImageUploading}
+          />
           <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value as "dat" | "chua_dat" })} className={inputCls + " w-48"}>
             <option value="dat">✔ ĐẠT</option>
             <option value="chua_dat">✘ CHƯA ĐẠT</option>
@@ -180,6 +303,15 @@ export default function ReleaseNotesPage() {
                       </td>
                       <td className="px-4 py-2.5 whitespace-pre-wrap text-muted-light">
                         {isEditing ? <textarea value={editForm.test_result ?? ""} onChange={e => setEditForm({ ...editForm, test_result: e.target.value })} className={textareaCls} /> : (n.test_result || "—")}
+                        <EvidenceImagesField
+                          images={isEditing ? (editForm.evidence_images ?? []) : (n.evidence_images ?? [])}
+                          editable={isEditing}
+                          uploading={editImageUploading}
+                          error={editImageError}
+                          onChange={(imgs) => setEditForm({ ...editForm, evidence_images: imgs })}
+                          onError={setEditImageError}
+                          onUploadingChange={setEditImageUploading}
+                        />
                       </td>
                       <td className="px-4 py-2.5">
                         {isEditing ? (
@@ -272,6 +404,15 @@ export default function ReleaseNotesPage() {
                     ) : (
                       <p className="text-sm whitespace-pre-wrap text-muted-light">{n.test_result || "—"}</p>
                     )}
+                    <EvidenceImagesField
+                      images={isEditing ? (editForm.evidence_images ?? []) : (n.evidence_images ?? [])}
+                      editable={isEditing}
+                      uploading={editImageUploading}
+                      error={editImageError}
+                      onChange={(imgs) => setEditForm({ ...editForm, evidence_images: imgs })}
+                      onError={setEditImageError}
+                      onUploadingChange={setEditImageUploading}
+                    />
                   </div>
 
                   <div>
