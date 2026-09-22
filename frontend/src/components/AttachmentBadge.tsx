@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileText, Image as ImageIcon, Loader2 } from "lucide-react";
+import { FileText, Image as ImageIcon, Loader2, X } from "lucide-react";
 import clsx from "clsx";
 import type { Attachment } from "@/lib/types";
 import { fetchAttachmentViewUrl } from "@/lib/minioUpload";
@@ -16,11 +16,13 @@ export interface DisplayAttachment extends Attachment {
 
 /** 1 file đính kèm (ảnh/PDF/Word) — dùng chung cho Quote Chat và Release Note
  * (đính kèm minh chứng): ảnh hiện thumbnail (lazy-load view URL nếu không có
- * sẵn `previewUrl` cục bộ), PDF/Word hiện icon + tên, bấm vào để mở file
- * trong tab mới. */
+ * sẵn `previewUrl` cục bộ), bấm vào mở lightbox xem full trong CÙNG tab (đóng
+ * bằng nút X hoặc bấm ra ngoài ảnh/nhấn Esc). PDF/Word vẫn mở tab mới (không
+ * xem trực tiếp trong trang được) — hiện icon + tên.*/
 export function AttachmentBadge({ attachment }: { attachment: DisplayAttachment }) {
   const [viewUrl, setViewUrl] = useState<string | null>(attachment.previewUrl || null);
   const [opening, setOpening] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const isImage = attachment.media_type.startsWith("image/");
 
   useEffect(() => {
@@ -36,7 +38,30 @@ export function AttachmentBadge({ attachment }: { attachment: DisplayAttachment 
     };
   }, [isImage, viewUrl, attachment.file_key]);
 
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setLightboxOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightboxOpen]);
+
   async function openFile() {
+    if (isImage) {
+      if (!viewUrl) {
+        setOpening(true);
+        try {
+          setViewUrl(await fetchAttachmentViewUrl(attachment.file_key));
+        } catch {
+          setOpening(false);
+          return;
+        }
+        setOpening(false);
+      }
+      setLightboxOpen(true);
+      return;
+    }
     if (viewUrl) {
       window.open(viewUrl, "_blank", "noopener,noreferrer");
       return;
@@ -54,21 +79,46 @@ export function AttachmentBadge({ attachment }: { attachment: DisplayAttachment 
 
   if (isImage) {
     return (
-      <button
-        type="button"
-        onClick={openFile}
-        title={attachment.file_name}
-        className="block w-16 h-16 rounded-lg overflow-hidden border border-border-soft shrink-0 bg-tint/30"
-      >
-        {viewUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={viewUrl} alt={attachment.file_name} className="w-full h-full object-cover" />
-        ) : (
-          <span className="w-full h-full flex items-center justify-center">
-            <ImageIcon size={18} className="text-muted-light" />
-          </span>
+      <>
+        <button
+          type="button"
+          onClick={openFile}
+          title={attachment.file_name}
+          className="block w-16 h-16 rounded-lg overflow-hidden border border-border-soft shrink-0 bg-tint/30"
+        >
+          {viewUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={viewUrl} alt={attachment.file_name} className="w-full h-full object-cover" />
+          ) : (
+            <span className="w-full h-full flex items-center justify-center">
+              {opening ? <Loader2 size={18} className="animate-spin text-muted-light" /> : <ImageIcon size={18} className="text-muted-light" />}
+            </span>
+          )}
+        </button>
+
+        {lightboxOpen && viewUrl && (
+          <div
+            className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 sm:p-8"
+            onClick={() => setLightboxOpen(false)}
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              aria-label="Đóng"
+              className="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <X size={24} />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={viewUrl}
+              alt={attachment.file_name}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         )}
-      </button>
+      </>
     );
   }
 
