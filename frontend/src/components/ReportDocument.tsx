@@ -700,7 +700,7 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       </div>
 
-      <div className="px-6 sm:px-10 pt-1.5 pb-10">
+      <div className="px-6 sm:px-10 pt-3 pb-10">
 
         {/* 🚨 ĐIỂM NHẤN — đóng khung đỏ nổi bật, đứng đầu tiên của báo cáo
             (thay cho vị trí "Tóm tắt điều hành" cũ): Nhận định — kết luận của
