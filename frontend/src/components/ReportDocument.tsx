@@ -714,18 +714,15 @@ export function ReportDocument({ report }: { report: Report }) {
         </section>
 
         {/* PHẦN 1 — TIN TỨC CHÍNH / NỔI BẬT TRONG NGÀY */}
-        {/* Không còn ép "print:break-before-page" — trước đây luôn đẩy Phần 1
-            sang trang mới bất kể khối ĐIỂM NHẤN phía trên còn chừa bao nhiêu
-            chỗ trống, gây khoảng trắng lớn cuối trang 1. Giờ để Phần 1 chảy
-            tiếp ngay sau ĐIỂM NHẤN như các section khác; PartHeading (class
-            "report-heading") đã có page-break-after: avoid nên tiêu đề không
-            bị mồ côi cuối trang, còn ".print-keep-together" trên card biểu đồ
-            nến giữ nguyên khối chart khi cần đẩy sang trang sau. */}
+        {/* Không ép bất kỳ khối nào (chart, bảng giá...) phải nằm trọn 1 trang —
+            in tuần tự, tràn trang tự nhiên tới đâu hay tới đó, tránh để lại
+            khoảng trắng dài phía trên khi 1 khối lớn bị đẩy nguyên sang trang
+            sau vì không đủ chỗ còn lại trên trang hiện tại. */}
         <section className="py-5">
           <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
 
           <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-            <div className="print-keep-together lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
+            <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
               <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
                 <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
                 <span>EUR/tCO₂e</span>
@@ -748,7 +745,7 @@ export function ReportDocument({ report }: { report: Report }) {
             )}
           </div>
 
-          <div className="print:break-inside-avoid mt-5">
+          <div className="mt-5">
             <SubHeading>Bảng giá nhanh</SubHeading>
             {report.content["2"]?.price_timestamp && (
               <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
@@ -1115,7 +1112,7 @@ export function ReportDocument({ report }: { report: Report }) {
                     const Icon = meta.icon;
                     const sc = byHorizon[h];
                     return (
-                      <div key={h} className="print-keep-together border border-border rounded-lg overflow-hidden">
+                      <div key={h} className="border border-border rounded-lg overflow-hidden">
                         <div className={clsx("flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2", meta.iconBg)}>
                           <Icon size={13} /> {h}
                         </div>
