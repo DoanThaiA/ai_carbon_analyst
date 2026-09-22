@@ -545,6 +545,20 @@ function formatVietnameseDate(dateStr: string) {
   return `Ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
 }
 
+const VIETNAMESE_DAYS = ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
+
+function formatVietnameseDateFull(dateStr: string) {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  if (isNaN(d.getTime())) return dateStr;
+
+  const dayOfWeek = VIETNAMESE_DAYS[d.getDay()];
+  return `${dayOfWeek}, ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
+}
+
 /**
  * Toàn bộ nội dung "tờ báo cáo" (masthead → footer) — dùng chung cho cả màn
  * hình user (chỉ xem báo cáo đã published) và màn hình admin duyệt báo cáo,
@@ -639,8 +653,32 @@ export function ReportDocument({ report }: { report: Report }) {
     // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
     <div className="report-shell max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-[1.5] rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
-      {/* Thanh ngày — đứng đầu báo cáo, sát header (đã bỏ banner Stavian/tiêu đề
-          phía trên nó). */}
+      {/* Banner Stavian — logo + tiêu đề + dải ngày */}
+      <div className="w-full bg-[#1B4D3E] text-white text-center py-6 px-4">
+        {/* Logo + tên công ty */}
+        <div className="flex flex-col items-center gap-1 mb-4">
+          <img
+            src="/stavian_logo.png"
+            alt="Stavian Industrial Metal"
+            className="h-12 sm:h-14 object-contain"
+          />
+          <span className="font-bold text-[13px] sm:text-[15px] tracking-[0.15em] uppercase">
+            Stavian<span className="align-super text-[8px] sm:text-[9px] ml-px">®</span>
+          </span>
+          <span className="text-[9px] sm:text-[10px] tracking-[0.25em] uppercase text-white/80">
+            Industrial Metal
+          </span>
+        </div>
+        {/* Tiêu đề chính */}
+        <h1 className="text-[22px] sm:text-[28px] md:text-[32px] font-extrabold italic tracking-tight leading-tight mb-1">
+          TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON
+        </h1>
+        <p className="text-[11px] sm:text-[13px] tracking-[0.2em] uppercase text-white/70">
+          Carbon Market Daily News
+        </p>
+      </div>
+
+      {/* Thanh ngày */}
       <div className="w-full bg-[#2f8749] py-2 text-center">
         <div className="text-[13px] sm:text-[15px] font-bold text-white">
           {formatVietnameseDate(report.report_date)}
