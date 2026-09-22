@@ -38,9 +38,9 @@ export function Header() {
   // (chưa đăng nhập) không nên hiện các nút này.
   const isAuthenticated = !isLogin && role !== null;
 
-  // Breadcrumb "Admin/<Tên trang>" thay cho tiêu đề "AI Carbon Analyst" khi ở
-  // khu vực admin — cùng nguồn ADMIN_NAV_ITEMS với sidebar/menu mobile bên
-  // dưới nên luôn khớp nhãn.
+  // Breadcrumb "Admin/<Tên trang>" — hiện ở thanh riêng NGAY DƯỚI header (không
+  // còn thay chỗ tiêu đề "Jenny AI" nữa), cùng nguồn ADMIN_NAV_ITEMS với
+  // sidebar/menu mobile bên dưới nên luôn khớp nhãn.
   const adminPageLabel = ADMIN_NAV_ITEMS.find(({ href }) => pathname?.startsWith(href))?.label;
 
   const handleAdminLogout = async () => {
@@ -50,72 +50,84 @@ export function Header() {
   };
 
   return (
-    <header className="relative bg-primary-dark px-6 py-4 flex items-center justify-between sticky top-0 z-50 print:hidden">
-      <Link href={logoHref} className="flex items-center gap-3 min-w-0">
-        <Image src="/stavian_logo.png" alt="Stavian" width={100} height={28} className="h-7 w-auto block shrink-0" />
-        <div className="w-[1px] h-5 bg-white/25 mx-1 shrink-0"></div>
-        <h1 className="text-xl font-extrabold tracking-tight text-white truncate">
-          {isAdmin ? `Admin/${adminPageLabel ?? ""}` : "AI Carbon Analyst"}
-        </h1>
-      </Link>
-      {isAuthenticated && (
-        <div className="flex items-center gap-3 shrink-0">
-          {role === "admin" && !isAdmin && (
-            <Link
-              href="/admin/reports"
-              className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
-              title="Trang Quản Trị"
-            >
-              <Settings size={14} />
-              <span className="hidden sm:inline">Quản Trị</span>
-            </Link>
-          )}
-          <HotNewsBell />
-          {isAdmin ? (
-            <button
-              onClick={() => setMobileNavOpen(v => !v)}
-              className="md:hidden text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
-              aria-label="Menu"
-            >
-              {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-          ) : (
-            <LogoutButton />
-          )}
-        </div>
-      )}
-
-      {/* Menu mobile admin — điều hướng + đăng xuất, thay cho sidebar (chỉ hiện
-          từ md trở lên, xem admin/layout.tsx). */}
-      {isAdmin && mobileNavOpen && (
-        <div className="md:hidden absolute top-full inset-x-0 bg-primary-dark border-t border-white/10 shadow-lg z-40">
-          <ul className="p-3 space-y-1">
-            {ADMIN_NAV_ITEMS.map(({ href, label, icon: Icon }) => (
-              <li key={href}>
-                <Link
-                  href={href}
-                  className={clsx(
-                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors",
-                    pathname?.startsWith(href) ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10"
-                  )}
-                >
-                  <Icon size={16} />
-                  {label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <div className="border-t border-white/10 p-3">
-            <button
-              onClick={handleAdminLogout}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
-            >
-              <LogOut size={16} />
-              Đăng xuất
-            </button>
+    <div className="sticky top-0 z-50 print:hidden">
+      <header className="relative bg-primary-dark px-6 py-4 flex items-center justify-between">
+        <Link href={logoHref} className="flex items-center gap-3 min-w-0">
+          <Image src="/jenny.jpg" alt="Jenny AI" width={36} height={36} className="h-9 w-9 rounded-full object-cover shrink-0 border border-white/20" />
+          <div className="w-[1px] h-5 bg-white/25 mx-1 shrink-0"></div>
+          <h1 className="text-xl font-extrabold tracking-tight text-white truncate">
+            Jenny AI
+          </h1>
+        </Link>
+        {isAuthenticated && (
+          <div className="flex items-center gap-3 shrink-0">
+            {role === "admin" && !isAdmin && (
+              <Link
+                href="/admin/reports"
+                className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
+                title="Trang Quản Trị"
+              >
+                <Settings size={14} />
+                <span className="hidden sm:inline">Quản Trị</span>
+              </Link>
+            )}
+            <HotNewsBell />
+            {isAdmin ? (
+              <button
+                onClick={() => setMobileNavOpen(v => !v)}
+                className="md:hidden text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
+                aria-label="Menu"
+              >
+                {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+            ) : (
+              <LogoutButton />
+            )}
           </div>
+        )}
+
+        {/* Menu mobile admin — điều hướng + đăng xuất, thay cho sidebar (chỉ
+            hiện từ md trở lên, xem admin/layout.tsx). */}
+        {isAdmin && mobileNavOpen && (
+          <div className="md:hidden absolute top-full inset-x-0 bg-primary-dark border-t border-white/10 shadow-lg z-40">
+            <ul className="p-3 space-y-1">
+              {ADMIN_NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    className={clsx(
+                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors",
+                      pathname?.startsWith(href) ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10"
+                    )}
+                  >
+                    <Icon size={16} />
+                    {label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className="border-t border-white/10 p-3">
+              <button
+                onClick={handleAdminLogout}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
+              >
+                <LogOut size={16} />
+                Đăng xuất
+              </button>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Breadcrumb "Admin/<Tên trang>" — thanh riêng, kích thước nhỏ gọn, nằm
+          ngay dưới header thay vì lấn vào tiêu đề chính "Jenny AI". */}
+      {isAdmin && (
+        <div className="bg-primary-dark/95 border-t border-white/10 px-6 py-1.5">
+          <p className="text-white/70 text-xs sm:text-sm font-semibold tracking-wide truncate">
+            Admin/{adminPageLabel ?? ""}
+          </p>
         </div>
       )}
-    </header>
+    </div>
   );
 }
