@@ -703,7 +703,7 @@ export function ReportDocument({ report }: { report: Report }) {
             </ul>
 
             {euaSummary && (
-              <div className="mt-4 pt-3 border-t border-[#7A1E1E]/20">
+              <div className="mt-1.5 pt-2 border-t border-[#7A1E1E]/20">
                 <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-[#7A1E1E] mb-1.5">Nhận định</h4>
                 <p className="text-[14.5px] sm:text-[15.5px] leading-[1.5] font-bold text-[#7A1E1E] text-center sm:text-left">
                   <RichText text={euaSummary} />

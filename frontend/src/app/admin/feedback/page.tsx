@@ -52,7 +52,7 @@ export default function AdminFeedbackPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Phản Ánh Về Jenny</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Phản Ánh Về Jenny</h2>
         <p className="text-body">Phản ánh của người dùng về thái độ/hiệu quả phục vụ của AI assistant</p>
       </div>
 

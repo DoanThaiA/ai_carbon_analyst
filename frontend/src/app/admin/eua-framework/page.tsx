@@ -103,7 +103,7 @@ export default function AdminEuaFrameworkPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Khung Phân Tích EUA</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Khung Phân Tích EUA</h2>
         <p className="text-body">
           Custom nội dung diễn giải từng khối tri thức nhân quả dùng để sinh báo cáo & chat AI — không đổi
           được cơ chế nào áp dụng cho topic tin tức nào, chỉ đổi được NỘI DUNG diễn giải của từng khối.

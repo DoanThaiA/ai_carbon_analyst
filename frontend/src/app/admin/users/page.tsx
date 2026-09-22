@@ -68,7 +68,7 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Người Dùng</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Người Dùng</h2>
         <p className="text-body">Danh sách Gmail được phép đăng nhập xem daily report</p>
       </div>
 

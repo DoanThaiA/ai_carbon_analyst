@@ -92,7 +92,7 @@ export default function AdminReportsPage() {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Duyệt Báo Cáo</h2>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Duyệt Báo Cáo</h2>
           <p className="text-body">Tạo bản draft và duyệt để xuất bản cho user xem</p>
         </div>
 

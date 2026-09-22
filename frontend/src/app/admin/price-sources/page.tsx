@@ -96,7 +96,7 @@ export default function PriceSourcesPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Nguồn Giá</h2>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Nguồn Giá</h2>
           <p className="text-body">Cấu hình các hợp đồng để crawl giá từ Barchart</p>
         </div>
         <button onClick={() => setShowAddForm(v => !v)} className="btn-pill py-2.5">

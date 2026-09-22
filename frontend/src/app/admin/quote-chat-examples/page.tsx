@@ -44,7 +44,7 @@ export default function AdminQuoteChatExamplesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Đoạn Chat Tham Khảo</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Đoạn Chat Tham Khảo</h2>
         <p className="text-body">
           Các cặp hỏi-đáp admin chọn từ mục{" "}
           <Link href="/admin/chat-reviews" className="text-primary-dark hover:underline font-semibold">

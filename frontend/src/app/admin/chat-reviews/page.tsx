@@ -61,7 +61,7 @@ export default function AdminChatReviewsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Đánh Giá Chat</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Đánh Giá Chat</h2>
         <p className="text-body">Lịch sử các phiên hỏi đáp AI của người dùng và đánh giá tốt/không tốt kèm lý do</p>
       </div>
 

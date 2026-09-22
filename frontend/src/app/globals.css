@@ -58,14 +58,14 @@
   --color-warn: var(--color-warn);
   --color-warn-tint: var(--color-warn-tint);
 
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: var(--font-inter), Arial, Helvetica, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 body {
   background: var(--color-surface);
   color: var(--color-foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
 /* Signature pill button: solid fill, inverts to outline on hover — components.md */
