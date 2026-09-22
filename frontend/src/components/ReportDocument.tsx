@@ -655,19 +655,13 @@ export function ReportDocument({ report }: { report: Report }) {
 
       {/* Banner Stavian — logo + tiêu đề + dải ngày */}
       <div className="w-full bg-[#1B4D3E] text-white text-center py-6 px-4">
-        {/* Logo + tên công ty */}
-        <div className="flex flex-col items-center gap-1 mb-4">
+        {/* Logo — chỉ 1 logo (ảnh), bỏ text "Stavian/Industrial Metal" trùng lặp bên dưới, phóng to */}
+        <div className="flex flex-col items-center mb-4">
           <img
             src="/stavian_logo.png"
             alt="Stavian Industrial Metal"
-            className="h-12 sm:h-14 object-contain"
+            className="h-20 sm:h-24 object-contain"
           />
-          <span className="font-bold text-[13px] sm:text-[15px] tracking-[0.15em] uppercase">
-            Stavian<span className="align-super text-[8px] sm:text-[9px] ml-px">®</span>
-          </span>
-          <span className="text-[9px] sm:text-[10px] tracking-[0.25em] uppercase text-white/80">
-            Industrial Metal
-          </span>
         </div>
         {/* Tiêu đề chính — chữ thẳng (không italic), căn giữa, 26px/bold/trắng theo yêu cầu */}
         <h1 className="text-center text-[26px] font-bold text-white tracking-[0.3px] leading-tight mb-1">
