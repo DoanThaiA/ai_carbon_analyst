@@ -700,7 +700,7 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       </div>
 
-      <div className="px-6 sm:px-10 pt-5 pb-10">
+      <div className="px-6 sm:px-10 pt-1.5 pb-10">
 
         {/* 🚨 ĐIỂM NHẤN — đóng khung đỏ nổi bật, đứng đầu tiên của báo cáo
             (thay cho vị trí "Tóm tắt điều hành" cũ): Nhận định — kết luận của
@@ -709,7 +709,7 @@ export function ReportDocument({ report }: { report: Report }) {
             nhãn "Nhận định"), viết hoa toàn bộ, có vạch ngăn cách bên dưới —
             rồi mới tới danh sách yếu tố nổi bật trong ngày (nội dung y hệt
             "Tóm tắt điều hành" cũ), các mục không còn vạch ngăn giữa với nhau. */}
-        <section className="py-5">
+        <section className="pt-0 pb-5">
           <FramedHighlight title="🚨 ĐIỂM NHẤN" variant="danger">
             {euaSummary && (
               <div className="mb-1.5 pb-2 border-b border-[#7A1E1E]/20">
