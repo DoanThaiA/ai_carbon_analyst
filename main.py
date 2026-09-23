@@ -17,6 +17,7 @@ from schemas.crawl_models import SourceConfig
 from pipeline.crawl_pipeline import PipelineContext, PipelineResult, process_source
 from db.session import build_sessionmaker, create_engine
 from services import storage
+from services.hot_news_email import send_pending_hot_news_digest
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -186,7 +187,11 @@ async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> 
         _print_summary(source.name, results)
         total_stored += sum(1 for r in results if r.status == "stored")
 
-    # 6. Dọn dẹp
+    # 6. Gửi 1 email digest gom toàn bộ hot news của đợt crawl này (tự bắt lỗi,
+    # không làm hỏng job — xem services/hot_news_email.py)
+    await send_pending_hot_news_digest(session_factory, settings)
+
+    # 7. Dọn dẹp
     await fetcher.close()
     await engine.dispose()
 

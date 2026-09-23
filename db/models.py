@@ -88,6 +88,10 @@ class Article(Base):
     # báo trên header khi true. hot_news_reason: LLM giải thích ngắn khớp tiêu chí nào.
     is_hot_news: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     hot_news_reason: Mapped[Optional[str]] = mapped_column(Text)
+    # Thời điểm đã gửi email digest hot news cho bài này (NULL = chưa gửi) — xem
+    # services/hot_news_email.py. Lưu ở DB (không phải buffer in-memory) để mỗi
+    # bài chỉ gửi đúng 1 lần, và SMTP lỗi thì lần crawl sau tự gửi lại.
+    hot_news_emailed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self) -> str:
         return f"Article(id={self.id!r}, url={self.url!r})"
