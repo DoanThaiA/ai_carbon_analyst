@@ -4,10 +4,11 @@ scheduler.py
 Script chạy ngầm 24/7, tự động kích hoạt 4 tác vụ độc lập theo giờ Việt Nam:
 
   1. daily_prices_job       06:00  — crawl giá các hợp đồng tương lai (BarchartPriceCrawler)
-  2. morning_news_crawl_job 06:00  — crawl tin tức TOÀN BỘ nguồn trong sources.yaml
-  3. noon_news_crawl_job    12:00  — crawl lại CHỈ nhóm Tier A (dữ liệu sàn/cơ quan chính
-                                     thức: EIA, IETA, OPEC, Nasdaq, EU Commission, ESMA,
-                                     ICE, EEX — xem NOON_TIER_A_DOMAINS)
+  2. morning_news_crawl_job 06:00  — crawl tin tức TOÀN BỘ nguồn is_active=True (bảng
+                                     news_crawl_sources — xem api/routers/admin_news_sources.py)
+  3. noon_news_crawl_job    12:00  — crawl lại CHỈ nhóm nguồn is_noon_crawl=True (dữ liệu
+                                     sàn/cơ quan chính thức: EIA, IETA, OPEC, Nasdaq, EU
+                                     Commission, ESMA, ICE, EEX)
   4. auto_report_job        07:00  — tự động sinh 1 báo cáo/ngày cho ngày hôm qua (VN) bằng Claude
 
 Cửa sổ lọc bài báo theo published_at (pipeline/crawl_pipeline.py):
@@ -32,7 +33,6 @@ import asyncio
 import logging
 import sys
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -85,32 +85,21 @@ async def daily_prices_job() -> None:
 
 # ─── Job 2: Crawl News (06:00 toàn bộ nguồn & 12:00 chỉ Tier A) ──────────────
 
-# Đợt 12:00 chỉ chạy lại nhóm Tier A (dữ liệu sàn/cơ quan chính thức) thay vì
-# toàn bộ ~47 nguồn — đối chiếu domain trong sources.yaml, chỉ giữ domain THỰC
-# SỰ có nguồn tương ứng trong file (bỏ qua iea.org, climateimpactx.com, acx.net,
-# cmegroup.com, lme.com — không có trong sources.yaml).
-NOON_TIER_A_DOMAINS: List[str] = [
-    "eia.gov",
-    "ieta.org",
-    "opec.org",
-    "nasdaq.com",
-    "commission.europa.eu",
-    "esma.europa.eu",
-    "ice.com",
-    "eex.com",
-    "climate.ec.europa.eu",
-]
+# Đợt 12:00 chỉ chạy lại nhóm nguồn is_noon_crawl=True (dữ liệu sàn/cơ quan
+# chính thức) thay vì toàn bộ nguồn — cờ này set trực tiếp trên từng dòng
+# news_crawl_sources qua admin (api/routers/admin_news_sources.py), thay cho
+# danh sách domain viết cứng trước đây.
 
 
-async def run_crawl_news(domains: Optional[List[str]] = None) -> None:
+async def run_crawl_news(noon_only: bool = False) -> None:
     """Chạy pipeline crawl news (async). Import tại runtime để tránh xung đột asyncio.run().
-    domains=None -> crawl toàn bộ nguồn; truyền list -> chỉ crawl đúng các domain đó.
+    noon_only=False -> crawl toàn bộ nguồn is_active=True; True -> chỉ nguồn is_noon_crawl=True.
     """
     from main import main as crawl_news_main
-    label = f"{len(domains)} nguồn Tier A" if domains else "toàn bộ nguồn"
+    label = "nguồn is_noon_crawl=True" if noon_only else "toàn bộ nguồn"
     logger.info("━━━ [NEWS] Bắt đầu crawl tin tức (%s)...", label)
     try:
-        await crawl_news_main(domains=domains)
+        await crawl_news_main(noon_only=noon_only)
         logger.info("━━━ [NEWS] Hoàn thành crawl tin tức (%s).", label)
     except Exception:
         logger.exception("━━━ [NEWS] Lỗi không mong đợi khi crawl tin tức (%s)!", label)
@@ -131,7 +120,7 @@ async def noon_news_crawl_job() -> None:
     now_vn = datetime.now(TZ_VN)
     logger.info("=" * 60)
     logger.info("🚀 [SCHEDULER] Bắt đầu Noon News Crawl Job (Tier A) — %s", now_vn.strftime("%Y-%m-%d %H:%M:%S"))
-    await run_crawl_news(domains=NOON_TIER_A_DOMAINS)
+    await run_crawl_news(noon_only=True)
     logger.info("✅ [SCHEDULER] Noon News Crawl Job hoàn thành — %s", datetime.now(TZ_VN).strftime("%H:%M:%S"))
     logger.info("=" * 60)
 

@@ -1,10 +1,11 @@
-import { FileText, Radar, Users, MessageSquareText, BrainCircuit, Sparkles, MessageSquareWarning, ClipboardList } from "lucide-react";
+import { FileText, Radar, Newspaper, Users, MessageSquareText, BrainCircuit, Sparkles, MessageSquareWarning, ClipboardList } from "lucide-react";
 
 // Danh sách điều hướng admin — dùng chung giữa sidebar desktop (admin/layout.tsx)
 // và menu mobile + breadcrumb "Admin/<trang>" trong Header.tsx, để 2 nơi luôn
 // khớp nhãn/route với nhau thay vì khai báo trùng lặp.
 export const ADMIN_NAV_ITEMS = [
   { href: "/admin/reports", label: "Báo cáo", icon: FileText },
+  { href: "/admin/news-sources", label: "Nguồn tin tức", icon: Newspaper },
   { href: "/admin/price-sources", label: "Nguồn giá", icon: Radar },
   { href: "/admin/users", label: "Người dùng", icon: Users },
   { href: "/admin/chat-reviews", label: "Đánh giá chat", icon: MessageSquareText },

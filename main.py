@@ -2,10 +2,9 @@
 import asyncio
 import logging
 import sys
-from pathlib import Path
 from typing import List, Optional
 
-import yaml
+from sqlalchemy import select
 
 from crawl_news.classification import build_classifier
 from core.config import Settings
@@ -13,6 +12,7 @@ from crawl_news.dedupe import Sha256Fingerprinter
 from services.embedding import CohereEmbedder
 from crawl_news.fetcher import PoliteFetcher
 from crawl_news.playwright_fetcher import PlaywrightFetcher
+from db.models import NewsCrawlSource
 from schemas.crawl_models import SourceConfig
 from pipeline.crawl_pipeline import PipelineContext, PipelineResult, process_source
 from db.session import build_sessionmaker, create_engine
@@ -33,38 +33,43 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-def load_sources(yaml_path: Path) -> List[SourceConfig]:
-    """Đọc sources.yaml và chuyển đổi thành danh sách SourceConfig."""
-    with yaml_path.open(encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+def _source_config_from_row(row: NewsCrawlSource) -> SourceConfig:
+    """Map 1 dòng news_crawl_sources sang SourceConfig — thay cho đọc sources.yaml.
+    Bỏ qua exclude_path_patterns khi None để SourceConfig dùng default_factory
+    (danh sách mặc định) thay vì ghi đè bằng None."""
+    kwargs = dict(
+        domain=row.domain,
+        name=row.name,
+        tier=row.tier,
+        category=row.category,
+        region=row.region,
+        type=row.source_type,
+        rss_url=row.rss_url,
+        listing_url=row.listing_url,
+        group=row.group or [],
+        confidence=row.confidence or "",
+        note=row.note or "",
+        link_pattern=row.link_pattern,
+        max_articles=row.max_articles,
+        use_playwright=row.use_playwright,
+        bloomberg_feeds=row.bloomberg_feeds or [],
+    )
+    if row.exclude_path_patterns is not None:
+        kwargs["exclude_path_patterns"] = row.exclude_path_patterns
+    return SourceConfig(**kwargs)
 
-    sources = []
-    for entry in data.get("sources", []):
-        sources.append(
-            SourceConfig(
-                domain=entry["domain"],
-                name=entry["name"],
-                tier=entry["tier"],
-                category=entry["category"],
-                region=entry.get("region", "international"),
-                type=entry.get("type", "html"),
-                rss_url=entry.get("rss_url"),
-                listing_url=entry.get("listing_url"),
-                exclude_path_patterns=entry.get(
-                    "exclude_path_patterns",
-                    ["/tag/", "/category/", "/author/", "/about",
-                     "/contact", "/login", "/search", "/page/"],
-                ),
-                group=entry.get("group", []),
-                confidence=entry.get("confidence", ""),
-                note=entry.get("note", ""),
-                link_pattern=entry.get("link_pattern"),
-                max_articles=entry.get("max_articles"),
-                use_playwright=entry.get("use_playwright", False),
-                bloomberg_feeds=entry.get("bloomberg_feeds", []),
-            )
-        )
-    return sources
+
+async def load_sources_from_db(session_factory, *, noon_only: bool = False) -> List[SourceConfig]:
+    """Đọc nguồn is_active=True từ bảng news_crawl_sources (thay cho sources.yaml
+    — xem api/routers/admin_news_sources.py cho CRUD, scripts/migrate_sources.py
+    cho backfill 1 lần từ sources.yaml cũ). noon_only=True -> chỉ lấy thêm nguồn
+    is_noon_crawl=True (đợt crawl phụ 12:00, xem scheduler.py::noon_news_crawl_job)."""
+    stmt = select(NewsCrawlSource).where(NewsCrawlSource.is_active == True)  # noqa: E712
+    if noon_only:
+        stmt = stmt.where(NewsCrawlSource.is_noon_crawl == True)  # noqa: E712
+    async with session_factory() as session:
+        rows = (await session.execute(stmt)).scalars().all()
+    return [_source_config_from_row(r) for r in rows]
 
 
 def _print_summary(source_name: str, results: List[PipelineResult]) -> None:
@@ -97,21 +102,28 @@ def _print_summary(source_name: str, results: List[PipelineResult]) -> None:
             )
 
 
-async def main(domains: Optional[List[str]] = None) -> None:
-    """domains=None -> crawl toàn bộ nguồn trong sources.yaml (mặc định).
-    Truyền list domain -> chỉ crawl đúng các nguồn đó (dùng cho đợt crawl phụ
-    trong ngày chỉ cần chạy lại 1 nhóm nguồn nhất định, vd Tier A lúc 12:00)."""
+async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> None:
+    """domains=None -> crawl toàn bộ nguồn is_active=True trong news_crawl_sources
+    (mặc định). Truyền list domain -> lọc thêm theo domain (test thủ công 1 nhóm
+    nguồn). noon_only=True -> chỉ lấy nguồn is_noon_crawl=True (đợt crawl phụ
+    12:00, xem scheduler.py::noon_news_crawl_job) — thay cho danh sách
+    NOON_TIER_A_DOMAINS viết cứng trước đây."""
     settings = Settings.from_env()
     logger.info("[CONFIG] Backend: %s | Model: %s", settings.classifier_backend, settings.classifier_model)
 
-    # 1. Đọc danh sách nguồn
-    sources_path = Path(__file__).parent / "sources.yaml"
-    all_sources = load_sources(sources_path)
+    # 1. Kết nối database
+    logger.info("[DB] Ket noi database...")
+    engine = create_engine(settings.database_url)
+    session_factory = build_sessionmaker(engine)
+    logger.info("[DB] Database san sang.")
+
+    # 2. Đọc danh sách nguồn từ DB (news_crawl_sources)
+    all_sources = await load_sources_from_db(session_factory, noon_only=noon_only)
     demo_sources = (
         [s for s in all_sources if s.domain in domains] if domains else all_sources
     )
     if domains and not demo_sources:
-        logger.warning("[CONFIG] Không tìm thấy nguồn nào khớp domains=%s trong sources.yaml", domains)
+        logger.warning("[CONFIG] Không tìm thấy nguồn nào khớp domains=%s trong news_crawl_sources", domains)
 
     has_playwright_sources = any(s.use_playwright for s in demo_sources)
     logger.info("📰 Demo với %d nguồn (%d dùng Playwright):",
@@ -123,12 +135,6 @@ async def main(domains: Optional[List[str]] = None) -> None:
             "   - [Tier %s] %-40s | confidence: %s%s%s",
             s.tier, s.name, s.confidence or "?", flag, pw_flag,
         )
-
-    # 2. Kết nối database
-    logger.info("[DB] Ket noi database...")
-    engine = create_engine(settings.database_url)
-    session_factory = build_sessionmaker(engine)
-    logger.info("[DB] Database san sang.")
 
     # 3. Khởi tạo các thành phần pipeline
     fetcher = PoliteFetcher()

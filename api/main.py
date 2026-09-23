@@ -21,6 +21,7 @@ from api.routers import (
     admin_chat_reviews,
     admin_eua_framework,
     admin_feedback,
+    admin_news_sources,
     admin_price_sources,
     admin_quote_chat_examples,
     admin_release_notes,
@@ -63,6 +64,7 @@ app.add_middleware(
 app.include_router(auth_admin.router)
 app.include_router(auth_user.router)
 app.include_router(admin_price_sources.router)
+app.include_router(admin_news_sources.router)
 app.include_router(admin_users.router)
 app.include_router(admin_reports.router)
 app.include_router(admin_chat_reviews.router)

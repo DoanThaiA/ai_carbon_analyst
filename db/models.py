@@ -189,6 +189,61 @@ class PriceCrawlSource(Base):
         return f"PriceCrawlSource(id={self.id!r}, instrument_code={self.instrument_code!r})"
 
 
+class NewsCrawlSource(Base):
+    """Cấu hình 1 nguồn tin để crawl_news/crawler.py::crawl_source() lấy bài — thay thế
+    cho sources.yaml hardcode trước đây, admin CRUD qua /api/admin/news-sources.
+    `domain` KHÔNG unique (vd eia.gov, carbonbrief.org có nhiều listing_url/nguồn con
+    khác nhau trong cùng domain, y hệt sources.yaml cũ) — unique key thực tế là `name`.
+    `source_type` ứng với field `type` của schemas.crawl_models.SourceConfig (đổi tên
+    tránh nhầm với builtin `type`, cùng quy ước với Chunk.source_type).
+    is_noon_crawl: thay cho scheduler.py::NOON_TIER_A_DOMAINS hardcode — noon_news_crawl_job
+    query domain của các row is_noon_crawl=True thay vì list domain viết cứng trong code."""
+
+    __tablename__ = "news_crawl_sources"
+    __table_args__ = (
+        CheckConstraint("tier IN ('A', 'B', 'C')", name="ck_news_crawl_sources_tier"),
+        CheckConstraint(
+            "region IN ('vietnam', 'international')", name="ck_news_crawl_sources_region"
+        ),
+        CheckConstraint(
+            "source_type IN ('html', 'rss', 'bloomberg_rss')",
+            name="ck_news_crawl_sources_source_type",
+        ),
+        Index("idx_news_crawl_sources_domain", "domain"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    domain: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    tier: Mapped[str] = mapped_column(CHAR(1), nullable=False)
+    region: Mapped[str] = mapped_column(Text, nullable=False, server_default="international")
+    source_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="html")
+    listing_url: Mapped[Optional[str]] = mapped_column(Text)
+    rss_url: Mapped[Optional[str]] = mapped_column(Text)
+    link_pattern: Mapped[Optional[str]] = mapped_column(Text)
+    # NULL = dùng default list trong SourceConfig.exclude_path_patterns (xem
+    # main.py::_source_config_from_row), chỉ set khi admin override thủ công.
+    exclude_path_patterns: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))
+    group: Mapped[Optional[List[int]]] = mapped_column(ARRAY(Integer))
+    bloomberg_feeds: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text))
+    confidence: Mapped[Optional[str]] = mapped_column(Text)
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    max_articles: Mapped[Optional[int]] = mapped_column(Integer)
+    use_playwright: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    is_noon_crawl: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"NewsCrawlSource(id={self.id!r}, domain={self.domain!r}, name={self.name!r})"
+
+
 class User(Base):
     """Gmail được admin cho phép đăng nhập vào màn hình daily report (đăng nhập
     bằng email + mã OTP, không có mật khẩu)."""
