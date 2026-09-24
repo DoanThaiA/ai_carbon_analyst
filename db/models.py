@@ -249,7 +249,7 @@ class NewsCrawlSource(Base):
 
 
 class User(Base):
-    """Gmail được admin cho phép đăng nhập vào màn hình daily report (đăng nhập
+    """Email (mọi tên miền) được admin cho phép đăng nhập vào màn hình daily report (đăng nhập
     bằng email + mã OTP, không có mật khẩu)."""
 
     __tablename__ = "users"

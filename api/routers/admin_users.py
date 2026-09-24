@@ -39,11 +39,8 @@ async def list_users(session: AsyncSession = Depends(get_db)):
 
 @router.post("")
 async def create_user(body: UserCreate, session: AsyncSession = Depends(get_db)):
+    # Cho phép email thuộc mọi tên miền — EmailStr đã kiểm tra định dạng hợp lệ.
     email = body.email.strip().lower()
-    
-    # Chỉ cho phép email thuộc tên miền @stavian
-    if not email.split('@')[-1].startswith('stavian'):
-        raise HTTPException(status_code=400, detail="Chỉ cho phép thêm email có đuôi @stavian.")
 
     user_count = (await session.execute(select(func.count(User.id)))).scalar()
     if user_count >= 4:
