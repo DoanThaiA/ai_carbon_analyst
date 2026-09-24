@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
 from db.models import OtpCode, User
-from services.email_sender import send_otp_email
+from services.email_sender import email_configured, send_otp_email
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +65,11 @@ async def request_otp(session: AsyncSession, email: str, settings: Settings) -> 
     session.add(otp)
     await session.commit()
 
-    if settings.smtp_host and settings.smtp_user and settings.smtp_password:
+    if email_configured(settings):
         await send_otp_email(email, code, settings)
     else:
-        # Dev fallback — KHÔNG bao giờ chạy nhánh này khi đã cấu hình đủ SMTP thật.
-        logger.warning("[DEV] SMTP chưa cấu hình đầy đủ — mã OTP cho %s là: %s", email, code)
+        # Dev fallback — KHÔNG bao giờ chạy nhánh này khi đã cấu hình Resend thật.
+        logger.warning("[DEV] Resend chưa cấu hình đầy đủ — mã OTP cho %s là: %s", email, code)
 
 
 async def verify_otp(session: AsyncSession, email: str, code: str, settings: Settings) -> None:

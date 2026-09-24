@@ -1,61 +1,105 @@
 """
-Gửi email (OTP đăng nhập + digest Hot News) qua Gmail SMTP (App Password) bằng aiosmtplib — khớp thiết kế
-asyncio-first của toàn bộ codebase (crawl_news, embedding, ...).
+Gửi email (OTP đăng nhập + digest Hot News) qua Resend HTTP API (https://resend.com)
+bằng httpx.AsyncClient — khớp thiết kế asyncio-first của toàn bộ codebase
+(không dùng SDK `resend` vì SDK là sync, sẽ chặn event loop).
 
-Cần set trong .env: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM.
-SMTP_USER/SMTP_PASSWORD là Gmail App Password (Google Account > Security >
-App Passwords) — KHÔNG dùng mật khẩu Gmail thường vì Google chặn SMTP đăng
-nhập trực tiếp bằng mật khẩu tài khoản.
+Cần set trong .env: RESEND_API_KEY, EMAIL_FROM. EMAIL_FROM phải thuộc 1 domain
+đã verify trong Resend (Resend > Domains, thêm bản ghi SPF/DKIM vào DNS) —
+KHÔNG dùng được địa chỉ @gmail.com làm người gửi. Chưa có domain thì dùng tạm
+`onboarding@resend.dev` (chỉ gửi được tới email chủ tài khoản Resend).
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import html
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
-from email.utils import make_msgid
-from typing import List, Optional, Protocol, Sequence
+from typing import Any, List, Optional, Protocol, Sequence
 
-import aiosmtplib
+import httpx
 
 from core.config import Settings
 
 logger = logging.getLogger(__name__)
+
+RESEND_API_BASE = "https://api.resend.com"
+# Giới hạn của Resend: tối đa 100 email / 1 request POST /emails/batch.
+RESEND_BATCH_MAX = 100
+_MAX_ATTEMPTS = 3
 
 
 class EmailSendError(RuntimeError):
     pass
 
 
-async def send_otp_email(to_email: str, code: str, settings: Settings) -> None:
-    if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
+def email_configured(settings: Settings) -> bool:
+    return bool(settings.resend_api_key and settings.email_from)
+
+
+def _require_configured(settings: Settings, purpose: str) -> None:
+    if not email_configured(settings):
         raise EmailSendError(
-            "SMTP chưa được cấu hình (SMTP_HOST/SMTP_USER/SMTP_PASSWORD trong .env) — "
-            "không thể gửi email OTP."
+            "Resend chưa được cấu hình (RESEND_API_KEY/EMAIL_FROM trong .env) — "
+            f"không thể gửi email {purpose}."
         )
 
-    message = EmailMessage()
-    message["From"] = settings.smtp_from
-    message["To"] = to_email
-    message["Subject"] = "Mã đăng nhập Carbon Analyst"
-    message.set_content(
-        f"Mã đăng nhập của bạn là: {code}\n\n"
-        f"Mã có hiệu lực trong {settings.otp_expire_minutes} phút. "
-        "Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email."
+
+def _http_client(settings: Settings) -> httpx.AsyncClient:
+    """Tách riêng để test thay bằng client dùng httpx.MockTransport."""
+    return httpx.AsyncClient(
+        base_url=RESEND_API_BASE,
+        headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+        timeout=15.0,
     )
 
+
+async def _post(
+    client: httpx.AsyncClient, path: str, payload: Any, idempotency_key: Optional[str] = None
+) -> Any:
+    """POST tới Resend, retry khi 429 (rate limit) / 5xx / lỗi mạng. Idempotency-Key
+    giúp retry (kể cả ở đợt crawl sau, trong 24h) không tạo email trùng."""
+    headers = {"Idempotency-Key": idempotency_key} if idempotency_key else {}
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            resp = await client.post(path, json=payload, headers=headers)
+        except httpx.HTTPError as exc:
+            if attempt == _MAX_ATTEMPTS:
+                raise EmailSendError(f"Không kết nối được Resend: {exc}") from exc
+            await asyncio.sleep(attempt)
+            continue
+        if resp.status_code < 300:
+            return resp.json()
+        if (resp.status_code == 429 or resp.status_code >= 500) and attempt < _MAX_ATTEMPTS:
+            try:
+                delay = min(float(resp.headers.get("retry-after", attempt)), 10.0)
+            except ValueError:
+                delay = float(attempt)
+            await asyncio.sleep(delay)
+            continue
+        raise EmailSendError(f"Resend trả lỗi {resp.status_code}: {resp.text[:500]}")
+    raise EmailSendError("Resend: hết số lần thử.")  # không tới được — vòng lặp luôn return/raise
+
+
+async def send_otp_email(to_email: str, code: str, settings: Settings) -> None:
+    _require_configured(settings, "OTP")
+    payload = {
+        "from": settings.email_from,
+        "to": [to_email],
+        "subject": "Mã đăng nhập Carbon Analyst",
+        "text": (
+            f"Mã đăng nhập của bạn là: {code}\n\n"
+            f"Mã có hiệu lực trong {settings.otp_expire_minutes} phút. "
+            "Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email."
+        ),
+    }
     try:
-        await aiosmtplib.send(
-            message,
-            hostname=settings.smtp_host,
-            port=settings.smtp_port,
-            username=settings.smtp_user,
-            password=settings.smtp_password,
-            start_tls=True,
-        )
-    except Exception as exc:  # noqa: BLE001 — bọc lại thành lỗi rõ nghĩa cho tầng API
+        async with _http_client(settings) as client:
+            await _post(client, "/emails", payload)
+    except EmailSendError:
         logger.exception("Gửi email OTP thất bại cho %s", to_email)
-        raise EmailSendError(f"Không gửi được email OTP: {exc}") from exc
+        raise
 
 
 # ─── Digest Hot News ─────────────────────────────────────────────────────────
@@ -166,22 +210,24 @@ def _render_html(articles: Sequence[HotNewsEmailItem], app_base_url: str) -> str
     )
 
 
+@dataclass(frozen=True)
+class HotNewsDigest:
+    subject: str
+    text: str
+    html: str
+
+
 def build_hot_news_digest_message(
     articles: Sequence[HotNewsEmailItem], settings: Settings
-) -> EmailMessage:
-    """Dựng email (text + HTML). KHÔNG set header To/Bcc chứa người nhận — người
-    nhận chỉ nằm trong SMTP envelope (xem send_hot_news_digest_email), nên không
-    ai thấy được email của người khác."""
+) -> HotNewsDigest:
+    """Dựng nội dung email (subject + text + HTML) — hàm thuần, không gửi."""
     if not articles:
         raise ValueError("Cần ít nhất 1 bài để dựng email hot news.")
-    message = EmailMessage()
-    message["From"] = settings.smtp_from
-    message["To"] = settings.smtp_from  # người nhận thật đi qua envelope (Bcc)
-    message["Subject"] = build_hot_news_subject(articles)
-    message["Message-ID"] = make_msgid(domain=(settings.smtp_from.rpartition("@")[2] or None))
-    message.set_content(_render_text(articles, settings.app_base_url))
-    message.add_alternative(_render_html(articles, settings.app_base_url), subtype="html")
-    return message
+    return HotNewsDigest(
+        subject=build_hot_news_subject(articles),
+        text=_render_text(articles, settings.app_base_url),
+        html=_render_html(articles, settings.app_base_url),
+    )
 
 
 def _batches(items: Sequence[str], size: int) -> List[List[str]]:
@@ -189,44 +235,50 @@ def _batches(items: Sequence[str], size: int) -> List[List[str]]:
     return [list(items[i : i + size]) for i in range(0, len(items), size)]
 
 
+def _idempotency_key(articles: Sequence[HotNewsEmailItem], batch: Sequence[str]) -> str:
+    """Cùng tập bài + cùng lô người nhận → cùng key, nên nếu request trước đã tới
+    Resend nhưng response bị mất (timeout), gửi lại không tạo email trùng."""
+    raw = "|".join(sorted(a.url for a in articles)) + "#" + "|".join(batch)
+    return "hot-news/" + hashlib.sha256(raw.encode()).hexdigest()
+
+
 async def send_hot_news_digest_email(
     articles: Sequence[HotNewsEmailItem], recipients: Sequence[str], settings: Settings
 ) -> int:
-    """Gửi 1 email digest cho toàn bộ `recipients` (Bcc, chia lô
-    `hot_news_email_bcc_batch_size` người/thư, dùng chung 1 kết nối SMTP).
+    """Gửi digest cho toàn bộ `recipients` qua POST /emails/batch — mỗi người nhận
+    1 email riêng (`to` chỉ có đúng người đó, nên không ai thấy email người khác),
+    chia lô `hot_news_email_batch_size` email/request (tối đa 100).
 
     Trả về số người nhận gửi thành công. Lỗi 1 lô chỉ log rồi gửi tiếp lô sau;
     chỉ raise EmailSendError khi KHÔNG lô nào gửi được (để caller không đánh
     dấu "đã gửi" và lần crawl sau thử lại)."""
-    if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
-        raise EmailSendError(
-            "SMTP chưa được cấu hình (SMTP_HOST/SMTP_USER/SMTP_PASSWORD trong .env) — "
-            "không thể gửi email hot news."
-        )
+    _require_configured(settings, "hot news")
     if not recipients:
         return 0
 
-    message = build_hot_news_digest_message(articles, settings)
+    digest = build_hot_news_digest_message(articles, settings)
+    batch_size = min(settings.hot_news_email_batch_size, RESEND_BATCH_MAX)
     sent = 0
-    try:
-        async with aiosmtplib.SMTP(
-            hostname=settings.smtp_host,
-            port=settings.smtp_port,
-            username=settings.smtp_user,
-            password=settings.smtp_password,
-            start_tls=True,
-        ) as smtp:
-            for batch in _batches(recipients, settings.hot_news_email_bcc_batch_size):
-                try:
-                    await smtp.send_message(message, sender=settings.smtp_user, recipients=batch)
-                    sent += len(batch)
-                except aiosmtplib.SMTPException:
-                    logger.exception("[HOT-NEWS-EMAIL] Gửi lô %d người nhận thất bại", len(batch))
-    except Exception as exc:  # noqa: BLE001 — lỗi kết nối/đăng nhập SMTP
-        if sent == 0:
-            raise EmailSendError(f"Không gửi được email hot news: {exc}") from exc
-        logger.exception("[HOT-NEWS-EMAIL] Kết nối SMTP lỗi giữa chừng (đã gửi %d người)", sent)
+    last_error: Optional[Exception] = None
+    async with _http_client(settings) as client:
+        for batch in _batches(recipients, batch_size):
+            payload = [
+                {
+                    "from": settings.email_from,
+                    "to": [email],
+                    "subject": digest.subject,
+                    "text": digest.text,
+                    "html": digest.html,
+                }
+                for email in batch
+            ]
+            try:
+                await _post(client, "/emails/batch", payload, _idempotency_key(articles, batch))
+                sent += len(batch)
+            except EmailSendError as exc:
+                last_error = exc
+                logger.exception("[HOT-NEWS-EMAIL] Gửi lô %d người nhận thất bại", len(batch))
 
     if sent == 0:
-        raise EmailSendError("Không gửi được email hot news tới lô người nhận nào.")
+        raise EmailSendError(f"Không gửi được email hot news tới lô người nhận nào: {last_error}")
     return sent

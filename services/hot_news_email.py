@@ -7,7 +7,7 @@ Tại sao gom theo đợt crawl thay vì debounce timer trong API server:
   vẫn tách 1 đợt crawl dài thành nhiều email.
 - Trạng thái "đã gửi" nằm ở DB (`articles.hot_news_emailed_at`), không phải
   buffer in-memory — restart/deploy giữa chừng không mất email, chạy nhiều
-  process/worker không gửi trùng (claim bằng `FOR UPDATE SKIP LOCKED`), SMTP lỗi
+  process/worker không gửi trùng (claim bằng `FOR UPDATE SKIP LOCKED`), Resend lỗi
   thì bài vẫn NULL và được gửi lại ở đợt crawl sau.
 
 Chuông đỏ real-time trên UI vẫn đi qua Postgres NOTIFY + SSE như cũ
@@ -26,7 +26,7 @@ from sqlalchemy.orm import defer
 
 from core.config import Settings
 from db.models import Article, User
-from services.email_sender import EmailSendError, send_hot_news_digest_email
+from services.email_sender import EmailSendError, email_configured, send_hot_news_digest_email
 
 logger = logging.getLogger(__name__)
 
@@ -42,23 +42,23 @@ async def send_pending_hot_news_digest(
     session_factory: async_sessionmaker[AsyncSession], settings: Settings
 ) -> HotNewsDigestResult:
     """Gom mọi bài hot news chưa gửi (crawl trong `hot_news_email_max_age_hours`
-    giờ gần nhất) thành 1 email, gửi Bcc tới toàn bộ user is_active, rồi đánh dấu
+    giờ gần nhất) thành 1 email, gửi (qua Resend, mỗi người 1 email) tới toàn bộ user is_active, rồi đánh dấu
     `hot_news_emailed_at`. KHÔNG raise — lỗi chỉ log, để không làm hỏng job crawl
     gọi nó (bài chưa gửi sẽ được thử lại ở đợt crawl sau)."""
     result = HotNewsDigestResult()
     if not settings.hot_news_email_enabled:
         result.skipped_reason = "disabled"
         return result
-    if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
-        logger.warning("[HOT-NEWS-EMAIL] SMTP chưa cấu hình — bỏ qua gửi digest.")
-        result.skipped_reason = "smtp_not_configured"
+    if not email_configured(settings):
+        logger.warning("[HOT-NEWS-EMAIL] Resend chưa cấu hình — bỏ qua gửi digest.")
+        result.skipped_reason = "email_not_configured"
         return result
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.hot_news_email_max_age_hours)
     try:
         async with session_factory() as session:
             async with session.begin():
-                # Khoá các dòng trong suốt transaction (kể cả lúc chờ SMTP) — 1
+                # Khoá các dòng trong suốt transaction (kể cả lúc chờ Resend) — 1
                 # process khác chạy song song sẽ bỏ qua các dòng này thay vì gửi trùng.
                 articles = (
                     await session.execute(

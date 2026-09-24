@@ -60,23 +60,22 @@ class Settings:
     admin_password_hash: str
     cookie_secure: bool
 
-    # OTP email (Gmail SMTP + App Password)
-    smtp_host: str
-    smtp_port: int
-    smtp_user: str
-    smtp_password: str
-    smtp_from: str
+    # Email (OTP + digest Hot News) qua Resend — services/email_sender.py.
+    # email_from phải thuộc domain đã verify trong Resend, vd
+    # "Carbon Analyst <noreply@mcv.network>".
+    resend_api_key: str
+    email_from: str
     otp_expire_minutes: int
     otp_max_attempts: int
 
     # Email digest Hot News (services/hot_news_email.py) — gửi 1 email tổng hợp
     # SAU MỖI đợt crawl (06:00/12:00), không gửi từng bài. max_age_hours: chỉ gửi
-    # bài crawl trong N giờ gần nhất (tránh "xả" tồn đọng cũ khi SMTP hỏng lâu
-    # ngày). bcc_batch_size: số người nhận tối đa/1 email (Gmail giới hạn ~100
-    # người nhận/thư). app_base_url: link "Mở Carbon Analyst" trong email (trống = ẩn).
+    # bài crawl trong N giờ gần nhất (tránh "xả" tồn đọng cũ khi gửi mail hỏng lâu
+    # ngày). batch_size: số email tối đa/1 request Resend batch (mỗi người nhận
+    # 1 email riêng; Resend giới hạn 100). app_base_url: link "Mở Carbon Analyst" trong email (trống = ẩn).
     hot_news_email_enabled: bool
     hot_news_email_max_age_hours: int
-    hot_news_email_bcc_batch_size: int
+    hot_news_email_batch_size: int
     app_base_url: str
 
     @classmethod
@@ -121,15 +120,12 @@ class Settings:
             admin_username=os.environ.get("ADMIN_USERNAME", ""),
             admin_password_hash=os.environ.get("ADMIN_PASSWORD_HASH", ""),
             cookie_secure=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
-            smtp_host=os.environ.get("SMTP_HOST", ""),
-            smtp_port=int(os.environ.get("SMTP_PORT", "587")),
-            smtp_user=os.environ.get("SMTP_USER", ""),
-            smtp_password=os.environ.get("SMTP_PASSWORD", ""),
-            smtp_from=os.environ.get("SMTP_FROM", os.environ.get("SMTP_USER", "")),
+            resend_api_key=os.environ.get("RESEND_API_KEY", ""),
+            email_from=os.environ.get("EMAIL_FROM", ""),
             otp_expire_minutes=int(os.environ.get("OTP_EXPIRE_MINUTES", "5")),
             otp_max_attempts=int(os.environ.get("OTP_MAX_ATTEMPTS", "5")),
             hot_news_email_enabled=os.environ.get("HOT_NEWS_EMAIL_ENABLED", "true").lower() == "true",
             hot_news_email_max_age_hours=int(os.environ.get("HOT_NEWS_EMAIL_MAX_AGE_HOURS", "24")),
-            hot_news_email_bcc_batch_size=int(os.environ.get("HOT_NEWS_EMAIL_BCC_BATCH_SIZE", "50")),
+            hot_news_email_batch_size=int(os.environ.get("HOT_NEWS_EMAIL_BATCH_SIZE", "100")),
             app_base_url=os.environ.get("APP_BASE_URL", "").rstrip("/"),
         )

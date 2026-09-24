@@ -1,6 +1,6 @@
 """
 Gửi thủ công email digest Hot News (bình thường tự chạy cuối mỗi đợt crawl —
-xem main.py::main và services/hot_news_email.py). Dùng để test SMTP/template,
+xem main.py::main và services/hot_news_email.py). Dùng để test Resend/template,
 hoặc gửi bù khi đợt crawl trước gửi lỗi.
 
 Usage:
@@ -44,11 +44,10 @@ async def _dry_run(session_factory, settings: Settings, preview_path: str) -> No
     for a in articles:
         logger.info("  [ID:%d] %s — %s", a.id, a.title, a.url)
     if articles:
-        message = build_hot_news_digest_message(articles, settings)
-        logger.info("Tiêu đề: %s", message["Subject"])
-        html_part = message.get_body(preferencelist=("html",))
+        digest = build_hot_news_digest_message(articles, settings)
+        logger.info("Tiêu đề: %s", digest.subject)
         with open(preview_path, "w", encoding="utf-8") as f:
-            f.write(html_part.get_content())
+            f.write(digest.html)
         logger.info("Đã ghi preview HTML: %s", preview_path)
 
 

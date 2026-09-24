@@ -157,8 +157,8 @@ so a connection isn't held idle while awaiting the Claude API.
 **Hot news email digest** (`services/hot_news_email.py`): at the end of every
 `main.main()` crawl run (scheduler 06:00/12:00), all `is_hot_news` articles with
 `hot_news_emailed_at IS NULL` (crawled within `HOT_NEWS_EMAIL_MAX_AGE_HOURS`) are
-sent as ONE digest email to every active `users` row — recipients go only in the
-SMTP envelope (Bcc, batched by `HOT_NEWS_EMAIL_BCC_BATCH_SIZE`), never in headers.
+sent as ONE digest to every active `users` row via Resend (`services/email_sender.py`, httpx) —
+each recipient gets their own email via `POST /emails/batch` (batched by `HOT_NEWS_EMAIL_BATCH_SIZE`, ≤100).
 Rows are claimed with `FOR UPDATE SKIP LOCKED` and marked only after a successful
 send, so a failed send retries next crawl. Real-time UI alerts are separate (Postgres
 NOTIFY + SSE, `services/hot_news_broadcast.py`). Manual: `python -m scripts.send_hot_news_digest --dry-run`.

@@ -90,7 +90,7 @@ class Article(Base):
     hot_news_reason: Mapped[Optional[str]] = mapped_column(Text)
     # Thời điểm đã gửi email digest hot news cho bài này (NULL = chưa gửi) — xem
     # services/hot_news_email.py. Lưu ở DB (không phải buffer in-memory) để mỗi
-    # bài chỉ gửi đúng 1 lần, và SMTP lỗi thì lần crawl sau tự gửi lại.
+    # bài chỉ gửi đúng 1 lần, và gửi mail lỗi thì lần crawl sau tự gửi lại.
     hot_news_emailed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self) -> str:

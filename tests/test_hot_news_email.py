@@ -1,9 +1,11 @@
 """Test dựng email digest Hot News — services/email_sender.py. Hàm build là
-THUẦN (không đụng SMTP/DB); phần gửi được test bằng SMTP giả (monkeypatch)."""
+THUẦN (không đụng Resend/DB); phần gửi được test bằng Resend giả (httpx.MockTransport)."""
 import asyncio
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from core.config import Settings
@@ -18,9 +20,8 @@ from services.email_sender import (
 
 def _settings(**overrides) -> Settings:
     base = Settings.from_env()
-    values = {**base.__dict__, "smtp_host": "smtp.test", "smtp_user": "bot@mcv.test",
-              "smtp_password": "x", "smtp_from": "bot@mcv.test", "app_base_url": "https://app.test",
-              "hot_news_email_bcc_batch_size": 2, **overrides}
+    values = {**base.__dict__, "resend_api_key": "re_test", "email_from": "bot@mcv.test",
+              "app_base_url": "https://app.test", "hot_news_email_batch_size": 2, **overrides}
     return Settings(**values)
 
 
@@ -36,14 +37,10 @@ def _article(i: int, **overrides):
     return SimpleNamespace(**values)
 
 
-def _html(message) -> str:
-    return message.get_body(preferencelist=("html",)).get_content()
-
-
 def test_single_article_subject_uses_title():
     msg = build_hot_news_digest_message([_article(1)], _settings())
-    assert msg["Subject"] == "[HOT NEWS] EUA tăng mạnh 1"
-    html = _html(msg)
+    assert msg.subject == "[HOT NEWS] EUA tăng mạnh 1"
+    html = msg.html
     assert "Đảo chiều giá EUA 1" in html
     assert 'href="https://news.test/1"' in html
     assert "08:30 23/09/2026" in html  # hiển thị giờ VN
@@ -51,28 +48,19 @@ def test_single_article_subject_uses_title():
 
 def test_multiple_articles_subject_uses_count_and_lists_all():
     msg = build_hot_news_digest_message([_article(1), _article(2), _article(3)], _settings())
-    assert msg["Subject"] == "[HOT NEWS] 3 tin tức quan trọng vừa được cập nhật"
-    html = _html(msg)
+    assert msg.subject == "[HOT NEWS] 3 tin tức quan trọng vừa được cập nhật"
     for i in (1, 2, 3):
-        assert f"EUA tăng mạnh {i}" in html
-    text = msg.get_body(preferencelist=("plain",)).get_content()
-    assert "https://news.test/3" in text
+        assert f"EUA tăng mạnh {i}" in msg.html
+    assert "https://news.test/3" in msg.text
 
 
 def test_untrusted_content_is_escaped_and_bad_urls_neutralised():
     msg = build_hot_news_digest_message(
         [_article(1, title="<script>alert(1)</script>\nX", url="javascript:alert(1)")], _settings()
     )
-    html = _html(msg)
-    assert "<script>" not in html
-    assert "javascript:" not in html
-    assert "\n" not in msg["Subject"]
-
-
-def test_recipients_never_in_headers():
-    msg = build_hot_news_digest_message([_article(1)], _settings())
-    assert msg["To"] == "bot@mcv.test"
-    assert msg["Bcc"] is None
+    assert "<script>" not in msg.html
+    assert "javascript:" not in msg.html
+    assert "\n" not in msg.subject
 
 
 def test_batches():
@@ -80,42 +68,58 @@ def test_batches():
     assert _batches([], 2) == []
 
 
-class _FakeSMTP:
+class _FakeResend:
+    """Giả lập POST /emails/batch — ghi lại danh sách `to` của từng request."""
+
     def __init__(self, fail_batches=()):
-        self.sent = []
+        self.requests = []
         self.fail_batches = set(fail_batches)
 
-    def __call__(self, **_kwargs):
-        return self
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def send_message(self, message, sender, recipients):
-        idx = len(self.sent)
-        self.sent.append(list(recipients))
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        idx = len(self.requests)
+        self.requests.append(request)
         if idx in self.fail_batches:
-            raise email_sender.aiosmtplib.SMTPException("boom")
+            return httpx.Response(422, json={"message": "boom"})
+        body = json.loads(request.content)
+        return httpx.Response(200, json={"data": [{"id": f"e{idx}-{n}"} for n in range(len(body))]})
+
+    def install(self, monkeypatch):
+        monkeypatch.setattr(
+            email_sender,
+            "_http_client",
+            lambda settings: httpx.AsyncClient(
+                base_url=email_sender.RESEND_API_BASE, transport=httpx.MockTransport(self.handler)
+            ),
+        )
+        return self
+
+    def recipients(self):
+        return [[e["to"] for e in json.loads(r.content)] for r in self.requests]
 
 
-def test_send_splits_recipients_into_bcc_batches(monkeypatch):
-    fake = _FakeSMTP()
-    monkeypatch.setattr(email_sender.aiosmtplib, "SMTP", fake)
+def test_send_one_email_per_recipient_in_batches(monkeypatch):
+    fake = _FakeResend().install(monkeypatch)
     sent = asyncio.run(send_hot_news_digest_email([_article(1)], ["a@x", "b@x", "c@x"], _settings()))
     assert sent == 3
-    assert fake.sent == [["a@x", "b@x"], ["c@x"]]
+    # Mỗi người nhận 1 email riêng — không ai thấy địa chỉ người khác.
+    assert fake.recipients() == [[["a@x"], ["b@x"]], [["c@x"]]]
+    assert all(r.url.path == "/emails/batch" for r in fake.requests)
+    keys = [r.headers["Idempotency-Key"] for r in fake.requests]
+    assert len(set(keys)) == 2
 
 
 def test_send_partial_failure_counts_successful_batches(monkeypatch):
-    monkeypatch.setattr(email_sender.aiosmtplib, "SMTP", _FakeSMTP(fail_batches={0}))
+    _FakeResend(fail_batches={0}).install(monkeypatch)
     sent = asyncio.run(send_hot_news_digest_email([_article(1)], ["a@x", "b@x", "c@x"], _settings()))
     assert sent == 1
 
 
 def test_send_raises_when_every_batch_fails(monkeypatch):
-    monkeypatch.setattr(email_sender.aiosmtplib, "SMTP", _FakeSMTP(fail_batches={0, 1}))
+    _FakeResend(fail_batches={0, 1}).install(monkeypatch)
     with pytest.raises(EmailSendError):
         asyncio.run(send_hot_news_digest_email([_article(1)], ["a@x", "b@x", "c@x"], _settings()))
+
+
+def test_send_raises_when_not_configured():
+    with pytest.raises(EmailSendError):
+        asyncio.run(send_hot_news_digest_email([_article(1)], ["a@x"], _settings(resend_api_key="")))
