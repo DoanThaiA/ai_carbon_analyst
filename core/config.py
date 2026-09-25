@@ -65,6 +65,10 @@ class Settings:
     # "Carbon Analyst <noreply@mcv.network>".
     resend_api_key: str
     email_from: str
+    # Địa chỉ thật nhận phản hồi (Reply-To) — trống = không gửi header. Nên đặt:
+    # email "noreply" không có Reply-To + không có List-Unsubscribe là tín hiệu
+    # spam với Gmail. Khi có, digest cũng kèm List-Unsubscribe (mailto) tới địa chỉ này.
+    email_reply_to: str
     otp_expire_minutes: int
     otp_max_attempts: int
 
@@ -122,6 +126,7 @@ class Settings:
             cookie_secure=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
             resend_api_key=os.environ.get("RESEND_API_KEY", ""),
             email_from=os.environ.get("EMAIL_FROM", ""),
+            email_reply_to=os.environ.get("EMAIL_REPLY_TO", "").strip(),
             otp_expire_minutes=int(os.environ.get("OTP_EXPIRE_MINUTES", "5")),
             otp_max_attempts=int(os.environ.get("OTP_MAX_ATTEMPTS", "5")),
             hot_news_email_enabled=os.environ.get("HOT_NEWS_EMAIL_ENABLED", "true").lower() == "true",

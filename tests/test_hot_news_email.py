@@ -21,7 +21,8 @@ from services.email_sender import (
 def _settings(**overrides) -> Settings:
     base = Settings.from_env()
     values = {**base.__dict__, "resend_api_key": "re_test", "email_from": "bot@mcv.test",
-              "app_base_url": "https://app.test", "hot_news_email_batch_size": 2, **overrides}
+              "app_base_url": "https://app.test", "hot_news_email_batch_size": 2,
+              "email_reply_to": "", **overrides}
     return Settings(**values)
 
 
@@ -39,7 +40,7 @@ def _article(i: int, **overrides):
 
 def test_single_article_subject_uses_title():
     msg = build_hot_news_digest_message([_article(1)], _settings())
-    assert msg.subject == "[HOT NEWS] EUA tăng mạnh 1"
+    assert msg.subject == "Tin nổi bật: EUA tăng mạnh 1"
     html = msg.html
     assert "Đảo chiều giá EUA 1" in html
     assert 'href="https://news.test/1"' in html
@@ -48,7 +49,7 @@ def test_single_article_subject_uses_title():
 
 def test_multiple_articles_subject_uses_count_and_lists_all():
     msg = build_hot_news_digest_message([_article(1), _article(2), _article(3)], _settings())
-    assert msg.subject == "[HOT NEWS] 3 tin tức quan trọng vừa được cập nhật"
+    assert msg.subject == "Carbon Analyst: 3 tin nổi bật mới"
     for i in (1, 2, 3):
         assert f"EUA tăng mạnh {i}" in msg.html
     assert "https://news.test/3" in msg.text
@@ -123,3 +124,16 @@ def test_send_raises_when_every_batch_fails(monkeypatch):
 def test_send_raises_when_not_configured():
     with pytest.raises(EmailSendError):
         asyncio.run(send_hot_news_digest_email([_article(1)], ["a@x"], _settings(resend_api_key="")))
+
+
+def test_reply_to_and_list_unsubscribe_only_when_configured(monkeypatch):
+    fake = _FakeResend().install(monkeypatch)
+    asyncio.run(send_hot_news_digest_email([_article(1)], ["a@x"], _settings()))
+    email = json.loads(fake.requests[0].content)[0]
+    assert "reply_to" not in email and "headers" not in email
+
+    fake = _FakeResend().install(monkeypatch)
+    asyncio.run(send_hot_news_digest_email([_article(1)], ["a@x"], _settings(email_reply_to="desk@mcv.test")))
+    email = json.loads(fake.requests[0].content)[0]
+    assert email["reply_to"] == "desk@mcv.test"
+    assert email["headers"]["List-Unsubscribe"] == "<mailto:desk@mcv.test?subject=unsubscribe>"

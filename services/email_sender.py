@@ -82,10 +82,19 @@ async def _post(
     raise EmailSendError("Resend: hết số lần thử.")  # không tới được — vòng lặp luôn return/raise
 
 
+def _sender_fields(settings: Settings) -> dict:
+    """from + reply_to chung cho mọi email. Gmail chấm điểm spam cao hơn với email
+    "noreply" không có Reply-To thật."""
+    fields: dict = {"from": settings.email_from}
+    if settings.email_reply_to:
+        fields["reply_to"] = settings.email_reply_to
+    return fields
+
+
 async def send_otp_email(to_email: str, code: str, settings: Settings) -> None:
     _require_configured(settings, "OTP")
     payload = {
-        "from": settings.email_from,
+        **_sender_fields(settings),
         "to": [to_email],
         "subject": "Mã đăng nhập Carbon Analyst",
         "text": (
@@ -136,13 +145,21 @@ def _format_published(published_at: Optional[datetime]) -> str:
     return published_at.astimezone(TZ_VN).strftime("%H:%M %d/%m/%Y")
 
 
+# Tiêu đề tránh "[HOT NEWS]" viết hoa trong ngoặc — kiểu tiêu đề quảng cáo mà bộ
+# lọc spam của Gmail chấm điểm cao.
 def build_hot_news_subject(articles: Sequence[HotNewsEmailItem]) -> str:
     if len(articles) == 1:
         title = _one_line(articles[0].title) or articles[0].url
         if len(title) > _SUBJECT_TITLE_MAX_CHARS:
             title = title[: _SUBJECT_TITLE_MAX_CHARS - 1].rstrip() + "…"
-        return f"[HOT NEWS] {title}"
-    return f"[HOT NEWS] {len(articles)} tin tức quan trọng vừa được cập nhật"
+        return f"Tin nổi bật: {title}"
+    return f"Carbon Analyst: {len(articles)} tin nổi bật mới"
+
+
+_FOOTER_NOTE = (
+    "Bạn nhận email này vì tài khoản của bạn được cấp quyền truy cập Carbon Analyst. "
+    "Muốn ngừng nhận, hãy trả lời email này hoặc liên hệ quản trị viên."
+)
 
 
 def _render_text(articles: Sequence[HotNewsEmailItem], app_base_url: str) -> str:
@@ -157,6 +174,8 @@ def _render_text(articles: Sequence[HotNewsEmailItem], app_base_url: str) -> str
         lines.append("")
     if app_base_url:
         lines.append(f"Mở Carbon Analyst: {app_base_url}")
+    lines.append("")
+    lines.append(_FOOTER_NOTE)
     return "\n".join(lines)
 
 
@@ -181,31 +200,40 @@ def _render_html(articles: Sequence[HotNewsEmailItem], app_base_url: str) -> str
             f"{esc(_one_line(a.title) or a.url)}</p>"
             f'<p style="margin:6px 0 0;font-size:13px;color:#6b7280;">{meta}</p>'
             f"{reason}"
-            f'<p style="margin:14px 0 0;"><a href="{esc(_safe_href(a.url), quote=True)}" '
-            'style="display:inline-block;padding:8px 16px;background:#b91c1c;color:#ffffff;'
-            'text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;">Đọc bài gốc</a></p>'
+            # Link chữ thay vì nút màu — email toàn nút CTA trỏ ra nhiều domain lạ
+            # trông giống email marketing với bộ lọc spam.
+            f'<p style="margin:12px 0 0;font-size:14px;"><a href="{esc(_safe_href(a.url), quote=True)}" '
+            'style="color:#1d4ed8;">Đọc bài gốc</a></p>'
             "</td></tr></table></td></tr>"
         )
     footer_link = (
-        f'<a href="{esc(app_base_url, quote=True)}" style="color:#b91c1c;">Mở Carbon Analyst</a><br>'
+        f'<a href="{esc(app_base_url, quote=True)}" style="color:#1d4ed8;">Mở Carbon Analyst</a><br>'
         if app_base_url
         else ""
     )
+    heading = f"{len(articles)} tin nổi bật mới"
+    # Preheader: dòng xem trước trong hộp thư (ẩn trong thân email) — thiếu thì
+    # Gmail lấy chữ đầu tiên của HTML, trông cẩu thả.
+    preheader = esc(_one_line(articles[0].title) or heading)
     return (
-        '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f3f4f6;">'
+        '<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{esc(heading)}</title></head>"
+        '<body style="margin:0;padding:0;background:#f3f4f6;">'
+        '<div style="display:none;max-height:0;overflow:hidden;opacity:0;">'
+        f"{preheader}</div>"
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;">'
         '<tr><td align="center" style="padding:24px 12px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         'style="max-width:600px;font-family:Arial,Helvetica,sans-serif;">'
         '<tr><td style="padding:0 0 16px;">'
-        '<p style="margin:0;font-size:12px;font-weight:700;letter-spacing:1px;color:#b91c1c;">HOT NEWS</p>'
-        f'<p style="margin:4px 0 0;font-size:20px;font-weight:700;color:#111827;">'
-        f"{len(articles)} tin tức quan trọng vừa được cập nhật</p>"
+        '<p style="margin:0;font-size:13px;font-weight:600;color:#6b7280;">Carbon Analyst</p>'
+        f'<p style="margin:4px 0 0;font-size:20px;font-weight:700;color:#111827;">{esc(heading)}</p>'
         "</td></tr>"
         + "".join(cards)
         + '<tr><td style="padding:8px 0 0;font-size:12px;color:#9ca3af;line-height:1.6;">'
         f"{footer_link}"
-        "Bạn nhận email này vì tài khoản của bạn được cấp quyền truy cập Carbon Analyst."
+        f"{esc(_FOOTER_NOTE)}"
         "</td></tr></table></td></tr></table></body></html>"
     )
 
@@ -258,23 +286,41 @@ async def send_hot_news_digest_email(
 
     digest = build_hot_news_digest_message(articles, settings)
     batch_size = min(settings.hot_news_email_batch_size, RESEND_BATCH_MAX)
+    # List-Unsubscribe: Gmail ưu tiên email gửi hàng loạt có cách huỷ nhận rõ ràng.
+    # Chỉ gắn khi có Reply-To thật — mailto tới hộp "noreply" còn tệ hơn không có.
+    headers = (
+        {"List-Unsubscribe": f"<mailto:{settings.email_reply_to}?subject=unsubscribe>"}
+        if settings.email_reply_to
+        else {}
+    )
     sent = 0
     last_error: Optional[Exception] = None
     async with _http_client(settings) as client:
         for batch in _batches(recipients, batch_size):
             payload = [
                 {
-                    "from": settings.email_from,
+                    **_sender_fields(settings),
                     "to": [email],
                     "subject": digest.subject,
                     "text": digest.text,
                     "html": digest.html,
+                    **({"headers": headers} if headers else {}),
                 }
                 for email in batch
             ]
             try:
-                await _post(client, "/emails/batch", payload, _idempotency_key(articles, batch))
+                resp = await _post(client, "/emails/batch", payload, _idempotency_key(articles, batch))
                 sent += len(batch)
+                # Log id Resend trả về cho từng người nhận — tra trạng thái giao thật
+                # (delivered/bounced/suppressed) tại resend.com/emails/<id>.
+                ids = [d.get("id") for d in (resp or {}).get("data") or []]
+                for email, email_id in zip(batch, ids):
+                    logger.info("[HOT-NEWS-EMAIL] Resend chấp nhận %s — id=%s", email, email_id)
+                if len(ids) != len(batch):
+                    logger.warning(
+                        "[HOT-NEWS-EMAIL] Resend trả %d id cho lô %d người nhận: %s",
+                        len(ids), len(batch), str(resp)[:500],
+                    )
             except EmailSendError as exc:
                 last_error = exc
                 logger.exception("[HOT-NEWS-EMAIL] Gửi lô %d người nhận thất bại", len(batch))
