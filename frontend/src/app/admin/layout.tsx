@@ -33,7 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Sidebar cố định — chỉ hiện từ md trở lên. Dưới md, điều hướng + đăng
           xuất chuyển lên menu mobile trong Header.tsx (icon burger cạnh chuông
           thông báo), không lặp lại ở đây nữa. */}
-      <nav className="hidden md:block md:w-56 shrink-0 bg-background border border-border rounded-2xl p-3 h-fit md:sticky md:top-20">
+      <nav className="hidden md:block print:hidden md:w-56 shrink-0 bg-background border border-border rounded-2xl p-3 h-fit md:sticky md:top-20">
         <ul className="space-y-1">
           {ADMIN_NAV_ITEMS.map(({ href, label, icon: Icon }) => (
             <li key={href}>

@@ -132,6 +132,29 @@ body {
   @page {
     size: A4;
     margin: 12mm 10mm 12mm 10mm;
+
+    /* Header/footer của trang in — khai báo margin box riêng thì Chrome/Edge
+       KHÔNG in header/footer mặc định của trình duyệt nữa (ngày giờ, <title>
+       "Carbon Analyst Dashboard", URL localhost...) vốn dùng font hệ thống,
+       lệch font với báo cáo — thay bằng header/footer Arial đồng bộ. */
+    @top-left {
+      content: "Tin tức hàng ngày thị trường Carbon";
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #707070;
+    }
+    @top-right {
+      content: "Stavian Industrial Metal";
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #707070;
+    }
+    @bottom-right {
+      content: "Trang " counter(page) " / " counter(pages);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #707070;
+    }
   }
 
   /* ---- Section: cho nội dung chảy liên tục, chỉ ngắt trang khi tràn ---- */

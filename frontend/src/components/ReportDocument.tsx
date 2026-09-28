@@ -5,7 +5,7 @@ import clsx from "clsx";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
-  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck,
+  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink,
 } from "lucide-react";
 import type { Report } from "@/lib/types";
 
@@ -45,8 +45,8 @@ const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: strin
 // cách gọi tên khác của cùng "direction" (tăng/giảm/đi ngang) đã có sẵn trong
 // trading_scenarios, KHÔNG phải trường dữ liệu mới/suy diễn thêm.
 const TREND_META: Record<string, { arrow: string; label: string; className: string }> = {
-  "tăng": { arrow: "↗", label: "NGHIÊNG TĂNG", className: "text-up" },
-  "giảm": { arrow: "↘", label: "NGHIÊNG GIẢM", className: "text-down" },
+  "tăng": { arrow: "▲", label: "NGHIÊNG TĂNG", className: "text-up" },
+  "giảm": { arrow: "▼", label: "NGHIÊNG GIẢM", className: "text-down" },
   "đi ngang": { arrow: "↔", label: "GIẰNG CO", className: "text-muted-light" },
 };
 
@@ -234,11 +234,15 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
 // báo) và TÍN HIỆU HÔM NAY (đầu tiên của Phần 2, variant mặc định "primary").
 function FramedHighlight({
   title,
+  icon: Icon,
   children,
   className,
   variant = "primary",
 }: {
   title: string;
+  // Icon lucide (SVG) thay cho emoji — emoji không có trong Arial, khi in PDF
+  // sẽ bị trình duyệt thay bằng font emoji khác, lệch font với phần còn lại.
+  icon?: React.ElementType;
   children: React.ReactNode;
   className?: string;
   variant?: "primary" | "danger";
@@ -261,6 +265,7 @@ function FramedHighlight({
             isDanger ? "bg-[#7A1E1E]" : "bg-primary-dark"
           )}
         >
+          {Icon && <Icon size={14} strokeWidth={2.5} aria-hidden="true" />}
           <span className="font-extrabold text-[12.5px] sm:text-[13.5px] tracking-wide uppercase">{title}</span>
         </span>
       </div>
@@ -598,7 +603,7 @@ export function ReportDocument({ report }: { report: Report }) {
     const support = Math.min(...chartData.map((c: any) => c.low));
     return { support, resistance, target: resistance + (resistance - support) };
   })() : null;
-  const fmtEua = (n: number) => `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR/tCO₂`;
+  const fmtEua = (n: number) => `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR/tCO2`;
   const NO_DATA = <span className="text-muted-light">—</span>;
   const quickSignalRows: { label: string; value: React.ReactNode }[] = [
     {
@@ -710,7 +715,7 @@ export function ReportDocument({ report }: { report: Report }) {
             rồi mới tới danh sách yếu tố nổi bật trong ngày (nội dung y hệt
             "Tóm tắt điều hành" cũ), các mục không còn vạch ngăn giữa với nhau. */}
         <section className="pt-0 pb-5">
-          <FramedHighlight title="🚨 ĐIỂM NHẤN" variant="danger">
+          <FramedHighlight title="ĐIỂM NHẤN" icon={AlertTriangle} variant="danger">
             {euaSummary && (
               <div className="mb-1.5 pb-2 border-b border-[#7A1E1E]/20">
                 <p className="text-[14.5px] sm:text-[15.5px] leading-[1.3] font-bold text-[#7A1E1E] uppercase text-center sm:text-left">
@@ -743,7 +748,7 @@ export function ReportDocument({ report }: { report: Report }) {
                         rel="noopener noreferrer"
                         className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
                       >
-                        Nguồn: {sourceName} ↗
+                        Nguồn: {sourceName} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                       </a>
                     )}
                   </li>
@@ -765,7 +770,7 @@ export function ReportDocument({ report }: { report: Report }) {
             <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
               <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
                 <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
-                <span>EUR/tCO₂e</span>
+                <span className="normal-case">EUR/tCO2e</span>
               </div>
               <CandlestickChart report={report} />
             </div>
@@ -948,7 +953,7 @@ export function ReportDocument({ report }: { report: Report }) {
                               rel="noopener noreferrer"
                               className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
                             >
-                              Nguồn: {d.source_name} ↗
+                              Nguồn: {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                             </a>
                           )}
                         </div>
@@ -980,7 +985,7 @@ export function ReportDocument({ report }: { report: Report }) {
                               rel="noopener noreferrer"
                               className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
                             >
-                              Nguồn: {d.source_name} ↗
+                              Nguồn: {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                             </a>
                           )}
                         </div>
@@ -1313,7 +1318,7 @@ export function ReportDocument({ report }: { report: Report }) {
                               rel="noopener noreferrer"
                               className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
                             >
-                              Nguồn: {sourceName} ↗
+                              Nguồn: {sourceName} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                             </a>
                           )}
                         </div>
@@ -1411,7 +1416,7 @@ export function ReportDocument({ report }: { report: Report }) {
                             rel="noopener noreferrer"
                             className="mt-1 inline-block font-mono text-[11.5px] text-primary hover:underline"
                           >
-                            Nguồn: {art.source} ↗
+                            Nguồn: {art.source} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                           </a>
                         </div>
                       ))}
