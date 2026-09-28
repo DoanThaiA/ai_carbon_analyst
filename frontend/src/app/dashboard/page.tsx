@@ -7,6 +7,7 @@ import { FileText, CheckCircle2, ChevronRight, AlertCircle } from "lucide-react"
 import { format } from "date-fns";
 import { api } from "@/lib/api";
 import type { ReportSummary } from "@/lib/types";
+import { displayReportDate } from "@/lib/reportDate";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -73,7 +74,7 @@ export default function Dashboard() {
                     <FileText size={20} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-label">Báo cáo ngày {report.report_date}</h3>
+                    <h3 className="text-lg font-bold text-label">Báo cáo ngày {displayReportDate(report.report_date)}</h3>
                   </div>
                 </div>
                 <div className="px-2.5 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5 bg-tint text-primary-dark border border-primary/20">

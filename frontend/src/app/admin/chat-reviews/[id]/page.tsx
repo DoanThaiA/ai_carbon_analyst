@@ -20,6 +20,7 @@ import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { AdminChatMessage, AdminChatSessionDetail } from "@/lib/types";
+import { displayReportDate } from "@/lib/reportDate";
 
 const RATING_BADGE: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
   good: { label: "Tốt", icon: <ThumbsUp size={13} />, cls: "bg-tint text-primary-dark border border-primary/20" },
@@ -105,7 +106,7 @@ export default function AdminChatReviewDetailPage() {
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Calendar size={14} className="text-muted-light" />
-                  Báo cáo ngày {session.report_date}
+                  Báo cáo ngày {displayReportDate(session.report_date)}
                 </span>
                 <span className="text-muted-light">Cập nhật {format(new Date(session.updated_at), "HH:mm dd/MM/yyyy")}</span>
               </div>
