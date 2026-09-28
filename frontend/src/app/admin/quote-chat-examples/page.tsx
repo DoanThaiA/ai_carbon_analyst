@@ -6,7 +6,6 @@ import { Sparkles, Trash2, AlertCircle, Quote as QuoteIcon } from "lucide-react"
 import { format } from "date-fns";
 import { api } from "@/lib/api";
 import type { QuoteChatExample } from "@/lib/types";
-import { displayReportDate } from "@/lib/reportDate";
 
 export default function AdminQuoteChatExamplesPage() {
   const [examples, setExamples] = useState<QuoteChatExample[]>([]);
@@ -86,7 +85,7 @@ export default function AdminQuoteChatExamplesPage() {
             <div key={ex.id} className="bg-background border border-border rounded-2xl p-5 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted-light">
-                  {ex.source_report_date && <span>Báo cáo ngày {displayReportDate(ex.source_report_date)}</span>}
+                  {ex.source_report_date && <span>Báo cáo ngày {ex.source_report_date}</span>}
                   {ex.created_by && <span>Thêm bởi {ex.created_by}</span>}
                   <span>{format(new Date(ex.created_at), "HH:mm dd/MM/yyyy")}</span>
                 </div>

@@ -9,17 +9,20 @@ Script chạy ngầm 24/7, tự động kích hoạt 4 tác vụ độc lập th
   3. noon_news_crawl_job    12:00  — crawl lại CHỈ nhóm nguồn is_noon_crawl=True (dữ liệu
                                      sàn/cơ quan chính thức: EIA, IETA, OPEC, Nasdaq, EU
                                      Commission, ESMA, ICE, EEX)
-  4. auto_report_job        07:00  — tự động sinh 1 báo cáo/ngày cho ngày hôm qua (VN) bằng Claude
+  4. auto_report_job        07:00  — tự động sinh 1 báo cáo/ngày bằng Claude, lưu report_date = HÔM NAY
+                                     (VN) — dữ liệu vẫn là giá/tin của hôm qua, xem
+                                     services/report_generator.py::report_data_date
 
 Cửa sổ lọc bài báo theo published_at (pipeline/crawl_pipeline.py):
   Cả đợt crawl 06:00 lẫn 12:00 đều lọc bài theo cùng khung cố định:
     [06:00 VN ngày T, 06:00 VN ngày T+1)
-  Ví dụ: báo cáo ngày 28/08 chỉ chứa bài publish từ 06:00 ngày 28/08 đến 06:00 ngày 29/08.
+  Ví dụ: báo cáo ngày 29/08 (report_date = 29/08, sinh 07:00 ngày 29/08) chỉ chứa bài
+  publish từ 06:00 ngày 28/08 đến 06:00 ngày 29/08.
   Đợt 12:00 bổ sung bài bị miss trong cùng cửa sổ đó, không lấy bài mới hơn 06:00 hôm nay.
 
 auto_report_job chạy SAU đợt morning_news_crawl 06:00 — tin tức đưa vào báo cáo được lọc
-theo crawled_at ở services/report_generator.py::get_news_for_report (07:00 VN ngày T →
-07:00 VN ngày T+1). Job này chỉ tạo báo cáo mới nếu ngày đó CHƯA có report (hoặc report cũ
+theo crawled_at ở services/report_generator.py::get_news_for_report (07:00 VN ngày T-1 →
+07:00 VN ngày T, với T = report_date = ngày sinh báo cáo). Job này chỉ tạo báo cáo mới nếu ngày đó CHƯA có report (hoặc report cũ
 bị 'failed') — không đụng vào report đã 'draft'/'published' do admin thao tác thủ công,
 các API /api/admin/reports/* (generate/publish/edit/delete) vẫn hoạt động độc lập như cũ.
 
@@ -128,7 +131,10 @@ async def noon_news_crawl_job() -> None:
 # ─── Job 3: Auto-generate Report (07:00) ─────────────────────────────────────
 
 async def run_auto_report_job() -> None:
-    """Tự động sinh 1 báo cáo/ngày cho ngày hôm qua (VN) — chạy sau đợt news crawl 06:00.
+    """Tự động sinh 1 báo cáo/ngày, lưu report_date = HÔM NAY (VN) — chạy sau đợt news
+    crawl 06:00. Dữ liệu trong báo cáo vẫn là của hôm qua (giá phiên đóng cửa hôm qua,
+    tin crawl 07:00 hôm qua → 07:00 hôm nay) — generate_report_content tự lùi 1 ngày
+    qua report_data_date(), ở đây chỉ quyết định ngày LƯU.
 
     Không tạo/ghi đè nếu report ngày đó đã 'generating'/'draft'/'published' (tránh
     đụng vào báo cáo admin đã tạo/duyệt thủ công qua POST /api/admin/reports/generate) —
@@ -141,7 +147,7 @@ async def run_auto_report_job() -> None:
     from api.routers.admin_reports import _run_report_generation_job
     from db.models import Report
 
-    target_date = (datetime.now(TZ_VN) - timedelta(days=1)).strftime("%Y-%m-%d")
+    target_date = datetime.now(TZ_VN).strftime("%Y-%m-%d")
     logger.info("=" * 60)
     logger.info("🚀 [SCHEDULER] Bắt đầu Auto Report Job cho ngày %s...", target_date)
 

@@ -357,6 +357,20 @@ def _format_pct_with_abs(pct: Optional[float], close_price: float) -> str:
     return f"{pct:+.2f}% ({abs_change:+.2f})"
 
 
+def report_data_date(report_date_str: str) -> str:
+    """report_date (ngày TẠO/phát hành báo cáo, lưu trong DB và hiển thị trên UI)
+    -> ngày DỮ LIỆU của báo cáo = report_date - 1 ngày.
+
+    Báo cáo sinh lúc 07:00 ngày T được lưu report_date = T, nhưng vẫn dùng giá
+    phiên đóng cửa <= T-1 và tin tức crawl trong khung 07:00 (VN) T-1 → 07:00
+    (VN) T (xem get_news_for_report) — tức mọi logic lấy dữ liệu bên dưới vẫn
+    chạy theo ngày dữ liệu T-1 như trước, chỉ đổi ngày LƯU của báo cáo.
+    Quote Chat (services/quote_chat.py, services/retrieval.py) cũng quy đổi
+    qua hàm này để tra đúng dữ liệu của báo cáo đang xem.
+    """
+    return (datetime.strptime(report_date_str, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
+
+
 async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> tuple[List[Dict], str]:
     """Lấy dữ liệu giá của ngày gần nhất có dữ liệu (<= target_date_str)."""
     # Tìm ngày gần nhất có dữ liệu
@@ -466,8 +480,9 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
     ngày T được auto-generate lúc 07:00 (VN) ngày T+1 — nên tin tức đưa vào báo cáo
     ngày T là tin thu thập từ 07:00 (VN) ngày T đến 07:00 (VN) ngày T+1 (bao gồm cả
     đợt crawl 06:00 của ngày T+1, chạy ngay trước khi report được sinh).
-    Ví dụ: báo cáo ngày 23/08 (sinh lúc 07:00 ngày 24/08) lấy tin từ 07:00 ngày 23/08
-    đến 07:00 ngày 24/08.
+    Ví dụ: dữ liệu ngày 23/08 (báo cáo sinh lúc 07:00 ngày 24/08, lưu report_date =
+    24/08 — xem report_data_date) lấy tin từ 07:00 ngày 23/08 đến 07:00 ngày 24/08.
+    `target_date_str` ở đây là NGÀY DỮ LIỆU, không phải report_date.
 
     DB lưu UTC, VN = UTC+7 → 07:00 (VN) ngày T chính là 00:00 (UTC) ngày T.
     """
@@ -875,13 +890,14 @@ def _gasoil_crack_spread_summary(prices: List[Dict]) -> Optional[str]:
     )
 
 
-async def get_previous_report_events(session: AsyncSession, target_date_str: str) -> List[Dict]:
-    """Lấy danh sách sự kiện Mục 8 từ báo cáo gần nhất TRƯỚC ngày target — để Mục
-    8 hôm nay có thể cập nhật lại kết quả thực tế của các sự kiện kỳ trước đã qua."""
+async def get_previous_report_events(session: AsyncSession, report_date_str: str) -> List[Dict]:
+    """Lấy danh sách sự kiện Mục 8 từ báo cáo gần nhất TRƯỚC báo cáo `report_date_str`
+    (so theo report_date — ngày tạo, KHÔNG phải ngày dữ liệu) — để Mục 8 hôm nay có
+    thể cập nhật lại kết quả thực tế của các sự kiện kỳ trước đã qua."""
     stmt = (
         select(Report)
         .where(
-            Report.report_date < target_date_str,
+            Report.report_date < report_date_str,
             Report.status.in_(["draft", "published"]),  # bỏ qua report đang 'generating'/'failed' — content=None
         )
         .order_by(desc(Report.report_date))
@@ -1462,11 +1478,16 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 # Main orchestrator
 # ─────────────────────────────────────────────────────────────────────
 
-async def generate_report_content(session: AsyncSession, target_date: str) -> Dict[str, Any]:
+async def generate_report_content(session: AsyncSession, report_date: str) -> Dict[str, Any]:
     """
     Sinh nội dung báo cáo bằng cách gọi LLM riêng cho từng mục.
     Mỗi mục chỉ nhận đúng những topic tin tức liên quan.
+
+    `report_date`: ngày TẠO báo cáo (khoá lưu DB). Toàn bộ dữ liệu (giá, tin tức,
+    lịch sự kiện, prompt) dùng `target_date` = ngày dữ liệu = report_date - 1 —
+    y hệt logic trước đây, xem report_data_date().
     """
+    target_date = report_data_date(report_date)
     # ── 1. Thu thập dữ liệu ──────────────────────────────────────────
     # 1 query duy nhất — override admin đã custom cho khung phân tích EUA (nếu
     # có), dùng cho cả Mục 2/3/5 bên dưới (xem services/eua_framework_admin.py).
@@ -1483,7 +1504,7 @@ async def generate_report_content(session: AsyncSession, target_date: str) -> Di
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
     pending_outcome_events, still_upcoming_events = _split_prev_events(
-        await get_previous_report_events(session, target_date), target_date
+        await get_previous_report_events(session, report_date), target_date
     )
     prev_events_text = _format_prev_events(pending_outcome_events, still_upcoming_events)
     recurring_calendar_events = _compute_recurring_calendar_events(target_date)

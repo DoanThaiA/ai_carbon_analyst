@@ -7,7 +7,6 @@ import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { AdminChatSessionListResponse, AdminChatSessionSummary, ChatRating } from "@/lib/types";
-import { displayReportDate } from "@/lib/reportDate";
 
 const PAGE_SIZE = 20;
 
@@ -123,7 +122,7 @@ export default function AdminChatReviewsPage() {
                           {s.user_email}
                         </Link>
                       </td>
-                      <td className="px-4 py-2.5 text-body whitespace-nowrap">{displayReportDate(s.report_date)}</td>
+                      <td className="px-4 py-2.5 text-body whitespace-nowrap">{s.report_date}</td>
                       <td className="px-4 py-2.5 text-body max-w-xs">
                         <p className="line-clamp-2 italic">{s.quote}</p>
                       </td>
@@ -158,7 +157,7 @@ export default function AdminChatReviewsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-semibold text-label truncate">{s.user_email}</p>
-                      <p className="text-xs text-muted-light">Báo cáo {displayReportDate(s.report_date)} · {format(new Date(s.updated_at), "HH:mm dd/MM/yyyy")}</p>
+                      <p className="text-xs text-muted-light">Báo cáo {s.report_date} · {format(new Date(s.updated_at), "HH:mm dd/MM/yyyy")}</p>
                     </div>
                     <span className={clsx("shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold", badge.cls)}>
                       {badge.icon}

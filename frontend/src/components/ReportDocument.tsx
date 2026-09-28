@@ -8,7 +8,6 @@ import {
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink,
 } from "lucide-react";
 import type { Report } from "@/lib/types";
-import { displayReportDate } from "@/lib/reportDate";
 
 // "YYYY-MM-DD" -> "dd/MM" (nhãn trục X) — tránh phụ thuộc date-fns chỉ cho 1 format đơn giản.
 function formatShortDate(dateStr: string) {
@@ -688,7 +687,7 @@ export function ReportDocument({ report }: { report: Report }) {
                 Phát hành
               </div>
               <div className="text-[13px] sm:text-[15px] font-bold leading-snug">
-                {formatVietnameseDate(displayReportDate(report.report_date))}
+                {formatVietnameseDate(report.report_date)}
               </div>
             </div>
           </div>

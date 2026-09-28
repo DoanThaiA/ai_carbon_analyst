@@ -64,6 +64,10 @@ class RetrievalService:
             # đúng report_date -> "Danh sách tin tức tham khảo" rỗng dù dữ liệu đã có sẵn.
             start_date = target_date
             end_date = target_date + timedelta(days=1)
+            # `report_date` ở đây là NGÀY DỮ LIỆU tin tức (caller đã quy đổi — xem
+            # quote_chat.py::retrieve_context_for_quote); báo cáo tương ứng được lưu
+            # report_date = ngày dữ liệu + 1 (report_generator.py::report_data_date).
+            report_key = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
 
             filter_cte = """
             article_filter AS (
@@ -79,7 +83,7 @@ class RetrievalService:
             )
             params["start_date"] = start_date
             params["end_date"] = end_date
-            params["report_date"] = report_date
+            params["report_date"] = report_key
 
         if only_source_type:
             conditions.append("source_type = :only_source_type")

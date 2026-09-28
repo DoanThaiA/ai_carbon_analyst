@@ -7,7 +7,6 @@ import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { ReportSummary } from "@/lib/types";
-import { displayReportDate } from "@/lib/reportDate";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -74,10 +73,9 @@ export default function AdminReportsPage() {
     setGenerating(true);
     setError("");
 
-    // Báo cáo chạy lúc 7h sáng sẽ lấy dữ liệu của ngày hôm qua (phiên đóng cửa)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const targetDate = format(yesterday, "yyyy-MM-dd");
+    // Báo cáo lưu theo ngày TẠO (hôm nay) — backend tự lấy dữ liệu của hôm qua
+    // (giá phiên đóng cửa + tin crawl), xem services/report_generator.py::report_data_date.
+    const targetDate = format(new Date(), "yyyy-MM-dd");
 
     try {
       await api.post(`/api/admin/reports/generate?date=${targetDate}`);
@@ -138,7 +136,7 @@ export default function AdminReportsPage() {
                   <div className={clsx("p-2 rounded-lg", STATUS_STYLES[report.status].iconWrap)}>
                     <FileText size={20} />
                   </div>
-                  <h3 className="text-lg font-bold text-label">Báo cáo ngày {displayReportDate(report.report_date)}</h3>
+                  <h3 className="text-lg font-bold text-label">Báo cáo ngày {report.report_date}</h3>
                 </div>
                 <div className={clsx(
                   "px-2.5 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5",

@@ -4,6 +4,7 @@ import base64
 import io
 import logging
 import re
+from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
 
 from sqlalchemy import select, func
@@ -17,6 +18,7 @@ from services import minio_service
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services.report_generator import (
+    report_data_date,
     get_prices_for_report,
     _summarize_prices,
     get_historical_ohlc_for_report,
@@ -336,6 +338,9 @@ async def _tool_eua_volume_history_text(
 
 PRICE_HISTORY_DEFAULT_SESSIONS = 10
 PRICE_HISTORY_MAX_SESSIONS = 60
+# Giới hạn độ dài khoảng ngày khi get_price_history có start_date (~1 năm lịch) — đủ
+# cho "từ đầu năm"/"quý trước", tránh 1 lệnh gọi kéo cả lịch sử giá vào context.
+PRICE_RANGE_MAX_DAYS = 370
 
 
 async def _resolve_instrument(session: AsyncSession, instrument_input: str) -> Optional[Instrument]:
@@ -358,7 +363,8 @@ async def _resolve_instrument(session: AsyncSession, instrument_input: str) -> O
 
 
 async def _tool_price_history_text(
-    session: AsyncSession, instrument_input: str, target_date: str, sessions: int, requested_date: Optional[str] = None
+    session: AsyncSession, instrument_input: str, target_date: str, sessions: int,
+    requested_date: Optional[str] = None, start_date: Optional[str] = None,
 ) -> str:
     """Lịch sử OHLC (+khối lượng nếu có) của 1 instrument BẤT KỲ hệ thống đang
     theo dõi qua NHIỀU phiên — tổng quát hoá `get_historical_ohlc_for_report()`
@@ -375,6 +381,20 @@ async def _tool_price_history_text(
             f"Không tìm thấy instrument \"{instrument_input}\" — hệ thống đang theo dõi các mã: {listing}. "
             "Gọi lại tool với đúng 1 mã trong danh sách này."
         )
+
+    if start_date:
+        # Khoảng ngày cụ thể (vd "tuần trước", "tháng trước" — model quy đổi qua LỊCH
+        # THAM CHIẾU trong system prompt): lấy dư rồi lọc đúng các phiên trong
+        # [start_date, target_date], giữ thêm 1 phiên NGAY TRƯỚC start_date làm mốc so
+        # sánh — "tuần trước tăng bao nhiêu" = đóng cửa phiên cuối tuần trước so với
+        # đóng cửa phiên cuối của tuần liền trước đó, không phải so với phiên đầu tuần.
+        span_days = (date_cls.fromisoformat(target_date) - date_cls.fromisoformat(start_date)).days + 1
+        buffered = await get_historical_ohlc_for_report(
+            session, inst.code, target_date, limit=min(span_days, PRICE_RANGE_MAX_DAYS) + 5
+        )
+        in_range = [c for c in buffered if str(c["date"]) >= start_date]
+        before = [c for c in buffered if str(c["date"]) < start_date]
+        return _format_price_range_text(inst, in_range, before[-1] if before else None, start_date, target_date)
 
     chart_data = await get_historical_ohlc_for_report(session, inst.code, target_date, limit=sessions)
     if not chart_data:
@@ -406,6 +426,55 @@ async def _tool_price_history_text(
         f"cao nhất {high:.2f}, thấp nhất {low:.2f} trong giai đoạn này.\n"
         "LƯU Ý: dùng ĐÚNG số liệu này, TUYỆT ĐỐI KHÔNG tự bịa số khác hay suy diễn thêm mốc kỹ thuật "
         f"(mốc hỗ trợ/kháng cự tính sẵn CHỈ có cho EUA, qua tool get_eua_details) cho {inst.code}."
+    )
+
+
+def _format_price_range_text(
+    inst: Instrument, rows: List[Dict[str, Any]], baseline: Optional[Dict[str, Any]], start_date: str, end_date: str
+) -> str:
+    """Kết quả get_price_history khi có start_date — tính SẴN biến động cả giai đoạn
+    bằng Python (không để model tự cộng trừ) để câu trả lời "tuần/tháng trước tăng
+    giảm bao nhiêu" luôn chính xác."""
+    period = f"{start_date} → {end_date}"
+    if not rows:
+        return (
+            f"Không có phiên giao dịch nào của {inst.name} ({inst.code}) trong giai đoạn {period} "
+            "(nghỉ lễ/cuối tuần/chưa crawl). PHẢI nói rõ điều này, KHÔNG tự bịa số liệu giai đoạn đó."
+        )
+    lines = [
+        f"- {c['date']} ({_weekday_vn(date_cls.fromisoformat(str(c['date'])))}): mở {c['open']:.2f}, "
+        f"cao {c['high']:.2f}, thấp {c['low']:.2f}, đóng {c['close']:.2f}"
+        + (f", KL {c['volume']:,.0f}" if c.get("volume") is not None else "")
+        for c in rows
+    ]
+    last = rows[-1]
+    high = max(c["high"] for c in rows)
+    low = min(c["low"] for c in rows)
+    if baseline:
+        delta = last["close"] - baseline["close"]
+        pct = (delta / baseline["close"] * 100) if baseline["close"] else 0
+        change = (
+            f"đóng cửa phiên cuối giai đoạn ({last['date']}) {last['close']:.2f} so với đóng cửa phiên "
+            f"liền trước giai đoạn ({baseline['date']}) {baseline['close']:.2f}: {delta:+.2f} ({pct:+.2f}%)"
+        )
+    else:
+        first = rows[0]
+        delta = last["close"] - first["close"]
+        pct = (delta / first["close"] * 100) if first["close"] else 0
+        change = (
+            f"(không có phiên nào trước giai đoạn để làm mốc) đóng cửa {first['date']} {first['close']:.2f} "
+            f"→ {last['date']} {last['close']:.2f}: {delta:+.2f} ({pct:+.2f}%)"
+        )
+    span_days = (date_cls.fromisoformat(end_date) - date_cls.fromisoformat(start_date)).days + 1
+    truncated = (
+        f"LƯU Ý: khoảng dài hơn {PRICE_RANGE_MAX_DAYS} ngày — chỉ lấy được phần cuối giai đoạn, phần đầu bị thiếu.\n"
+        if span_days > PRICE_RANGE_MAX_DAYS else ""
+    )
+    return (
+        f"{truncated}Giá {inst.name} ({inst.code}, đơn vị {inst.unit or '?'}) giai đoạn {period} — "
+        f"{len(rows)} phiên có dữ liệu:\n" + "\n".join(lines) + "\n"
+        f"Biến động cả giai đoạn (đã tính sẵn): {change}. Cao nhất {high:.2f}, thấp nhất {low:.2f}.\n"
+        "LƯU Ý: dùng ĐÚNG số đã tính sẵn này, KHÔNG tự tính lại; nêu rõ khoảng ngày thực tế trong câu trả lời."
     )
 
 
@@ -611,12 +680,98 @@ def _format_bullets(bullets: Optional[List[Any]]) -> str:
 # System prompt
 # ─────────────────────────────────────────────────────────────────────
 
+_TZ_VN = timezone(timedelta(hours=7))
+_WEEKDAYS_VN = ("Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật")
+_WEEKDAYS_VN_SHORT = ("T2", "T3", "T4", "T5", "T6", "T7", "CN")
+# Số tuần lịch hiển thị trong LỊCH THAM CHIẾU (tính lùi từ tuần hiện tại) — đủ phủ
+# "tháng trước" trọn vẹn cả khi hôm nay là cuối tháng.
+DATE_REFERENCE_WEEKS_BACK = 9
+
+
+def _weekday_vn(d: date_cls) -> str:
+    return _WEEKDAYS_VN[d.weekday()]
+
+
+def _fmt_day(d: date_cls) -> str:
+    return f"{_weekday_vn(d)} {d:%d/%m/%Y} ({d.isoformat()})"
+
+
+def _fmt_range(start: date_cls, end: date_cls) -> str:
+    trading_days = sum(1 for i in range((end - start).days + 1) if (start + timedelta(days=i)).weekday() < 5)
+    return f"{start.isoformat()} → {end.isoformat()} ({_weekday_vn(start)} {start:%d/%m} – {_weekday_vn(end)} {end:%d/%m/%Y}, {trading_days} ngày Thứ Hai–Thứ Sáu)"
+
+
+def _month_bounds(year: int, month: int) -> tuple[date_cls, date_cls]:
+    start = date_cls(year, month, 1)
+    next_month = date_cls(year + (month == 12), month % 12 + 1, 1)
+    return start, next_month - timedelta(days=1)
+
+
+def _build_date_reference(report_date: str, today: Optional[date_cls] = None) -> str:
+    """LỊCH THAM CHIẾU tính SẴN bằng Python — model không tự tính thứ/ngày (LLM hay
+    sai thứ trong tuần, số ngày trong tháng, ranh giới tuần/tháng khi quy đổi "tuần
+    trước", "tháng trước", "thứ Tư tuần trước"...). Tuần tính Thứ Hai → Chủ Nhật.
+    Mốc tương đối lấy theo HÔM NAY (giờ VN); ngày báo cáo đang xem ghi kèm riêng."""
+    today = today or datetime.now(_TZ_VN).date()
+    week_start = today - timedelta(days=today.weekday())
+    last_week_start = week_start - timedelta(days=7)
+    two_weeks_start = week_start - timedelta(days=14)
+    month_start, month_end = _month_bounds(today.year, today.month)
+    prev_month_start, prev_month_end = _month_bounds(
+        today.year - (today.month == 1), (today.month - 2) % 12 + 1
+    )
+    quarter = (today.month - 1) // 3
+    quarter_start = date_cls(today.year, quarter * 3 + 1, 1)
+    prev_quarter_start = date_cls(today.year - (quarter == 0), ((quarter - 1) % 4) * 3 + 1, 1)
+    try:
+        report_day = date_cls.fromisoformat(report_date)
+        report_line = (
+            f"- Báo cáo đang xem: {_fmt_day(report_day)} — dữ liệu của báo cáo là ngày "
+            f"{_fmt_day(report_day - timedelta(days=1))} (giá = phiên giao dịch gần nhất tính đến ngày đó)."
+        )
+    except ValueError:
+        report_line = f"- Báo cáo đang xem: {report_date}."
+
+    calendar_lines = []
+    for w in range(DATE_REFERENCE_WEEKS_BACK, -2, -1):  # từ 9 tuần trước tới tuần sau
+        start = week_start - timedelta(days=7 * w)
+        label = {0: "tuần này", 1: "tuần trước", 2: "2 tuần trước", -1: "tuần sau"}.get(w, f"{w} tuần trước")
+        days = " | ".join(
+            f"{_WEEKDAYS_VN_SHORT[i]} {(start + timedelta(days=i)):%d/%m}"
+            for i in range(7)
+        )
+        calendar_lines.append(f"  {label}: {days}")
+
+    return f"""=== LỊCH THAM CHIẾU (đã tính sẵn chính xác — PHẢI dùng bảng này, TUYỆT ĐỐI KHÔNG tự tính thứ/ngày) ===
+- HÔM NAY: {_fmt_day(today)} (giờ Việt Nam).
+{report_line}
+- Hôm qua: {_fmt_day(today - timedelta(days=1))}. Hôm kia: {_fmt_day(today - timedelta(days=2))}.
+- Tuần này: {_fmt_range(week_start, week_start + timedelta(days=6))}.
+- Tuần trước: {_fmt_range(last_week_start, last_week_start + timedelta(days=6))}.
+- 2 tuần trước: {_fmt_range(two_weeks_start, two_weeks_start + timedelta(days=6))}.
+- 7 ngày qua: {_fmt_range(today - timedelta(days=7), today - timedelta(days=1))}.
+- 30 ngày qua: {_fmt_range(today - timedelta(days=30), today - timedelta(days=1))}.
+- Tháng này (tháng {today.month}/{today.year}): {_fmt_range(month_start, month_end)}.
+- Tháng trước (tháng {prev_month_start.month}/{prev_month_start.year}): {_fmt_range(prev_month_start, prev_month_end)}.
+- Quý này (Q{quarter + 1}/{today.year}): {_fmt_range(quarter_start, today)} (tính tới hôm nay).
+- Quý trước (Q{(quarter - 1) % 4 + 1}/{prev_quarter_start.year}): {_fmt_range(prev_quarter_start, quarter_start - timedelta(days=1))}.
+- Từ đầu năm: {_fmt_range(date_cls(today.year, 1, 1), today)}.
+Lịch các tuần gần đây (tuần = Thứ Hai → Chủ Nhật; T2..T7 = Thứ Hai..Thứ Bảy, CN = Chủ Nhật; ngày dd/mm):
+""" + "\n".join(calendar_lines) + """
+CÁCH DÙNG:
+- Mốc tương đối ("hôm qua", "tuần trước", "tháng trước", "thứ Tư tuần trước", "đầu tháng"...) tính theo HÔM NAY ở trên; CHỈ tính theo ngày báo cáo khi người dùng nói rõ (vd "so với ngày báo cáo", "tuần trước ngày báo cáo"). "Thứ X tuần trước" = ô Thứ X ở dòng "tuần trước" của lịch; "thứ X" không kèm tuần = thứ X gần nhất ĐÃ QUA (hoặc hôm nay nếu hôm nay là thứ X).
+- Hỏi về CẢ 1 KHOẢNG (tuần trước, tháng trước, 7/30 ngày qua, quý...): gọi get_price_history với start_date = ngày đầu khoảng, date = ngày cuối khoảng (lấy nguyên từ dòng tương ứng ở trên) — tool trả mọi phiên trong khoảng + biến động cả giai đoạn đã tính sẵn. KHÔNG ước lượng khoảng bằng `sessions`.
+- Hỏi về 1 NGÀY cụ thể: truyền date = đúng ngày đó. Thứ Bảy/Chủ Nhật/nghỉ lễ không có phiên giao dịch — tool tự trả phiên gần nhất trước đó; PHẢI nói rõ ngày phiên thực tế.
+- search_news chỉ lọc được 1 ngày/lần: tin cả tuần/tháng thì gọi không kèm date với từ khoá cụ thể, rồi chỉ dùng các bài có ngày nằm trong khoảng đã quy đổi.
+- Trong câu trả lời, LUÔN ghi rõ khoảng ngày đã quy đổi (vd "tuần trước (""" + f"{last_week_start:%d/%m}–{last_week_start + timedelta(days=6):%d/%m}" + """)") để người dùng tự kiểm tra."""
+
+
 def _build_static_instructions(
     report_date: str, overrides: Optional[Dict[str, str]] = None,
     few_shot_block: str = "",
 ) -> str:
     """Phần system prompt KHÔNG đổi giữa các câu hỏi/phiên/user (chỉ đổi 1
-    lần/ngày theo report_date) — role, kiến thức nền, năng lực, quy tắc. Tách
+    lần/ngày theo report_date và theo HÔM NAY của LỊCH THAM CHIẾU) — role, kiến thức nền, năng lực, quy tắc. Tách
     riêng khỏi `_build_dynamic_context()` để làm prefix `cache_control` ổn
     định cho backend Anthropic (xem PROMPT CACHING trong `_stream_anthropic`):
     nội dung này giống hệt nhau ở MỌI request trong cùng report_date, chiếm
@@ -635,6 +790,7 @@ def _build_static_instructions(
     admin chưa thêm ví dụ nào — đặt cùng phần static vì không đổi theo câu hỏi.
     """
     few_shot_section = f"\n{few_shot_block}\n" if few_shot_block else ""
+    date_reference = _build_date_reference(report_date)
 
     data_block = f"""=== DỮ LIỆU GIÁ / NỘI DUNG BÁO CÁO — TRA CỨU QUA TOOL, KHÔNG CÓ SẴN Ở ĐÂY ===
 Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬT (round-trip DB/API), người dùng đang chờ trực tiếp — chỉ gọi khi câu hỏi THỰC SỰ cần dữ liệu đó, KHÔNG gọi "cho chắc"/"để minh hoạ thêm bằng số" nếu thông tin đã có sẵn trong đoạn trích/DỮ LIỆU NỀN/lịch sử hội thoại. ĐẶC BIỆT với câu hỏi THUẦN SUY LUẬN ("vì sao", "cơ chế nào", "tại sao X tác động Y") mà đoạn trích/DỮ LIỆU NỀN đã nêu đủ dữ kiện định tính để giải thích — TRẢ LỜI NGAY bằng suy luận (xem NĂNG LỰC mục C bên dưới), KHÔNG gọi get_market_prices/get_eua_details/get_price_history "cho có số liệu minh hoạ" nếu người dùng không hỏi rõ 1 con số cụ thể; chỉ gọi tool giá khi câu hỏi trực tiếp cần SỐ (giá bao nhiêu, tăng/giảm bao nhiêu %, mốc kỹ thuật ở đâu...).
@@ -642,9 +798,9 @@ Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬ
 - get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
 - get_report_section(section="1".."4"|"6"|"8"|"9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu — bao gồm cả tín hiệu liên thị trường và quan điểm thị trường nếu có + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
-- get_price_history(instrument, sessions tuỳ chọn, date tuỳ chọn): lịch sử OHLC nhiều phiên của 1 instrument BẤT KỲ hệ thống theo dõi (không chỉ EUA) — dùng khi hỏi XU HƯỚNG/lịch sử giá qua thời gian của TTF/than/dầu/điện Đức..., khác get_market_prices (chỉ 1 ngày). EUA thì ưu tiên get_eua_details/get_eua_volume_history trước.
+- get_price_history(instrument, sessions tuỳ chọn, date tuỳ chọn, start_date tuỳ chọn): lịch sử OHLC nhiều phiên của 1 instrument BẤT KỲ hệ thống theo dõi (kể cả EUA) — dùng khi hỏi XU HƯỚNG/lịch sử giá qua thời gian, khác get_market_prices (chỉ 1 ngày). Hỏi về 1 KHOẢNG (tuần trước, tháng trước, quý...) thì truyền start_date + date theo LỊCH THAM CHIẾU bên dưới — tool tính sẵn biến động cả khoảng. Hỏi xu hướng EUA chung (không nêu khoảng ngày) thì ưu tiên get_eua_details/get_eua_volume_history trước.
 - search_news(query, date tuỳ chọn): tìm CHỦ ĐỘNG trong TOÀN BỘ kho tin đã crawl (không giới hạn ngày báo cáo đang xem như DỮ LIỆU NỀN tự động bên dưới) — dùng khi câu hỏi lệch chủ đề khỏi DỮ LIỆU NỀN ban đầu hoặc cần tin của NGÀY KHÁC.
-QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section/get_price_history): mặc định (không truyền `date`) các tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "báo cáo hôm qua", "tuần trước"), PHẢI tự quy đổi ra định dạng YYYY-MM-DD và truyền qua tham số `date` — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Với get_market_prices/get_eua_details/get_eua_volume_history/get_price_history, nếu ngày yêu cầu không có dữ liệu, tool trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo — PHẢI đọc và nêu đúng ngày thực tế trong câu trả lời. Với get_report_section, nếu báo cáo ngày yêu cầu chưa published, tool báo rõ không có — KHÔNG tự suy diễn nội dung ngày đó. RIÊNG search_news: không truyền `date` = tìm KHÔNG giới hạn ngày (khác các tool trên, nơi không truyền `date` nghĩa là dùng {report_date}) — chỉ truyền `date` khi cần giới hạn đúng 1 ngày tin tức cụ thể.
+QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section/get_price_history): mặc định (không truyền `date`) các tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "báo cáo hôm qua", "tuần trước"), PHẢI quy đổi ra định dạng YYYY-MM-DD bằng LỊCH THAM CHIẾU bên dưới (không tự tính thứ/ngày) và truyền qua tham số `date` (khoảng ngày: thêm `start_date` cho get_price_history) — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Với get_market_prices/get_eua_details/get_eua_volume_history/get_price_history, nếu ngày yêu cầu không có dữ liệu, tool trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo — PHẢI đọc và nêu đúng ngày thực tế trong câu trả lời. Với get_report_section, nếu báo cáo ngày yêu cầu chưa published, tool báo rõ không có — KHÔNG tự suy diễn nội dung ngày đó. RIÊNG search_news: không truyền `date` = tìm KHÔNG giới hạn ngày (khác các tool trên, nơi không truyền `date` nghĩa là dùng {report_date}) — chỉ truyền `date` khi cần giới hạn đúng 1 ngày tin tức cụ thể.
 Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng CÙNG tham số (date/section/instrument/query...) trong CÙNG hội thoại (dữ liệu là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ; gọi lại NẾU đổi tham số). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
 LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen có thể được cắt ra từ BẤT KỲ mục nào của báo cáo (không chỉ Mục 1/2/3) — có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Gặp trường hợp này: GỌI get_report_section (ưu tiên thử mục có khả năng chứa đoạn trích nhất trước, dựa vào văn phong/nội dung — Mục 1 là các gạch đầu dòng tóm tắt, Mục 2 có "yếu tố hỗ trợ tăng/giảm giá", Mục 3 là phân tích chuyên sâu có tiêu đề từng khối (bao gồm cả các tín hiệu dạng "X → EUA" và quan điểm thị trường trái chiều nếu có), Mục 4 nhắc CBAM/VCM/thép xanh, Mục 8 là sự kiện có ngày giờ, "biz" là gợi ý dạng bảng kích hoạt/hành động/lý do; thử mục khác nếu không thấy, nhưng ưu tiên các mục có văn phong khớp nhất trước để không tốn lượt gọi tool vô ích) để tìm đúng vị trí đoạn trích, đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong kết quả trả về để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì, rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi có thể tự tra ra bằng tool."""
     price_ref = "gọi tool get_eua_details (hoặc get_market_prices/get_eua_volume_history tuỳ loại dữ liệu) rồi dùng"
@@ -657,6 +813,8 @@ LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích n
 QUY TẮC TUYỆT ĐỐI QUAN TRỌNG NHẤT, ÁP DỤNG CHO MỌI CÂU TRẢ LỜI (đọc kỹ trước khi làm bất cứ điều gì khác, xem lại chi tiết ở QUY TẮC TRẢ LỜI mục 6 phía dưới): TỪ ĐẦU TIÊN model xuất ra PHẢI là từ đầu tiên của câu trả lời thật — TUYỆT ĐỐI KHÔNG xuất bất kỳ token/từ/câu nào khác trước đó dưới bất kỳ hình thức nào, bao gồm nhưng không giới hạn: lời chào, lời dẫn nhập, rào đón, xin lỗi, nhắc lại câu hỏi, tự thuật lại quá trình suy nghĩ/kế hoạch trả lời ("Để trả lời...", "Tôi cần...", "Hãy để tôi...", "Trước tiên...", "Đây là...", "Câu hỏi hay..."), hay bất kỳ dạng "suy nghĩ thành tiếng" nào khác. Nếu cần gọi tool để lấy dữ liệu, GỌI TOOL NGAY, KHÔNG kèm bất kỳ câu text nào tường thuật việc đó — chỉ viết text SAU KHI đã có đủ dữ liệu, và text đó phải LÀ câu trả lời, không phải lời dẫn vào câu trả lời.
 
 {data_block}
+
+{date_reference}
 
 {_build_domain_knowledge(overrides)}
 {few_shot_section}
@@ -733,7 +891,9 @@ async def retrieve_context_for_quote(
         query=query,
         top_k=MAX_CONTEXT_CHUNKS,
         hybrid_limit=HYBRID_SEARCH_LIMIT,
-        report_date=report_date,
+        # retrieve() lọc tin theo NGÀY DỮ LIỆU — báo cáo report_date T dùng tin
+        # của ngày dữ liệu T-1 (xem report_generator.py::report_data_date).
+        report_date=report_data_date(report_date),
         only_source_type="article",
         min_relevance_score=MIN_RERANK_SCORE,
     )
@@ -893,7 +1053,17 @@ CLIENT_TOOLS = [
                 },
                 "sessions": {
                     "type": "integer",
-                    "description": f"Số phiên gần nhất cần lấy (mặc định {PRICE_HISTORY_DEFAULT_SESSIONS}, tối đa {PRICE_HISTORY_MAX_SESSIONS}).",
+                    "description": f"Số phiên gần nhất cần lấy (mặc định {PRICE_HISTORY_DEFAULT_SESSIONS}, tối đa {PRICE_HISTORY_MAX_SESSIONS}). Bỏ qua khi đã truyền start_date.",
+                },
+                "start_date": {
+                    "type": "string",
+                    "description": (
+                        "TUỲ CHỌN — YYYY-MM-DD, ngày BẮT ĐẦU của 1 khoảng thời gian (vd 'tuần trước', "
+                        "'tháng trước', 'từ thứ Hai đến nay'), dùng cùng `date` = ngày KẾT THÚC khoảng. "
+                        "Lấy đúng từ LỊCH THAM CHIẾU trong system prompt, không tự tính. Khi có start_date, "
+                        "tool trả mọi phiên trong khoảng + biến động cả giai đoạn đã tính sẵn (so với phiên "
+                        "liền trước khoảng)."
+                    ),
                 },
                 "date": _DATE_PARAM_SCHEMA,
             },
@@ -962,7 +1132,7 @@ async def _execute_client_tool(
     if name == "get_report_section":
         cache_key = (name, tool_input.get("section"), tool_input.get("date"))
     elif name == "get_price_history":
-        cache_key = (name, tool_input.get("instrument"), tool_input.get("date"), tool_input.get("sessions"))
+        cache_key = (name, tool_input.get("instrument"), tool_input.get("date"), tool_input.get("sessions"), tool_input.get("start_date"))
     elif name == "search_news":
         cache_key = (name, tool_input.get("query"), tool_input.get("date"))
     elif name in ("get_market_prices", "get_eua_details", "get_eua_volume_history"):
@@ -983,7 +1153,16 @@ async def _execute_client_tool(
     if raw_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(raw_date)):
         invalid_date_note = str(raw_date)
         raw_date = None
-    target_date = raw_date or report_date
+    # Không truyền `date` -> dữ liệu của báo cáo đang xem: tool giá/EUA tra theo NGÀY
+    # DỮ LIỆU (report_date - 1, đúng dữ liệu báo cáo đã dùng — xem
+    # report_generator.py::report_data_date), riêng get_report_section tra theo chính
+    # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
+    if raw_date:
+        target_date = raw_date
+    elif name == "get_report_section":
+        target_date = report_date
+    else:
+        target_date = report_data_date(report_date)
 
     try:
         if name == "get_market_prices":
@@ -1001,8 +1180,13 @@ async def _execute_client_tool(
             except (TypeError, ValueError):
                 sessions = PRICE_HISTORY_DEFAULT_SESSIONS
             sessions = max(1, min(sessions, PRICE_HISTORY_MAX_SESSIONS))
+            raw_start = tool_input.get("start_date")
+            start_date = str(raw_start) if raw_start and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(raw_start)) else None
+            if start_date and start_date > target_date:
+                start_date, target_date = target_date, start_date
             result = await _tool_price_history_text(
-                session, str(tool_input.get("instrument", "")), target_date, sessions, requested_date=raw_date
+                session, str(tool_input.get("instrument", "")), target_date, sessions,
+                requested_date=None if start_date else raw_date, start_date=start_date,
             )
         elif name == "search_news":
             if retrieval_service is None:
