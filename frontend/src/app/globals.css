@@ -236,6 +236,11 @@ body {
   svg {
     max-height: 200px;
   }
+  /* Hoạ tiết nền banner (ReportDocument.tsx) phủ toàn khối banner — không áp
+     giới hạn chiều cao của biểu đồ ở trên, nếu không bị cắt ngang giữa banner. */
+  .report-banner-art {
+    max-height: none !important;
+  }
 
   /* ---- Biểu đồ nến + key facts: xếp dọc trên PDF thay vì flex-row ---- */
   .lg\:flex-row {

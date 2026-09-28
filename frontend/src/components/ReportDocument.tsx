@@ -82,6 +82,7 @@ function tagColorClass(tag: string): string {
 // Nội dung từ backend đôi khi chứa markdown **bold** thô (đôi khi cả dấu ** lẻ, không cặp đôi)
 // — render thành <strong> và luôn dọn sạch mọi dấu * còn sót lại thay vì hiện literal.
 function RichText({ text }: { text: string }) {
+  if (!text) return null;
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return (
     <>
@@ -645,12 +646,6 @@ export function ReportDocument({ report }: { report: Report }) {
     },
   ];
 
-  const tickerData = priceRows.map((r: any) => ({
-    name: r.name,
-    price: r.price,
-    unit: '',
-    delta: r.dday,
-  }));
 
   return (
     // max-w-[210mm]: khổ A4 — trên màn hình rộng báo cáo hiển thị như 1 trang PDF
@@ -659,52 +654,94 @@ export function ReportDocument({ report }: { report: Report }) {
     // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
     <div className="report-shell max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-[1.5] rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
 
-      {/* Banner Stavian — logo + tiêu đề + dải ngày */}
-      <div className="w-full bg-[#1B4D3E] text-white text-center py-6 px-4">
-        {/* Logo — chỉ 1 logo (ảnh), bỏ text "Stavian/Industrial Metal" trùng lặp bên dưới, phóng to */}
-        <div className="flex flex-col items-center mb-4">
-          <img
-            src="/stavian_logo.png"
-            alt="Stavian Industrial Metal"
-            className="h-20 sm:h-24 object-contain"
-          />
-        </div>
-        {/* Tiêu đề chính — chữ thẳng (không italic), căn giữa, 26px/bold/trắng theo yêu cầu */}
-        <h1 className="text-center text-[26px] font-bold text-white tracking-[0.3px] leading-tight mb-1">
-          TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON
-        </h1>
-        <p className="text-center text-[11px] sm:text-[13px] tracking-[0.2em] uppercase text-white/70">
-          Carbon Market Daily News
-        </p>
-      </div>
+      {/* Banner Stavian — 1 khối nền liền (không tách 2 nửa gradient ngược chiều,
+          vốn tạo 1 đường nối lộ rõ ở giữa): hàng trên logo + ngày phát hành,
+          vạch mảnh thụt theo lề nội dung, rồi eyebrow → tiêu đề → người báo cáo. */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-[#1B4D3E] via-[#1a5c4a] to-[#143d33] text-white">
+        {/* Hoạ tiết chéo — "slice" (không "none") để hình không bị kéo méo theo
+            tỉ lệ khung, 1 SVG chung cho cả banner nên các đường chéo liền mạch.
+            .report-banner-art — bỏ giới hạn "svg { max-height: 200px }" (dành cho
+            biểu đồ) khi in, xem globals.css, nếu không hoạ tiết bị cắt ngang trong PDF. */}
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none report-banner-art"
+          viewBox="0 0 800 300"
+          preserveAspectRatio="xMaxYMid slice"
+          aria-hidden="true"
+        >
+          <polygon points="520,0 800,0 800,300 680,300" fill="rgba(255,255,255,0.035)" />
+          <polygon points="600,0 800,0 800,200 700,300 640,300" fill="rgba(255,255,255,0.025)" />
+          <polygon points="0,190 260,300 0,300" fill="rgba(0,0,0,0.08)" />
+          <line x1="470" y1="0" x2="630" y2="300" stroke="rgba(255,255,255,0.07)" strokeWidth="1" />
+          <line x1="540" y1="0" x2="700" y2="300" stroke="rgba(255,255,255,0.045)" strokeWidth="1" />
+        </svg>
 
-      {/* Thanh ngày */}
-      <div className="w-full bg-[#2f8749] py-2 text-center">
-        <div className="text-[13px] sm:text-[15px] font-bold text-white">
-          {formatVietnameseDate(displayReportDate(report.report_date))}
-        </div>
-      </div>
-
-      {/* Người báo cáo */}
-      <div className="w-full bg-background py-1.5 text-center">
-        <div className="text-[11px] sm:text-[12px] font-bold text-foreground">
-          Người báo cáo: Jenny AI, Phòng CLPT — Stavian Industrial Metal
-        </div>
-      </div>
-
-      {/* Ticker — full-bleed edge to edge inside the card */}
-      <div className="border-b border-border overflow-hidden whitespace-nowrap bg-surface ticker group">
-        <div className="ticker-track">
-          {/* Render twice for loop */}
-          {[...tickerData, ...tickerData].map((t, i) => (
-            <div key={i} className="font-mono text-[12.5px] px-6 flex items-center gap-2 border-r border-border text-body">
-              <span>{t.name}</span>
-              <b className="text-foreground font-semibold">{t.price} {t.unit}</b>
-              <span className={t.delta === "-" ? "text-muted-light" : isPositiveDelta(t.delta) ? "text-up" : "text-down"}>{t.delta}</span>
+        <div className="relative z-10 px-5 sm:px-10 pt-5 sm:pt-6 pb-6 sm:pb-7">
+          {/* Hàng trên: logo trái, ngày phát hành phải — căn giữa theo chiều dọc */}
+          <div className="flex items-center justify-between gap-4">
+            <img
+              src="/stavian_logo.png"
+              alt="Stavian Industrial Metal"
+              className="h-11 sm:h-14 w-auto object-contain shrink-0"
+            />
+            <div className="text-right">
+              <div className="text-[10.5px] sm:text-[11px] uppercase tracking-[0.12em] text-white/70 mb-0.5">
+                Phát hành
+              </div>
+              <div className="text-[13px] sm:text-[15px] font-bold leading-snug">
+                {formatVietnameseDate(displayReportDate(report.report_date))}
+              </div>
             </div>
-          ))}
+          </div>
+
+          {/* Vạch ngăn thụt theo lề nội dung (không tràn sát mép như đường nối cũ) */}
+          <div className="h-px bg-white/15 mt-4 sm:mt-5 mb-4 sm:mb-5" />
+
+          <div className="text-[11px] sm:text-[12px] font-semibold tracking-[0.2em] uppercase text-[#8fd9a8] mb-1.5">
+            Carbon Market Daily News
+          </div>
+          <h1 className="text-[21px] sm:text-[28px] font-extrabold tracking-[0.2px] leading-[1.2] [text-wrap:balance]">
+            TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON
+          </h1>
+          {/* div (không phải p) — tránh rule ".report-shell p { text-align: justify }"
+              làm giãn chữ khi dòng này xuống hàng trên mobile. Tên công ty đã có
+              trong logo nên ẩn trên mobile cho gọn 1 dòng. */}
+          <div className="mt-2 text-[11.5px] sm:text-[12.5px] leading-snug text-white/80">
+            Người báo cáo: Jenny AI · Phòng CLPT<span className="hidden sm:inline"> — Stavian Industrial Metal</span>
+          </div>
         </div>
+
+        {/* Viền nhấn dưới banner */}
+        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#2f8749] via-[#3da85e] to-[#2f8749]" />
       </div>
+
+      {/* Thanh điều hướng section — thay ticker giá cũ */}
+      <nav className="w-full bg-[#f5f7f6] border-b border-border print:hidden">
+        {/* overflow-x-auto ở ngoài + w-max mx-auto ở trong: màn rộng thì căn giữa,
+            màn hẹp thì cuộn ngang từ mục đầu tiên — justify-center trực tiếp trên
+            khung cuộn sẽ đẩy mục đầu ra ngoài mép trái, không cuộn tới được. */}
+        <div className="overflow-x-auto">
+          <div className="flex w-max mx-auto items-center">
+            {[
+              { id: "section-highlights", label: "Điểm nhấn" },
+              { id: "section-market", label: "Tổng quan giá" },
+              { id: "section-analysis", label: "Phân tích & Giao dịch" },
+              { id: "section-news", label: "Tin tức chi tiết" },
+              { id: "section-sources", label: "Nguồn tham khảo" },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  const el = document.getElementById(item.id);
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="relative px-4 sm:px-6 py-3 text-[12px] sm:text-[13px] font-semibold text-[#1B4D3E] hover:text-[#2f8749] whitespace-nowrap transition-colors hover:bg-[#e8efeb] border-r border-border/50 last:border-r-0"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </nav>
 
       <div className="px-6 sm:px-10 pt-3 pb-10">
 
@@ -715,7 +752,7 @@ export function ReportDocument({ report }: { report: Report }) {
             nhãn "Nhận định"), viết hoa toàn bộ, có vạch ngăn cách bên dưới —
             rồi mới tới danh sách yếu tố nổi bật trong ngày (nội dung y hệt
             "Tóm tắt điều hành" cũ), các mục không còn vạch ngăn giữa với nhau. */}
-        <section className="pt-0 pb-5">
+        <section id="section-highlights" className="pt-0 pb-5">
           <FramedHighlight title="ĐIỂM NHẤN" icon={AlertTriangle} variant="danger">
             {euaSummary && (
               <div className="mb-1.5 pb-2 border-b border-[#7A1E1E]/20">
@@ -764,7 +801,7 @@ export function ReportDocument({ report }: { report: Report }) {
             in tuần tự, tràn trang tự nhiên tới đâu hay tới đó, tránh để lại
             khoảng trắng dài phía trên khi 1 khối lớn bị đẩy nguyên sang trang
             sau vì không đủ chỗ còn lại trên trang hiện tại. */}
-        <section className="py-5">
+        <section id="section-market" className="py-5">
           <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
 
           <div className="flex flex-col lg:flex-row gap-4 items-stretch">
@@ -861,7 +898,7 @@ export function ReportDocument({ report }: { report: Report }) {
         </section>
 
         {/* PHẦN 2 — PHÂN TÍCH VÀ KHUYẾN NGHỊ GIAO DỊCH */}
-        <section className="py-5">
+        <section id="section-analysis" className="py-5">
           <PartHeading eyebrow="Phần 2" title="Phân tích và khuyến nghị giao dịch" icon={BarChart3} />
 
           {/* TÍN HIỆU HÔM NAY — nội dung đầu tiên của Phần 2: chiến lược trading
@@ -1382,7 +1419,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* PHẦN 3 — CHI TIẾT CÁC TIN TỨC CHÍNH */}
         {report.content["6"] && (
-          <section className="py-5">
+          <section id="section-news" className="py-5">
             <PartHeading eyebrow="Phần 3" title={report.content["6"].title || "Chi tiết các tin tức chính"} icon={Newspaper} />
             {[
               { key: "international", label: "Quốc tế" },
@@ -1433,7 +1470,7 @@ export function ReportDocument({ report }: { report: Report }) {
 
         {/* NGUỒN THAM KHẢO — đứng độc lập cuối báo cáo, không thuộc Phần nào */}
         {report.content["9"] && (
-          <section className="py-5">
+          <section id="section-sources" className="py-5">
             <PartHeading title={report.content["9"].title || "Nguồn tham khảo"} icon={Link2} />
             {report.content["9"].items?.length > 0 ? (
               <ul className="space-y-1.5">
