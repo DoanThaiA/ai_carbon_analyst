@@ -170,7 +170,7 @@ function ChatHistoryContent() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Lịch Sử Chat</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Lịch Sử Giao Tiếp</h2>
         <p className="text-body">Xem lại từng phiên hỏi đáp AI của người dùng — chọn 1 phiên bên trái để đọc toàn bộ hội thoại</p>
       </div>
 

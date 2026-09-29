@@ -26,6 +26,7 @@ from api.routers import (
     admin_quote_chat_examples,
     admin_release_notes,
     admin_reports,
+    admin_stats,
     admin_users,
     auth_admin,
     auth_user,
@@ -34,8 +35,13 @@ from api.routers import (
     quote_chat,
     upload,
 )
-from db.models import Report
+import logging
+from datetime import datetime, timedelta, timezone
+
+from db.models import Report, ReportView
 from services.hot_news_broadcast import start_listening, stop_listening
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -67,6 +73,7 @@ app.include_router(admin_price_sources.router)
 app.include_router(admin_news_sources.router)
 app.include_router(admin_users.router)
 app.include_router(admin_reports.router)
+app.include_router(admin_stats.router)
 app.include_router(admin_chat_reviews.router)
 app.include_router(admin_eua_framework.router)
 app.include_router(admin_quote_chat_examples.router)
@@ -104,11 +111,38 @@ async def get_reports(
     ]
 
 
+# Cùng 1 người mở lại cùng báo cáo trong khoảng này chỉ tính 1 lượt xem.
+REPORT_VIEW_DEDUPE_MINUTES = 30
+
+
+async def _record_report_view(session: AsyncSession, report_date: str, payload: dict) -> None:
+    """Ghi 1 lượt xem cho trang Thống kê hiệu suất (api/routers/admin_stats.py).
+    Lỗi ghi thống kê KHÔNG được làm hỏng việc trả báo cáo cho người đọc."""
+    viewer = payload.get("sub")
+    if not viewer:
+        return
+    try:
+        since = datetime.now(timezone.utc) - timedelta(minutes=REPORT_VIEW_DEDUPE_MINUTES)
+        recent = await session.scalar(
+            select(ReportView.id).where(
+                ReportView.viewer == viewer,
+                ReportView.report_date == report_date,
+                ReportView.viewed_at >= since,
+            ).limit(1)
+        )
+        if recent is None:
+            session.add(ReportView(report_date=report_date, viewer=viewer, role=payload.get("role") or "user"))
+            await session.commit()
+    except Exception:
+        logger.exception("Lỗi ghi lượt xem báo cáo %s — bỏ qua.", report_date)
+        await session.rollback()
+
+
 @app.get("/api/reports/{date}")
 async def get_report_by_date(
     date: str,
     session: AsyncSession = Depends(get_db),
-    _payload: dict = Depends(get_current_user),
+    payload: dict = Depends(get_current_user),
 ):
     """Lấy chi tiết báo cáo theo ngày (YYYY-MM-DD) — chỉ trả về nếu đã published,
     để tránh lộ nội dung draft chưa qua admin duyệt cho user."""
@@ -118,6 +152,8 @@ async def get_report_by_date(
 
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+
+    await _record_report_view(session, date, payload)
 
     return {
         "id": report.id,

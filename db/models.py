@@ -488,3 +488,73 @@ class ReleaseNote(Base):
 
     def __repr__(self) -> str:
         return f"ReleaseNote(id={self.id!r}, status={self.status!r})"
+
+
+class BizSuggestion(Base):
+    """Bộ nhớ gợi ý kinh doanh ngắn hạn của Jenny (mục "Gợi ý kinh doanh & giải
+    pháp cho SIM"). Mỗi gợi ý ngắn hạn sinh ra được lưu lại để các báo cáo sau:
+    - kiểm tra "tình huống kích hoạt" đã xảy ra chưa → nếu có thì NHẮC LẠI trong
+      báo cáo ngày đó ("Ngày 18/09 Jenny đã đề xuất...") rồi thôi theo dõi;
+    - chưa xảy ra → chỉ hiện 1 dòng tham chiếu, không sinh lại gợi ý trùng ý.
+    Chỉ nhớ trong BIZ_SUGGESTION_MEMORY_DAYS ngày kể từ first_report_date (xem
+    services/biz_memory.py). first_report_date/triggered_report_date cùng định
+    dạng "YYYY-MM-DD" với reports.report_date."""
+
+    __tablename__ = "biz_suggestions"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'triggered', 'dismissed')", name="ck_biz_suggestions_status"),
+        CheckConstraint("kind IN ('short', 'long')", name="ck_biz_suggestions_kind"),
+        Index("ix_biz_suggestions_status_date", "status", "first_report_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    first_report_date: Mapped[str] = mapped_column(Text, nullable=False)  # báo cáo đã đề xuất
+    # 'short' = gợi ý ngắn hạn (có tình huống kích hoạt, được theo dõi/nhắc lại);
+    # 'long' = gợi ý dài hạn — chỉ lưu để admin gỡ được + LLM không đề xuất lại ý đã
+    # gỡ; trigger/action/reason chứa opportunity/solution/expectation.
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="short")
+    trigger: Mapped[str] = mapped_column(Text, nullable=False)  # điều kiện "Nếu/Khi ..." hướng tới tương lai
+    # Quy tắc ngưỡng giá để backend tự kiểm tra (không cần LLM): {"code": "BRENT", "op": ">", "value": 100}
+    trigger_rule: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    triggered_report_date: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    trigger_evidence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_source_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_source_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Admin gỡ khỏi báo cáo (status='dismissed') — không theo dõi/nhắc lại nữa,
+    # và được báo cho LLM để không đề xuất lại ý tương tự trong thời gian nhớ.
+    dismissed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dismiss_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"BizSuggestion(id={self.id!r}, date={self.first_report_date!r}, status={self.status!r})"
+
+
+class ReportView(Base):
+    """1 dòng = 1 lượt MỞ báo cáo đã phát hành (GET /api/reports/{date}) — nguồn
+    số liệu "lượt xem" cho trang Thống kê hiệu suất (api/routers/admin_stats.py).
+    Cùng 1 người mở lại cùng báo cáo trong REPORT_VIEW_DEDUPE_MINUTES phút chỉ tính
+    1 lượt (tránh F5/chuyển tab làm phồng số liệu — xem api/main.py)."""
+
+    __tablename__ = "report_views"
+    __table_args__ = (
+        Index("ix_report_views_report_date", "report_date"),
+        Index("ix_report_views_viewer_date", "viewer", "report_date", "viewed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    report_date: Mapped[str] = mapped_column(Text, nullable=False)  # trùng Report.report_date
+    viewer: Mapped[str] = mapped_column(Text, nullable=False)  # email user / username admin (JWT "sub")
+    role: Mapped[str] = mapped_column(Text, nullable=False)  # 'user' | 'admin' — thống kê chỉ đếm 'user'
+    viewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"ReportView(id={self.id!r}, report_date={self.report_date!r}, viewer={self.viewer!r})"

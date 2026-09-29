@@ -91,6 +91,24 @@ export default function AdminReportReview() {
     }
   };
 
+  // Gỡ 1 gợi ý kinh doanh khỏi báo cáo (đề xuất phi thực tế...) — Jenny cũng thôi
+  // theo dõi/nhắc lại gợi ý đó ở các báo cáo sau (services/biz_memory.py).
+  const handleDismissBizSuggestion = async (id: number) => {
+    const reason = window.prompt(
+      "Gỡ gợi ý này khỏi báo cáo? Jenny sẽ không theo dõi hay đề xuất lại ý này nữa.\nLý do (không bắt buộc):",
+      ""
+    );
+    if (reason === null) return; // bấm Huỷ
+    try {
+      const res = await api.post(`/api/admin/reports/${date}/biz-suggestions/${id}/dismiss`, {
+        reason: reason.trim() || null,
+      });
+      setReport((prev) => (prev ? { ...prev, content: { ...prev.content, biz: res.data.biz } } : prev));
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Lỗi khi gỡ gợi ý");
+    }
+  };
+
   const handleEditClick = () => {
     if (!report) return;
     // Deep clone để không sửa trực tiếp state `report` trong lúc đang edit.
@@ -254,7 +272,7 @@ export default function AdminReportReview() {
         </div>
       ) : (
         <QuoteChat reportDate={date}>
-          <ReportDocument report={report} />
+          <ReportDocument report={report} onDismissBizSuggestion={handleDismissBizSuggestion} />
         </QuoteChat>
       )}
     </div>

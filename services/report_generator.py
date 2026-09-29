@@ -11,6 +11,7 @@ from sqlalchemy import select, and_, desc, func
 
 from db.models import Article, Price, Instrument, PriceCrawlSource, Report
 from core.config import Settings
+from services import biz_memory
 from services import eua_causal_chains as chains
 from services.eua_framework_admin import get_overrides_map
 from crawl_prices.market_events_fetcher import (
@@ -59,6 +60,11 @@ SECTION_TOPICS: Dict[str, List[str]] = {
           "energy_hydrogen", "geopolitics", "eu_policy", "cbam", "vcm", "global_carbon_market",
           "vietnam_carbon_policy"],
     "4": ["cbam", "vcm", "global_carbon_market", "vietnam_carbon_policy"],
+    # "Diễn biến chính" (ngay dưới Bảng giá nhanh): tin tác động cung/cầu EUA trực
+    # tiếp hoặc gián tiếp — bỏ vcm/vietnam_carbon_policy vì gần như không ảnh
+    # hưởng cung cầu hạn ngạch EU ETS.
+    "dev": ["eua_ets", "eu_policy", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil",
+            "energy_renewable", "energy_hydrogen", "geopolitics", "cbam", "global_carbon_market"],
     "8": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "eu_policy", "cbam"],
     "biz": ["eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil",
             "energy_renewable", "geopolitics", "eu_policy", "cbam", "vcm",
@@ -70,6 +76,7 @@ SECTION_MAX_TOKENS: Dict[str, int] = {
     "2": 4096,    # bảng bullish/bearish
     "3": 8192,    # mục phân tích sâu nhất — JSON lồng sâu nhất, giữ nguyên để tránh cắt cụt
     "4": 2048,    # 3 bullet ngắn
+    "dev": 3072,  # "Diễn biến chính": tối đa 6 tin × 1–2 câu
     "8": 2048,    # danh sách events
     # 4096 (tăng từ 3072) — 3072 từng không đủ vào ngày có nhiều tin CBAM/VCM/
     # chính sách, khiến LLM sinh nhiều gợi ý hơn dự kiến rồi bị cắt giữa chừng
@@ -1292,6 +1299,61 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
     return system, user
 
 
+def _prompt_key_developments(
+    news_text: str, prices_text: str, target_date: str, topics_present: List[str],
+    overrides: Optional[Dict[str, str]] = None,
+) -> tuple[str, str]:
+    """ "Diễn biến chính" — hiển thị ngay dưới Bảng giá nhanh: các TIN TỨC nổi bật
+    tác động lên cung/cầu EUA (trực tiếp hoặc gián tiếp), mỗi tin BẮT BUỘC có
+    nguồn bài viết (source_index → backend map sang tên/URL thật)."""
+    framework = _eua_framework(topics_present, full=False, overrides=overrides)
+    system = f"Bạn là chuyên gia phân tích thị trường carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
+    user = f"""Ngày báo cáo: {target_date}
+
+DỮ LIỆU GIÁ (chỉ để tham chiếu bối cảnh, KHÔNG nhắc lại số giá/%Δ — đã có trong Bảng giá nhanh):
+{prices_text}
+
+TIN TỨC đã đánh số [N] — CHỈ trích dẫn số có thật:
+{news_text}
+
+YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: các tin tức nổi bật NHẤT trong danh sách trên có tác động lên CUNG hoặc CẦU hạn ngạch EUA, TRỰC TIẾP (đấu giá, MSR, cap, chính sách EU ETS, CBAM, số liệu phát thải...) hoặc GIÁN TIẾP (giá khí/than/điện → chuyển đổi nhiên liệu → nhu cầu phát thải; địa chính trị, thời tiết, sản lượng công nghiệp, năng lượng tái tạo...).
+- Từ 3 đến 6 mục, xếp theo mức độ tác động lên giá EUA (mạnh → yếu). CHỈ chọn tin có cơ chế tác động RÕ RÀNG — bỏ qua tin không liên quan cung/cầu EUA. Nhiều bài cùng 1 sự kiện → gộp thành 1 mục.
+- Mỗi mục là object {{"text": "...", "impact": "tăng" | "giảm" | "trung lập", "source_index": N}}:
+  + "text": 1–2 câu. Câu đầu nêu SỰ KIỆN/SỐ LIỆU cụ thể từ bài báo; tiếp theo nêu NGẮN GỌN kênh tác động lên cung/cầu EUA (vd "→ tăng nhu cầu phát thải từ nhiệt điện than, hỗ trợ giá EUA"). Mở đầu bằng tag in đậm chủ đề (**EU ETS:**, **Khí gas:**, **Than:**, **Điện:**, **Dầu:**, **Địa chính trị:**, **Chính sách:**, **CBAM:**...). KHÔNG nhắc lại giá/%Δ của Bảng giá nhanh.
+  + "impact": chiều tác động lên GIÁ EUA theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH (không theo chiều tăng/giảm bề ngoài của tin).
+  + "source_index": BẮT BUỘC là số [N] có thật của bài báo làm căn cứ — mục nào không gắn được với 1 bài cụ thể thì BỎ, TUYỆT ĐỐI KHÔNG bịa số.
+- Không có tin nào đạt yêu cầu → "key_developments": [].
+
+CHỈ TRẢ VỀ JSON HỢP LỆ:
+{{"dev": {{"key_developments": [{{"text": "**Khí gas:** ...", "impact": "tăng", "source_index": 1}}]}}}}"""
+    return system, user
+
+
+_KEY_DEV_IMPACTS = {"tăng", "giảm", "trung lập"}
+
+
+def _resolve_key_developments(items: Optional[List[Any]], index_lookup: Dict[int, Dict]) -> List[Dict]:
+    """Chuẩn hoá "key_developments" → {"text", "impact", "source_name", "source_url"}.
+    Mục này yêu cầu LUÔN có nguồn bài viết — mục nào source_index không map được
+    tới bài có thật thì bỏ hẳn (không hiển thị tin không kiểm chứng được)."""
+    resolved = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        text = (it.get("text") or "").strip()
+        src_art = index_lookup.get(_first_source_index(it.get("source_index")))
+        if not text or not src_art:
+            continue
+        impact = str(it.get("impact") or "").strip().lower()
+        resolved.append({
+            "text": text,
+            "impact": impact if impact in _KEY_DEV_IMPACTS else "trung lập",
+            "source_name": src_art["source"],
+            "source_url": src_art["url"],
+        })
+    return resolved
+
+
 def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
     gasoil_crack_spread: str, target_date: str, topics_present: List[str],
@@ -1442,7 +1504,10 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 
 
 
-def _prompt_biz_recommendation(news_text: str, prices_text: str, eua_trend: str, target_date: str) -> tuple[str, str]:
+def _prompt_biz_recommendation(
+    news_text: str, prices_text: str, eua_trend: str, target_date: str,
+    tracking_text: str = "Không có.", valid_codes: str = "", dismissed_text: str = "Không có.",
+) -> tuple[str, str]:
     system = f"Bạn là chuyên gia tư vấn kinh doanh về carbon và năng lượng cho doanh nghiệp Việt Nam (SIM).\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date}
 
@@ -1455,12 +1520,19 @@ XU HƯỚNG EUA 30 NGÀY:
 TIN TỨC ĐA CHIỀU:
 {news_text}
 
+GỢI Ý NGẮN HẠN JENNY ĐÃ ĐỀ XUẤT Ở CÁC BÁO CÁO TRƯỚC, VẪN ĐANG THEO DÕI (tình huống kích hoạt chưa xảy ra):
+{tracking_text}
+
+GỢI Ý (NGẮN HẠN VÀ DÀI HẠN) ĐÃ BỊ ADMIN GỠ BỎ (đánh giá là phi thực tế/không phù hợp) — TUYỆT ĐỐI KHÔNG đề xuất lại ý tương tự ở CẢ 2 bảng:
+{dismissed_text}
+
 YÊU CẦU: Viết MỤC GỢI Ý KINH DOANH & GIẢI PHÁP CHO SIM — trình bày dưới dạng BẢNG (mỗi gợi ý là 1 HÀNG với các CỘT tách bạch, KHÔNG viết gộp thành 1 câu văn dài).
 Gồm 2 bảng:
-A. "short_term": mảng object, gợi ý ngắn hạn gắn TRỰC TIẾP với tin quan trọng/cập nhật mới nhất trong ngày. Mỗi object gồm ĐÚNG 3 trường, MỖI TRƯỜNG TỐI ĐA 1 CÂU NGẮN GỌN (như 1 ô trong bảng, không viết thành đoạn văn):
-   - "trigger": tình huống/tin tức cụ thể kích hoạt gợi ý này (nêu rõ số liệu/sự kiện, không viết chung chung).
+A. "short_term": mảng object, gợi ý ngắn hạn MỚI gắn TRỰC TIẾP với tin quan trọng/cập nhật mới nhất trong ngày. TUYỆT ĐỐI KHÔNG đề xuất lại gợi ý trùng ý với danh sách "ĐANG THEO DÕI" ở trên (hệ thống tự nhắc lại các gợi ý đó) — chỉ thêm gợi ý có nội dung/hành động MỚI. Mỗi object gồm các trường sau, MỖI TRƯỜNG CHỮ TỐI ĐA 1 CÂU NGẮN GỌN (như 1 ô trong bảng, không viết thành đoạn văn):
+   - "trigger": ĐIỀU KIỆN KÍCH HOẠT hướng tới TƯƠNG LAI, bắt đầu bằng "Nếu"/"Khi" — tình huống mà KHI XẢY RA thì SIM nên (hoặc lẽ ra đã nên) làm theo đề xuất, và có thể KIỂM CHỨNG được ở các ngày sau qua giá hoặc tin tức (vd "Nếu Brent vượt 100 USD/bbl", "Khi EU công bố cắt giảm phân bổ miễn phí cho ngành thép"). KHÔNG mô tả lại sự việc đã xảy ra hôm nay (bối cảnh hôm nay đưa vào "reason").
+   - "trigger_rule": CHỈ khi "trigger" là 1 NGƯỠNG GIÁ đóng cửa của 1 mã trong bảng giá → object {{"code": "<mã>", "op": ">" | ">=" | "<" | "<=", "value": <số, cùng đơn vị với giá>}}; mã hợp lệ: {valid_codes or "(không có)"}. Điều kiện dạng tin tức/chính sách → null.
    - "action": hành động cụ thể SIM nên làm, khả thi và thực tế.
-   - "reason": lý do vì sao hành động này hợp lý, gắn với chuỗi nhân quả đã phân tích ở các mục trên.
+   - "reason": lý do vì sao hành động này hợp lý (bối cảnh/số liệu hôm nay + chuỗi nhân quả đã phân tích ở các mục trên).
 B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân tích (chính sách CBAM, VCM, chuyển dịch năng lượng...). Mỗi object gồm ĐÚNG 3 trường, MỖI TRƯỜNG TỐI ĐA 1 CÂU NGẮN GỌN:
    - "opportunity": cơ hội/xu hướng dài hạn cụ thể đã xác định được.
    - "solution": giải pháp/hướng đi đề xuất cho SIM để tận dụng cơ hội đó.
@@ -1470,8 +1542,62 @@ QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ t�
 Lưu ý: KHÔNG dùng câu lệnh mua/bán tài chính trực tiếp.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"biz": {{"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [{{"trigger": "...", "action": "...", "reason": "..."}}], "long_term": [{{"opportunity": "...", "solution": "...", "expectation": "..."}}]}}}}"""
+{{"biz": {{"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [{{"trigger": "Nếu ...", "trigger_rule": null, "action": "...", "reason": "..."}}], "long_term": [{{"opportunity": "...", "solution": "...", "expectation": "..."}}]}}}}"""
     return system, user
+
+
+async def _check_biz_triggers_llm(
+    candidates: List[Any], news_text: str, index_lookup: Dict[int, Dict], target_date: str,
+) -> Dict[int, Dict[str, Optional[str]]]:
+    """Hỏi LLM: với từng gợi ý cũ (điều kiện dạng tin tức/chính sách — không có ngưỡng
+    giá), TIN TỨC trong ngày có cho thấy tình huống kích hoạt ĐÃ XẢY RA chưa. Chỉ chấp
+    nhận "đã xảy ra" khi kèm source_index trỏ tới bài có thật (backend map sang
+    tên/URL) — không kiểm chứng được thì coi như chưa xảy ra. Lỗi LLM → {} (không
+    làm hỏng việc sinh báo cáo; các gợi ý giữ nguyên trạng thái chờ)."""
+    if not candidates or not index_lookup:
+        return {}
+    system = f"Bạn là trợ lý theo dõi các đề xuất kinh doanh cho doanh nghiệp SIM.\n{CONCISENESS_RULE}"
+    user = f"""Ngày dữ liệu: {target_date}
+
+CÁC GỢI Ý ĐÃ ĐỀ XUẤT TRƯỚC ĐÂY (đang chờ tình huống kích hoạt):
+{biz_memory.describe_for_prompt(candidates)}
+
+TIN TỨC TRONG NGÀY đã đánh số [N] — CHỈ trích dẫn số có thật:
+{news_text}
+
+YÊU CẦU: Với TỪNG gợi ý [S<id>], xác định tin tức trong ngày có cho thấy "Tình huống" của gợi ý ĐÃ THỰC SỰ XẢY RA hay chưa.
+- "triggered": true CHỈ khi có bài báo nêu RÕ sự kiện/số liệu khớp với điều kiện (không suy diễn, không "có thể sắp xảy ra"); khi đó BẮT BUỘC "source_index" là số [N] của bài đó và "evidence" là 1 câu ngắn nêu điều đã xảy ra.
+- Chưa đủ căn cứ → "triggered": false, "source_index": null, "evidence": null.
+
+CHỈ TRẢ VỀ JSON HỢP LỆ:
+{{"checks": [{{"id": 12, "triggered": false, "source_index": null, "evidence": null}}]}}"""
+    try:
+        raw = await _call_llm(user, system=system, max_tokens=2048)
+    except Exception:
+        logger.exception("[REPORT] Kiểm tra kích hoạt gợi ý cũ lỗi — bỏ qua.")
+        return {}
+    parsed = _extract_json(raw) if raw else None
+    valid_ids = {c.id for c in candidates}
+    result: Dict[int, Dict[str, Optional[str]]] = {}
+    for chk in (parsed or {}).get("checks") or []:
+        if not isinstance(chk, dict) or chk.get("triggered") is not True:
+            continue
+        raw_id = chk.get("id")
+        if isinstance(raw_id, str):
+            raw_id = raw_id.strip().lstrip("Ss")
+        try:
+            sid = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        src_art = index_lookup.get(_first_source_index(chk.get("source_index")))
+        if sid not in valid_ids or not src_art:
+            continue
+        result[sid] = {
+            "evidence": (chk.get("evidence") or "").strip() or None,
+            "source_name": src_art["source"],
+            "source_url": src_art["url"],
+        }
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -1595,6 +1721,37 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     # đánh số [N], LLM chỉ chọn số có thật, backend tự map sang tên/URL nguồn thật.
     section1_news_text, section1_index_lookup = _filter_news_with_index(news_by_topic, "1")
     section4_news_text, section4_index_lookup = _filter_news_with_index(news_by_topic, "4")
+    # "Diễn biến chính" (dưới Bảng giá nhanh): mỗi tin bắt buộc có nguồn — cùng cơ chế [N].
+    dev_news_text, dev_index_lookup = _filter_news_with_index(news_by_topic, "dev", max_articles=15)
+
+    # ── Bộ nhớ gợi ý kinh doanh (services/biz_memory.py) ──
+    # Gợi ý ngắn hạn các báo cáo trước (trong 10 ngày) — kiểm tra tình huống kích
+    # hoạt đã xảy ra chưa: ngưỡng giá → so thẳng với giá thật; điều kiện tin tức →
+    # LLM đối chiếu tin trong ngày (bắt buộc kèm bài báo). CHỈ ĐỌC ở đây — ghi lại
+    # ở bước cuối (xem persist bên dưới).
+    active_suggestions = await biz_memory.load_active(session, report_date)
+    triggered_suggestions: Dict[int, Dict[str, Optional[str]]] = {}
+    llm_check_candidates = []
+    for s in active_suggestions:
+        if s.trigger_rule:
+            evidence = biz_memory.check_price_rule(s.trigger_rule, prices)
+            if evidence:
+                triggered_suggestions[s.id] = {
+                    "evidence": evidence,
+                    "source_name": "Giá chốt phiên (Barchart)",
+                    "source_url": next(
+                        (p.get("source_url") for p in prices if p.get("code") == s.trigger_rule.get("code")), None
+                    ),
+                }
+        else:
+            llm_check_candidates.append(s)
+    biz_news_text, biz_index_lookup = _filter_news_with_index(news_by_topic, "biz", max_articles=15)
+    triggered_suggestions.update(
+        await _check_biz_triggers_llm(llm_check_candidates, biz_news_text, biz_index_lookup, target_date)
+    )
+    still_tracking = [s for s in active_suggestions if s.id not in triggered_suggestions]
+    dismissed_suggestions = await biz_memory.load_recent_dismissed(session, report_date)
+    valid_price_codes = {str(p["code"]).upper() for p in prices if p.get("code") and p.get("close") is not None}
 
     # ── 2. Gọi LLM từng mục song song (tuần tự để tránh rate limit) ──
     content: Dict[str, Any] = {}
@@ -1607,6 +1764,10 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         ("2", _prompt_section2(
             eua_key_facts, prices_text, eua_trend, gasoil_crack_spread,
             section2_news_text, target_date, _topics_present(news_by_topic, "2"),
+            overrides=eua_framework_overrides,
+        )),
+        ("dev", _prompt_key_developments(
+            dev_news_text, prices_text, target_date, _topics_present(news_by_topic, "dev"),
             overrides=eua_framework_overrides,
         )),
         ("3", _prompt_section3(
@@ -1625,13 +1786,17 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         )),
         ("biz", _prompt_biz_recommendation(
             _filter_news_for_section(news_by_topic, "biz"),
-            prices_text, eua_trend, target_date
+            prices_text, eua_trend, target_date,
+            tracking_text=biz_memory.describe_for_prompt(still_tracking),
+            dismissed_text=biz_memory.describe_for_prompt(dismissed_suggestions),
+            valid_codes=", ".join(sorted(valid_price_codes)),
         )),
     ]
 
     FALLBACKS: Dict[str, dict] = {
         "1": {"title": "Tóm tắt điều hành", "bullets": [{"text": "Không thể sinh nội dung tự động.", "source_index": None}]},
         "2": {"market_drivers": {"bullish": [], "bearish": []}},
+        "dev": {"key_developments": []},
         "3": {"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA",
               "instrument_notes": {},
               "analysis_blocks": [{"heading": "Phân tích", "content": "Không có dữ liệu."}],
@@ -1670,9 +1835,13 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     results = await asyncio.gather(*tasks)
 
     section2_data: dict = FALLBACKS["2"]
+    key_developments: List[Dict] = []
     for section_key, section_data in results:
         if section_key == "2":
             section2_data = section_data
+        elif section_key == "dev":
+            # Gộp vào content["2"] (hiển thị ngay dưới Bảng giá nhanh), không thành mục riêng.
+            key_developments = _resolve_key_developments(section_data.get("key_developments"), dev_index_lookup)
         elif section_key == "8":
             content["8"] = {
                 **section_data,
@@ -1720,6 +1889,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         "price_timestamp": f"Giá chốt phiên {max_price_date or target_date} (nguồn: Barchart EOD)",
         "key_facts": eua_key_facts,
         "prices": prices,
+        "key_developments": key_developments,
         "chart_data": chart_data,
         "market_drivers": {
             "bullish": _resolve_driver_items(raw_drivers.get("bullish")),
@@ -1740,6 +1910,53 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     content["9"] = {
         "title": "Nguồn tham khảo",
         "items": [{"source": a["source"], "title": a["title"], "url": a["url"]} for a in cited_articles],
+    }
+
+    # ── Bộ nhớ gợi ý kinh doanh: chuẩn hoá gợi ý mới + ghi DB (BƯỚC CUỐI) ──
+    biz = content.get("biz") or dict(FALLBACKS["biz"])
+    new_short_term: List[Dict[str, Any]] = []
+    for it in biz.get("short_term") or []:
+        if not isinstance(it, dict) or not (it.get("trigger") or "").strip() or not (it.get("action") or "").strip():
+            continue
+        new_short_term.append({
+            "trigger": it["trigger"].strip(),
+            "trigger_rule": biz_memory.normalize_trigger_rule(it.get("trigger_rule"), valid_price_codes),
+            "action": it["action"].strip(),
+            "reason": (it.get("reason") or "").strip(),
+        })
+    new_long_term: List[Dict[str, Any]] = [
+        {
+            "opportunity": it["opportunity"].strip(),
+            "solution": it["solution"].strip(),
+            "expectation": (it.get("expectation") or "").strip(),
+        }
+        for it in biz.get("long_term") or []
+        if isinstance(it, dict) and (it.get("opportunity") or "").strip() and (it.get("solution") or "").strip()
+    ]
+    reminders, tracking = biz_memory.reminders_for_content(active_suggestions, triggered_suggestions)
+    try:
+        # flush trong cùng session/transaction — caller commit cùng report.content.
+        created, created_long = await biz_memory.persist(
+            session, report_date, triggered_suggestions, active_suggestions, new_short_term, new_long_term,
+        )
+        # Gắn id (có sau flush, cùng thứ tự) để admin gỡ đúng gợi ý trên giao diện.
+        for it, obj in zip(new_short_term, created):
+            it["id"] = obj.id
+        for it, obj in zip(new_long_term, created_long):
+            it["id"] = obj.id
+    except Exception:
+        # Lỗi ghi bộ nhớ không được làm hỏng cả báo cáo: rollback phần ghi dở, vẫn
+        # trả nội dung (hôm nay Jenny không "nhớ" được gợi ý mới — log để xử lý).
+        logger.exception("[REPORT] Lỗi ghi bộ nhớ gợi ý kinh doanh %s — bỏ qua.", report_date)
+        await session.rollback()
+    content["biz"] = {
+        **biz,
+        # trigger_rule chỉ dùng nội bộ để kiểm tra ngưỡng giá — không lưu vào nội dung hiển thị.
+        "short_term": [{k: v for k, v in it.items() if k != "trigger_rule"} for it in new_short_term],
+        "long_term": new_long_term,
+        # Gợi ý cũ vừa kích hoạt hôm nay → khối "Jenny nhắc lại"; chưa kích hoạt → dòng tham chiếu.
+        "reminders": reminders,
+        "tracking": tracking,
     }
 
     return content

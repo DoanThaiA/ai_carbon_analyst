@@ -9,7 +9,8 @@ Script chạy ngầm 24/7, tự động kích hoạt 4 tác vụ độc lập th
   3. noon_news_crawl_job    12:00  — crawl lại CHỈ nhóm nguồn is_noon_crawl=True (dữ liệu
                                      sàn/cơ quan chính thức: EIA, IETA, OPEC, Nasdaq, EU
                                      Commission, ESMA, ICE, EEX)
-  4. auto_report_job        07:00  — tự động sinh 1 báo cáo/ngày bằng Claude, lưu report_date = HÔM NAY
+  4. auto_report_job        07:00  — CHỈ thứ 3 → thứ 7 (cấu hình AUTO_REPORT_DAYS trong .env)
+                                     tự động sinh 1 báo cáo/ngày bằng Claude, lưu report_date = HÔM NAY
                                      (VN) — dữ liệu vẫn là giá/tin của hôm qua, xem
                                      services/report_generator.py::report_data_date
 
@@ -212,9 +213,13 @@ async def main() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    # Chỉ tự động sinh báo cáo vào các ngày cấu hình ở AUTO_REPORT_DAYS (mặc định
+    # thứ 3 → thứ 7, xem core/config.py::Settings.auto_report_days).
+    from core.config import Settings
+    auto_report_days = Settings.from_env().auto_report_days
     scheduler.add_job(
         run_auto_report_job,
-        trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Ho_Chi_Minh"),
+        trigger=CronTrigger(day_of_week=auto_report_days, hour=7, minute=0, timezone="Asia/Ho_Chi_Minh"),
         id="auto_report",
         name="Auto Report Generation",
         replace_existing=True,
@@ -225,7 +230,7 @@ async def main() -> None:
     logger.info("📅 Scheduler đã khởi động:")
     logger.info("   - Giá:      06:00 SA (giờ VN) mỗi ngày")
     logger.info("   - Tin tức:  06:00 (toàn bộ nguồn) & 12:00 (chỉ Tier A) giờ VN mỗi ngày")
-    logger.info("   - Báo cáo:  07:00 SA (giờ VN) mỗi ngày (tự động, 1 lần/ngày)")
+    logger.info("   - Báo cáo:  07:00 SA (giờ VN), chỉ các ngày '%s' (AUTO_REPORT_DAYS)", auto_report_days)
 
     if run_now:
         logger.info("⚡ Chế độ --now: chạy cả 4 job ngay lập tức để test (Prices → Morning News → Noon News → Report)...")

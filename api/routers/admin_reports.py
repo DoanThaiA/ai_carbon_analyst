@@ -1,15 +1,16 @@
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import defer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import async_session_maker, get_current_admin, get_db
 from db.models import Report
+from services import biz_memory
 from services.report_generator import generate_report_content
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,41 @@ async def update_report(date: str, body: ReportUpdate, session: AsyncSession = D
     report.content = body.content
     await session.commit()
     return {"message": f"Draft report for {date} updated successfully."}
+
+
+class BizSuggestionDismiss(BaseModel):
+    reason: Optional[str] = Field(None, max_length=1000)
+
+
+@router.post("/{date}/biz-suggestions/{suggestion_id}/dismiss")
+async def dismiss_biz_suggestion(
+    date: str,
+    suggestion_id: int,
+    body: Optional[BizSuggestionDismiss] = None,
+    session: AsyncSession = Depends(get_db),
+    admin: dict = Depends(get_current_admin),
+):
+    """Admin gỡ 1 gợi ý kinh doanh (ngắn hạn hoặc dài hạn) khỏi báo cáo `date` (đề xuất phi thực tế...) —
+    xoá khỏi mục "Gợi ý kinh doanh" của CHÍNH báo cáo này (cả bản đã phát hành),
+    và thôi theo dõi/nhắc lại gợi ý đó ở các báo cáo sau (services/biz_memory.py).
+    Các báo cáo khác đã sinh trước đó giữ nguyên làm lịch sử."""
+    stmt = select(Report).where(Report.report_date == date)
+    report = (await session.execute(stmt)).scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.status == "generating" or not report.content:
+        raise HTTPException(status_code=400, detail="Report đang được sinh, chưa thể sửa.")
+
+    new_biz, found = biz_memory.remove_from_biz_content(report.content.get("biz"), suggestion_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Không tìm thấy gợi ý này trong báo cáo.")
+
+    await biz_memory.dismiss(session, suggestion_id, admin.get("sub"), body.reason if body else None)
+    # Gán object content MỚI — SQLAlchemy không tự nhận ra thay đổi lồng bên trong JSONB.
+    report.content = {**report.content, "biz": new_biz}
+    await session.commit()
+    logger.info("[REPORT] Admin %s gỡ gợi ý kinh doanh #%s khỏi báo cáo %s.", admin.get("sub"), suggestion_id, date)
+    return {"message": "Đã gỡ gợi ý khỏi báo cáo.", "biz": new_biz}
 
 
 @router.delete("/{date}")

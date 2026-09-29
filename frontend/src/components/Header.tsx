@@ -9,7 +9,7 @@ import { LogoutButton } from "@/components/LogoutButton";
 import { HotNewsBell } from "@/components/HotNewsBell";
 import { Settings, Menu, X, LogOut } from "lucide-react";
 import { api, setAuthRole } from "@/lib/api";
-import { ADMIN_NAV_ITEMS } from "@/lib/adminNav";
+import { ADMIN_NAV_GROUPS, ADMIN_NAV_ITEMS } from "@/lib/adminNav";
 
 export function Header() {
   const pathname = usePathname();
@@ -90,30 +90,44 @@ export function Header() {
             hiện từ md trở lên, xem admin/layout.tsx). */}
         {isAdmin && mobileNavOpen && (
           <div className="md:hidden absolute top-full inset-x-0 bg-primary-dark border-t border-white/10 shadow-lg z-40">
-            <ul className="p-3 space-y-1">
-              {ADMIN_NAV_ITEMS.map(({ href, label, icon: Icon }) => (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    className={clsx(
-                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors",
-                      pathname?.startsWith(href) ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10"
-                    )}
-                  >
-                    <Icon size={16} />
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <div className="border-t border-white/10 p-3">
-              <button
-                onClick={handleAdminLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
-              >
-                <LogOut size={16} />
-                Đăng xuất
-              </button>
+            {/* Cùng phân nhóm với sidebar desktop — vạch kẻ mờ giữa các nhóm,
+                "Đăng xuất" nằm cuối nhóm cuối. */}
+            <div className="p-3">
+              {ADMIN_NAV_GROUPS.map((group, gi) => {
+                const isLast = gi === ADMIN_NAV_GROUPS.length - 1;
+                return (
+                  <div key={group.id}>
+                    {gi > 0 && <div className="my-2 mx-3 h-px bg-white/15" aria-hidden="true" />}
+                    <ul className="space-y-1">
+                      {group.items.map(({ href, label, icon: Icon }) => (
+                        <li key={href}>
+                          <Link
+                            href={href}
+                            className={clsx(
+                              "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors",
+                              pathname?.startsWith(href) ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10"
+                            )}
+                          >
+                            <Icon size={16} />
+                            {label}
+                          </Link>
+                        </li>
+                      ))}
+                      {isLast && (
+                        <li>
+                          <button
+                            onClick={handleAdminLogout}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
+                          >
+                            <LogOut size={16} />
+                            Đăng xuất
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

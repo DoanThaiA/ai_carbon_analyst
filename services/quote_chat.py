@@ -484,9 +484,14 @@ def _format_section1(sec: dict) -> str:
 
 def _format_section2(sec: dict) -> str:
     drivers = sec.get("market_drivers") or {}
+    developments = "\n".join(
+        f"- [{d.get('impact', '')}] {d.get('text', '')}" + (f" ({d['source_name']})" if d.get("source_name") else "")
+        for d in sec.get("key_developments") or []
+    )
     return (
         f"{sec.get('title', 'Bảng giá nhanh')}\n"
         f"{sec.get('key_facts', '')}\n"
+        f"Diễn biến chính:\n{developments or '(không có)'}\n"
         f"Yếu tố hỗ trợ tăng giá:\n{_format_bullets(drivers.get('bullish'))}\n"
         f"Yếu tố hỗ trợ giảm giá:\n{_format_bullets(drivers.get('bearish'))}"
     )
@@ -549,9 +554,22 @@ def _format_section_biz(sec: dict) -> str:
         f"- Cơ hội: {it.get('opportunity', '')} | Giải pháp: {it.get('solution', '')} | Kỳ vọng: {it.get('expectation', '')}"
         for it in sec.get("long_term") or []
     ) or "(không có gợi ý dài hạn)"
+    # Bộ nhớ gợi ý (services/biz_memory.py): gợi ý cũ vừa kích hoạt / còn đang theo dõi.
+    reminders = "\n".join(
+        f"- Đề xuất ngày {it.get('suggested_date', '')}: {it.get('action', '')} (khi: {it.get('trigger', '')}) "
+        f"— ĐÃ KÍCH HOẠT: {it.get('evidence') or ''}"
+        for it in sec.get("reminders") or []
+    )
+    tracking = "\n".join(
+        f"- Đề xuất ngày {it.get('suggested_date', '')}: {it.get('action', '')} (khi: {it.get('trigger', '')}) — chưa kích hoạt"
+        for it in sec.get("tracking") or []
+    )
+    memory = ""
+    if reminders or tracking:
+        memory = f"\n\nGợi ý cũ Jenny đang theo dõi:\n{reminders}\n{tracking}".rstrip()
     return (
         f"{sec.get('title', 'Gợi ý kinh doanh & giải pháp cho SIM')}\n"
-        f"Ngắn hạn:\n{short_term}\n\nDài hạn:\n{long_term}"
+        f"Ngắn hạn:\n{short_term}\n\nDài hạn:\n{long_term}{memory}"
     )
 
 

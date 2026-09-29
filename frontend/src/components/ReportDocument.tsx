@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import clsx from "clsx";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
-  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X,
+  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X, Trash2,
 } from "lucide-react";
 import type { Report } from "@/lib/types";
 
@@ -57,6 +57,13 @@ const TREND_META: Record<string, { arrow: string; label: string; className: stri
   "tăng": { arrow: "▲", label: "NGHIÊNG TĂNG", className: "text-up" },
   "giảm": { arrow: "▼", label: "NGHIÊNG GIẢM", className: "text-down" },
   "đi ngang": { arrow: "↔", label: "GIẰNG CO", className: "text-blue-700" },
+};
+
+// Nhãn chiều tác động lên giá EUA của từng tin trong "Diễn biến chính".
+const IMPACT_META: Record<string, { arrow: string; label: string; className: string }> = {
+  "tăng": { arrow: "▲", label: "Hỗ trợ giá", className: "text-up border-up/30 bg-up/10" },
+  "giảm": { arrow: "▼", label: "Áp lực giảm", className: "text-down border-down/30 bg-red-50" },
+  "trung lập": { arrow: "↔", label: "Trung lập", className: "text-blue-700 border-blue-200 bg-blue-50" },
 };
 
 // "Khuyến nghị vị thế" cũng suy ra trực tiếp từ "direction" có sẵn của kịch
@@ -138,10 +145,10 @@ const EUA_SENTIMENT_MAP: Record<string, EuaSentiment> = {
 };
 // Tiêu cực: nền đỏ chữ trắng; Trung lập: nền vàng chữ đen; Tích cực: nền xanh chữ trắng.
 // print-color-adjust: exact — giữ màu nền khi in PDF (trình duyệt mặc định bỏ nền).
-const EUA_SENTIMENT_STYLE: Record<EuaSentiment, { box: string; label: string }> = {
-  negative: { box: "bg-[#C62828] text-white", label: "Tiêu cực" },
-  neutral: { box: "bg-[#FACC15] text-black", label: "Trung lập" },
-  positive: { box: "bg-[#2E7D32] text-white", label: "Tích cực" },
+const EUA_SENTIMENT_STYLE: Record<EuaSentiment, { box: string }> = {
+  negative: { box: "bg-[#C62828] text-white" },
+  neutral: { box: "bg-[#FACC15] text-black" },
+  positive: { box: "bg-[#2E7D32] text-white" },
 };
 
 function parseEuaSentiment(summary: string): { sentiment: EuaSentiment; text: string } {
@@ -266,6 +273,10 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
 // Khung viền nổi bật, tiêu đề nằm hẳn TRONG khung (dải nền màu trên cùng, chữ
 // trắng) — không dùng nhãn bo tròn đè lên viền trên nữa. Dùng cho Tóm tắt điều
 // hành (tone "blue", đầu báo cáo) và TÍN HIỆU HÔM NAY (tone "primary", đầu Phần 2).
+// Kiểu chữ DÙNG CHUNG cho tiêu đề các khối nổi bật (Nhận định giá EUA, Tóm tắt
+// điều hành, Tín hiệu hôm nay) — cùng cỡ, in hoa, căn giữa.
+const BLOCK_TITLE_CLASS = "text-center text-[15px] sm:text-[16px] font-bold uppercase tracking-wide leading-tight";
+
 const FRAME_TONE = {
   primary: { frame: "border-primary-dark", band: "bg-primary-dark" },
   blue: { frame: "border-blue-600", band: "bg-blue-600" },
@@ -297,12 +308,12 @@ function FramedHighlight({
       {/* print-color-adjust: exact — giữ màu nền dải tiêu đề khi in PDF */}
       <div
         className={clsx(
-          "report-heading flex items-center gap-2 px-3.5 sm:px-5 py-2 text-white [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+          "report-heading flex items-center justify-center gap-2 px-3.5 sm:px-5 py-2 text-white [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
           FRAME_TONE[tone].band
         )}
       >
-        {Icon && <Icon size={14} strokeWidth={2.5} aria-hidden="true" />}
-        <h2 className="text-[13.5px] sm:text-[14.5px] font-extrabold uppercase tracking-wide">{title}</h2>
+        {Icon && <Icon size={15} strokeWidth={2.5} aria-hidden="true" />}
+        <h2 className={BLOCK_TITLE_CLASS}>{title}</h2>
       </div>
       <div className="px-3.5 sm:px-5 py-3">{children}</div>
     </div>
@@ -386,17 +397,54 @@ function EventTimeline({ events }: { events: any[] }) {
 // Bảng gợi ý kinh doanh (Mục SIM) — mỗi gợi ý là 1 hàng, cột theo đúng cấu trúc
 // nhân quả (kích hoạt → hành động → lý do / cơ hội → giải pháp → kỳ vọng) thay vì
 // gộp thành 1 đoạn văn dài, để dễ quét theo hàng như các bảng chuẩn khác trong báo cáo.
+// Nút gỡ gợi ý kinh doanh — chỉ hiện ở màn hình admin; type="button" nên tự ẩn khi in.
+function DismissButton({ onClick, className }: { onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Gỡ gợi ý này khỏi báo cáo"
+      aria-label="Gỡ gợi ý này khỏi báo cáo"
+      className={clsx(
+        "inline-flex items-center justify-center w-6 h-6 rounded-md border border-down/30 text-down bg-background hover:bg-red-50 transition-colors print:hidden",
+        className
+      )}
+    >
+      <Trash2 size={12} aria-hidden="true" />
+    </button>
+  );
+}
+
 function BizRecommendationTable({
   heading,
   accent,
   rows,
   columns,
+  infoKey,
+  infoLabel,
+  onDismiss,
 }: {
   heading: string;
   accent: string;
-  rows: Record<string, string>[] | undefined;
+  rows: Record<string, any>[] | undefined;
   columns: { key: string; label: string }[];
+  // Trường ẩn sau nút "i" ở ô cuối mỗi hàng (vd "reason" — Lý do), bấm mới mở
+  // ra thành 1 dòng phụ ngay dưới hàng đó — bảng gọn hơn. Khi in luôn hiện.
+  infoKey?: string;
+  infoLabel?: string;
+  // Chỉ truyền ở màn hình admin: nút gỡ gợi ý (hàng phải có "id" — gợi ý ngắn hạn
+  // lưu trong bộ nhớ biz_suggestions).
+  onDismiss?: (id: number) => void;
 }) {
+  const [openInfo, setOpenInfo] = useState<Set<number>>(new Set());
+  const toggleInfo = (i: number) =>
+    setOpenInfo((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  const colWidthCls = columns.length === 2 ? "w-1/2" : "w-1/3";
   return (
     <div>
       <h4 className={clsx("font-mono text-[11.5px] font-bold uppercase tracking-widest mb-3", accent)}>{heading}</h4>
@@ -414,7 +462,8 @@ function BizRecommendationTable({
                   <th
                     key={col.key}
                     className={clsx(
-                      "w-1/3 text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 bg-tint",
+                      colWidthCls,
+                      "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 bg-tint",
                       i < columns.length - 1 && "border-r border-border"
                     )}
                   >
@@ -424,19 +473,61 @@ function BizRecommendationTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map((row, ri) => (
-                <tr key={ri} className="align-top even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                  <td className="px-2 sm:px-3 py-2.5 sm:py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">{ri + 1}</td>
-                  {columns.map((col, i) => (
-                    <td
-                      key={col.key}
-                      className={clsx("px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-[1.5] break-words", i < columns.length - 1 && "border-r border-border")}
-                    >
-                      <RichText text={row[col.key] || ""} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {rows.map((row, ri) => {
+                const info = infoKey ? row[infoKey] : "";
+                const isOpen = openInfo.has(ri);
+                return (
+                  <Fragment key={ri}>
+                    <tr className="align-top even:bg-surface/60 hover:bg-tint/40 transition-colors">
+                      <td className="px-2 sm:px-3 py-2.5 sm:py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">
+                        {ri + 1}
+                        {onDismiss && typeof row.id === "number" && (
+                          <div className="mt-1.5"><DismissButton onClick={() => onDismiss(row.id)} /></div>
+                        )}
+                      </td>
+                      {columns.map((col, i) => {
+                        const isLast = i === columns.length - 1;
+                        return (
+                          <td
+                            key={col.key}
+                            className={clsx("px-2 sm:px-3 py-2.5 sm:py-3 text-body leading-[1.5] break-words", !isLast && "border-r border-border")}
+                          >
+                            {isLast && info ? (
+                              <div className="flex items-start gap-2">
+                                <div className="flex-1 min-w-0"><RichText text={row[col.key] || ""} /></div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleInfo(ri)}
+                                  aria-expanded={isOpen}
+                                  aria-label={isOpen ? `Ẩn ${infoLabel || "chi tiết"}` : `Xem ${infoLabel || "chi tiết"}`}
+                                  title={isOpen ? `Ẩn ${infoLabel || "chi tiết"}` : `Xem ${infoLabel || "chi tiết"}`}
+                                  className={clsx(
+                                    "shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full border transition-colors print:hidden",
+                                    isOpen ? "bg-primary text-white border-primary" : "text-primary border-primary/40 hover:bg-tint"
+                                  )}
+                                >
+                                  <Info size={12} strokeWidth={2.5} aria-hidden="true" />
+                                </button>
+                              </div>
+                            ) : (
+                              <RichText text={row[col.key] || ""} />
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {info && (
+                      <tr className={clsx(isOpen ? "table-row" : "hidden print:table-row")}>
+                        <td className="border-r border-border bg-surface" />
+                        <td colSpan={columns.length} className="px-2 sm:px-3 py-2 bg-tint/50 text-[12.5px] leading-[1.5] text-body">
+                          <span className="font-bold text-primary-dark mr-1">{infoLabel || "Chi tiết"}:</span>
+                          <RichText text={info} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -587,6 +678,15 @@ function formatVietnameseDate(dateStr: string) {
 
 const VIETNAMESE_DAYS = ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
 
+// "YYYY-MM-DD" -> "Thứ Ba"... (dựng Date theo giờ địa phương từ từng phần — tránh
+// new Date("YYYY-MM-DD") parse theo UTC làm lệch 1 ngày ở múi giờ âm).
+function vietnameseWeekday(dateStr: string) {
+  const parts = (dateStr || "").split("-");
+  if (parts.length !== 3) return "";
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  return isNaN(d.getTime()) ? "" : VIETNAMESE_DAYS[d.getDay()];
+}
+
 function formatVietnameseDateFull(dateStr: string) {
   if (!dateStr) return "";
   const parts = dateStr.split("-");
@@ -604,7 +704,14 @@ function formatVietnameseDateFull(dateStr: string) {
  * hình user (chỉ xem báo cáo đã published) và màn hình admin duyệt báo cáo,
  * để không lặp lại JSX giữa 2 nơi.
  */
-export function ReportDocument({ report }: { report: Report }) {
+export function ReportDocument({
+  report,
+  onDismissBizSuggestion,
+}: {
+  report: Report;
+  // Chỉ màn hình admin truyền vào — hiện nút gỡ gợi ý kinh doanh (services/biz_memory.py).
+  onDismissBizSuggestion?: (id: number) => void;
+}) {
   const priceRows = report?.content["2"]?.prices || [];
   // Menu hamburger điều hướng section (thanh dưới banner).
   const [navOpen, setNavOpen] = useState(false);
@@ -746,8 +853,9 @@ export function ReportDocument({ report }: { report: Report }) {
               className="h-11 sm:h-14 w-auto object-contain shrink-0"
             />
             <div className="text-right">
-              <div className="text-[10.5px] sm:text-[11px] uppercase tracking-[0.12em] text-white/70 mb-0.5">
-                Phát hành
+              {/* Thứ trong tuần của ngày báo cáo (thay cho nhãn "Phát hành" cũ) */}
+              <div className="text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.12em] text-[#8fd9a8] mb-0.5">
+                {vietnameseWeekday(report.report_date)}
               </div>
               <div className="text-[13px] sm:text-[15px] font-bold leading-snug">
                 {formatVietnameseDate(report.report_date)}
@@ -868,10 +976,9 @@ export function ReportDocument({ report }: { report: Report }) {
                 EUA_SENTIMENT_STYLE[euaVerdict.sentiment].box
               )}
             >
-              <div className="mb-1 text-[11px] font-extrabold uppercase tracking-[0.12em] opacity-90">
-                Nhận định giá EUA · {EUA_SENTIMENT_STYLE[euaVerdict.sentiment].label}
-              </div>
-              <p className="text-[14.5px] sm:text-[15.5px] leading-[1.4] font-bold text-left">
+              <h2 className={clsx(BLOCK_TITLE_CLASS, "mb-1.5")}>Nhận định giá EUA</h2>
+              {/* Nội dung nhận định: chữ thường, in đậm (KHÔNG in hoa — chỉ tiêu đề in hoa) */}
+              <p className="text-[14.5px] sm:text-[15.5px] leading-[1.45] font-bold normal-case text-left">
                 <RichText text={euaVerdict.text} />
               </p>
             </div>
@@ -969,13 +1076,19 @@ export function ReportDocument({ report }: { report: Report }) {
                       <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
                         <td className="px-1.5 sm:px-2 py-1.5 border-r border-border font-sans font-semibold text-label break-words">
                           {r.source_url ? (
+                            // Link kiểu quen thuộc (xanh dương + luôn gạch chân + icon ↗)
+                            // để tách bạch hẳn với tên cột (xanh ngọc, in hoa) — trước đây
+                            // cùng tông xanh ngọc, chỉ gạch chân khi hover nên không nhận
+                            // ra được là bấm được (nhất là trên mobile, không có hover).
                             <a
                               href={r.source_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-primary hover:underline"
+                              title={`Xem giá ${r.name} tại nguồn`}
+                              className="text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900 transition-colors"
                             >
                               {r.name}
+                              <ExternalLink size={11} className="inline-block ml-1 -mt-0.5 align-middle" aria-hidden="true" />
                             </a>
                           ) : (
                             r.name
@@ -1038,6 +1151,46 @@ export function ReportDocument({ report }: { report: Report }) {
               </table>
             </div>
           </div>
+
+          {/* Diễn biến chính — tin tức nổi bật tác động cung/cầu EUA (trực tiếp
+              hoặc gián tiếp), mỗi tin có nhãn chiều tác động + nguồn bài viết.
+              Backend: content["2"].key_developments (report_generator.py::
+              _prompt_key_developments). Báo cáo cũ chưa có trường này → ẩn. */}
+          {report.content["2"]?.key_developments?.length > 0 && (
+            <div className="mt-6">
+              <SubHeading>Diễn biến chính</SubHeading>
+              <ul className="list-none border border-border rounded-lg divide-y divide-border overflow-hidden">
+                {report.content["2"].key_developments.map((d: any, i: number) => {
+                  const meta = IMPACT_META[d.impact] ?? IMPACT_META["trung lập"];
+                  return (
+                    <li key={i} className="flex items-start gap-3 px-3 sm:px-4 py-3">
+                      <span className={clsx(
+                        "shrink-0 mt-0.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide whitespace-nowrap",
+                        meta.className
+                      )}>
+                        {meta.arrow} {meta.label}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] leading-[1.5] text-foreground">
+                          <RichText text={d.text} />
+                        </p>
+                        {d.source_name && (
+                          <a
+                            href={d.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 inline-flex items-center gap-1 text-[11.5px] text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900"
+                          >
+                            Nguồn: {d.source_name} <ExternalLink size={10} aria-hidden="true" />
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </section>
 
         {/* PHẦN 2 — PHÂN TÍCH VÀ KHUYẾN NGHỊ GIAO DỊCH */}
@@ -1473,16 +1626,94 @@ export function ReportDocument({ report }: { report: Report }) {
             <div className="mb-6">
               <SubHeading>{report.content["biz"].title}</SubHeading>
               <div className="flex flex-col gap-6">
-                <BizRecommendationTable
-                  heading="Ngắn hạn"
-                  accent="text-label"
-                  rows={report.content["biz"].short_term}
-                  columns={[
-                    { key: "trigger", label: "Tình huống kích hoạt" },
-                    { key: "action", label: "Hành động đề xuất" },
-                    { key: "reason", label: "Lý do" },
-                  ]}
-                />
+                {/* Jenny nhắc lại — gợi ý ở báo cáo trước (trong 10 ngày) mà tình huống
+                    kích hoạt vừa xảy ra hôm nay (services/biz_memory.py). */}
+                {report.content["biz"].reminders?.length > 0 && (
+                  <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                    <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-warn/30">
+                      <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                      <div className="text-[14px] sm:text-[15px] font-bold text-label">Jenny nhắc lại đề xuất trước đây</div>
+                    </div>
+                    <ul className="list-none divide-y divide-warn/20">
+                      {report.content["biz"].reminders.map((r: any, i: number) => (
+                        <li key={i} className="px-3.5 py-3 space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            <p className="flex-1 min-w-0 text-[14px] leading-[1.5] text-foreground">
+                              Ngày <b>{formatFullDate(r.suggested_date)}</b> Jenny đã đề xuất: <b><RichText text={r.action} /></b>
+                            </p>
+                            {onDismissBizSuggestion && typeof r.id === "number" && (
+                              <DismissButton onClick={() => onDismissBizSuggestion(r.id)} className="shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-[13px] leading-[1.5] text-body">
+                            <span className="font-semibold">Tình huống kích hoạt:</span> <RichText text={r.trigger} />
+                          </p>
+                          <p className="text-[13.5px] leading-[1.5] font-semibold text-up">
+                            ✓ Tình huống đã xảy ra{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
+                          </p>
+                          {r.source_name && (
+                            r.source_url ? (
+                              <a
+                                href={r.source_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11.5px] text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900"
+                              >
+                                Nguồn: {r.source_name} <ExternalLink size={10} aria-hidden="true" />
+                              </a>
+                            ) : (
+                              <span className="text-[11.5px] text-muted-light">Nguồn: {r.source_name}</span>
+                            )
+                          )}
+                          <p className="text-[13px] italic text-warn font-semibold">
+                            Anh/chị đã thực hiện theo đề xuất này chưa?
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div>
+                  <BizRecommendationTable
+                    heading="Ngắn hạn"
+                    accent="text-label"
+                    rows={report.content["biz"].short_term}
+                    columns={[
+                      { key: "trigger", label: "Tình huống kích hoạt" },
+                      { key: "action", label: "Hành động đề xuất" },
+                    ]}
+                    infoKey="reason"
+                    infoLabel="Lý do"
+                    onDismiss={onDismissBizSuggestion}
+                  />
+                  {/* Gợi ý cũ còn trong trí nhớ nhưng tình huống chưa xảy ra — không viết
+                      lại cả dòng, chỉ tham chiếu ngày đề xuất. */}
+                  {report.content["biz"].tracking?.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-border bg-surface/60 px-3.5 py-2.5">
+                      <h5 className="text-[11.5px] font-bold uppercase tracking-wider text-muted-light mb-1.5">
+                        Đề xuất trước đây — đang theo dõi
+                      </h5>
+                      <ol className="list-none space-y-1.5">
+                        {report.content["biz"].tracking.map((t: any, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-[13px] leading-[1.5] text-body">
+                            <p className="flex-1 min-w-0">
+                              <span className="font-semibold text-label">{i + 1}.</span>{" "}
+                              <RichText text={t.action} />{" "}
+                              <span className="text-muted-light">
+                                — đã gợi ý từ báo cáo ngày {formatFullDate(t.suggested_date)}, tình huống kích hoạt
+                                (<RichText text={t.trigger} />) chưa xảy ra.
+                              </span>
+                            </p>
+                            {onDismissBizSuggestion && typeof t.id === "number" && (
+                              <DismissButton onClick={() => onDismissBizSuggestion(t.id)} className="shrink-0" />
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                </div>
                 <BizRecommendationTable
                   heading="Dài hạn"
                   accent="text-primary"
@@ -1492,6 +1723,7 @@ export function ReportDocument({ report }: { report: Report }) {
                     { key: "solution", label: "Giải pháp đề xuất" },
                     { key: "expectation", label: "Kỳ vọng" },
                   ]}
+                  onDismiss={onDismissBizSuggestion}
                 />
               </div>
             </div>

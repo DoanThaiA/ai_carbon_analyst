@@ -82,6 +82,13 @@ class Settings:
     hot_news_email_batch_size: int
     app_base_url: str
 
+    # Các ngày trong tuần scheduler TỰ ĐỘNG sinh báo cáo (07:00 VN) — cú pháp
+    # day_of_week của APScheduler CronTrigger (vd "tue-sat", "mon-fri", "mon,wed,fri").
+    # Mặc định thứ 3 → thứ 7: báo cáo ngày T dùng giá/tin phiên T-1, nên tương ứng
+    # đúng 5 phiên giao dịch thứ 2 → thứ 6 (CN/thứ 2 không có phiên mới để báo cáo).
+    # Crawl giá/tin vẫn chạy MỖI NGÀY; admin vẫn sinh tay được bất kỳ ngày nào.
+    auto_report_days: str
+
     @classmethod
     def from_env(cls) -> "Settings":
         database_url = os.environ.get("DATABASE_URL")
@@ -133,4 +140,5 @@ class Settings:
             hot_news_email_max_age_hours=int(os.environ.get("HOT_NEWS_EMAIL_MAX_AGE_HOURS", "24")),
             hot_news_email_batch_size=int(os.environ.get("HOT_NEWS_EMAIL_BATCH_SIZE", "100")),
             app_base_url=os.environ.get("APP_BASE_URL", "").rstrip("/"),
+            auto_report_days=os.environ.get("AUTO_REPORT_DAYS", "tue-sat").strip().lower() or "tue-sat",
         )
