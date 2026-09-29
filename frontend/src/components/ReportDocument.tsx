@@ -651,7 +651,11 @@ export function ReportDocument({ report }: { report: Report }) {
     // thật (căn giữa, có viền/bóng đổ), thay vì kéo giãn hết chiều ngang trình
     // duyệt. Khi in (@media print trong globals.css), khổ A4 thật (@page) luôn
     // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
-    <div className="report-shell max-w-[210mm] mx-auto bg-background text-foreground font-sans leading-[1.5] rounded-2xl border border-border shadow-[var(--shadow-soft)] overflow-hidden mb-10">
+    // Mobile (< sm): báo cáo tràn sát 2 mép màn hình (-mx-4 bù đúng px-4 của <main>
+    // trong app/layout.tsx), bỏ viền/bo góc/bóng của card — trước đây lề <main> +
+    // viền card + lề nội dung + lề khung FramedHighlight cộng dồn, chữ trong khung
+    // chỉ còn ~77% bề ngang màn hình 375px. Lề đọc giờ chỉ còn px-4 của nội dung.
+    <div className="report-shell max-w-[210mm] mx-auto max-sm:-mx-4 bg-background text-foreground font-sans leading-[1.5] rounded-2xl max-sm:rounded-none border border-border max-sm:border-x-0 shadow-[var(--shadow-soft)] max-sm:shadow-none overflow-hidden mb-10">
 
       {/* Banner Stavian — 1 khối nền liền (không tách 2 nửa gradient ngược chiều,
           vốn tạo 1 đường nối lộ rõ ở giữa): hàng trên logo + ngày phát hành,
@@ -674,7 +678,7 @@ export function ReportDocument({ report }: { report: Report }) {
           <line x1="540" y1="0" x2="700" y2="300" stroke="rgba(255,255,255,0.045)" strokeWidth="1" />
         </svg>
 
-        <div className="relative z-10 px-5 sm:px-10 pt-5 sm:pt-6 pb-6 sm:pb-7">
+        <div className="relative z-10 px-4 sm:px-10 pt-5 sm:pt-6 pb-6 sm:pb-7">
           {/* Hàng trên: logo trái, ngày phát hành phải — căn giữa theo chiều dọc */}
           <div className="flex items-center justify-between gap-4">
             <img
@@ -742,7 +746,7 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       </nav>
 
-      <div className="px-3 sm:px-10 pt-3 pb-10">
+      <div className="px-4 sm:px-10 pt-3 pb-10">
 
         {/* 🚨 ĐIỂM NHẤN — đóng khung đỏ nổi bật, đứng đầu tiên của báo cáo
             (thay cho vị trí "Tóm tắt điều hành" cũ): Nhận định — kết luận của
@@ -1097,7 +1101,7 @@ export function ReportDocument({ report }: { report: Report }) {
                   ))}
 
                   {report.content["3"].correlation_analysis && (
-                    <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg pl-4 pr-4 py-3 my-5 space-y-2">
+                    <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg px-3 sm:px-4 py-3 my-5 space-y-2">
                       <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">Chuỗi Logic: Gas + Coal + Power → EUA</h4>
                       {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
                         <div className="space-y-2.5 mb-1">
