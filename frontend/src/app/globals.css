@@ -231,7 +231,7 @@ body {
   /* ---- Masthead: thu gọn padding cho trang đầu gọn hơn (Đã chuyển sang dùng print:pt-4 trong JSX) ---- */
 
   /* ---- Nội dung chính: giảm padding ngang cho vừa khổ A4 ---- */
-  .px-6.sm\:px-10 {
+  .px-3.sm\:px-10 {
     padding-left: 20px !important;
     padding-right: 20px !important;
   }

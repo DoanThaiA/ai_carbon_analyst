@@ -252,7 +252,7 @@ function FramedHighlight({
   return (
     <div
       className={clsx(
-        "report-heading report-frame relative rounded-2xl border-2 px-5 sm:px-7 pt-8 pb-6 shadow-[var(--shadow-soft)]",
+        "report-heading report-frame relative rounded-2xl border-2 px-3 sm:px-7 pt-8 pb-6 shadow-[var(--shadow-soft)]",
         isDanger
           ? "border-[#7A1E1E]/30 bg-gradient-to-b from-[#7A1E1E]/[0.07] to-background"
           : "border-primary/25 bg-gradient-to-b from-tint/70 to-background",
@@ -742,7 +742,7 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       </nav>
 
-      <div className="px-6 sm:px-10 pt-3 pb-10">
+      <div className="px-3 sm:px-10 pt-3 pb-10">
 
         {/* 🚨 ĐIỂM NHẤN — đóng khung đỏ nổi bật, đứng đầu tiên của báo cáo
             (thay cho vị trí "Tóm tắt điều hành" cũ): Nhận định — kết luận của
@@ -834,13 +834,13 @@ export function ReportDocument({ report }: { report: Report }) {
             )}
 
             {/* Bảng giá full-width */}
-            <div className="overflow-x-auto">
-              <table className="w-full table-fixed border-collapse font-mono text-[13.5px] sm:text-[12.5px]">
+            <div className="overflow-x-auto border border-border rounded-lg">
+              <table className="w-full sm:table-fixed border-collapse font-mono text-[12px] sm:text-[12.5px]">
                 <thead>
                   <tr>
-                    <th className="w-[20%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
-                    <th className="w-[15%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
-                    <th className="w-[65%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
+                    <th className="w-[28%] sm:w-[20%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
+                    <th className="w-[18%] sm:w-[15%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
+                    <th className="w-[54%] sm:w-[65%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -850,7 +850,7 @@ export function ReportDocument({ report }: { report: Report }) {
                     const priceUnit = priceUnitParts.join(" ");
                     return (
                       <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                        <td className="px-1.5 sm:px-2 py-1.5 border-r border-border font-sans font-semibold text-label">
+                        <td className="px-1.5 sm:px-2 py-1.5 border-r border-border font-sans font-semibold text-label break-words">
                           {r.source_url ? (
                             <a
                               href={r.source_url}
@@ -864,15 +864,15 @@ export function ReportDocument({ report }: { report: Report }) {
                             r.name
                           )}
                         </td>
-                        <td className="px-1.5 sm:px-2 py-1.5 border-r border-border text-center">
+                        <td className="px-1 sm:px-2 py-1.5 border-r border-border text-center">
                           <div className="flex flex-col items-center leading-[1.3]">
                             <span className="break-words tabular-nums">{priceNumber}</span>
                             {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
                           </div>
                         </td>
-                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[12px] leading-[1.5] text-body">
+                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[11px] sm:text-[12px] leading-[1.5] text-body">
                           {(r.dday !== "-" || r.dweek !== "-") && (
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] mb-1">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] sm:text-[11px] mb-1">
                               {r.dday !== "-" && (
                                 <span className={clsx("tabular-nums", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
                                   Δ Ngày: {r.dday}
@@ -943,18 +943,18 @@ export function ReportDocument({ report }: { report: Report }) {
           <div className="mb-6">
             <SubHeading>Bảng tín hiệu nhanh</SubHeading>
             <div className="overflow-x-auto border border-border rounded-lg">
-              <table className="w-full border-collapse text-[13px]">
+              <table className="w-full border-collapse text-[12.5px] sm:text-[13px]">
                 <thead>
                   <tr>
-                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[42%] sm:w-[34%]">Chỉ số</th>
-                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-3 py-2.5 border-b-2 border-primary/30 bg-tint">Giá trị</th>
+                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-1.5 sm:px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[42%] sm:w-[34%]">Chỉ số</th>
+                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-1.5 sm:px-3 py-2.5 border-b-2 border-primary/30 bg-tint">Giá trị</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {quickSignalRows.map((row, i) => (
                     <tr key={i} className="align-top even:bg-surface/60">
-                      <td className="px-3 py-1.5 border-r border-border font-sans font-semibold text-label">{row.label}</td>
-                      <td className="px-3 py-1.5 leading-[1.5] text-body">{row.value}</td>
+                      <td className="px-1.5 sm:px-3 py-1.5 border-r border-border font-sans font-semibold text-label">{row.label}</td>
+                      <td className="px-1.5 sm:px-3 py-1.5 leading-[1.5] text-body">{row.value}</td>
                     </tr>
                   ))}
                 </tbody>
