@@ -14,11 +14,11 @@ interface AllowedUser {
   created_at: string;
 }
 
-// Mở "Lịch sử chat" của 1 user — dùng lại trang Đánh giá chat với ?user=<email>.
+// Mở trang "Lịch sử chat" đã lọc sẵn theo 1 user (?user=<email>).
 function ChatHistoryLink({ email }: { email: string }) {
   return (
     <Link
-      href={`/admin/chat-reviews?user=${encodeURIComponent(email)}`}
+      href={`/admin/chat-history?user=${encodeURIComponent(email)}`}
       title="Lịch sử chat"
       aria-label={`Lịch sử chat của ${email}`}
       className="p-1.5 rounded text-primary hover:bg-tint transition-colors"
