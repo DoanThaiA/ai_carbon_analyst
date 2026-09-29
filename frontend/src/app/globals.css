@@ -58,40 +58,50 @@
   --color-warn: var(--color-warn);
   --color-warn-tint: var(--color-warn-tint);
 
-  --font-sans: var(--font-inter), Arial, Helvetica, sans-serif;
-  --font-mono: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, monospace;
+  /* Toàn site 1 font duy nhất: Arial, Helvetica, sans-serif. Arimo (webfont,
+     nạp qua next/font trong layout.tsx — cùng metric với Arial, đủ tiếng Việt)
+     đứng đầu để MỌI hệ điều hành + bản in PDF ra đúng 1 kiểu chữ; Arial/Helvetica
+     chỉ là dự phòng khi webfont chưa tải được. font-mono (ticker giá, header
+     bảng, badge...) cũng trỏ về cùng stack — không còn font thứ 2 nào trên site.
+     var(--font-arimo, Arial): nếu biến chưa được định nghĩa (vd trang lỗi render
+     ngoài RootLayout) thì cả khai báo vẫn hợp lệ, không rơi về font serif mặc định. */
+  --font-sans: var(--font-arimo, Arial), Arial, Helvetica, sans-serif;
+  --font-mono: var(--font-arimo, Arial), Arial, Helvetica, sans-serif;
+
+  /* Arial chỉ có 2 độ đậm thật: 400 (Regular) và 700 (Bold), Arimo cũng chỉ tới
+     700. Trên Windows (DirectWrite) "Arial Black" được gộp chung family "Arial"
+     ở weight 900, nên font-extrabold (800) / font-black (900) — khi webfont chưa
+     tải kịp và rơi về Arial hệ thống — sẽ render bằng Arial Black, font KHÔNG
+     đủ ký tự tiếng Việt (Ầ, Ơ, Ư, Ệ...) → tiêu đề lẫn lộn font, lệch dấu.
+     Chặn trần 700 cho TOÀN site (Tailwind v4 đọc weight từ các biến này). */
+  --font-weight-extrabold: 700;
+  --font-weight-black: 700;
+}
+
+html,
+body {
+  font-family: var(--font-arimo, Arial), Arial, Helvetica, sans-serif;
 }
 
 body {
   background: var(--color-surface);
   color: var(--color-foreground);
-  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
-/* Báo cáo (ReportDocument.tsx, bọc trong .report-shell) LUÔN dùng Arial cho
-   MỌI chữ — kể cả các đoạn đang gắn font-mono (ticker giá, header bảng, badge,
-   nhãn số liệu — vốn cố tình dùng IBM Plex Mono để căn số liệu thẳng hàng).
-   Yêu cầu riêng cho báo cáo, không áp dụng cho phần còn lại của web (admin,
-   trang chủ...) vẫn dùng Inter/IBM Plex Mono như bình thường — nên override
-   bằng 1 rule riêng, không đổi --font-sans/--font-mono dùng chung toàn site. */
-.report-shell,
-.report-shell * {
-  /* Arimo (webfont, nạp qua next/font trong layout.tsx) trước — trông như
-     Arial nhưng đi kèm file font riêng có đủ tiếng Việt, không phụ thuộc Arial
-     cài trên máy (Windows hiển thị/tải PDF bị lỗi font khi dùng Arial hệ thống). */
-  font-family: var(--font-arimo), Arial, Helvetica, sans-serif !important;
+/* Form control (input/textarea/select/button) KHÔNG kế thừa font từ body theo
+   mặc định của trình duyệt — ép dùng chung stack để ô nhập liệu (vd Quote Chat,
+   trình sửa báo cáo) không hiện font hệ thống khác. */
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
 }
 
-/* Arial chỉ có 2 độ đậm thật: 400 (Regular) và 700 (Bold). Trên Windows
-   (DirectWrite) "Arial Black" được gộp chung family "Arial" ở weight 900, nên
-   font-extrabold (800) / font-black (900) sẽ bị render bằng Arial Black — font
-   này KHÔNG có đủ ký tự tiếng Việt (Ầ, Ơ, Ư, Ệ...), trình duyệt phải lấy ký tự
-   thiếu từ font khác → tiêu đề bị lẫn lộn font, dấu lệch. macOS cũng có thể
-   chọn Arial Black tương tự. Chặn trần ở 700 cho mọi chữ trong báo cáo —
-   Tailwind v4 đọc weight từ các biến này nên override tại .report-shell là đủ. */
-.report-shell {
-  --font-weight-extrabold: 700;
-  --font-weight-black: 700;
+/* SVG <text> (trục biểu đồ nến trong báo cáo) — khai báo tường minh, không phụ
+   thuộc việc trình duyệt có kế thừa font-family vào SVG hay không khi in PDF. */
+svg text {
+  font-family: var(--font-arimo, Arial), Arial, Helvetica, sans-serif;
 }
 
 /* Các đoạn văn trong báo cáo căn đều 2 bên (justify) thay vì căn trái mặc định.
@@ -155,22 +165,26 @@ body {
     /* Header/footer của trang in — khai báo margin box riêng thì Chrome/Edge
        KHÔNG in header/footer mặc định của trình duyệt nữa (ngày giờ, <title>
        "Carbon Analyst Dashboard", URL localhost...) vốn dùng font hệ thống,
-       lệch font với báo cáo — thay bằng header/footer Arial đồng bộ. */
+       lệch font với báo cáo — thay bằng header/footer Arial đồng bộ.
+       KHÔNG ghi tên "Arimo" trực tiếp: next/font đổi tên family thành dạng
+       "__Arimo_xxxx" nên tên gốc không bao giờ khớp webfont — phải đi qua biến
+       --font-arimo (page context kế thừa custom property từ <html>), có sẵn
+       fallback Arial nếu biến không tới được margin box. */
     @top-left {
       content: "Tin tức hàng ngày thị trường Carbon";
-      font-family: "Arimo", Arial, Helvetica, sans-serif;
+      font-family: var(--font-arimo, Arial), Arial, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
     @top-right {
       content: "Stavian Industrial Metal";
-      font-family: "Arimo", Arial, Helvetica, sans-serif;
+      font-family: var(--font-arimo, Arial), Arial, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
     @bottom-right {
       content: "Trang " counter(page) " / " counter(pages);
-      font-family: "Arimo", Arial, Helvetica, sans-serif;
+      font-family: var(--font-arimo, Arial), Arial, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
@@ -315,5 +329,15 @@ body {
   @keyframes scroll {
     0% { transform: translateX(0); }
     100% { transform: translateX(-50%); }
+  }
+  /* Thanh trượt giá trong báo cáo (ReportDocument.tsx) chạy TỪ TRÁI SANG PHẢI:
+     nội dung nhân đôi, bắt đầu lệch -50% rồi trượt về 0 → lặp liền mạch.
+     Thời lượng đặt inline theo số hợp đồng để tốc độ đều, vừa phải. */
+  .ticker-track-ltr {
+    animation-name: scroll-ltr;
+  }
+  @keyframes scroll-ltr {
+    0% { transform: translateX(-50%); }
+    100% { transform: translateX(0); }
   }
 }

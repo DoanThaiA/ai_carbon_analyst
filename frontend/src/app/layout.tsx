@@ -1,24 +1,24 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Mono, Arimo } from "next/font/google";
+import { Arimo } from "next/font/google";
 import { Leaf } from "lucide-react";
 import "./globals.css";
 import clsx from "clsx";
 import { Header } from "@/components/Header";
 
-const inter = Inter({
-  subsets: ["latin", "latin-ext", "vietnamese"],
-  weight: ["400", "600", "700", "800"],
-  variable: "--font-inter",
-});
-// Arimo — cùng kích thước chữ (metric-compatible) với Arial, có subset tiếng
-// Việt. Báo cáo (.report-shell) dùng font này thay cho Arial hệ thống: Arial
-// cài sẵn trên từng máy Windows/macOS khác nhau nên hiển thị/tải PDF bị lỗi
-// font tiếng Việt, còn webfont thì mọi máy dùng chung 1 file.
+// Toàn site dùng DUY NHẤT 1 font: Arial, Helvetica, sans-serif — nạp kèm Arimo
+// (webfont cùng kích thước chữ/metric-compatible với Arial, đủ tiếng Việt) đứng
+// đầu stack (xem --font-sans trong globals.css). Arial cài sẵn trên máy không
+// đồng nhất: Linux/Android không có Arial, Windows gộp "Arial Black" (thiếu dấu
+// tiếng Việt) vào family Arial, Helvetica cũ trên macOS thiếu vài ký tự tiếng
+// Việt — webfont thì mọi hệ điều hành và bản in PDF dùng chung đúng 1 file.
+// Arimo là variable font (400–700); nạp cả kiểu nghiêng để chữ italic là
+// nghiêng thật, không phải nghiêng giả do trình duyệt tự bóp.
 const arimo = Arimo({
   subsets: ["latin", "latin-ext", "vietnamese"],
+  style: ["normal", "italic"],
+  display: "swap",
   variable: "--font-arimo",
 });
-const ibmPlexMono = IBM_Plex_Mono({ weight: ["400", "500", "600", "700"], subsets: ["latin", "latin-ext", "vietnamese"], variable: "--font-ibm-plex-mono" });
 
 export const metadata: Metadata = {
   title: "Carbon Analyst Dashboard",
@@ -32,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={clsx(inter.variable, ibmPlexMono.variable, arimo.variable)}>
+    <html lang="vi" className={clsx(arimo.variable)}>
       <body className="font-sans min-h-screen selection:bg-primary/20">
 
         <div className="flex flex-col min-h-screen">

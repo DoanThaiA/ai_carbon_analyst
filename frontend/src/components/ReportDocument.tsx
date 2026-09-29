@@ -5,7 +5,7 @@ import clsx from "clsx";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
-  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink,
+  Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X,
 } from "lucide-react";
 import type { Report } from "@/lib/types";
 
@@ -23,6 +23,15 @@ function formatCompactPriceNumber(numStr: string): string {
   if (Number.isNaN(n)) return numStr;
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+// Các mục trong menu hamburger điều hướng (id khớp với <section id> trong báo cáo).
+const REPORT_SECTIONS = [
+  { id: "section-highlights", label: "Tóm tắt điều hành" },
+  { id: "section-market", label: "Tổng quan giá" },
+  { id: "section-analysis", label: "Phân tích & Giao dịch" },
+  { id: "section-news", label: "Tin tức chi tiết" },
+  { id: "section-sources", label: "Nguồn tham khảo" },
+];
 
 function formatFullDate(dateStr: string) {
   const parts = dateStr.split("-");
@@ -117,6 +126,33 @@ const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận)\s*:?\*\*/;
 // định" trong khối "🚨 ĐIỂM NHẤN" gộp chung với "Tóm tắt điều hành".
 const EUA_SUMMARY_TAG_RE = /\*\*Tổng hợp\s*:?\*\*/;
 
+// Nhãn xu hướng giá EUA do backend ghi ngay sau "**Tổng hợp:**" (xem
+// _prompt_section3 trong report_generator.py): [TÍCH CỰC]/[TRUNG LẬP]/[TIÊU CỰC]
+// — quyết định màu khung "Nhận định". Báo cáo cũ (chưa có nhãn) mặc định trung lập.
+type EuaSentiment = "positive" | "neutral" | "negative";
+const EUA_SENTIMENT_RE = /^\s*\[\s*(TÍCH CỰC|TRUNG LẬP|TIÊU CỰC)\s*\]\s*/i;
+const EUA_SENTIMENT_MAP: Record<string, EuaSentiment> = {
+  "TÍCH CỰC": "positive",
+  "TRUNG LẬP": "neutral",
+  "TIÊU CỰC": "negative",
+};
+// Tiêu cực: nền đỏ chữ trắng; Trung lập: nền vàng chữ đen; Tích cực: nền xanh chữ trắng.
+// print-color-adjust: exact — giữ màu nền khi in PDF (trình duyệt mặc định bỏ nền).
+const EUA_SENTIMENT_STYLE: Record<EuaSentiment, { box: string; label: string }> = {
+  negative: { box: "bg-[#C62828] text-white", label: "Tiêu cực" },
+  neutral: { box: "bg-[#FACC15] text-black", label: "Trung lập" },
+  positive: { box: "bg-[#2E7D32] text-white", label: "Tích cực" },
+};
+
+function parseEuaSentiment(summary: string): { sentiment: EuaSentiment; text: string } {
+  const match = summary.match(EUA_SENTIMENT_RE);
+  if (!match) return { sentiment: "neutral", text: summary };
+  return {
+    sentiment: EUA_SENTIMENT_MAP[match[1].toUpperCase()] ?? "neutral",
+    text: summary.slice(match[0].length).trim(),
+  };
+}
+
 // Dòng tiêu đề-kết luận đầu mỗi nhóm trong Mục 3, heading "Phân tích" (xem
 // _prompt_section3::ĐỊNH DẠNG trong report_generator.py — dòng đầu tiên của
 // mỗi nhóm PHẢI viết liền "Tên nhóm: <kết luận>") — đóng khung nổi bật NGUYÊN
@@ -152,7 +188,7 @@ function extractEuaSummary(blocks: any[] | undefined): { cleanedBlocks: any[]; s
 
 // Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung: rút NGUYÊN block có
 // heading "Cần theo dõi" ra khỏi analysis_blocks của Mục 3 để hiển thị thành
-// mục riêng, đứng giữa "Kịch bản chiến lược" và "Gợi ý kinh doanh & giải pháp
+// mục riêng, đứng giữa "Kịch bản hành động" và "Gợi ý kinh doanh & giải pháp
 // cho SIM" thay vì trong Mục 3 — nội dung watchpoint do backend sinh giữ
 // nguyên (vẫn liệt kê "1.", "2."... không có ngày giờ cụ thể vì đây không
 // phải sự kiện có lịch, chỉ là điểm cần theo dõi).
@@ -201,9 +237,8 @@ function isPositiveDelta(value: string) {
 // 3 cấp heading rõ ràng theo phân cấp thị giác:
 //  - PartHeading: đầu mục lớn nhất ("Phần 1/2/3", hoặc đứng riêng như "Tóm tắt
 //    điều hành"/"Nguồn tham khảo" không cần nhãn "Phần").
-//  - FramedHighlight: khung viền nổi bật có tiêu đề dạng "nhãn" nằm đè lên viền
-//    trên (kiểu legend/fieldset) — dùng cho các khối cần nhấn mạnh nhất (Tóm
-//    tắt điều hành, Tổng hợp giá EUA).
+//  - FramedHighlight: khung viền nổi bật, tiêu đề là dải nền màu nằm trong khung
+//    — dùng cho các khối cần nhấn mạnh nhất (Tóm tắt điều hành, Tín hiệu hôm nay).
 //  - SubHeading: đầu mục con trong 1 Phần, dải nền xanh dương full-width + in
 //    đậm để dễ quét mắt mà không cần số thứ tự.
 // Icon chỉ giữ lại ở PartHeading (Phần 1/2/3, Nguồn tham khảo) — FramedHighlight
@@ -228,17 +263,20 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
   );
 }
 
-// Khung viền + tiêu đề "đè" lên viền trên, canh giữa — tạo điểm nhấn thị giác
-// mạnh nhất trong báo cáo, dùng cho 2 khối quan trọng nhất: 🚨 ĐIỂM NHẤN (đầu
-// tiên của báo cáo — gộp "Tóm tắt điều hành" + kết luận "Tổng hợp về giá EUA"
-// cũ, variant "danger", khung/nhãn màu đỏ #7A1E1E để tách bạch mức độ cảnh
-// báo) và TÍN HIỆU HÔM NAY (đầu tiên của Phần 2, variant mặc định "primary").
+// Khung viền nổi bật, tiêu đề nằm hẳn TRONG khung (dải nền màu trên cùng, chữ
+// trắng) — không dùng nhãn bo tròn đè lên viền trên nữa. Dùng cho Tóm tắt điều
+// hành (tone "blue", đầu báo cáo) và TÍN HIỆU HÔM NAY (tone "primary", đầu Phần 2).
+const FRAME_TONE = {
+  primary: { frame: "border-primary-dark", band: "bg-primary-dark" },
+  blue: { frame: "border-blue-600", band: "bg-blue-600" },
+};
+
 function FramedHighlight({
   title,
   icon: Icon,
   children,
   className,
-  variant = "primary",
+  tone = "primary",
 }: {
   title: string;
   // Icon lucide (SVG) thay cho emoji — emoji không có trong Arial, khi in PDF
@@ -246,31 +284,27 @@ function FramedHighlight({
   icon?: React.ElementType;
   children: React.ReactNode;
   className?: string;
-  variant?: "primary" | "danger";
+  tone?: keyof typeof FRAME_TONE;
 }) {
-  const isDanger = variant === "danger";
   return (
     <div
       className={clsx(
-        "report-heading report-frame relative rounded-2xl border-2 px-3 sm:px-7 pt-8 pb-6 shadow-[var(--shadow-soft)]",
-        isDanger
-          ? "border-[#7A1E1E]/30 bg-gradient-to-b from-[#7A1E1E]/[0.07] to-background"
-          : "border-primary/25 bg-gradient-to-b from-tint/70 to-background",
+        "report-frame rounded-lg border-2 overflow-hidden shadow-[var(--shadow-soft)]",
+        FRAME_TONE[tone].frame,
         className
       )}
     >
-      <div className="absolute -top-[15px] left-1/2 -translate-x-1/2">
-        <span
-          className={clsx(
-            "inline-flex items-center gap-2 rounded-full text-white px-4 py-[7px] shadow-[0_3px_10px_rgba(15,95,90,0.32)] whitespace-nowrap",
-            isDanger ? "bg-[#7A1E1E]" : "bg-primary-dark"
-          )}
-        >
-          {Icon && <Icon size={14} strokeWidth={2.5} aria-hidden="true" />}
-          <span className="font-extrabold text-[12.5px] sm:text-[13.5px] tracking-wide uppercase">{title}</span>
-        </span>
+      {/* print-color-adjust: exact — giữ màu nền dải tiêu đề khi in PDF */}
+      <div
+        className={clsx(
+          "report-heading flex items-center gap-2 px-3.5 sm:px-5 py-2 text-white [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+          FRAME_TONE[tone].band
+        )}
+      >
+        {Icon && <Icon size={14} strokeWidth={2.5} aria-hidden="true" />}
+        <h2 className="text-[13.5px] sm:text-[14.5px] font-extrabold uppercase tracking-wide">{title}</h2>
       </div>
-      {children}
+      <div className="px-3.5 sm:px-5 py-3">{children}</div>
     </div>
   );
 }
@@ -572,15 +606,40 @@ function formatVietnameseDateFull(dateStr: string) {
  */
 export function ReportDocument({ report }: { report: Report }) {
   const priceRows = report?.content["2"]?.prices || [];
+  // Menu hamburger điều hướng section (thanh dưới banner).
+  const [navOpen, setNavOpen] = useState(false);
+  // Thanh trượt giá: tên hợp đồng + giá + Δ ngày, lấy thẳng từ Bảng giá nhanh.
+  const tickerItems = priceRows
+    .filter((r: any) => r.name && r.price)
+    .map((r: any) => ({
+      name: r.name as string,
+      price: formatCompactPriceNumber(String(r.price).split(" ")[0]),
+      dday: r.dday && r.dday !== "-" ? String(r.dday) : null,
+    }));
+  // Lặp danh sách cho đủ ≥ 12 mục mỗi bản — ít hợp đồng thì 1 bản có thể hẹp hơn
+  // bề ngang thanh trên màn rộng, lộ khoảng trống khi vòng lặp chạy.
+  const tickerLoop = tickerItems.length > 0
+    ? Array.from({ length: Math.ceil(12 / tickerItems.length) }, () => tickerItems).flat()
+    : [];
+  // Chỉ số các dòng Bảng giá nhanh đang mở ghi chú (nút "i") — mặc định đóng hết.
+  const [openNotes, setOpenNotes] = useState<Set<number>>(new Set());
+  const toggleNote = (i: number) =>
+    setOpenNotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
   // Mục 3 mặc định hiện đủ phân tích (Diễn biến chính -> Cần theo dõi); ẩn được để
-  // user chỉ cần xem nhanh bảng Kịch bản chiến lược, không cần đọc hết phần phân tích.
+  // user chỉ cần xem nhanh bảng Kịch bản hành động, không cần đọc hết phần phân tích.
   const [showAnalysis, setShowAnalysis] = useState(true);
 
   // Rút dòng "**Tổng hợp:**" (kết luận chung giá EUA) ra khỏi các block phân
   // tích để đưa lên đầu báo cáo, làm phần "Nhận định" trong khối "🚨 ĐIỂM
   // NHẤN" gộp chung với "Tóm tắt điều hành" cũ — xem extractEuaSummary ở trên.
   const { cleanedBlocks: blocksAfterSummary, summary: euaSummary } = extractEuaSummary(report.content["3"]?.analysis_blocks);
-  // "Cần theo dõi" giờ hiển thị thành mục riêng, giữa "Kịch bản chiến lược" và
+  const euaVerdict = euaSummary ? parseEuaSentiment(euaSummary) : null;
+  // "Cần theo dõi" giờ hiển thị thành mục riêng, giữa "Kịch bản hành động" và
   // "Gợi ý kinh doanh & giải pháp cho SIM" — xem extractWatchpoints ở trên.
   const { cleanedBlocks: analysisBlocks, watchpoints } = extractWatchpoints(blocksAfterSummary);
   const hasMarketDrivers =
@@ -717,55 +776,109 @@ export function ReportDocument({ report }: { report: Report }) {
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#2f8749] via-[#3da85e] to-[#2f8749]" />
       </div>
 
-      {/* Thanh điều hướng section — thay ticker giá cũ */}
-      <nav className="w-full bg-[#f5f7f6] border-b border-border print:hidden">
-        {/* overflow-x-auto ở ngoài + w-max mx-auto ở trong: màn rộng thì căn giữa,
-            màn hẹp thì cuộn ngang từ mục đầu tiên — justify-center trực tiếp trên
-            khung cuộn sẽ đẩy mục đầu ra ngoài mép trái, không cuộn tới được. */}
-        <div className="overflow-x-auto">
-          <div className="flex w-max mx-auto items-center">
-            {[
-              { id: "section-highlights", label: "Điểm nhấn" },
-              { id: "section-market", label: "Tổng quan giá" },
-              { id: "section-analysis", label: "Phân tích & Giao dịch" },
-              { id: "section-news", label: "Tin tức chi tiết" },
-              { id: "section-sources", label: "Nguồn tham khảo" },
-            ].map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  const el = document.getElementById(item.id);
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-                className="relative px-4 sm:px-6 py-3 text-[12px] sm:text-[13px] font-semibold text-[#1B4D3E] hover:text-[#2f8749] whitespace-nowrap transition-colors hover:bg-[#e8efeb] border-r border-border/50 last:border-r-0"
+      {/* Thanh dưới banner: nút hamburger (menu điều hướng section) bên trái,
+          phần còn lại là thanh trượt giá — giá + Δ ngày của từng hợp đồng trong
+          Bảng giá nhanh chạy liên tục. Ẩn khi in/xuất PDF. */}
+      <nav className="relative z-20 w-full flex items-stretch bg-[#f5f7f6] border-b border-border print:hidden">
+        <div className="relative shrink-0 border-r border-border">
+          <button
+            type="button"
+            onClick={() => setNavOpen((o) => !o)}
+            aria-expanded={navOpen}
+            aria-controls="report-section-menu"
+            aria-label={navOpen ? "Đóng menu điều hướng" : "Mở menu điều hướng"}
+            className={clsx(
+              "h-full flex items-center gap-2 px-3 sm:px-4 py-2.5 text-[#1B4D3E] transition-colors",
+              navOpen ? "bg-[#e8efeb]" : "hover:bg-[#e8efeb]"
+            )}
+          >
+            {navOpen ? <X size={18} strokeWidth={2.5} /> : <Menu size={18} strokeWidth={2.5} />}
+            <span className="hidden sm:inline text-[12.5px] font-bold uppercase tracking-wide">Mục lục</span>
+          </button>
+
+          {navOpen && (
+            <>
+              {/* Lớp phủ trong suốt — bấm ra ngoài menu thì đóng menu */}
+              <div className="fixed inset-0 z-10" onClick={() => setNavOpen(false)} aria-hidden="true" />
+              <ul
+                id="report-section-menu"
+                className="absolute left-0 top-full z-20 mt-px min-w-[220px] bg-background border border-border rounded-b-lg shadow-[var(--shadow-medium)] py-1"
               >
-                {item.label}
-              </button>
-            ))}
-          </div>
+                {REPORT_SECTIONS.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNavOpen(false);
+                        document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-[13.5px] font-semibold text-[#1B4D3E] hover:bg-[#e8efeb] hover:text-[#2f8749] transition-colors"
+                    >
+                      {item.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
+
+        {tickerItems.length > 0 && (
+          <div className="ticker relative flex-1 min-w-0 overflow-hidden flex items-center">
+            {/* Nội dung nhân đôi (2 bản liền nhau) + dịch đúng 50% để vòng lặp liền
+                mạch không bị giật khi quay lại đầu. Di chuột vào thì tạm dừng. */}
+            <div
+              className="ticker-track ticker-track-ltr motion-reduce:[animation-play-state:paused]"
+              style={{ animationDuration: `${tickerLoop.length * 5}s` }}
+            >
+              {[0, 1].map((copy) => (
+                <div key={copy} className="flex shrink-0 items-center" aria-hidden={copy === 1}>
+                  {tickerLoop.map((t: { name: string; price: string; dday: string | null }, i: number) => (
+                    <span key={i} className="flex items-center gap-2 px-4 sm:px-5 whitespace-nowrap text-[12.5px] sm:text-[13px] border-r border-border/60">
+                      <span className="font-bold text-[#1B4D3E]">{t.name}</span>
+                      <span className="tabular-nums text-label">{t.price}</span>
+                      {t.dday && (
+                        <span className={clsx("tabular-nums font-semibold", isPositiveDelta(t.dday) ? "text-up" : "text-down")}>
+                          {isPositiveDelta(t.dday) ? "▲" : "▼"} {t.dday}
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
 
       <div className="px-4 sm:px-10 pt-3 pb-10">
 
-        {/* 🚨 ĐIỂM NHẤN — đóng khung đỏ nổi bật, đứng đầu tiên của báo cáo
-            (thay cho vị trí "Tóm tắt điều hành" cũ): Nhận định — kết luận của
-            "Tổng hợp về giá EUA" cũ (dòng "**Tổng hợp:**" cuối Mục 3, xem
-            extractEuaSummary ở trên) — đứng trước, chỉ lấy nội dung (không có
-            nhãn "Nhận định"), viết hoa toàn bộ, có vạch ngăn cách bên dưới —
-            rồi mới tới danh sách yếu tố nổi bật trong ngày (nội dung y hệt
-            "Tóm tắt điều hành" cũ), các mục không còn vạch ngăn giữa với nhau. */}
-        <section id="section-highlights" className="pt-0 pb-5">
-          <FramedHighlight title="ĐIỂM NHẤN" icon={AlertTriangle} variant="danger">
-            {euaSummary && (
-              <div className="mb-1.5 pb-2 border-b border-[#7A1E1E]/20">
-                <p className="text-[14.5px] sm:text-[15.5px] leading-[1.3] font-bold text-[#7A1E1E] uppercase text-left">
-                  <RichText text={euaSummary} />
-                </p>
+        {/* Đầu báo cáo gồm 2 khối xếp dọc:
+            1) Nhận định — kết luận "Tổng hợp về giá EUA" (dòng "**Tổng hợp:**"
+               cuối Mục 3, xem extractEuaSummary ở trên), khung màu theo nhãn xu
+               hướng (đỏ/vàng/xanh — xem EUA_SENTIMENT_STYLE).
+            2) Tóm tắt điều hành — khung xanh dương, tiêu đề nằm ngay trong khung
+               (dải tiêu đề trên cùng, không dùng nhãn bo tròn đè lên viền), bên
+               dưới liệt kê các yếu tố nổi bật trong ngày. */}
+        <section id="section-highlights" className="pt-2 pb-5 space-y-4">
+          {euaVerdict && (
+            <div
+              className={clsx(
+                "report-heading rounded-lg px-3.5 py-3 shadow-sm [&_strong]:text-inherit [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+                EUA_SENTIMENT_STYLE[euaVerdict.sentiment].box
+              )}
+            >
+              <div className="mb-1 text-[11px] font-extrabold uppercase tracking-[0.12em] opacity-90">
+                Nhận định giá EUA · {EUA_SENTIMENT_STYLE[euaVerdict.sentiment].label}
               </div>
-            )}
+              <p className="text-[14.5px] sm:text-[15.5px] leading-[1.4] font-bold text-left">
+                <RichText text={euaVerdict.text} />
+              </p>
+            </div>
+          )}
 
-            <ul className="list-none">
+          <FramedHighlight title="Tóm tắt điều hành" tone="blue">
+            <ul className="list-none -my-0.5">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
                 const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
                 const isMatch = b.includes(':');
@@ -844,7 +957,7 @@ export function ReportDocument({ report }: { report: Report }) {
                   <tr>
                     <th className="w-[28%] sm:w-[20%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
                     <th className="w-[18%] sm:w-[15%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
-                    <th className="w-[54%] sm:w-[65%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Ghi chú</th>
+                    <th className="w-[54%] sm:w-[65%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Biến động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -875,21 +988,48 @@ export function ReportDocument({ report }: { report: Report }) {
                           </div>
                         </td>
                         <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[11px] sm:text-[12px] leading-[1.5] text-body">
-                          {(r.dday !== "-" || r.dweek !== "-") && (
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] sm:text-[11px] mb-1">
-                              {r.dday !== "-" && (
-                                <span className={clsx("tabular-nums", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
-                                  Δ Ngày: {r.dday}
-                                </span>
+                          {/* Mặc định chỉ hiện Δ Ngày/Δ Tuần; ghi chú giá (instrument_notes)
+                              ẩn sau nút "i", bấm mới mở ra. Khi in PDF luôn hiện ghi chú
+                              (print:block) vì bản in không bấm được. */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] sm:text-[11px]">
+                            {r.dday !== "-" && (
+                              <span className={clsx("tabular-nums", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
+                                Δ Ngày: {r.dday}
+                              </span>
+                            )}
+                            {r.dweek !== "-" && (
+                              <span className={clsx("tabular-nums", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>
+                                Δ Tuần: {r.dweek}
+                              </span>
+                            )}
+                            {r.note && (
+                              <button
+                                type="button"
+                                onClick={() => toggleNote(i)}
+                                aria-expanded={openNotes.has(i)}
+                                aria-label={openNotes.has(i) ? "Ẩn ghi chú giá" : "Xem ghi chú giá"}
+                                title={openNotes.has(i) ? "Ẩn ghi chú" : "Xem ghi chú"}
+                                className={clsx(
+                                  "ml-auto inline-flex items-center justify-center w-5 h-5 rounded-full border transition-colors print:hidden",
+                                  openNotes.has(i)
+                                    ? "bg-primary text-white border-primary"
+                                    : "text-primary border-primary/40 hover:bg-tint"
+                                )}
+                              >
+                                <Info size={12} strokeWidth={2.5} aria-hidden="true" />
+                              </button>
+                            )}
+                          </div>
+                          {r.note && (
+                            <div
+                              className={clsx(
+                                "mt-1 rounded-md bg-tint/60 border border-primary/15 px-2 py-1.5",
+                                openNotes.has(i) ? "block" : "hidden print:block"
                               )}
-                              {r.dweek !== "-" && (
-                                <span className={clsx("tabular-nums", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>
-                                  Δ Tuần: {r.dweek}
-                                </span>
-                              )}
+                            >
+                              {r.note}
                             </div>
                           )}
-                          {r.note}
                         </td>
                       </tr>
                     );
@@ -911,29 +1051,46 @@ export function ReportDocument({ report }: { report: Report }) {
           {todaySignal && (
             <div className="mb-6">
               <FramedHighlight title="TÍN HIỆU HÔM NAY">
-                <div className="space-y-3.5">
-                  <div>
-                    <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-primary-dark mb-1">Hành động</h4>
-                    <p className="text-[14.5px] leading-[1.5] font-bold text-label">
-                      {todaySignal.trading_strategy ? <RichText text={todaySignal.trading_strategy} /> : <span className="text-muted-light font-normal">—</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-primary-dark mb-1">Cơ sở</h4>
-                    <p className="text-[13.5px] leading-[1.5] text-body">
-                      {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light">—</span>}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-primary-dark shrink-0">Độ tin cậy</h4>
-                    {todaySignal.probability ? (
+                {/* Nhấn mạnh trực diện: xu hướng + độ tin cậy lên đầu dạng nhãn lớn,
+                    "Hành động" là chữ to nhất trong khối (ô nền nhạt, vạch nhấn trái),
+                    "Cơ sở" cỡ chữ đọc thường nhưng lớn hơn trước. */}
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {TREND_META[todaySignal.direction] && (
                       <span className={clsx(
-                        "inline-block font-mono text-[11px] uppercase tracking-wider rounded px-2 py-0.5 border whitespace-nowrap",
+                        "inline-flex items-center gap-1.5 rounded-md border-2 px-3 py-1 text-[15px] sm:text-[16px] font-extrabold uppercase tracking-wide",
+                        TREND_META[todaySignal.direction].className,
+                        todaySignal.direction === "tăng" ? "border-up/40 bg-up/10" :
+                          todaySignal.direction === "giảm" ? "border-down/40 bg-red-50" :
+                            "border-blue-300 bg-blue-50"
+                      )}>
+                        {TREND_META[todaySignal.direction].arrow} {TREND_META[todaySignal.direction].label}
+                      </span>
+                    )}
+                    {todaySignal.probability && (
+                      <span className={clsx(
+                        "inline-flex items-center rounded-md border px-3 py-1 text-[13px] sm:text-[14px] font-bold uppercase tracking-wide whitespace-nowrap",
                         todaySignal.probability === "Cao" ? "text-up border-up/30 bg-up/10" :
                           todaySignal.probability === "Thấp" ? "text-muted-light border-border" :
                             "text-warn border-warn/30 bg-warn-tint"
-                      )}>{todaySignal.probability}</span>
-                    ) : <span className="text-muted-light text-[13.5px]">—</span>}
+                      )}>
+                        Độ tin cậy: {todaySignal.probability}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border-l-4 border-primary-dark bg-tint/70 px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                    <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark mb-1">Hành động</h4>
+                    <p className="text-[17px] sm:text-[19px] leading-[1.4] font-extrabold text-label">
+                      {todaySignal.trading_strategy ? <RichText text={todaySignal.trading_strategy} /> : <span className="text-muted-light font-normal">—</span>}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark mb-1">Cơ sở</h4>
+                    <p className="text-[15px] sm:text-[16px] leading-[1.5] font-medium text-label">
+                      {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light">—</span>}
+                    </p>
                   </div>
                 </div>
               </FramedHighlight>
@@ -1132,7 +1289,7 @@ export function ReportDocument({ report }: { report: Report }) {
             </div>
           )}
 
-          {/* Kịch bản chiến lược */}
+          {/* Kịch bản hành động */}
           {report.content["3"]?.trading_scenarios?.length > 0 && (() => {
             const HORIZON_ORDER = ["ngắn hạn", "trung hạn", "dài hạn"];
             const byHorizon: Record<string, any> = {};
@@ -1188,37 +1345,39 @@ export function ReportDocument({ report }: { report: Report }) {
 
             return (
               <div className="mb-6">
-                <SubHeading>Kịch bản chiến lược</SubHeading>
+                <SubHeading>Kịch bản hành động</SubHeading>
 
-                {/* Mobile: mỗi khung thời gian là 1 card xếp dọc (label/giá trị theo
-                      hàng) thay vì bảng nhiều cột — không đủ chỗ ngang trên màn hình hẹp.
-                      Từ sm+ (kể cả khi in/xuất PDF) dùng bảng % width bên dưới — không cần
-                      fallback card cho print nữa vì bảng đã tự co vừa khổ giấy, không còn
-                      bị tràn/cắt chữ như trước. */}
-                <div className="sm:hidden space-y-4">
-                  {columns.map(h => {
-                    const meta = HORIZON_META[h];
-                    const Icon = meta.icon;
-                    const sc = byHorizon[h];
+                {/* Mobile: gộp TẤT CẢ khung thời gian vào 1 khối duy nhất (không còn
+                      tách mỗi khung thời gian thành 1 card riêng) — nhóm theo từng chỉ
+                      tiêu, trong mỗi chỉ tiêu liệt kê liền nhau Ngắn/Trung/Dài hạn để
+                      đọc tập trung và so sánh ngay giữa các khung. Từ sm+ (kể cả khi
+                      in/xuất PDF) dùng bảng % width bên dưới. */}
+                <div className="sm:hidden border border-border rounded-lg overflow-hidden divide-y divide-border">
+                  {ROWS.map((row, ri) => {
+                    const RowIcon = row.icon;
                     return (
-                      <div key={h} className="border border-border rounded-lg overflow-hidden">
-                        <div className={clsx("flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2", meta.iconBg)}>
-                          <Icon size={13} /> {h}
+                      <div key={ri} className={clsx(row.highlight && "bg-primary/[0.06]")}>
+                        <div className={clsx(
+                          "flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold uppercase tracking-wide text-primary-dark",
+                          row.highlight ? "bg-primary/[0.08] border-l-2 border-primary" : "bg-tint"
+                        )}>
+                          {RowIcon && <RowIcon size={13} className="shrink-0" />}
+                          {row.label}
                         </div>
-                        <div className="divide-y divide-border">
-                          {ROWS.map((row, ri) => {
-                            const RowIcon = row.icon;
+                        <div className="divide-y divide-border/70">
+                          {columns.map(h => {
+                            const meta = HORIZON_META[h];
+                            const Icon = meta.icon;
                             return (
-                              <div key={ri} className={clsx("px-3 py-2.5", row.highlight && "bg-primary/[0.06] border-l-2 border-primary")}>
-                                <div className={clsx(
-                                  "flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider mb-1",
-                                  row.highlight ? "text-primary-dark font-bold" : "text-primary-dark"
+                              <div key={h} className="flex items-start gap-2.5 px-3 py-2">
+                                <span className={clsx(
+                                  "shrink-0 w-[84px] inline-flex items-center gap-1 rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                  meta.iconBg
                                 )}>
-                                  {RowIcon && <RowIcon size={12} className="shrink-0" />}
-                                  {row.label}
-                                </div>
-                                <div className="text-[13px] text-body leading-[1.5]">
-                                  {sc ? row.render(sc) : <span className="text-muted-light">—</span>}
+                                  <Icon size={11} className="shrink-0" /> {h}
+                                </span>
+                                <div className="flex-1 min-w-0 text-[13px] text-body leading-[1.5] break-words">
+                                  {byHorizon[h] ? row.render(byHorizon[h]) : <span className="text-muted-light">—</span>}
                                 </div>
                               </div>
                             );
@@ -1296,7 +1455,7 @@ export function ReportDocument({ report }: { report: Report }) {
             );
           })()}
 
-          {/* Cần theo dõi — tách khỏi Mục 3/8, đứng giữa "Kịch bản chiến lược" và
+          {/* Cần theo dõi — tách khỏi Mục 3/8, đứng giữa "Kịch bản hành động" và
               "Gợi ý kinh doanh & giải pháp cho SIM" (theo yêu cầu bố cục báo cáo). */}
           {watchpoints && (
             <div className="mb-6">

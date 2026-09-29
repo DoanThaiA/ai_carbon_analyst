@@ -1,5 +1,12 @@
 # Typography
 
+> **Áp dụng thực tế trong AI Carbon Analyst:** toàn site dùng
+> `font-family: Arial, Helvetica, sans-serif` — nạp kèm webfont **Arimo**
+> (cùng metric với Arial, đủ tiếng Việt) đứng đầu stack để mọi hệ điều hành
+> và bản in PDF hiển thị giống nhau; độ đậm tối đa 700. Xem
+> `src/app/layout.tsx` và `src/app/globals.css`. Phần bên dưới chỉ là tài
+> liệu tham khảo trích từ website Stavian.
+
 Extracted from `wp-content/themes/gnws/assets/fonts/font.css` and the
 computed classes on homepage headings/body text.
 
