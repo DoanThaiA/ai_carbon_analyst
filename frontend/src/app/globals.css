@@ -95,10 +95,10 @@ body {
 }
 
 /* Các đoạn văn trong báo cáo căn đều 2 bên (justify) thay vì căn trái mặc định.
-   :not(.text-center) — loại trừ các đoạn cố tình căn giữa (banner tiêu đề...),
-   vì "p" + class ở đây có specificity cao hơn 1 class .text-center của Tailwind
-   nên sẽ đè mất text-center nếu không loại trừ. */
-.report-shell p:not(.text-center) {
+   :not(.text-center)/:not(.text-left) — loại trừ các đoạn cố tình căn giữa hoặc
+   căn trái (banner tiêu đề, nhận định in hoa...), vì "p" + class ở đây có
+   specificity cao hơn 1 class Tailwind nên sẽ đè mất nếu không loại trừ. */
+.report-shell p:not(.text-center):not(.text-left) {
   text-align: justify;
 }
 

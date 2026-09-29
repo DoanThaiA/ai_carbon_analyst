@@ -755,7 +755,7 @@ export function ReportDocument({ report }: { report: Report }) {
           <FramedHighlight title="ĐIỂM NHẤN" icon={AlertTriangle} variant="danger">
             {euaSummary && (
               <div className="mb-1.5 pb-2 border-b border-[#7A1E1E]/20">
-                <p className="text-[14.5px] sm:text-[15.5px] leading-[1.3] font-bold text-[#7A1E1E] uppercase text-justify sm:text-left">
+                <p className="text-[14.5px] sm:text-[15.5px] leading-[1.3] font-bold text-[#7A1E1E] uppercase text-left">
                   <RichText text={euaSummary} />
                 </p>
               </div>
