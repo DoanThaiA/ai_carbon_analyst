@@ -76,7 +76,10 @@ body {
    bằng 1 rule riêng, không đổi --font-sans/--font-mono dùng chung toàn site. */
 .report-shell,
 .report-shell * {
-  font-family: Arial, Helvetica, sans-serif !important;
+  /* Arimo (webfont, nạp qua next/font trong layout.tsx) trước — trông như
+     Arial nhưng đi kèm file font riêng có đủ tiếng Việt, không phụ thuộc Arial
+     cài trên máy (Windows hiển thị/tải PDF bị lỗi font khi dùng Arial hệ thống). */
+  font-family: var(--font-arimo), Arial, Helvetica, sans-serif !important;
 }
 
 /* Arial chỉ có 2 độ đậm thật: 400 (Regular) và 700 (Bold). Trên Windows
@@ -151,19 +154,19 @@ body {
        lệch font với báo cáo — thay bằng header/footer Arial đồng bộ. */
     @top-left {
       content: "Tin tức hàng ngày thị trường Carbon";
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: "Arimo", Arial, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
     @top-right {
       content: "Stavian Industrial Metal";
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: "Arimo", Arial, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
     @bottom-right {
       content: "Trang " counter(page) " / " counter(pages);
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: "Arimo", Arial, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
