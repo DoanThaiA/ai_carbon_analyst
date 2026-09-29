@@ -14,7 +14,6 @@ import {
   ExternalLink,
   ThumbsUp,
   ThumbsDown,
-  MessageSquareWarning,
   Paperclip,
   FileText,
 } from "lucide-react";
@@ -32,6 +31,7 @@ import {
 } from "@/lib/minioUpload";
 import { AttachmentBadge, type DisplayAttachment } from "@/components/AttachmentBadge";
 import { JennyFeedbackModal } from "@/components/JennyFeedbackModal";
+import { FloatingChatActions } from "@/components/FloatingChatActions";
 
 interface FloatingTrigger {
   x: number;
@@ -454,29 +454,11 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       )}
 
       {!chatOpen && (
-        // Mobile (< sm): 2 nút tròn chỉ có icon, xếp dọc sát góc phải — cụm nút
-        // dạng pill có chữ trước đây nằm ngang gần hết bề rộng màn hình, che mất
-        // ~2 dòng nội dung báo cáo khi cuộn. Từ sm+ vẫn là pill có nhãn như cũ.
-        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex flex-col-reverse sm:flex-row items-end sm:items-center gap-2 print:hidden">
-          <button
-            onClick={() => setFeedbackOpen(true)}
-            title="Phản ánh thái độ của Jenny"
-            aria-label="Phản ánh thái độ của Jenny"
-            className="flex items-center justify-center gap-2 bg-background border border-border text-body text-sm font-semibold w-11 h-11 sm:w-auto sm:h-auto sm:px-4 sm:py-3 rounded-full shadow-[var(--shadow-medium)] hover:border-primary hover:text-primary-dark transition-colors"
-          >
-            <MessageSquareWarning size={18} className="text-primary" />
-            <span className="hidden sm:inline">Phản ánh</span>
-          </button>
-          <button
-            onClick={openHistoryPanel}
-            title="Lịch sử hỏi đáp"
-            aria-label="Lịch sử hỏi đáp"
-            className="flex items-center justify-center gap-2 bg-background border border-border text-body text-sm font-semibold w-11 h-11 sm:w-auto sm:h-auto sm:px-4 sm:py-3 rounded-full shadow-[var(--shadow-medium)] hover:border-primary hover:text-primary-dark transition-colors"
-          >
-            <History size={18} className="text-primary" />
-            <span className="hidden sm:inline">Lịch sử hỏi đáp</span>
-          </button>
-        </div>
+        <FloatingChatActions
+          containerRef={containerRef}
+          onFeedback={() => setFeedbackOpen(true)}
+          onHistory={openHistoryPanel}
+        />
       )}
 
       <JennyFeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
