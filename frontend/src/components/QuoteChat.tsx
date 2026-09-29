@@ -302,8 +302,18 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     if (!sessionsLoaded) fetchSessions();
   }
 
+  // Mobile (< sm): lịch sử và khung chat chiếm cùng 1 chỗ (mở lịch sử thì khung
+  // chat bị ẩn) — nên chọn 1 phiên phải tự đóng lịch sử để chuyển thẳng sang
+  // đoạn chat đó. Desktop 2 cột nằm cạnh nhau nên vẫn giữ lịch sử mở.
+  function closeHistoryOnMobile() {
+    if (window.matchMedia("(max-width: 639.98px)").matches) setHistoryOpen(false);
+  }
+
   async function selectSession(s: ChatSessionSummary) {
-    if (s.id === sessionId) return;
+    if (s.id === sessionId) {
+      closeHistoryOnMobile();
+      return;
+    }
     abortRef.current?.abort();
     setSending(false);
     try {
@@ -321,8 +331,9 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       setSuggestions([]);
       setInput("");
       clearPendingAttachments();
-      // Lịch sử KHÔNG tự đóng khi chọn phiên — chỉ đóng khi người dùng bấm lại
-      // biểu tượng đồng hồ (toggleHistory), để có thể chọn xem nhiều phiên liên tiếp.
+      // Desktop: lịch sử KHÔNG tự đóng khi chọn phiên — chỉ đóng khi bấm lại biểu
+      // tượng đồng hồ (toggleHistory), để chọn xem nhiều phiên liên tiếp.
+      closeHistoryOnMobile();
       resetRatingState();
       setRating(detail.rating);
       setReasonDraft(detail.rating_reason || "");

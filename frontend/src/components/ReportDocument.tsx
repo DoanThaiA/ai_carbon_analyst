@@ -38,7 +38,7 @@ const HORIZON_META: Record<string, { icon: typeof Clock; accent: string; iconBg:
 const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: string }> = {
   "tăng": { icon: TrendingUp, className: "text-up border-up/30 bg-up/10" },
   "giảm": { icon: TrendingDown, className: "text-down border-down/30 bg-red-50" },
-  "đi ngang": { icon: Minus, className: "text-muted-light border-border bg-surface-alt" },
+  "đi ngang": { icon: Minus, className: "text-blue-700 border-blue-300 bg-blue-50" },
 };
 
 // Nhãn xu hướng dạng mũi tên + chữ cho "Bảng tín hiệu nhanh" (Phần 2) — chỉ là
@@ -47,7 +47,7 @@ const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: strin
 const TREND_META: Record<string, { arrow: string; label: string; className: string }> = {
   "tăng": { arrow: "▲", label: "NGHIÊNG TĂNG", className: "text-up" },
   "giảm": { arrow: "▼", label: "NGHIÊNG GIẢM", className: "text-down" },
-  "đi ngang": { arrow: "↔", label: "GIẰNG CO", className: "text-muted-light" },
+  "đi ngang": { arrow: "↔", label: "GIẰNG CO", className: "text-blue-700" },
 };
 
 // "Khuyến nghị vị thế" cũng suy ra trực tiếp từ "direction" có sẵn của kịch
@@ -1146,13 +1146,18 @@ export function ReportDocument({ report }: { report: Report }) {
               {
                 // Tên hàng ngắn gọn ("Xác suất / Chiều giá" cũ dài, xuống 2 dòng khó
                 // nhìn trên mobile) — thông tin nằm ngay trong nội dung, mỗi dòng
-                // có nhãn riêng "Xác suất: ..." / "Chiều giá: ...".
+                // có nhãn riêng "Chiều giá: ..." / "Xác suất: ...".
                 label: "Nhận định",
                 render: (sc) => {
                   const dirMeta = DIRECTION_META[sc.direction];
                   const DirIcon = dirMeta?.icon;
                   return (
                     <div className="flex flex-col gap-1.5 items-start">
+                      {dirMeta && (
+                        <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border", dirMeta.className)}>
+                          <DirIcon size={11} className="shrink-0" /> Chiều giá: {sc.direction}
+                        </span>
+                      )}
                       {sc.probability && (
                         <span className={clsx(
                           "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border",
@@ -1160,11 +1165,6 @@ export function ReportDocument({ report }: { report: Report }) {
                             sc.probability === "Thấp" ? "text-muted-light border-border" :
                               "text-warn border-warn/30 bg-warn-tint"
                         )}>Xác suất: {sc.probability}</span>
-                      )}
-                      {dirMeta && (
-                        <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border", dirMeta.className)}>
-                          <DirIcon size={11} className="shrink-0" /> Chiều giá: {sc.direction}
-                        </span>
                       )}
                     </div>
                   );
