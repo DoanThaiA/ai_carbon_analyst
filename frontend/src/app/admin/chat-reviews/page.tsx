@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { MessageSquareText, ThumbsUp, ThumbsDown, HelpCircle, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
@@ -24,6 +24,47 @@ const RATING_BADGE: Record<string, { label: string; icon: React.ReactNode; cls: 
   bad: { label: "Không tốt", icon: <ThumbsDown size={12} />, cls: "bg-red-50 text-down border border-red-200" },
   none: { label: "Chưa đánh giá", icon: <HelpCircle size={12} />, cls: "bg-surface-alt text-muted-light border border-border" },
 };
+
+// Đoạn text dài (đoạn trích, lý do đánh giá) mặc định cắt còn vài dòng cho bảng
+// gọn — nút "Xem chi tiết" chỉ hiện khi text thật sự bị cắt, bấm để mở hết
+// nội dung ngay tại chỗ (không phải vào trang chi tiết phiên).
+function ExpandableText({ text, className, clampClass = "line-clamp-2" }: { text: string; className?: string; clampClass?: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || expanded) return;
+    const check = () => setOverflowing(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, expanded]);
+
+  return (
+    <div>
+      <p ref={ref} className={clsx("whitespace-pre-wrap break-words", className, !expanded && clampClass)}>
+        {text}
+      </p>
+      {(overflowing || expanded) && (
+        <button
+          type="button"
+          onClick={(e) => {
+            // Card mobile bọc trong <Link> — chặn điều hướng khi bấm nút này.
+            e.preventDefault();
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          className="mt-1 text-[12px] font-semibold not-italic text-primary hover:text-primary-dark hover:underline"
+        >
+          {expanded ? "Thu gọn" : "Xem chi tiết"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function AdminChatReviewsPage() {
   const [filter, setFilter] = useState<RatingFilter>("all");
@@ -124,7 +165,7 @@ export default function AdminChatReviewsPage() {
                       </td>
                       <td className="px-4 py-2.5 text-body whitespace-nowrap">{s.report_date}</td>
                       <td className="px-4 py-2.5 text-body max-w-xs">
-                        <p className="line-clamp-2 italic">{s.quote}</p>
+                        <ExpandableText text={s.quote} className="italic" />
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={clsx("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold", badge.cls)}>
@@ -132,7 +173,9 @@ export default function AdminChatReviewsPage() {
                           {badge.label}
                         </span>
                         {s.rating === "bad" && s.rating_reason && (
-                          <p className="mt-1 text-[12px] text-muted-light line-clamp-2 max-w-xs">{s.rating_reason}</p>
+                          <div className="mt-1 max-w-xs">
+                            <ExpandableText text={s.rating_reason} className="text-[12px] text-muted-light" />
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-body">{s.message_count}</td>
@@ -164,9 +207,9 @@ export default function AdminChatReviewsPage() {
                       {badge.label}
                     </span>
                   </div>
-                  {s.quote && <p className="text-sm text-body line-clamp-2 italic">{s.quote}</p>}
+                  {s.quote && <ExpandableText text={s.quote} className="text-sm text-body italic" />}
                   {s.rating === "bad" && s.rating_reason && (
-                    <p className="text-[12px] text-muted-light line-clamp-2">{s.rating_reason}</p>
+                    <ExpandableText text={s.rating_reason} className="text-[12px] text-muted-light" />
                   )}
                   <p className="text-xs text-muted-light">{s.message_count} tin nhắn</p>
                 </Link>

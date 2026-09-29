@@ -122,13 +122,13 @@ export default function AdminChatReviewDetailPage() {
 
             <div className="rounded-xl bg-tint/40 border border-border-soft px-4 py-3 flex gap-2 items-start">
               <QuoteIcon size={14} className="text-primary shrink-0 mt-0.5" />
-              <p className="text-[13.5px] leading-relaxed text-body italic">{session.quote}</p>
+              <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{session.quote}</p>
             </div>
 
             {session.rating === "bad" && session.rating_reason && (
               <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3">
                 <p className="text-xs font-semibold text-down mb-1">Lý do đánh giá không tốt</p>
-                <p className="text-[13.5px] leading-relaxed text-body">{session.rating_reason}</p>
+                <p className="text-[13.5px] leading-relaxed text-body whitespace-pre-wrap break-words">{session.rating_reason}</p>
               </div>
             )}
           </div>
@@ -144,7 +144,7 @@ export default function AdminChatReviewDetailPage() {
                     <span className="text-[11px] text-muted-light mb-1 px-1">{m.role === "user" ? "Người dùng" : "AI"}</span>
                     <div
                       className={clsx(
-                        "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap",
+                        "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words",
                         m.role === "user"
                           ? "bg-primary text-white rounded-br-sm"
                           : "bg-surface text-body rounded-bl-sm border border-border"

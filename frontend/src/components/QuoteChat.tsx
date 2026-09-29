@@ -83,6 +83,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const [trigger, setTrigger] = useState<FloatingTrigger | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -92,6 +93,16 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [input, setInput] = useState("");
+
+  // Ô nhập là textarea tự giãn theo nội dung (tối đa ~6 dòng rồi mới cuộn) để
+  // user nhìn thấy hết câu đã gõ, thay vì <input> 1 dòng bị cuộn ngang mất chữ.
+  // Chạy lại mỗi khi input đổi — kể cả khi bị xoá về "" sau lúc gửi.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
   const [sending, setSending] = useState(false);
 
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -576,7 +587,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 <div key={i} className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
                   <div
                     className={clsx(
-                      "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap",
+                      "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words",
                       m.role === "user"
                         ? "bg-primary text-white rounded-br-sm"
                         : "bg-surface text-body rounded-bl-sm border border-border"
@@ -759,7 +770,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 e.preventDefault();
                 sendQuestion(input);
               }}
-              className="flex items-center gap-2 px-4 py-3 border-t border-border shrink-0"
+              className="flex items-end gap-2 px-4 py-3 border-t border-border shrink-0"
             >
               <input
                 ref={fileInputRef}
@@ -778,12 +789,22 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               >
                 <Paperclip size={16} />
               </button>
-              <input
+              <textarea
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter = gửi, Shift+Enter = xuống dòng. Bỏ qua Enter khi đang
+                  // gõ dở bằng bộ gõ (IME: Telex/VNI...) để không gửi nhầm.
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    sendQuestion(input);
+                  }
+                }}
+                rows={1}
                 placeholder={activeQuote ? "Hỏi thêm về đoạn trích..." : "Chọn 1 phiên hoặc bôi đen đoạn trích để hỏi..."}
                 disabled={sending || !activeQuote}
-                className="flex-1 text-[13.5px] px-3 py-2 rounded-full border border-border-soft bg-surface focus:outline-none focus:border-primary disabled:opacity-60"
+                className="flex-1 min-w-0 resize-none overflow-y-auto max-h-40 text-[13.5px] leading-[1.4] px-3.5 py-2 rounded-2xl border border-border-soft bg-surface whitespace-pre-wrap break-words focus:outline-none focus:border-primary disabled:opacity-60"
               />
               <button
                 type="submit"
