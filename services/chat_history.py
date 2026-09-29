@@ -140,14 +140,18 @@ async def list_sessions_admin(
     session: AsyncSession,
     *,
     rating: Optional[str] = None,
+    user_email: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> Tuple[Sequence[Tuple[ChatSession, int]], int]:
     """Danh sách toàn bộ phiên chat (mọi user/báo cáo) cho màn hình admin quản lý
     đánh giá — kèm số tin nhắn mỗi phiên (subquery, tránh N+1 query) và tổng số
     phiên khớp filter để FE phân trang. `rating`: None (tất cả), 'good', 'bad',
-    hoặc 'none' (chưa đánh giá)."""
+    hoặc 'none' (chưa đánh giá). `user_email`: chỉ lấy phiên của 1 user (màn
+    hình "Lịch sử chat" theo từng người dùng); None = mọi user."""
     filters = []
+    if user_email:
+        filters.append(ChatSession.user_email == user_email)
     if rating == "none":
         filters.append(ChatSession.rating.is_(None))
     elif rating in ("good", "bad"):

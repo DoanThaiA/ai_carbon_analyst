@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MessageSquareText, ThumbsUp, ThumbsDown, HelpCircle, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { MessageSquareText, ThumbsUp, ThumbsDown, HelpCircle, AlertCircle, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -66,7 +67,20 @@ function ExpandableText({ text, className, clampClass = "line-clamp-2" }: { text
   );
 }
 
+// useSearchParams cần bọc Suspense (giống login/page.tsx) — nếu không build sẽ
+// báo lỗi khi prerender trang.
 export default function AdminChatReviewsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatReviewsContent />
+    </Suspense>
+  );
+}
+
+function ChatReviewsContent() {
+  // ?user=<email> — "Lịch sử chat" của 1 người dùng (mở từ trang Người dùng):
+  // cùng danh sách/bộ lọc đánh giá như trên, chỉ giới hạn phiên của user đó.
+  const userEmail = useSearchParams().get("user") || "";
   const [filter, setFilter] = useState<RatingFilter>("all");
   const [page, setPage] = useState(0);
   const [data, setData] = useState<AdminChatSessionListResponse>({ items: [], total: 0 });
@@ -79,6 +93,7 @@ export default function AdminChatReviewsPage() {
     setError("");
     const params: Record<string, string | number> = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
     if (filter !== "all") params.rating = filter;
+    if (userEmail) params.user_email = userEmail;
 
     api
       .get("/api/admin/chat-sessions", { params })
@@ -95,16 +110,29 @@ export default function AdminChatReviewsPage() {
     return () => {
       cancelled = true;
     };
-  }, [filter, page]);
+  }, [filter, page, userEmail]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Đánh Giá Chat</h2>
-        <p className="text-body">Lịch sử các phiên hỏi đáp AI của người dùng và đánh giá tốt/không tốt kèm lý do</p>
-      </div>
+      {userEmail ? (
+        <div>
+          <Link href="/admin/users" className="inline-flex items-center gap-2 text-sm font-semibold text-body hover:text-primary-dark transition-colors mb-3">
+            <ArrowLeft size={16} />
+            Quay lại Người dùng
+          </Link>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Lịch Sử Chat</h2>
+          <p className="text-body break-words">
+            Các phiên hỏi đáp AI của <span className="font-semibold text-label">{userEmail}</span>
+          </p>
+        </div>
+      ) : (
+        <div>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Đánh Giá Chat</h2>
+          <p className="text-body">Lịch sử các phiên hỏi đáp AI của người dùng và đánh giá tốt/không tốt kèm lý do</p>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {FILTER_TABS.map((tab) => (
@@ -136,7 +164,7 @@ export default function AdminChatReviewsPage() {
       ) : data.items.length === 0 ? (
         <div className="text-center py-16 bg-surface border border-border-soft border-dashed rounded-2xl">
           <MessageSquareText size={40} className="mx-auto text-muted mb-3" />
-          <p className="text-body">Không có phiên chat nào khớp bộ lọc.</p>
+          <p className="text-body">{userEmail ? "Người dùng này chưa có phiên chat nào khớp bộ lọc." : "Không có phiên chat nào khớp bộ lọc."}</p>
         </div>
       ) : (
         <>

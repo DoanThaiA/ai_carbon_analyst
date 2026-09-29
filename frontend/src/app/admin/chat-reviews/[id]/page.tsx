@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ const RATING_BADGE: Record<string, { label: string; icon: React.ReactNode; cls: 
 
 export default function AdminChatReviewDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const sessionId = params.id as string;
 
   const [session, setSession] = useState<AdminChatSessionDetail | null>(null);
@@ -80,7 +81,19 @@ export default function AdminChatReviewDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/chat-reviews" className="inline-flex items-center gap-2 text-sm font-semibold text-body hover:text-primary-dark transition-colors">
+      {/* Quay về đúng trang danh sách đã mở (Đánh giá chat, hoặc Lịch sử chat
+          của 1 user — giữ nguyên ?user=), fallback về Đánh giá chat khi mở trực
+          tiếp link. */}
+      <Link
+        href="/admin/chat-reviews"
+        onClick={(e) => {
+          if (window.history.length > 1) {
+            e.preventDefault();
+            router.back();
+          }
+        }}
+        className="inline-flex items-center gap-2 text-sm font-semibold text-body hover:text-primary-dark transition-colors"
+      >
         <ArrowLeft size={16} />
         Quay lại danh sách
       </Link>

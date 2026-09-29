@@ -29,11 +29,16 @@ async def list_chat_sessions(
     rating: Optional[Literal["good", "bad", "none"]] = Query(
         None, description="Lọc theo đánh giá: good/bad/none (chưa đánh giá). Bỏ trống = tất cả."
     ),
+    user_email: Optional[str] = Query(
+        None, description="Chỉ lấy phiên chat của 1 user (lịch sử chat theo người dùng). Bỏ trống = mọi user."
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
-    rows, total = await list_sessions_admin(session, rating=rating, limit=limit, offset=offset)
+    rows, total = await list_sessions_admin(
+        session, rating=rating, user_email=user_email, limit=limit, offset=offset
+    )
     items = [
         AdminChatSessionSummary(
             id=s.id,
