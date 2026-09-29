@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Plus, Trash2, AlertCircle, Mail, MessagesSquare } from "lucide-react";
+import { Plus, Trash2, AlertCircle, Mail } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -12,20 +11,6 @@ interface AllowedUser {
   email: string;
   is_active: boolean;
   created_at: string;
-}
-
-// Mở trang "Lịch sử chat" đã lọc sẵn theo 1 user (?user=<email>).
-function ChatHistoryLink({ email }: { email: string }) {
-  return (
-    <Link
-      href={`/admin/chat-history?user=${encodeURIComponent(email)}`}
-      title="Lịch sử chat"
-      aria-label={`Lịch sử chat của ${email}`}
-      className="p-1.5 rounded text-primary hover:bg-tint transition-colors"
-    >
-      <MessagesSquare size={16} />
-    </Link>
-  );
 }
 
 export default function AdminUsersPage() {
@@ -149,12 +134,9 @@ export default function AdminUsersPage() {
                       </button>
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      <div className="inline-flex items-center gap-1">
-                        <ChatHistoryLink email={u.email} />
-                        <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down">
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -180,7 +162,6 @@ export default function AdminUsersPage() {
                   >
                     {u.is_active ? "Active" : "Tắt"}
                   </button>
-                  <ChatHistoryLink email={u.email} />
                   <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down">
                     <Trash2 size={16} />
                   </button>
