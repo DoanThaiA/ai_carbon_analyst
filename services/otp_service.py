@@ -35,7 +35,9 @@ def _generate_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-async def request_otp(session: AsyncSession, email: str, settings: Settings) -> None:
+async def request_otp(session: AsyncSession, email: str, settings: Settings) -> bool:
+    """Tạo mã OTP cho `email`. Trả về True nếu đã gửi email, False nếu không gửi
+    (đang dùng mã cố định OTP_FIXED_CODE, hoặc dev chưa cấu hình Resend)."""
     email = email.strip().lower()
 
     user = (
@@ -56,7 +58,12 @@ async def request_otp(session: AsyncSession, email: str, settings: Settings) -> 
     if latest is not None and (now - latest.created_at) < timedelta(seconds=RESEND_COOLDOWN_SECONDS):
         raise OtpError("Vui lòng đợi ít nhất 60 giây trước khi yêu cầu mã mới.", status_code=429)
 
-    code = _generate_code()
+    # TẠM THỜI dùng mã cố định (Settings.otp_fixed_code) thay cho mã ngẫu nhiên và
+    # KHÔNG gửi email — vẫn đi qua đúng luồng lưu/verify bên dưới nên các giới hạn
+    # (chỉ user được cấp quyền, hạn dùng, số lần nhập sai) vẫn áp dụng. Đặt
+    # OTP_FIXED_CODE= (trống) để quay lại sinh mã ngẫu nhiên + gửi email như cũ.
+    fixed_code = settings.otp_fixed_code
+    code = fixed_code or _generate_code()
     otp = OtpCode(
         email=email,
         code_hash=_hash_code(code),
@@ -65,11 +72,16 @@ async def request_otp(session: AsyncSession, email: str, settings: Settings) -> 
     session.add(otp)
     await session.commit()
 
+    if fixed_code:
+        logger.info("[OTP] Đang dùng mã OTP cố định — không gửi email cho %s.", email)
+        return False
+
     if email_configured(settings):
         await send_otp_email(email, code, settings)
-    else:
-        # Dev fallback — KHÔNG bao giờ chạy nhánh này khi đã cấu hình Resend thật.
-        logger.warning("[DEV] Resend chưa cấu hình đầy đủ — mã OTP cho %s là: %s", email, code)
+        return True
+    # Dev fallback — KHÔNG bao giờ chạy nhánh này khi đã cấu hình Resend thật.
+    logger.warning("[DEV] Resend chưa cấu hình đầy đủ — mã OTP cho %s là: %s", email, code)
+    return False
 
 
 async def verify_otp(session: AsyncSession, email: str, code: str, settings: Settings) -> None:

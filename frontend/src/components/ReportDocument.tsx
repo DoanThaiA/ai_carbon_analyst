@@ -718,11 +718,16 @@ export function ReportDocument({
   // Thanh trượt giá: tên hợp đồng + giá + Δ ngày, lấy thẳng từ Bảng giá nhanh.
   const tickerItems = priceRows
     .filter((r: any) => r.name && r.price)
-    .map((r: any) => ({
-      name: r.name as string,
-      price: formatCompactPriceNumber(String(r.price).split(" ")[0]),
-      dday: r.dday && r.dday !== "-" ? String(r.dday) : null,
-    }));
+    .map((r: any) => {
+      // r.price dạng "<số> <đơn vị>" (vd "81.4400 EUR/tCO2") — tách để định dạng số, giữ đơn vị.
+      const [rawNumber, ...unitParts] = String(r.price).split(" ");
+      return {
+        name: r.name as string,
+        price: formatCompactPriceNumber(rawNumber),
+        unit: unitParts.join(" "),
+        dday: r.dday && r.dday !== "-" ? String(r.dday) : null,
+      };
+    });
   // Lặp danh sách cho đủ ≥ 12 mục mỗi bản — ít hợp đồng thì 1 bản có thể hẹp hơn
   // bề ngang thanh trên màn rộng, lộ khoảng trống khi vòng lặp chạy.
   const tickerLoop = tickerItems.length > 0
@@ -941,10 +946,13 @@ export function ReportDocument({
             >
               {[0, 1].map((copy) => (
                 <div key={copy} className="flex shrink-0 items-center" aria-hidden={copy === 1}>
-                  {tickerLoop.map((t: { name: string; price: string; dday: string | null }, i: number) => (
+                  {tickerLoop.map((t: { name: string; price: string; unit: string; dday: string | null }, i: number) => (
                     <span key={i} className="flex items-center gap-2 px-4 sm:px-5 whitespace-nowrap text-[12.5px] sm:text-[13px] border-r border-border/60">
                       <span className="font-bold text-[#1B4D3E]">{t.name}</span>
-                      <span className="tabular-nums text-label">{t.price}</span>
+                      <span className="tabular-nums text-label">
+                        {t.price}
+                        {t.unit && <span className="ml-1 text-[11px] text-muted-light">{t.unit}</span>}
+                      </span>
                       {t.dday && (
                         <span className={clsx("tabular-nums font-semibold", isPositiveDelta(t.dday) ? "text-up" : "text-down")}>
                           {isPositiveDelta(t.dday) ? "▲" : "▼"} {t.dday}

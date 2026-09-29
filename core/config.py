@@ -71,6 +71,9 @@ class Settings:
     email_reply_to: str
     otp_expire_minutes: int
     otp_max_attempts: int
+    # TẠM THỜI: mã OTP đăng nhập cố định, KHÔNG gửi email (services/otp_service.py).
+    # Để trống (OTP_FIXED_CODE=) → quay lại luồng cũ: sinh mã ngẫu nhiên + gửi email.
+    otp_fixed_code: str
 
     # Email digest Hot News (services/hot_news_email.py) — gửi 1 email tổng hợp
     # SAU MỖI đợt crawl (06:00/12:00), không gửi từng bài. max_age_hours: chỉ gửi
@@ -136,6 +139,7 @@ class Settings:
             email_reply_to=os.environ.get("EMAIL_REPLY_TO", "").strip(),
             otp_expire_minutes=int(os.environ.get("OTP_EXPIRE_MINUTES", "5")),
             otp_max_attempts=int(os.environ.get("OTP_MAX_ATTEMPTS", "5")),
+            otp_fixed_code=os.environ.get("OTP_FIXED_CODE", "180821").strip(),
             hot_news_email_enabled=os.environ.get("HOT_NEWS_EMAIL_ENABLED", "true").lower() == "true",
             hot_news_email_max_age_hours=int(os.environ.get("HOT_NEWS_EMAIL_MAX_AGE_HOURS", "24")),
             hot_news_email_batch_size=int(os.environ.get("HOT_NEWS_EMAIL_BATCH_SIZE", "100")),
