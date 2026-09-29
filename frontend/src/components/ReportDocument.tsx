@@ -1144,7 +1144,10 @@ export function ReportDocument({ report }: { report: Report }) {
             // thông tin actionable nhất thay vì phải đọc lướt cả bảng.
             const ROWS: { label: string; icon?: typeof Target; highlight?: boolean; render: (sc: any) => React.ReactNode }[] = [
               {
-                label: "Xác suất / Chiều giá",
+                // Tên hàng ngắn gọn ("Xác suất / Chiều giá" cũ dài, xuống 2 dòng khó
+                // nhìn trên mobile) — thông tin nằm ngay trong nội dung, mỗi dòng
+                // có nhãn riêng "Xác suất: ..." / "Chiều giá: ...".
+                label: "Nhận định",
                 render: (sc) => {
                   const dirMeta = DIRECTION_META[sc.direction];
                   const DirIcon = dirMeta?.icon;
@@ -1160,7 +1163,7 @@ export function ReportDocument({ report }: { report: Report }) {
                       )}
                       {dirMeta && (
                         <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border", dirMeta.className)}>
-                          <DirIcon size={11} /> {sc.direction}
+                          <DirIcon size={11} className="shrink-0" /> Chiều giá: {sc.direction}
                         </span>
                       )}
                     </div>
