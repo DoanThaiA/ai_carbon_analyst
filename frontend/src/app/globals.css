@@ -79,6 +79,18 @@ body {
   font-family: Arial, Helvetica, sans-serif !important;
 }
 
+/* Arial chỉ có 2 độ đậm thật: 400 (Regular) và 700 (Bold). Trên Windows
+   (DirectWrite) "Arial Black" được gộp chung family "Arial" ở weight 900, nên
+   font-extrabold (800) / font-black (900) sẽ bị render bằng Arial Black — font
+   này KHÔNG có đủ ký tự tiếng Việt (Ầ, Ơ, Ư, Ệ...), trình duyệt phải lấy ký tự
+   thiếu từ font khác → tiêu đề bị lẫn lộn font, dấu lệch. macOS cũng có thể
+   chọn Arial Black tương tự. Chặn trần ở 700 cho mọi chữ trong báo cáo —
+   Tailwind v4 đọc weight từ các biến này nên override tại .report-shell là đủ. */
+.report-shell {
+  --font-weight-extrabold: 700;
+  --font-weight-black: 700;
+}
+
 /* Các đoạn văn trong báo cáo căn đều 2 bên (justify) thay vì căn trái mặc định.
    :not(.text-center) — loại trừ các đoạn cố tình căn giữa (banner tiêu đề...),
    vì "p" + class ở đây có specificity cao hơn 1 class .text-center của Tailwind
