@@ -61,17 +61,17 @@ export function ReportDateFilter({
   })?.key;
 
   return (
-    <div className="bg-background border border-border rounded-2xl p-3 sm:p-4 shadow-[var(--shadow-soft)] space-y-3 print:hidden">
+    <div className="bg-primary/[0.04] border border-primary/15 rounded-2xl p-3 sm:p-4 space-y-3 print:hidden">
       <div className="flex flex-col lg:flex-row lg:items-center gap-3">
         <div className="flex items-center gap-2 text-sm font-bold text-label shrink-0">
-          <span className="p-1.5 rounded-lg bg-tint text-primary-dark">
+          <span className="p-1.5 rounded-lg bg-primary/10 text-primary-dark">
             <CalendarDays size={16} aria-hidden="true" />
           </span>
           Lọc theo ngày
         </div>
 
         {/* Khoảng ngày: 1 khung liền có viền, focus-within đổi màu viền cả khung */}
-        <div className="flex items-center rounded-xl border border-border bg-surface px-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-shadow lg:w-[340px]">
+        <div className="flex items-center rounded-xl border border-primary/20 bg-background/70 px-2 focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/10 transition-shadow lg:w-[340px]">
           <input
             type="date"
             aria-label="Từ ngày"
@@ -101,8 +101,8 @@ export function ReportDateFilter({
               className={clsx(
                 "h-8 rounded-full border px-3 text-[13px] font-semibold transition-colors",
                 activePreset === p.key
-                  ? "bg-primary text-white border-primary"
-                  : "bg-background text-body border-border hover:border-primary hover:text-primary-dark"
+                  ? "bg-primary/15 text-primary-dark border-primary/40"
+                  : "bg-transparent text-body border-primary/20 hover:bg-primary/10 hover:text-primary-dark"
               )}
             >
               {p.label}
@@ -119,7 +119,7 @@ export function ReportDateFilter({
             <button
               type="button"
               onClick={() => onChange({ from: "", to: "" })}
-              className="h-8 inline-flex items-center gap-1 rounded-full px-2.5 text-[13px] font-semibold text-down hover:bg-red-50 transition-colors"
+              className="h-8 inline-flex items-center gap-1 rounded-full px-2.5 text-[13px] font-semibold text-down hover:bg-down/10 transition-colors"
             >
               <X size={14} aria-hidden="true" /> Xoá lọc
             </button>
