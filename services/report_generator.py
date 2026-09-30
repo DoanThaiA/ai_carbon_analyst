@@ -1828,6 +1828,11 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             if parsed and sec_key in parsed:
                 sec_data = parsed[sec_key]
                 logger.info(f"[REPORT] Mục {sec_key} OK.")
+            elif parsed and set(parsed) == set(FALLBACKS[sec_key]):
+                # Model đôi khi bỏ lớp bọc {"<sec_key>": ...} và trả thẳng nội dung mục
+                # (vd {"key_developments": [...]} cho mục dev) — JSON vẫn hợp lệ, không cần fallback.
+                sec_data = parsed
+                logger.info(f"[REPORT] Mục {sec_key} OK (model bỏ lớp bọc '{sec_key}').")
             else:
                 logger.warning(
                     f"[REPORT] Mục {sec_key} thất bại, dùng fallback. "

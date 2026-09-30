@@ -139,7 +139,7 @@ class Settings:
             email_reply_to=os.environ.get("EMAIL_REPLY_TO", "").strip(),
             otp_expire_minutes=int(os.environ.get("OTP_EXPIRE_MINUTES", "5")),
             otp_max_attempts=int(os.environ.get("OTP_MAX_ATTEMPTS", "5")),
-            otp_fixed_code=os.environ.get("OTP_FIXED_CODE", "180821").strip(),
+            otp_fixed_code=os.environ.get("OTP_FIXED_CODE", "180621").strip(),
             hot_news_email_enabled=os.environ.get("HOT_NEWS_EMAIL_ENABLED", "true").lower() == "true",
             hot_news_email_max_age_hours=int(os.environ.get("HOT_NEWS_EMAIL_MAX_AGE_HOURS", "24")),
             hot_news_email_batch_size=int(os.environ.get("HOT_NEWS_EMAIL_BATCH_SIZE", "100")),
