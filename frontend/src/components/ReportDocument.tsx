@@ -61,10 +61,10 @@ const TREND_META: Record<string, { arrow: string; label: string; className: stri
 
 // Nhãn tác động của từng SỰ KIỆN TIN TỨC trong "Diễn biến chính" lên cán cân
 // cung–cầu EUA (mục này chỉ là tin tức, không phải diễn biến giá hợp đồng).
-const IMPACT_META: Record<string, { arrow: string; label: string; className: string }> = {
-  "tăng": { arrow: "▲", label: "Hỗ trợ EUA", className: "text-up border-up/30 bg-up/10" },
-  "giảm": { arrow: "▼", label: "Áp lực lên EUA", className: "text-down border-down/30 bg-red-50" },
-  "trung lập": { arrow: "↔", label: "Chưa rõ tác động", className: "text-blue-700 border-blue-200 bg-blue-50" },
+const IMPACT_META: Record<string, { arrow: string; label: string; badge: string; bar: string }> = {
+  "tăng": { arrow: "▲", label: "Hỗ trợ EUA", badge: "text-up border-up/30 bg-up/10", bar: "border-l-up" },
+  "giảm": { arrow: "▼", label: "Áp lực EUA", badge: "text-down border-down/30 bg-red-50", bar: "border-l-down" },
+  "trung lập": { arrow: "●", label: "Chờ xác nhận", badge: "text-blue-700 border-blue-200 bg-blue-50", bar: "border-l-blue-400" },
 };
 
 // "Khuyến nghị vị thế" cũng suy ra trực tiếp từ "direction" có sẵn của kịch
@@ -1174,19 +1174,25 @@ export function ReportDocument({
           {report.content["2"]?.key_developments?.length > 0 && (
             <div className="mt-6">
               <SubHeading>Diễn biến chính</SubHeading>
-              <ul className="list-none border border-border rounded-lg divide-y divide-border overflow-hidden">
+              <ul className="list-none space-y-2.5 sm:space-y-3">
                 {report.content["2"].key_developments.map((d: any, i: number) => {
                   const meta = IMPACT_META[d.impact] ?? IMPACT_META["trung lập"];
                   return (
-                    <li key={i} className="flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-3 px-3 sm:px-4 py-3">
+                    <li
+                      key={i}
+                      className={clsx(
+                        "flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 rounded-lg border border-border border-l-4 bg-background px-3.5 sm:px-4 py-3 print:break-inside-avoid",
+                        meta.bar
+                      )}
+                    >
                       <span className={clsx(
-                        "self-start shrink-0 sm:mt-0.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide whitespace-nowrap",
-                        meta.className
+                        "self-start sm:w-[128px] shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap",
+                        meta.badge
                       )}>
-                        {meta.arrow} {meta.label}
+                        <span aria-hidden="true">{meta.arrow}</span> {meta.label}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[14px] leading-[1.5] text-foreground">
+                        <p className="text-[14px] sm:text-[14.5px] leading-[1.6] text-foreground">
                           <RichText text={d.text} />
                         </p>
                         {d.source_name && (
@@ -1194,7 +1200,7 @@ export function ReportDocument({
                             href={d.source_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="mt-1 inline-flex items-center gap-1 text-[11.5px] text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900"
+                            className="mt-1.5 inline-flex items-center gap-1 text-[12px] text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900"
                           >
                             Nguồn: {d.source_name} <ExternalLink size={10} aria-hidden="true" />
                           </a>
