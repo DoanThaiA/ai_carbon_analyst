@@ -14,7 +14,7 @@ import clsx from "clsx";
 //   cuộn xuống, hiện lại khi cuộn lên hoặc dừng cuộn; thêm khoảng trống cuối báo
 //   cáo để nút không che nội dung cuối trang.
 
-const BTN_SIZE = 48;
+const BTN_SIZE = 56;
 const GUTTER_MIN_MARGIN = 8; // khoảng cách tối thiểu giữa nút và mép báo cáo/mép màn hình
 const SCROLL_STOP_MS = 600;
 
@@ -218,9 +218,9 @@ export function FloatingChatActions({
             aria-label={menuOpen ? "Đóng menu" : "Mở menu Jenny: Chat, Lịch sử hỏi đáp, Phản ánh"}
             aria-expanded={menuOpen}
             title="Jenny"
-            className="relative block w-12 h-12 rounded-full shadow-[var(--shadow-medium)] ring-2 ring-primary ring-offset-2 ring-offset-background hover:ring-primary-dark transition-shadow"
+            className="relative block w-14 h-14 rounded-full shadow-[var(--shadow-medium)] ring-2 ring-primary ring-offset-2 ring-offset-background hover:ring-primary-dark transition-shadow"
           >
-            <Image src="/jenny.jpg" alt="Jenny AI" width={48} height={48} className="w-12 h-12 rounded-full object-cover" />
+            <Image src="/jenny_chat.jpg" alt="Jenny AI" width={112} height={112} sizes="56px" className="w-14 h-14 rounded-full object-cover" />
             {menuOpen && (
               <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white">
                 <X size={20} />

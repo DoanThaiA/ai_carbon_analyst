@@ -27,7 +27,7 @@ function formatCompactPriceNumber(numStr: string): string {
 // Các mục trong menu hamburger điều hướng (id khớp với <section id> trong báo cáo).
 const REPORT_SECTIONS = [
   { id: "section-highlights", label: "Tóm tắt điều hành" },
-  { id: "section-market", label: "Tổng quan giá" },
+  { id: "section-market", label: "Diễn biến thị trường" },
   { id: "section-analysis", label: "Phân tích & Giao dịch" },
   { id: "section-news", label: "Tin tức chi tiết" },
   { id: "section-sources", label: "Nguồn tham khảo" },
@@ -274,7 +274,7 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
 // Khung viền nổi bật, tiêu đề nằm hẳn TRONG khung (dải nền màu trên cùng, chữ
 // trắng) — không dùng nhãn bo tròn đè lên viền trên nữa. Dùng cho Tóm tắt điều
 // hành (tone "blue", đầu báo cáo) và TÍN HIỆU HÔM NAY (tone "primary", đầu Phần 2).
-// Kiểu chữ DÙNG CHUNG cho tiêu đề các khối nổi bật (Nhận định giá EUA, Tóm tắt
+// Kiểu chữ DÙNG CHUNG cho tiêu đề các khối nổi bật (Nhận định tổng quan, Tóm tắt
 // điều hành, Tín hiệu hôm nay) — cùng cỡ, in hoa, căn giữa.
 const BLOCK_TITLE_CLASS = "text-center text-[15px] sm:text-[16px] font-bold uppercase tracking-wide leading-tight";
 
@@ -991,7 +991,7 @@ export function ReportDocument({
                 EUA_SENTIMENT_STYLE[euaVerdict.sentiment].box
               )}
             >
-              <h2 className={clsx(BLOCK_TITLE_CLASS, "mb-1.5")}>Nhận định giá EUA</h2>
+              <h2 className={clsx(BLOCK_TITLE_CLASS, "mb-1.5")}>NHẬN ĐỊNH TỔNG QUAN</h2>
               {/* Nội dung nhận định: chữ thường, in đậm (KHÔNG in hoa — chỉ tiêu đề in hoa) */}
               <p className="text-[14.5px] sm:text-[15.5px] leading-[1.45] font-bold normal-case text-left">
                 <RichText text={euaVerdict.text} />
@@ -1040,7 +1040,7 @@ export function ReportDocument({
             khoảng trắng dài phía trên khi 1 khối lớn bị đẩy nguyên sang trang
             sau vì không đủ chỗ còn lại trên trang hiện tại. */}
         <section id="section-market" className="py-5">
-          <PartHeading eyebrow="Phần 1" title="Tổng quan giá thị trường" icon={LineChart} />
+          <PartHeading eyebrow="Phần 1" title="Diễn biến thị trường" icon={LineChart} />
 
           <div className="flex flex-col lg:flex-row gap-4 items-stretch">
             <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
