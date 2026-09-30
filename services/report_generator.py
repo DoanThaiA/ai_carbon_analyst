@@ -1219,7 +1219,11 @@ def _extract_json(raw: str) -> Optional[dict]:
 
     try:
         return json.loads(_escape_bare_control_chars_in_json_strings(snippet))
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        # Log vị trí lỗi để biết vì sao mục rơi về fallback (thường là dấu " chưa escape
+        # trong text, hoặc JSON bị cắt) thay vì chỉ thấy đuôi raw.
+        ctx = snippet[max(0, e.pos - 60): e.pos + 60].replace("\n", " ")
+        logger.warning(f"[REPORT] JSON không hợp lệ: {e.msg} tại vị trí {e.pos}/{len(snippet)} — ...{ctx}...")
         return None
 
 
