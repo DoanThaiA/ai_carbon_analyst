@@ -21,7 +21,7 @@ const SCROLL_STOP_MS = 600;
 // Popup gợi ý cạnh avatar Jenny: tự bật khi mở báo cáo, sau HINT_AUTO_HIDE_MS không
 // tương tác thì thu nhỏ vào avatar (chỉ còn avatar). Đang rê chuột trên popup thì
 // không tự thu nhỏ.
-const HINT_AUTO_HIDE_MS = 2000;
+const HINT_AUTO_HIDE_MS = 8000;
 // Đường dẫn báo cáo đã tự bật gợi ý — component này bị unmount khi mở chat và
 // mount lại khi đóng chat (xem QuoteChat), nên nhớ ở cấp module để gợi ý chỉ tự
 // bật 1 lần mỗi khi MỞ 1 báo cáo, không bật lại sau mỗi lần đóng chat.
@@ -186,7 +186,7 @@ export function FloatingChatActions({
         style={fabMode ? undefined : { left: gutterLeft ?? undefined }}
         className={clsx(
           "fixed z-40 print:hidden transition-all duration-200",
-          fabMode ? "bottom-4 right-4" : "bottom-6",
+          fabMode ? "bottom-4 right-4" : "bottom-28",
           fabMode && hidden && !menuOpen ? "translate-y-24 opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
         )}
       >
