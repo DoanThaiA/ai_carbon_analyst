@@ -19,6 +19,7 @@ from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services.report_generator import (
     report_data_date,
+    _compute_recurring_calendar_events,
     get_prices_for_report,
     _summarize_prices,
     get_historical_ohlc_for_report,
@@ -486,11 +487,13 @@ def _format_section1(sec: dict) -> str:
 def _format_section2(sec: dict) -> str:
     drivers = sec.get("market_drivers") or {}
     developments = "\n".join(
-        f"- [{d.get('impact', '')}] {d.get('text', '')}" + (f" ({d['source_name']})" if d.get("source_name") else "")
+        f"- [{d.get('impact', '')}] {d.get('text', '')}"
+        + (f" (nguồn: {d['source_name']}" + (f" — {d['source_url']}" if d.get("source_url") else "") + ")" if d.get("source_name") else "")
         for d in sec.get("key_developments") or []
     )
     return (
         f"{sec.get('title', 'Bảng giá nhanh')}\n"
+        f"{sec.get('price_timestamp', '')}\n"
         f"{sec.get('key_facts', '')}\n"
         f"Diễn biến chính:\n{developments or '(không có)'}\n"
         f"Yếu tố hỗ trợ tăng giá:\n{_format_bullets(drivers.get('bullish'))}\n"
@@ -519,6 +522,7 @@ def _format_section6(sec: dict) -> str:
     def _list(articles: Optional[List[dict]]) -> str:
         lines = [
             f"- [{a.get('source', '?')}] {a.get('title', '')}: {a.get('summary', '')}"
+            + (f" ({a['url']})" if a.get("url") else "")
             for a in articles or []
         ]
         return "\n".join(lines) if lines else "(không có)"
@@ -650,6 +654,349 @@ async def _tool_biz_suggestions_text(
         + "\nLƯU Ý: chỉ nêu đúng các gợi ý và bằng chứng ở trên; gợi ý chưa kích hoạt nghĩa là hệ thống chưa "
         "ghi nhận tình huống xảy ra, KHÔNG tự khẳng định thêm. Bạn không thể tạo/sửa/gỡ gợi ý — việc gỡ do admin thực hiện.",
         MAX_REPORT_CHARS,
+    )
+
+
+STATS_MAX_INSTRUMENTS = 4
+STATS_DEFAULT_SESSIONS = 30
+STATS_MIN_COMMON_FOR_CORR = 5
+
+
+def _pearson(xs: List[float], ys: List[float]) -> Optional[float]:
+    n = len(xs)
+    if n < 2:
+        return None
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx == 0 or syy == 0:
+        return None
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / (sxx * syy) ** 0.5
+
+
+def _compute_price_stats(series: Dict[str, List[tuple]], units: Dict[str, Optional[str]]) -> str:
+    """Thống kê TÍNH SẴN bằng Python cho 1–4 instrument — model không tự cộng trừ/tương quan.
+    `series`: code -> [(ngày 'YYYY-MM-DD', giá đóng cửa)] tăng dần theo ngày, đã lọc trong khoảng.
+    Tương quan tính trên LỢI SUẤT NGÀY (% thay đổi phiên liền kề) của các ngày CHUNG của cả 2 mã —
+    không phải trên mức giá (tương quan mức giá dễ cho kết quả giả khi cùng có xu hướng)."""
+    lines: List[str] = []
+    returns: Dict[str, Dict[str, float]] = {}
+    for code, rows in series.items():
+        if len(rows) < 2:
+            lines.append(f"- {code}: chỉ có {len(rows)} phiên trong khoảng — không đủ để tính thống kê.")
+            continue
+        closes = [c for _, c in rows]
+        first_d, first_c = rows[0]
+        last_d, last_c = rows[-1]
+        hi = max(rows, key=lambda r: r[1])
+        lo = min(rows, key=lambda r: r[1])
+        rets = {
+            rows[i][0]: (rows[i][1] - rows[i - 1][1]) / rows[i - 1][1] * 100
+            for i in range(1, len(rows)) if rows[i - 1][1]
+        }
+        returns[code] = rets
+        vals = list(rets.values())
+        mean = sum(vals) / len(vals) if vals else 0.0
+        std = (sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5 if len(vals) > 1 else 0.0
+        best = max(rets.items(), key=lambda kv: kv[1])
+        worst = min(rets.items(), key=lambda kv: kv[1])
+        change = (last_c - first_c) / first_c * 100 if first_c else 0.0
+        lines.append(
+            f"- {code} ({len(rows)} phiên, {first_d} → {last_d}): đóng cửa {first_c:.2f} → {last_c:.2f} "
+            f"({change:+.2f}%, {last_c - first_c:+.2f} {units.get(code) or ''}); cao nhất {hi[1]:.2f} ({hi[0]}), "
+            f"thấp nhất {lo[1]:.2f} ({lo[0]}); độ lệch chuẩn biến động ngày {std:.2f}%; "
+            f"phiên tăng mạnh nhất {best[1]:+.2f}% ({best[0]}), giảm mạnh nhất {worst[1]:+.2f}% ({worst[0]})."
+        )
+
+    codes = [c for c in series if c in returns]
+    pair_lines: List[str] = []
+    for i in range(len(codes)):
+        for j in range(i + 1, len(codes)):
+            a, b = codes[i], codes[j]
+            common = sorted(set(returns[a]) & set(returns[b]))
+            if len(common) < STATS_MIN_COMMON_FOR_CORR:
+                pair_lines.append(f"- {a} vs {b}: chỉ {len(common)} ngày chung — quá ít để tính tương quan.")
+                continue
+            r = _pearson([returns[a][d] for d in common], [returns[b][d] for d in common])
+            if r is None:
+                pair_lines.append(f"- {a} vs {b}: không tính được tương quan (một mã không biến động).")
+            else:
+                pair_lines.append(f"- {a} vs {b}: tương quan lợi suất ngày = {r:+.2f} ({len(common)} ngày chung).")
+            la, lb = dict(series[a]), dict(series[b])
+            last_common = max(set(la) & set(lb), default=None)
+            if last_common:
+                ua, ub = units.get(a), units.get(b)
+                pair_lines.append(
+                    f"  Ngày chung gần nhất {last_common}: {a}={la[last_common]:.2f}, {b}={lb[last_common]:.2f}, "
+                    f"tỷ lệ {a}/{b}={la[last_common] / lb[last_common]:.3f}"
+                    + (f", chênh lệch {la[last_common] - lb[last_common]:+.2f} {ua}" if ua and ua == ub else
+                       f" (khác đơn vị: {a}={ua or '?'}, {b}={ub or '?'} — KHÔNG trừ trực tiếp, cần quy đổi)")
+                )
+    out = "Thống kê giá (tính sẵn, dựa trên giá đóng cửa):\n" + "\n".join(lines)
+    if pair_lines:
+        out += "\nQuan hệ giữa các mã:\n" + "\n".join(pair_lines)
+    out += (
+        "\nLƯU Ý: dùng ĐÚNG các số đã tính sẵn này, KHÔNG tự tính lại. Tương quan ≠ nhân quả; mẫu ngắn (<20 ngày) "
+        "kém tin cậy — nói rõ số phiên. Nêu đúng khoảng ngày thực tế."
+    )
+    return out
+
+
+async def _tool_price_stats_text(
+    session: AsyncSession, instruments: List[str], end_date: str, start_date: Optional[str], sessions: int
+) -> str:
+    resolved: List[Instrument] = []
+    for name in instruments[:STATS_MAX_INSTRUMENTS]:
+        inst = await _resolve_instrument(session, str(name))
+        if not inst:
+            all_instruments = (await session.execute(select(Instrument.code, Instrument.name))).all()
+            listing = ", ".join(f"{c} ({n})" for c, n in all_instruments) or "(không có)"
+            return f"Không tìm thấy instrument \"{name}\" — các mã hệ thống theo dõi: {listing}."
+        if inst.code not in [r.code for r in resolved]:
+            resolved.append(inst)
+    if not resolved:
+        return "Cần truyền ít nhất 1 instrument."
+
+    if start_date:
+        span = (date_cls.fromisoformat(end_date) - date_cls.fromisoformat(start_date)).days + 1
+        limit = min(max(span, 2), PRICE_RANGE_MAX_DAYS) + 5
+    else:
+        limit = sessions
+    series: Dict[str, List[tuple]] = {}
+    for inst in resolved:
+        data = await get_historical_ohlc_for_report(session, inst.code, end_date, limit=limit)
+        rows = [(str(c["date"]), float(c["close"])) for c in data if c.get("close") is not None]
+        if start_date:
+            rows = [r for r in rows if r[0] >= start_date]
+        series[inst.code] = sorted(rows)
+    if not any(series.values()):
+        return f"Không có dữ liệu giá nào tính đến {end_date}."
+    return _compute_price_stats(series, {i.code: i.unit for i in resolved})
+
+
+_WEEKDAYS_FULL_VN = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+_EUA_SUMMARY_TAG_RE = re.compile(r"\*\*Tổng hợp\s*:?\*\*")
+HISTORY_MAX_DAYS = 14
+HISTORY_DEFAULT_DAYS = 7
+CALENDAR_MAX_DAYS = 90
+
+
+def _fmt_day_full(iso: str) -> str:
+    """'2026-09-30' -> 'Thứ Tư 30/09/2026'."""
+    try:
+        d = date_cls.fromisoformat(iso)
+        return f"{_WEEKDAYS_FULL_VN[d.weekday()]} {d:%d/%m/%Y}"
+    except ValueError:
+        return iso
+
+
+def _extract_eua_verdict(content: dict) -> Optional[str]:
+    """Nhận định tổng quan về EUA: phần sau thẻ '**Tổng hợp:**' trong analysis_blocks của Mục 3 —
+    ĐÚNG cách frontend (ReportDocument.tsx::extractEuaSummary) rút ra khối NHẬN ĐỊNH TỔNG QUAN."""
+    for block in ((content.get("3") or {}).get("analysis_blocks") or []):
+        for line in str(block.get("content") or "").split("\n"):
+            m = _EUA_SUMMARY_TAG_RE.search(line)
+            if m:
+                return line[m.end():].strip() or None
+    return None
+
+
+def _scenario(content: dict, horizon: str) -> Optional[dict]:
+    """Kịch bản theo horizon ('ngắn hạn'/'trung hạn') — frontend dùng đúng so khớp này cho TÍN HIỆU HÔM NAY."""
+    for sc in ((content.get("3") or {}).get("trading_scenarios") or []):
+        if isinstance(sc, dict) and sc.get("horizon") == horizon:
+            return sc
+    return None
+
+
+def _format_scenario(sc: Optional[dict]) -> str:
+    if not sc:
+        return "(không có)"
+    return (
+        f"{sc.get('direction', '?')} (xác suất {sc.get('probability', '?')}) — điều kiện: {sc.get('condition', '')} | "
+        f"vùng giá: {sc.get('price_zone', '')} | rủi ro: {sc.get('key_risk', '')} | chiến lược: {sc.get('trading_strategy', '')}"
+    )
+
+
+_HISTORY_SECTIONS = ("verdict", "signal", "1", "2", "3", "4", "6", "8", "biz")
+
+
+def _report_digest(content: dict, section: str) -> str:
+    """Trích 1 'mảng' nội dung của 1 báo cáo để so sánh qua nhiều ngày."""
+    if section == "verdict":
+        return _extract_eua_verdict(content) or "(báo cáo không có nhận định tổng quan)"
+    if section == "signal":
+        return (
+            f"Ngắn hạn: {_format_scenario(_scenario(content, 'ngắn hạn'))}\n"
+            f"Trung hạn: {_format_scenario(_scenario(content, 'trung hạn'))}"
+        )
+    formatter = _REPORT_SECTION_FORMATTERS.get(section)
+    sec = content.get(section)
+    if not formatter or not sec:
+        return f"(báo cáo không có Mục {section})"
+    return formatter(sec)
+
+
+async def _tool_report_history_text(session: AsyncSession, end_date: str, section: str, days: int) -> str:
+    if section not in _HISTORY_SECTIONS:
+        return f"Mảng không hợp lệ — chỉ hỗ trợ: {', '.join(_HISTORY_SECTIONS)}."
+    since = (date_cls.fromisoformat(end_date) - timedelta(days=days - 1)).isoformat()
+    rows = (
+        await session.execute(
+            select(Report.report_date, Report.content)
+            .where(Report.status == "published", Report.report_date >= since, Report.report_date <= end_date)
+            .order_by(Report.report_date)
+        )
+    ).all()
+    if not rows:
+        return f"Không có báo cáo published nào trong khoảng {since} → {end_date}."
+    blocks = [f"=== Báo cáo {_fmt_day_full(d)} ===\n{_report_digest(c or {}, section)}" for d, c in rows]
+    missing = days - len(rows)
+    note = (
+        f"\nLƯU Ý: chỉ {len(rows)}/{days} ngày trong khoảng có báo cáo published (các ngày khác — cuối tuần/nghỉ lễ/"
+        "chưa duyệt — không có dữ liệu); nêu đúng các ngày thực có, KHÔNG suy đoán ngày thiếu."
+        if missing > 0 else ""
+    )
+    return _truncate("\n\n".join(blocks) + note, MAX_REPORT_CHARS)
+
+
+FORECAST_MAX_SESSIONS = 20
+FORECAST_DEFAULT_SESSIONS = 5
+
+
+def _evaluate_forecast(direction: Optional[str], base_close: float, after: List[tuple]) -> str:
+    """So hướng dự báo với diễn biến giá thực — phần SỐ tính sẵn bằng Python. 'cùng chiều/ngược chiều' chỉ
+    gán cho dự báo tăng/giảm; 'đi ngang' không gán nhãn đúng/sai (không có ngưỡng chuẩn trong hệ thống)."""
+    lines = [f"- {d}: đóng cửa {c:.2f} ({(c - base_close) / base_close * 100:+.2f}% so với mốc {base_close:.2f})" for d, c in after]
+    last_d, last_c = after[-1]
+    chg = (last_c - base_close) / base_close * 100
+    peak = max(after, key=lambda x: x[1])
+    trough = min(after, key=lambda x: x[1])
+    if direction in ("tăng", "giảm"):
+        same = (chg > 0) == (direction == "tăng") and chg != 0
+        verdict = (
+            f"Kết quả sau {len(after)} phiên (đến {last_d}): giá {chg:+.2f}% → "
+            + ("CÙNG chiều với dự báo " if same else "NGƯỢC chiều (hoặc đứng yên) so với dự báo ") + f"\"{direction}\"."
+        )
+    else:
+        verdict = (
+            f"Kết quả sau {len(after)} phiên (đến {last_d}): giá {chg:+.2f}% — dự báo \"{direction or 'không rõ'}\" không có "
+            "ngưỡng chuẩn nên KHÔNG gán nhãn đúng/sai, chỉ nêu số liệu."
+        )
+    return (
+        "\n".join(lines)
+        + f"\nCao nhất {peak[1]:.2f} ({peak[0]}), thấp nhất {trough[1]:.2f} ({trough[0]}) trong {len(after)} phiên sau báo cáo.\n"
+        + verdict
+    )
+
+
+async def _tool_review_forecast_text(session: AsyncSession, report_date: str, sessions: int) -> str:
+    content = (
+        await session.execute(select(Report.content).where(Report.report_date == report_date, Report.status == "published"))
+    ).scalar_one_or_none()
+    if not content:
+        return f"Không có báo cáo published ngày {report_date} để đối chiếu."
+    base_date = report_data_date(report_date)
+    horizon_end = (date_cls.fromisoformat(report_date) + timedelta(days=sessions * 2 + 10)).isoformat()
+    hist = await get_historical_ohlc_for_report(session, "EUA", horizon_end, limit=sessions + 40)
+    rows = sorted((str(c["date"]), float(c["close"])) for c in hist if c.get("close") is not None)
+    before = [r for r in rows if r[0] <= base_date]
+    after = [r for r in rows if r[0] > base_date][:sessions]
+    short = _scenario(content, "ngắn hạn")
+    head = (
+        f"Báo cáo {_fmt_day_full(report_date)} (dữ liệu đến phiên {base_date}):\n"
+        f"Nhận định tổng quan: {_extract_eua_verdict(content) or '(không có)'}\n"
+        f"Kịch bản ngắn hạn: {_format_scenario(short)}\nTrung hạn: {_format_scenario(_scenario(content, 'trung hạn'))}\n"
+    )
+    if not before:
+        return head + "Không có giá EUA tại/trước mốc báo cáo để làm cơ sở so sánh."
+    if not after:
+        return head + f"Chưa có phiên EUA nào SAU mốc {before[-1][0]} trong hệ thống — còn quá sớm để đối chiếu dự báo."
+    base_d, base_c = before[-1]
+    return (
+        head + f"\nDiễn biến EUA thực tế (mốc {base_d}: {base_c:.2f}):\n"
+        + _evaluate_forecast(short.get("direction") if short else None, base_c, after)
+        + "\nLƯU Ý: chỉ nêu kết quả đối chiếu trên; vùng giá/điều kiện của kịch bản là văn bản tự do — tự so với số liệu "
+        "trên và nói rõ nếu không đủ dữ liệu, KHÔNG phán quyết thêm."
+    )
+
+
+async def _tool_report_overview_text(session: AsyncSession, report_date: str) -> str:
+    row = (
+        await session.execute(select(Report.status, Report.content, Report.published_at).where(Report.report_date == report_date))
+    ).first()
+    if row is None:
+        return f"Chưa có báo cáo nào cho ngày {report_date}."
+    status, content, published_at = row
+    if status != "published" or not content:
+        return f"Báo cáo ngày {report_date} chưa ở trạng thái published (trạng thái: {status}) — không có nội dung để xem."
+    c = content
+    sec2 = c.get("2") or {}
+    sec6 = c.get("6") or {}
+    biz = c.get("biz") or {}
+    n = lambda x: len(x or [])
+    out = [
+        f"TỔNG QUAN báo cáo {_fmt_day_full(report_date)} (dữ liệu đến phiên {report_data_date(report_date)}):",
+        f"- Nhận định tổng quan EUA: {_extract_eua_verdict(c) or '(không có)'}",
+        f"- Kịch bản ngắn hạn: {_format_scenario(_scenario(c, 'ngắn hạn'))}",
+        f"- Mục 1 Tóm tắt điều hành: {n((c.get('1') or {}).get('bullets'))} ý",
+        f"- Mục 2 Bảng giá nhanh: {n(sec2.get('prices'))} instrument, {n(sec2.get('key_developments'))} diễn biến chính, "
+        f"{n((sec2.get('market_drivers') or {}).get('bullish'))} yếu tố hỗ trợ tăng / {n((sec2.get('market_drivers') or {}).get('bearish'))} hỗ trợ giảm",
+        f"- Mục 3 Phân tích: {n((c.get('3') or {}).get('analysis_blocks'))} khối, {n((c.get('3') or {}).get('trading_scenarios'))} kịch bản giao dịch",
+        f"- Mục 4 Tín chỉ carbon & CBAM: {n((c.get('4') or {}).get('bullets'))} ý",
+        f"- Mục 6 Tin tức: {n(sec6.get('international'))} tin quốc tế, {n(sec6.get('vietnam'))} tin Việt Nam",
+        f"- Mục 8 Lịch sự kiện: {n((c.get('8') or {}).get('events'))} sự kiện",
+        f"- Gợi ý kinh doanh: {n(biz.get('short_term'))} ngắn hạn, {n(biz.get('long_term'))} dài hạn, "
+        f"{n(biz.get('reminders'))} nhắc lại, {n(biz.get('tracking'))} đang theo dõi",
+        "LƯU Ý: đây chỉ là mục lục; cần nội dung chi tiết thì gọi get_report_section với đúng mục.",
+    ]
+    return "\n".join(out)
+
+
+async def _tool_calendar_text(session: AsyncSession, start_date: str, end_date: str) -> str:
+    """Lịch sự kiện trong khoảng bất kỳ (tối đa CALENDAR_MAX_DAYS ngày): (a) sự kiện định kỳ tính sẵn
+    (EIA thứ Tư, Baker Hughes thứ Sáu — quy đổi giờ VN) + (b) sự kiện đã ghi trong Mục 8 của các báo cáo
+    published phủ khoảng này (có thể kèm kết quả đã xảy ra)."""
+    s_d, e_d = date_cls.fromisoformat(start_date), date_cls.fromisoformat(end_date)
+    events: Dict[tuple, dict] = {}
+    cur = s_d
+    while cur <= e_d:
+        for ev in _compute_recurring_calendar_events(cur.isoformat()):
+            if start_date <= ev["date"] <= end_date:
+                events[(ev["date"], ev["event"])] = {**ev, "from": "định kỳ"}
+        cur += timedelta(days=7)
+    rows = (
+        await session.execute(
+            select(Report.report_date, Report.content).where(
+                Report.status == "published",
+                Report.report_date >= (s_d - timedelta(days=7)).isoformat(),
+                Report.report_date <= end_date,
+            ).order_by(Report.report_date)
+        )
+    ).all()
+    for rd, content in rows:
+        for ev in ((content or {}).get("8") or {}).get("events") or []:
+            d = str(ev.get("date") or "")
+            if start_date <= d <= end_date:
+                key = (d, ev.get("event"))
+                prev = events.get(key)
+                # Bản ghi từ báo cáo MỚI hơn ghi đè (vì có thể đã có kết quả); giữ outcome nếu bản mới không có.
+                merged = {**(prev or {}), **ev, "from": f"báo cáo {rd}"}
+                if prev and not ev.get("outcome") and prev.get("outcome"):
+                    merged["outcome"] = prev["outcome"]
+                events[key] = merged
+    if not events:
+        return f"Không có sự kiện nào trong hệ thống cho khoảng {start_date} → {end_date}."
+    lines = []
+    for (d, _), ev in sorted(events.items(), key=lambda kv: (kv[0][0], str(kv[0][1]))):
+        lines.append(
+            f"- {_fmt_day_full(d)}: {ev.get('event', '')} (mức độ tác động: {ev.get('impact', '?')}; nguồn: {ev['from']})"
+            + (f" — Kết quả: {ev['outcome']}" if ev.get("outcome") else "")
+        )
+    return (
+        f"Sự kiện {start_date} → {end_date}:\n" + "\n".join(lines)
+        + "\nLƯU Ý: hệ thống CHỈ có lịch định kỳ (EIA, Baker Hughes) và các sự kiện đã ghi trong Mục 8 các báo cáo — "
+        "KHÔNG có lịch đầy đủ (vd họp ECB/Fed, đấu giá EUA) nếu chưa từng được ghi; nói rõ giới hạn này, không bịa."
     )
 
 
@@ -834,7 +1181,10 @@ def _format_bullets(bullets: Optional[List[Any]]) -> str:
         if isinstance(b, dict):
             text = (b.get("text") or "").strip()
             source_name = b.get("source_name")
-            lines.append(f"- {text}" + (f" ({source_name})" if source_name else ""))
+            source_url = b.get("source_url")
+            # Kèm URL để model gọi được get_article(url) khi người dùng hỏi sâu về bài nguồn của bullet.
+            src = f" (nguồn: {source_name}" + (f" — {source_url}" if source_url else "") + ")" if source_name else ""
+            lines.append(f"- {text}{src}")
         elif b:
             lines.append(f"- {b}")
     return "\n".join(lines) if lines else "(không có)"
@@ -963,6 +1313,11 @@ Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬ
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
 - get_report_section(section="1".."4"|"6"|"8"|"9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu — bao gồm cả tín hiệu liên thị trường và quan điểm thị trường nếu có + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
 - get_biz_suggestions(status, kind, days, date tuỳ chọn): BỘ NHỚ gợi ý kinh doanh của Jenny đọc thẳng từ DB — gợi ý ngắn/dài hạn đã đề xuất trong ~10 ngày gần nhất kèm trạng thái mới nhất (đang theo dõi / ĐÃ KÍCH HOẠT + bằng chứng + nguồn / admin đã gỡ). Dùng khi hỏi "Jenny đã đề xuất gì", "gợi ý nào đã kích hoạt/đang theo dõi". Chỉ đọc, không tạo/sửa/gỡ được gợi ý.
+- calc_price_stats(instruments[1-4], start_date, sessions, date tuỳ chọn): thống kê TÍNH SẴN (% thay đổi, cao/thấp nhất, độ biến động, tương quan lợi suất ngày + tỷ lệ/chênh lệch giữa các cặp) — dùng cho câu hỏi định lượng/liên thị trường; KHÔNG tự tính từ chuỗi giá.
+- get_report_history(section, days, date tuỳ chọn): CÙNG 1 mảng ("verdict" nhận định tổng quan, "signal" kịch bản, hoặc Mục 1/2/3/4/6/8/biz) của NHIỀU báo cáo liên tiếp — dùng để so sánh/xem xu hướng qua các ngày ("nhận định 7 ngày qua", "hôm nay khác hôm qua").
+- review_past_forecast(date, sessions tuỳ chọn): ĐỐI CHIẾU nhận định/kịch bản của 1 báo cáo quá khứ với giá EUA thực tế các phiên sau đó (kết quả cùng/ngược chiều tính sẵn) — dùng khi hỏi "dự báo có đúng không".
+- get_report_overview(date tuỳ chọn): MỤC LỤC báo cáo (nhận định tổng quan, kịch bản ngắn hạn, số lượng nội dung từng mục) — dùng cho câu hỏi chung chung "báo cáo có gì" rồi mới đọc mục cụ thể.
+- get_calendar_events(start_date, end_date): lịch sự kiện trong khoảng bất kỳ (EIA/Baker Hughes định kỳ + sự kiện đã ghi ở Mục 8, kèm kết quả) — dùng khi hỏi sự kiện ngoài cửa sổ 7 ngày của Mục 8.
 - list_reports(limit tuỳ chọn): các NGÀY đã có báo cáo published — dùng trước khi so sánh nhiều ngày hoặc khi tool báo không có báo cáo ngày đó.
 - browse_news(topic, region, hot_only, limit, date tuỳ chọn): DANH SÁCH bài đã crawl trong 1 ngày (id, nguồn, hạng, giờ đăng, tiêu đề, topic, tin nóng) — dùng cho "hôm nay có tin gì về X", "có tin nóng không", "tin Việt Nam". Khác search_news (tìm theo nội dung).
 - get_article(article_id | url): TOÀN VĂN 1 bài (id từ browse_news, url từ search_news/Mục 9) — khi cần chi tiết 1 bài cụ thể.
@@ -1299,6 +1654,89 @@ CLIENT_TOOLS = [
         },
     },
     {
+        "name": "calc_price_stats",
+        "description": (
+            "TÍNH SẴN thống kê giá cho 1–4 instrument trong 1 khoảng: % thay đổi, cao/thấp nhất (kèm ngày), "
+            "độ lệch chuẩn biến động ngày, phiên tăng/giảm mạnh nhất; nếu truyền ≥2 mã thì thêm TƯƠNG QUAN lợi "
+            "suất ngày, tỷ lệ và chênh lệch (khi cùng đơn vị) giữa từng cặp. Dùng cho câu hỏi định lượng/liên thị "
+            "trường: 'EUA và TTF tương quan thế nào 30 ngày qua', 'biến động EUA tháng này so với Brent', 'mã nào "
+            "biến động mạnh nhất'. LUÔN dùng tool này thay vì tự tính từ get_price_history."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instruments": {
+                    "type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": STATS_MAX_INSTRUMENTS,
+                    "description": "Mã/tên 1–4 instrument, vd [\"EUA\", \"TTF\"].",
+                },
+                "start_date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD, đầu khoảng (lấy từ LỊCH THAM CHIẾU). Bỏ trống = lấy `sessions` phiên gần nhất."},
+                "sessions": {"type": "integer", "description": f"Số phiên gần nhất khi không có start_date (mặc định {STATS_DEFAULT_SESSIONS}, tối đa {PRICE_HISTORY_MAX_SESSIONS})."},
+                "date": _DATE_PARAM_SCHEMA,
+            },
+            "required": ["instruments"],
+        },
+    },
+    {
+        "name": "get_report_history",
+        "description": (
+            "Lấy CÙNG 1 mảng nội dung của NHIỀU báo cáo liên tiếp (tối đa %d ngày, kết thúc ở ngày báo cáo đang xem) để so "
+            "sánh/xem xu hướng theo thời gian: 'verdict' = nhận định tổng quan EUA, 'signal' = kịch bản ngắn/trung hạn, hoặc "
+            "Mục '1','2','3','4','6','8','biz'. Dùng cho 'nhận định 7 ngày qua thay đổi thế nào', 'tín hiệu hôm nay khác hôm "
+            "qua ra sao', 'tuần này Jenny đề xuất gì'. Nhanh hơn gọi get_report_section từng ngày." % HISTORY_MAX_DAYS
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "section": {"type": "string", "enum": list(_HISTORY_SECTIONS), "description": "Mảng cần so sánh."},
+                "days": {"type": "integer", "description": f"Số ngày lịch nhìn lại (mặc định {HISTORY_DEFAULT_DAYS}, tối đa {HISTORY_MAX_DAYS}). Mục '3','6' rất dài — nên dùng ít ngày."},
+                "date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD, ngày báo cáo kết thúc. Không truyền = báo cáo đang xem."},
+            },
+            "required": ["section"],
+        },
+    },
+    {
+        "name": "review_past_forecast",
+        "description": (
+            "ĐỐI CHIẾU dự báo của 1 báo cáo trong quá khứ với diễn biến giá EUA THỰC TẾ sau đó: trả nhận định + kịch bản "
+            "ngắn/trung hạn của báo cáo, giá EUA từng phiên sau mốc báo cáo, % so với mốc, và kết quả cùng/ngược chiều (tính "
+            "sẵn). Dùng cho 'dự báo hôm qua có đúng không', 'kịch bản tuần trước có thành hiện thực không', 'Jenny nhận định "
+            "đúng hay sai'. Chỉ áp dụng cho EUA."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "YYYY-MM-DD, ngày của báo cáo cần đối chiếu (báo cáo đó phải published). Bắt buộc khi hỏi về báo cáo KHÁC ngày đang xem; bỏ trống = báo cáo đang xem."},
+                "sessions": {"type": "integer", "description": f"Số phiên giá sau báo cáo để đối chiếu (mặc định {FORECAST_DEFAULT_SESSIONS}, tối đa {FORECAST_MAX_SESSIONS})."},
+            },
+        },
+    },
+    {
+        "name": "get_report_overview",
+        "description": (
+            "MỤC LỤC nhanh của 1 báo cáo: nhận định tổng quan EUA, kịch bản ngắn hạn, và SỐ LƯỢNG nội dung từng mục (số ý, "
+            "số diễn biến, số tin, số sự kiện, số gợi ý). Gọi khi câu hỏi chung chung ('báo cáo hôm nay có gì', 'tóm tắt "
+            "báo cáo') để biết nên đọc mục nào tiếp bằng get_report_section, thay vì đoán."
+        ),
+        "input_schema": {"type": "object", "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD. Không truyền = báo cáo đang xem."}}},
+    },
+    {
+        "name": "get_calendar_events",
+        "description": (
+            "Lịch sự kiện thị trường trong 1 KHOẢNG ngày bất kỳ (tối đa %d ngày, cả quá khứ lẫn tương lai): lịch định kỳ "
+            "(EIA thứ Tư, Baker Hughes thứ Sáu — giờ VN) + sự kiện đã ghi trong Mục 8 các báo cáo, kèm kết quả nếu đã xảy ra. "
+            "Dùng khi hỏi sự kiện NGOÀI cửa sổ 7 ngày của Mục 8: 'tuần sau/tháng này có sự kiện gì', 'số liệu EIA tuần trước "
+            "ra sao'." % CALENDAR_MAX_DAYS
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "start_date": {"type": "string", "description": "YYYY-MM-DD, đầu khoảng (lấy từ LỊCH THAM CHIẾU)."},
+                "end_date": {"type": "string", "description": "YYYY-MM-DD, cuối khoảng."},
+            },
+            "required": ["start_date", "end_date"],
+        },
+    },
+    {
         "name": "get_price_history",
         "description": (
             "Lấy lịch sử OHLC (mở/cao/thấp/đóng, kèm khối lượng nếu có) của 1 instrument BẤT KỲ hệ "
@@ -1371,10 +1809,10 @@ CLIENT_TOOLS = [
 # THIẾU NGỮ CẢNH" trong data_block) RỒI còn gọi thêm 1-2 tool giá, số lượt cần
 # thiết cao hơn hẳn so với khi chỉ có 3 mục — 8 chừa dư đủ cho tình huống dò
 # 4-5 mục + 2 tool giá mà vẫn còn ít nhất 1 lượt sinh câu trả lời cuối.
-MAX_TOOL_ITERATIONS = 8
+MAX_TOOL_ITERATIONS = 12
 
 
-_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news")
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview")
 
 
 async def _execute_client_tool(
@@ -1397,6 +1835,16 @@ async def _execute_client_tool(
     """
     if name == "get_report_section":
         cache_key = (name, tool_input.get("section"), tool_input.get("date"))
+    elif name == "get_report_history":
+        cache_key = (name, tool_input.get("section"), tool_input.get("days"), tool_input.get("date"))
+    elif name == "review_past_forecast":
+        cache_key = (name, tool_input.get("date"), tool_input.get("sessions"))
+    elif name == "get_report_overview":
+        cache_key = (name, tool_input.get("date"))
+    elif name == "get_calendar_events":
+        cache_key = (name, tool_input.get("start_date"), tool_input.get("end_date"))
+    elif name == "calc_price_stats":
+        cache_key = (name, tuple(tool_input.get("instruments") or ()), tool_input.get("start_date"), tool_input.get("sessions"), tool_input.get("date"))
     elif name == "list_reports":
         cache_key = (name, tool_input.get("limit"))
     elif name == "browse_news":
@@ -1433,7 +1881,7 @@ async def _execute_client_tool(
     # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
     if raw_date:
         target_date = raw_date
-    elif name in ("get_report_section", "get_biz_suggestions"):
+    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview"):
         target_date = report_date
     else:
         target_date = report_data_date(report_date)
@@ -1447,6 +1895,42 @@ async def _execute_client_tool(
             result = await _tool_eua_volume_history_text(session, target_date, chart_cache)
         elif name == "get_report_section":
             result = await _tool_report_section_text(session, target_date, str(tool_input.get("section", "")))
+        elif name == "get_report_history":
+            try:
+                hd = int(tool_input.get("days") or HISTORY_DEFAULT_DAYS)
+            except (TypeError, ValueError):
+                hd = HISTORY_DEFAULT_DAYS
+            result = await _tool_report_history_text(session, target_date, str(tool_input.get("section", "")), max(1, min(hd, HISTORY_MAX_DAYS)))
+        elif name == "review_past_forecast":
+            try:
+                fs = int(tool_input.get("sessions") or FORECAST_DEFAULT_SESSIONS)
+            except (TypeError, ValueError):
+                fs = FORECAST_DEFAULT_SESSIONS
+            result = await _tool_review_forecast_text(session, target_date, max(1, min(fs, FORECAST_MAX_SESSIONS)))
+        elif name == "get_report_overview":
+            result = await _tool_report_overview_text(session, target_date)
+        elif name == "get_calendar_events":
+            sd, ed = str(tool_input.get("start_date") or ""), str(tool_input.get("end_date") or "")
+            if not (re.fullmatch(r"\d{4}-\d{2}-\d{2}", sd) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", ed)):
+                return "Cần truyền start_date và end_date đúng định dạng YYYY-MM-DD."
+            if sd > ed:
+                sd, ed = ed, sd
+            if (date_cls.fromisoformat(ed) - date_cls.fromisoformat(sd)).days + 1 > CALENDAR_MAX_DAYS:
+                ed = (date_cls.fromisoformat(sd) + timedelta(days=CALENDAR_MAX_DAYS - 1)).isoformat()
+            result = await _tool_calendar_text(session, sd, ed)
+        elif name == "calc_price_stats":
+            raw_insts = tool_input.get("instruments")
+            insts = [raw_insts] if isinstance(raw_insts, str) else [str(x) for x in (raw_insts or [])]
+            try:
+                sess = int(tool_input.get("sessions") or STATS_DEFAULT_SESSIONS)
+            except (TypeError, ValueError):
+                sess = STATS_DEFAULT_SESSIONS
+            raw_start = tool_input.get("start_date")
+            start_d = str(raw_start) if raw_start and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(raw_start)) else None
+            end_d = target_date
+            if start_d and start_d > end_d:
+                start_d, end_d = end_d, start_d
+            result = await _tool_price_stats_text(session, insts, end_d, start_d, max(2, min(sess, PRICE_HISTORY_MAX_SESSIONS)))
         elif name == "list_reports":
             try:
                 lim = int(tool_input.get("limit") or 10)
