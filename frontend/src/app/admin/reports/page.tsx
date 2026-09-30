@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { reportTitle } from "@/lib/reportDate";
+import { ReportDateFilter, filterByDateRange, type DateRange } from "@/components/ReportDateFilter";
 import type { ReportSummary } from "@/lib/types";
 
 const POLL_INTERVAL_MS = 5000;
@@ -43,6 +44,8 @@ export default function AdminReportsPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [range, setRange] = useState<DateRange>({ from: "", to: "" });
+  const filtered = filterByDateRange(reports, range);
 
   const fetchReports = async (): Promise<ReportSummary[]> => {
     try {
@@ -125,8 +128,15 @@ export default function AdminReportsPage() {
           <p className="text-body text-lg">Chưa có báo cáo nào trong hệ thống.</p>
         </div>
       ) : (
+        <>
+        <ReportDateFilter value={range} onChange={setRange} shown={filtered.length} total={reports.length} />
+        {filtered.length === 0 ? (
+          <div className="text-center py-16 bg-background border border-border-soft border-dashed rounded-2xl">
+            <p className="text-body text-lg">Không có báo cáo nào trong khoảng ngày đã chọn.</p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {reports.map((report) => (
+          {filtered.map((report) => (
             <Link
               key={report.id}
               href={`/admin/reports/${report.report_date}`}
@@ -163,6 +173,8 @@ export default function AdminReportsPage() {
             </Link>
           ))}
         </div>
+        )}
+        </>
       )}
     </div>
   );

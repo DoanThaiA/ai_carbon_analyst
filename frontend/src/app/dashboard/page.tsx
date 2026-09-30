@@ -7,6 +7,7 @@ import { FileText, CheckCircle2, ChevronRight, AlertCircle } from "lucide-react"
 import { format } from "date-fns";
 import { api } from "@/lib/api";
 import { reportTitle } from "@/lib/reportDate";
+import { ReportDateFilter, filterByDateRange, type DateRange } from "@/components/ReportDateFilter";
 import type { ReportSummary } from "@/lib/types";
 
 export default function Dashboard() {
@@ -14,6 +15,8 @@ export default function Dashboard() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [range, setRange] = useState<DateRange>({ from: "", to: "" });
+  const filtered = filterByDateRange(reports, range);
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -61,8 +64,15 @@ export default function Dashboard() {
           <p className="text-body text-lg">Chưa có báo cáo nào được duyệt.</p>
         </div>
       ) : (
+        <>
+        <ReportDateFilter value={range} onChange={setRange} shown={filtered.length} total={reports.length} />
+        {filtered.length === 0 ? (
+          <div className="text-center py-16 bg-background border border-border-soft border-dashed rounded-2xl">
+            <p className="text-body text-lg">Không có báo cáo nào trong khoảng ngày đã chọn.</p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {reports.map((report) => (
+          {filtered.map((report) => (
             <Link
               key={report.id}
               href={`/reports/${report.report_date}`}
@@ -91,6 +101,8 @@ export default function Dashboard() {
             </Link>
           ))}
         </div>
+        )}
+        </>
       )}
     </div>
   );
