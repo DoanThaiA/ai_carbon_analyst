@@ -6,6 +6,7 @@ import { FileText, Clock, CheckCircle2, ChevronRight, PlusCircle, AlertCircle, L
 import { format } from "date-fns";
 import clsx from "clsx";
 import { api } from "@/lib/api";
+import { reportTitle } from "@/lib/reportDate";
 import type { ReportSummary } from "@/lib/types";
 
 const POLL_INTERVAL_MS = 5000;
@@ -136,7 +137,7 @@ export default function AdminReportsPage() {
                   <div className={clsx("p-2 rounded-lg", STATUS_STYLES[report.status].iconWrap)}>
                     <FileText size={20} />
                   </div>
-                  <h3 className="text-lg font-bold text-label">Báo cáo ngày {report.report_date}</h3>
+                  <h3 className="text-lg font-bold text-label">{reportTitle(report.report_date)}</h3>
                 </div>
                 <div className={clsx(
                   "px-2.5 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5",

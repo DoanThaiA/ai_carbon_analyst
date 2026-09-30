@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
-from db.models import Report, Instrument
+from db.models import Article, BizSuggestion, Report, Instrument
 from schemas.chat_models import MAX_ATTACHMENTS_PER_TURN, Attachment, ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services import minio_service
@@ -48,6 +48,7 @@ MAX_ANSWER_TOKENS = 2048  # chặn cứng độ dài — bổ trợ cho rule ng�
 # chỉ là lưới an toàn tránh 1 mục bất thường dài làm phình tool result không
 # kiểm soát.
 MAX_REPORT_CHARS = 40000
+MAX_ARTICLE_CHARS = 12000  # tool get_article — 1 bài dài hiếm khi cần hơn thế để trả lời
 
 # Ngưỡng relevance_score (thang 0-1 của Cohere rerank) để 1 chunk được coi là
 # THẬT SỰ liên quan tới quote+câu hỏi — top_k chỉ giới hạn số lượng, không đảm
@@ -601,6 +602,151 @@ async def _tool_report_section_text(session: AsyncSession, report_date: str, sec
     return _truncate(formatter(sec), MAX_REPORT_CHARS)
 
 
+_BIZ_STATUS_LABEL = {"pending": "đang theo dõi (chưa kích hoạt)", "triggered": "ĐÃ KÍCH HOẠT", "dismissed": "admin đã gỡ"}
+
+
+async def _tool_biz_suggestions_text(
+    session: AsyncSession, report_date: str, status: str, kind: str, days: int
+) -> str:
+    """Bộ nhớ gợi ý kinh doanh của Jenny (bảng biz_suggestions, xem services/biz_memory.py)
+    — CHỈ ĐỌC. Lấy gợi ý đề xuất trong `days` ngày kết thúc ở `report_date` (gồm cả ngày đó).
+    Khác get_report_section('biz'): đọc thẳng bảng nên có trạng thái mới nhất, bằng chứng
+    kích hoạt và cả gợi ý đã gỡ; không phụ thuộc nội dung đóng băng trong báo cáo cũ."""
+    since = (date_cls.fromisoformat(report_date) - timedelta(days=days)).isoformat()
+    stmt = select(BizSuggestion).where(
+        BizSuggestion.first_report_date >= since,
+        BizSuggestion.first_report_date <= report_date,
+    )
+    if status == "active":
+        stmt = stmt.where(BizSuggestion.status.in_(("pending", "triggered")))
+    elif status != "all":
+        stmt = stmt.where(BizSuggestion.status == status)
+    if kind != "all":
+        stmt = stmt.where(BizSuggestion.kind == kind)
+    rows = (await session.execute(stmt.order_by(BizSuggestion.first_report_date, BizSuggestion.id))).scalars().all()
+    if not rows:
+        return f"Không có gợi ý nào (status={status}, kind={kind}) trong {days} ngày đến {report_date}."
+
+    lines = []
+    for r in rows:
+        d = _fmt_vn_date_short(r.first_report_date)
+        if r.kind == "long":
+            lines.append(f"- [DÀI HẠN, đề xuất {d}] Cơ hội: {r.trigger} | Giải pháp: {r.action} | Kỳ vọng: {r.reason}")
+            continue
+        line = (
+            f"- [NGẮN HẠN, đề xuất {d}, {_BIZ_STATUS_LABEL.get(r.status, r.status)}] "
+            f"Khi: {r.trigger} | Hành động: {r.action} | Lý do: {r.reason}"
+        )
+        if r.status == "triggered":
+            line += f" | Kích hoạt ngày {_fmt_vn_date_short(r.triggered_report_date)}: {r.trigger_evidence or ''}"
+            if r.evidence_source_name:
+                line += f" (nguồn: {r.evidence_source_name} {r.evidence_source_url or ''})".rstrip()
+        if r.status == "dismissed" and r.dismiss_reason:
+            line += f" | Lý do gỡ: {r.dismiss_reason}"
+        lines.append(line)
+    return _truncate(
+        f"Gợi ý kinh doanh của Jenny — {days} ngày đến {report_date} (status={status}, kind={kind}):\n"
+        + "\n".join(lines)
+        + "\nLƯU Ý: chỉ nêu đúng các gợi ý và bằng chứng ở trên; gợi ý chưa kích hoạt nghĩa là hệ thống chưa "
+        "ghi nhận tình huống xảy ra, KHÔNG tự khẳng định thêm. Bạn không thể tạo/sửa/gỡ gợi ý — việc gỡ do admin thực hiện.",
+        MAX_REPORT_CHARS,
+    )
+
+
+async def _tool_list_reports_text(session: AsyncSession, limit: int) -> str:
+    """Các ngày đã có báo cáo published (mới → cũ) — để model biết `date` nào hợp lệ khi
+    gọi get_report_section/get_biz_suggestions cho ngày khác, thay vì đoán ngày."""
+    rows = (
+        await session.execute(
+            select(Report.report_date)
+            .where(Report.status == "published")
+            .order_by(Report.report_date.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    if not rows:
+        return "Chưa có báo cáo nào được published."
+    return (
+        f"{len(rows)} báo cáo published gần nhất (mới → cũ): " + ", ".join(rows) + "\n"
+        "LƯU Ý: chỉ những ngày này mới truy vấn được báo cáo; ngày không có trong danh sách = chưa có báo cáo "
+        "(cuối tuần/nghỉ lễ/chưa duyệt) — nêu rõ với người dùng thay vì đoán."
+    )
+
+
+_TOPIC_VALUES = (
+    "eua_ets", "energy_gas", "energy_power_eu", "energy_coal", "energy_oil", "energy_renewable",
+    "energy_hydrogen", "geopolitics", "eu_policy", "cbam", "vcm", "global_carbon_market", "vietnam_carbon_policy",
+)
+
+
+async def _tool_browse_news_text(
+    session: AsyncSession, data_date: str, topic: Optional[str], region: Optional[str], hot_only: bool, limit: int
+) -> str:
+    """Liệt kê CÓ CẤU TRÚC các bài đã crawl trong 1 ngày dữ liệu (khung [D 00:00 UTC, D+1) — khớp
+    retrieval.py/get_news_for_report), lọc theo topic/region/hot. Khác search_news (tìm theo ngữ
+    nghĩa từ khoá): dùng cho câu hỏi 'hôm nay có những tin gì về CBAM', 'tin nóng', 'tin Việt Nam'."""
+    start = datetime.strptime(data_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    stmt = select(Article).where(
+        Article.crawled_at >= start, Article.crawled_at < start + timedelta(days=1), Article.is_relevant.is_(True),
+    )
+    if topic:
+        stmt = stmt.where(Article.topic.any(topic))
+    if region:
+        stmt = stmt.where(Article.region == region)
+    if hot_only:
+        stmt = stmt.where(Article.is_hot_news.is_(True))
+    rows = (
+        await session.execute(stmt.order_by(Article.is_hot_news.desc(), Article.published_at.desc().nullslast()).limit(limit))
+    ).scalars().all()
+    filt = ", ".join(x for x in (f"topic={topic}" if topic else "", f"region={region}" if region else "", "chỉ tin nóng" if hot_only else "") if x) or "không lọc"
+    if not rows:
+        return f"Không có bài nào (ngày dữ liệu {data_date}, {filt})."
+    lines = []
+    for a in rows:
+        pub = a.published_at.astimezone(timezone(timedelta(hours=7))).strftime("%d/%m/%Y %H:%M") if a.published_at else "?"
+        hot = f" | TIN NÓNG: {a.hot_news_reason or ''}" if a.is_hot_news else ""
+        lines.append(
+            f"- [id={a.id}] ({a.source}, hạng {a.source_tier or '?'}, {pub}) {a.title or '(không tiêu đề)'} "
+            f"| topic: {', '.join(a.topic or [])}{hot}"
+        )
+    return (
+        f"{len(rows)} bài (ngày dữ liệu {data_date}, {filt}, tối đa {limit}):\n" + "\n".join(lines)
+        + "\nLƯU Ý: đây chỉ là danh sách tiêu đề; cần nội dung chi tiết thì gọi get_article với id. TUYỆT ĐỐI "
+        "KHÔNG bịa nội dung bài ngoài những gì tool trả về."
+    )
+
+
+async def _tool_article_text(session: AsyncSession, article_id: Optional[int], url: Optional[str]) -> str:
+    """Toàn văn 1 bài theo id (từ browse_news) hoặc url (từ search_news/Mục 9)."""
+    if article_id is not None:
+        stmt = select(Article).where(Article.id == article_id)
+    elif url:
+        stmt = select(Article).where(Article.url == url.strip())
+    else:
+        return "Cần truyền article_id hoặc url."
+    a = (await session.execute(stmt)).scalar_one_or_none()
+    if a is None:
+        return "Không tìm thấy bài viết này trong kho tin đã crawl."
+    pub = a.published_at.astimezone(timezone(timedelta(hours=7))).strftime("%d/%m/%Y %H:%M") if a.published_at else "không rõ"
+    head = (
+        f"{a.title or '(không tiêu đề)'}\nNguồn: {a.source} (hạng {a.source_tier or '?'}) — đăng {pub} (giờ VN) — {a.url}\n"
+        f"Topic: {', '.join(a.topic or [])}" + (f"\nTIN NÓNG: {a.hot_news_reason}" if a.is_hot_news else "")
+    )
+    return _truncate(
+        head + "\n\n" + a.content.strip()
+        + "\n\nLƯU Ý: chỉ nêu thông tin có trong bài này; trích dẫn nguồn và thời gian đăng khi dùng.",
+        MAX_ARTICLE_CHARS,
+    )
+
+
+def _fmt_vn_date_short(iso: Optional[str]) -> str:
+    """'2026-09-18' -> '18/09/2026' (giữ nguyên nếu không parse được)."""
+    try:
+        return date_cls.fromisoformat(iso or "").strftime("%d/%m/%Y")
+    except ValueError:
+        return iso or ""
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Chuyên môn nền tảng — tiêm vào system prompt để model suy luận
 # ─────────────────────────────────────────────────────────────────────
@@ -816,6 +962,10 @@ Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬ
 - get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
 - get_report_section(section="1".."4"|"6"|"8"|"9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu — bao gồm cả tín hiệu liên thị trường và quan điểm thị trường nếu có + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
+- get_biz_suggestions(status, kind, days, date tuỳ chọn): BỘ NHỚ gợi ý kinh doanh của Jenny đọc thẳng từ DB — gợi ý ngắn/dài hạn đã đề xuất trong ~10 ngày gần nhất kèm trạng thái mới nhất (đang theo dõi / ĐÃ KÍCH HOẠT + bằng chứng + nguồn / admin đã gỡ). Dùng khi hỏi "Jenny đã đề xuất gì", "gợi ý nào đã kích hoạt/đang theo dõi". Chỉ đọc, không tạo/sửa/gỡ được gợi ý.
+- list_reports(limit tuỳ chọn): các NGÀY đã có báo cáo published — dùng trước khi so sánh nhiều ngày hoặc khi tool báo không có báo cáo ngày đó.
+- browse_news(topic, region, hot_only, limit, date tuỳ chọn): DANH SÁCH bài đã crawl trong 1 ngày (id, nguồn, hạng, giờ đăng, tiêu đề, topic, tin nóng) — dùng cho "hôm nay có tin gì về X", "có tin nóng không", "tin Việt Nam". Khác search_news (tìm theo nội dung).
+- get_article(article_id | url): TOÀN VĂN 1 bài (id từ browse_news, url từ search_news/Mục 9) — khi cần chi tiết 1 bài cụ thể.
 - get_price_history(instrument, sessions tuỳ chọn, date tuỳ chọn, start_date tuỳ chọn): lịch sử OHLC nhiều phiên của 1 instrument BẤT KỲ hệ thống theo dõi (kể cả EUA) — dùng khi hỏi XU HƯỚNG/lịch sử giá qua thời gian, khác get_market_prices (chỉ 1 ngày). Hỏi về 1 KHOẢNG (tuần trước, tháng trước, quý...) thì truyền start_date + date theo LỊCH THAM CHIẾU bên dưới — tool tính sẵn biến động cả khoảng. Hỏi xu hướng EUA chung (không nêu khoảng ngày) thì ưu tiên get_eua_details/get_eua_volume_history trước.
 - search_news(query, date tuỳ chọn): tìm CHỦ ĐỘNG trong TOÀN BỘ kho tin đã crawl (không giới hạn ngày báo cáo đang xem như DỮ LIỆU NỀN tự động bên dưới) — dùng khi câu hỏi lệch chủ đề khỏi DỮ LIỆU NỀN ban đầu hoặc cần tin của NGÀY KHÁC.
 QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section/get_price_history): mặc định (không truyền `date`) các tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "báo cáo hôm qua", "tuần trước"), PHẢI quy đổi ra định dạng YYYY-MM-DD bằng LỊCH THAM CHIẾU bên dưới (không tự tính thứ/ngày) và truyền qua tham số `date` (khoảng ngày: thêm `start_date` cho get_price_history) — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Với get_market_prices/get_eua_details/get_eua_volume_history/get_price_history, nếu ngày yêu cầu không có dữ liệu, tool trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo — PHẢI đọc và nêu đúng ngày thực tế trong câu trả lời. Với get_report_section, nếu báo cáo ngày yêu cầu chưa published, tool báo rõ không có — KHÔNG tự suy diễn nội dung ngày đó. RIÊNG search_news: không truyền `date` = tìm KHÔNG giới hạn ngày (khác các tool trên, nơi không truyền `date` nghĩa là dùng {report_date}) — chỉ truyền `date` khi cần giới hạn đúng 1 ngày tin tức cụ thể.
@@ -1067,6 +1217,88 @@ CLIENT_TOOLS = [
         },
     },
     {
+        "name": "get_biz_suggestions",
+        "description": (
+            "Đọc BỘ NHỚ GỢI Ý KINH DOANH của Jenny (bảng biz_suggestions) — gợi ý ngắn hạn/dài hạn đã đề "
+            "xuất trong các báo cáo gần đây, kèm TRẠNG THÁI mới nhất: đang theo dõi (chưa kích hoạt), ĐÃ "
+            "KÍCH HOẠT (kèm bằng chứng + nguồn + ngày kích hoạt) hoặc admin đã gỡ. Gọi khi hỏi 'Jenny đã "
+            "đề xuất gì trước đây', 'gợi ý nào đang theo dõi/đã kích hoạt', 'tình huống X đã xảy ra "
+            "chưa'. Khác get_report_section('biz') (chỉ nội dung đóng băng của 1 báo cáo). CHỈ ĐỌC — không "
+            "tạo/sửa/gỡ được gợi ý."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "pending", "triggered", "dismissed", "all"],
+                    "description": "Mặc định 'active' = đang theo dõi + đã kích hoạt (không gồm đã gỡ).",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["short", "long", "all"],
+                    "description": "Mặc định 'all'. 'short' = ngắn hạn (có tình huống kích hoạt), 'long' = dài hạn.",
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "Số ngày nhìn lại tính đến ngày báo cáo (mặc định 10, tối đa 30).",
+                },
+                "date": {
+                    "type": "string",
+                    "description": (
+                        "TUỲ CHỌN — YYYY-MM-DD, ngày kết thúc của khoảng nhìn lại. Không truyền = ngày "
+                        "báo cáo đang xem."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "name": "list_reports",
+        "description": (
+            "Liệt kê các NGÀY đã có báo cáo published (mới → cũ). Gọi khi cần biết báo cáo nào tồn tại "
+            "trước khi so sánh nhiều ngày ('so với tuần trước', 'các báo cáo gần đây') hoặc khi get_report_section "
+            "báo không có dữ liệu cho 1 ngày."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "description": "Số báo cáo tối đa (mặc định 10, tối đa 60)."}},
+        },
+    },
+    {
+        "name": "browse_news",
+        "description": (
+            "Liệt kê CÓ CẤU TRÚC các bài đã crawl trong 1 ngày (id, nguồn, hạng nguồn, giờ đăng, tiêu đề, topic, "
+            "tin nóng), lọc theo topic/region/tin nóng. Khác search_news (tìm theo ngữ nghĩa/từ khoá, trả đoạn nội "
+            "dung): dùng cho 'hôm nay có những tin gì về CBAM', 'có tin nóng nào không', 'tin Việt Nam hôm nay', "
+            "'bao nhiêu bài về khí gas'. Cần nội dung 1 bài thì gọi tiếp get_article."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "enum": list(_TOPIC_VALUES), "description": "Lọc theo chủ đề (tuỳ chọn)."},
+                "region": {"type": "string", "enum": ["vietnam", "international"], "description": "Lọc theo phạm vi nguồn (tuỳ chọn)."},
+                "hot_only": {"type": "boolean", "description": "true = chỉ tin nóng."},
+                "limit": {"type": "integer", "description": "Số bài tối đa (mặc định 15, tối đa 30)."},
+                "date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD, ngày dữ liệu tin. Không truyền = ngày dữ liệu của báo cáo đang xem."},
+            },
+        },
+    },
+    {
+        "name": "get_article",
+        "description": (
+            "Lấy TOÀN VĂN 1 bài báo đã crawl theo `article_id` (từ browse_news) hoặc `url` (từ search_news / Mục 9 "
+            "nguồn tham khảo). Gọi khi người dùng hỏi chi tiết về 1 bài cụ thể mà tóm tắt/đoạn trích chưa đủ."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "article_id": {"type": "integer", "description": "id bài (từ browse_news)."},
+                "url": {"type": "string", "description": "URL bài (nếu không có id)."},
+            },
+        },
+    },
+    {
         "name": "get_price_history",
         "description": (
             "Lấy lịch sử OHLC (mở/cao/thấp/đóng, kèm khối lượng nếu có) của 1 instrument BẤT KỲ hệ "
@@ -1142,7 +1374,7 @@ CLIENT_TOOLS = [
 MAX_TOOL_ITERATIONS = 8
 
 
-_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history")
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news")
 
 
 async def _execute_client_tool(
@@ -1165,6 +1397,14 @@ async def _execute_client_tool(
     """
     if name == "get_report_section":
         cache_key = (name, tool_input.get("section"), tool_input.get("date"))
+    elif name == "list_reports":
+        cache_key = (name, tool_input.get("limit"))
+    elif name == "browse_news":
+        cache_key = (name, tool_input.get("topic"), tool_input.get("region"), tool_input.get("hot_only"), tool_input.get("limit"), tool_input.get("date"))
+    elif name == "get_article":
+        cache_key = (name, tool_input.get("article_id"), tool_input.get("url"))
+    elif name == "get_biz_suggestions":
+        cache_key = (name, tool_input.get("status"), tool_input.get("kind"), tool_input.get("days"), tool_input.get("date"))
     elif name == "get_price_history":
         cache_key = (name, tool_input.get("instrument"), tool_input.get("date"), tool_input.get("sessions"), tool_input.get("start_date"))
     elif name == "search_news":
@@ -1193,7 +1433,7 @@ async def _execute_client_tool(
     # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
     if raw_date:
         target_date = raw_date
-    elif name == "get_report_section":
+    elif name in ("get_report_section", "get_biz_suggestions"):
         target_date = report_date
     else:
         target_date = report_data_date(report_date)
@@ -1207,6 +1447,43 @@ async def _execute_client_tool(
             result = await _tool_eua_volume_history_text(session, target_date, chart_cache)
         elif name == "get_report_section":
             result = await _tool_report_section_text(session, target_date, str(tool_input.get("section", "")))
+        elif name == "list_reports":
+            try:
+                lim = int(tool_input.get("limit") or 10)
+            except (TypeError, ValueError):
+                lim = 10
+            result = await _tool_list_reports_text(session, max(1, min(lim, 60)))
+        elif name == "browse_news":
+            topic = tool_input.get("topic")
+            region = tool_input.get("region")
+            try:
+                lim = int(tool_input.get("limit") or 15)
+            except (TypeError, ValueError):
+                lim = 15
+            result = await _tool_browse_news_text(
+                session, target_date,
+                topic if topic in _TOPIC_VALUES else None,
+                region if region in ("vietnam", "international") else None,
+                bool(tool_input.get("hot_only")), max(1, min(lim, 30)),
+            )
+        elif name == "get_article":
+            try:
+                aid = int(tool_input["article_id"]) if tool_input.get("article_id") is not None else None
+            except (TypeError, ValueError):
+                aid = None
+            result = await _tool_article_text(session, aid, tool_input.get("url"))
+        elif name == "get_biz_suggestions":
+            status = str(tool_input.get("status") or "active")
+            kind = str(tool_input.get("kind") or "all")
+            if status not in ("active", "pending", "triggered", "dismissed", "all"):
+                status = "active"
+            if kind not in ("short", "long", "all"):
+                kind = "all"
+            try:
+                days = int(tool_input.get("days") or 10)
+            except (TypeError, ValueError):
+                days = 10
+            result = await _tool_biz_suggestions_text(session, target_date, status, kind, max(1, min(days, 30)))
         elif name == "get_price_history":
             raw_sessions = tool_input.get("sessions")
             try:
