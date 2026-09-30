@@ -135,7 +135,7 @@ export default function AdminChatReviewDetailPage() {
 
             <div className="rounded-xl bg-tint/40 border border-border-soft px-4 py-3 flex gap-2 items-start">
               <QuoteIcon size={14} className="text-primary shrink-0 mt-0.5" />
-              <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{session.quote}</p>
+              <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{session.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"}</p>
             </div>
 
             {session.rating === "bad" && session.rating_reason && (

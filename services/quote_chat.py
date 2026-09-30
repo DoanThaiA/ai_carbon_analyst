@@ -879,8 +879,24 @@ def _build_dynamic_context(quote: str, context_block: str) -> str:
     hoặc chen giữa phần tĩnh, mọi thay đổi ở đây sẽ làm mất cache toàn bộ phần
     tĩnh phía sau (cache là khớp PREFIX, hỏng ở đâu là mất cache từ đó trở đi).
     """
-    return f"""=== ĐOẠN NGƯỜI DÙNG ĐANG BÔI ĐEN (điểm neo của toàn bộ hội thoại) ===
-\"\"\"{quote}\"\"\"
+    if not quote.strip():
+        # Chat tự do (mở từ avatar Jenny, không bôi đen đoạn nào) — ghi đè các quy
+        # tắc về "đoạn trích" trong phần tĩnh phía trên (giữ nguyên phần tĩnh để
+        # không mất prompt cache), Jenny trả lời thẳng theo câu hỏi.
+        quote_block = (
+            "=== KHÔNG CÓ ĐOẠN TRÍCH — CHAT TỰ DO ===\n"
+            "Người dùng mở chat trực tiếp, KHÔNG bôi đen đoạn nào trong báo cáo. BỎ QUA mọi quy tắc "
+            "nói về \"đoạn trích\" ở trên (neo vào đoạn trích, đoạn trích thiếu ngữ cảnh...): trả lời "
+            "thẳng theo CÂU HỎI của người dùng, dựa trên DỮ LIỆU NỀN bên dưới, các mục của báo cáo "
+            "(get_report_section khi cần) và các tool dữ liệu giá. KHÔNG nhắc tới \"đoạn trích\"/"
+            "\"đoạn bạn bôi đen\" trong câu trả lời."
+        )
+    else:
+        quote_block = (
+            "=== ĐOẠN NGƯỜI DÙNG ĐANG BÔI ĐEN (điểm neo của toàn bộ hội thoại) ===\n"
+            f"\"\"\"{quote}\"\"\""
+        )
+    return f"""{quote_block}
 
 === DỮ LIỆU NỀN LIÊN QUAN (trích từ kho tin tức đã crawl, đánh số để trích dẫn) ===
 {context_block}"""
@@ -1587,10 +1603,21 @@ _GENERIC_QUESTIONS = [
     "Trong kịch bản xấu nhất, điều gì sẽ xảy ra?",
 ]
 
+# Gợi ý khi chat tự do (không bôi đen đoạn nào) — hỏi về báo cáo/thị trường nói chung.
+_FREE_CHAT_QUESTIONS = [
+    "Tóm tắt nhanh diễn biến giá EUA hôm nay?",
+    "Yếu tố nào đang tác động mạnh nhất đến giá EUA?",
+    "Doanh nghiệp Việt Nam cần lưu ý gì từ báo cáo hôm nay?",
+    "Kịch bản giá EUA trong 1–2 tuần tới thế nào?",
+]
+
 
 def suggest_questions(quote: str, limit: int = 4) -> List[str]:
     """Trả về vài câu hỏi phổ biến gợi ý cho đoạn quote — ưu tiên câu khớp từ khoá
-    trong quote, bù thêm câu hỏi chung nếu chưa đủ `limit`."""
+    trong quote, bù thêm câu hỏi chung nếu chưa đủ `limit`. Quote rỗng (chat tự do)
+    → câu hỏi chung về báo cáo."""
+    if not quote.strip():
+        return _FREE_CHAT_QUESTIONS[:limit]
     matched = [q for pattern, q in _KEYWORD_QUESTIONS if re.search(pattern, quote, re.IGNORECASE)]
 
     questions: List[str] = []

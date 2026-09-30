@@ -87,7 +87,9 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
 
   const [trigger, setTrigger] = useState<FloatingTrigger | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  // null = chưa mở phiên nào; "" = chat tự do (không đoạn trích); chuỗi = đoạn đã bôi đen.
   const [activeQuote, setActiveQuote] = useState<string | null>(null);
+  const chatReady = activeQuote !== null;
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -258,6 +260,24 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     fetchSuggestions(quote);
   }
 
+  // "Chat" từ menu avatar Jenny — hỏi đáp tự do, KHÔNG cần bôi đen đoạn nào:
+  // activeQuote = "" (rỗng, khác null = chưa mở phiên nào). Backend lưu quote rỗng
+  // và Jenny trả lời theo câu hỏi (services/quote_chat.py::_build_dynamic_context).
+  function openFreeChat() {
+    abortRef.current?.abort();
+    setSending(false);
+    setChatOpen(true);
+    setHistoryOpen(false);
+    setActiveQuote("");
+    setSessionId(null);
+    setMessages([]);
+    setInput("");
+    setTrigger(null);
+    resetRatingState();
+    clearPendingAttachments();
+    fetchSuggestions("");
+  }
+
   function closeChat() {
     abortRef.current?.abort();
     setChatOpen(false);
@@ -345,7 +365,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
   async function sendQuestion(question: string) {
     const q = question.trim();
     const isUploadingAttachment = pendingAttachments.some((p) => p.status === "uploading");
-    if (!q || !activeQuote || sending || isUploadingAttachment) return;
+    if (!q || !chatReady || sending || isUploadingAttachment) return;
 
     // Chỉ những file upload thành công (status "done") mới có file_key để gửi
     // kèm — file lỗi bị bỏ qua lặng lẽ (đã có cảnh báo lúc chọn/upload).
@@ -394,7 +414,8 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       reportDate,
       question: q,
       sessionId,
-      quote: sessionId ? undefined : activeQuote,
+      // Chat tự do (activeQuote rỗng) → không gửi quote.
+      quote: sessionId ? undefined : activeQuote || undefined,
       attachments: readyAttachments.map((p) => p.attachment),
       signal: controller.signal,
       onMeta: (meta) => {
@@ -456,6 +477,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       {!chatOpen && (
         <FloatingChatActions
           containerRef={containerRef}
+          onChat={openFreeChat}
           onFeedback={() => setFeedbackOpen(true)}
           onHistory={openHistoryPanel}
         />
@@ -498,7 +520,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                   <div className="px-4 py-8 text-center">
                     <MessagesSquare size={28} className="mx-auto text-muted-light mb-2" />
                     <p className="text-[12.5px] text-muted-light leading-relaxed">
-                      Chưa có lịch sử. Bôi đen một đoạn trong báo cáo để bắt đầu hỏi đáp.
+                      Chưa có lịch sử. Bôi đen một đoạn trong báo cáo hoặc chat trực tiếp với Jenny để bắt đầu hỏi đáp.
                     </p>
                   </div>
                 ) : (
@@ -515,7 +537,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                           )}
                         >
                           <p className="text-[12.5px] leading-snug text-body italic line-clamp-2">
-                            {s.quote}
+                            {s.quote || <span className="not-italic font-semibold text-primary-dark">Chat trực tiếp với Jenny</span>}
                           </p>
                           <p className="text-[11px] text-muted-light mt-1">
                             {formatDistanceToNow(new Date(s.updated_at), { addSuffix: true, locale: vi })}
@@ -537,7 +559,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               <div className="flex items-center justify-between px-4 py-3.5 border-b border-border shrink-0">
                 <div className="flex items-center gap-2 text-label font-semibold text-sm">
                   <MessageCircleQuestion size={16} className="text-primary" />
-                  Hỏi đáp về đoạn trích
+                  {activeQuote ? "Hỏi đáp về đoạn trích" : "Chat với Jenny"}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -570,16 +592,27 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
             )}
 
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-              {!activeQuote ? (
-                <div className="h-full flex flex-col items-center justify-center text-center gap-2 px-6">
+              {!chatReady ? (
+                <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-6">
                   <MessagesSquare size={28} className="text-muted-light" />
                   <p className="text-[13px] text-muted-light leading-relaxed">
-                    Chọn 1 phiên trong lịch sử bên trái, hoặc bôi đen một đoạn trong báo cáo để bắt đầu hỏi đáp mới.
+                    Chọn 1 phiên trong lịch sử, bôi đen một đoạn trong báo cáo, hoặc chat trực tiếp với Jenny.
                   </p>
+                  <button
+                    type="button"
+                    onClick={openFreeChat}
+                    className="text-[12.5px] font-semibold px-3.5 py-1.5 rounded-full bg-primary text-white hover:bg-primary-dark transition-colors"
+                  >
+                    Chat với Jenny
+                  </button>
                 </div>
               ) : (
                 messages.length === 0 && (
-                  <p className="text-[13px] text-muted-light">Đặt câu hỏi về đoạn trích trên, hoặc chọn gợi ý bên dưới.</p>
+                  <p className="text-[13px] text-muted-light">
+                    {activeQuote
+                      ? "Đặt câu hỏi về đoạn trích trên, hoặc chọn gợi ý bên dưới."
+                      : "Hỏi Jenny bất cứ điều gì về báo cáo và thị trường hôm nay, hoặc chọn gợi ý bên dưới."}
+                  </p>
                 )
               )}
               {messages.map((m, i) => (
@@ -708,7 +741,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               </div>
             )}
 
-            {activeQuote && messages.length === 0 && (
+            {chatReady && messages.length === 0 && (
               <div className="px-4 pb-3 flex flex-wrap gap-2 shrink-0">
                 {suggestionsLoading ? (
                   <span className="text-[12px] text-muted-light flex items-center gap-1.5">
@@ -782,7 +815,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               <button
                 type="button"
                 onClick={handleAttachClick}
-                disabled={sending || !activeQuote || pendingAttachments.length >= MAX_ATTACHMENTS_PER_TURN}
+                disabled={sending || !chatReady || pendingAttachments.length >= MAX_ATTACHMENTS_PER_TURN}
                 title="Đính kèm ảnh/PDF/Word"
                 className="w-9 h-9 flex items-center justify-center rounded-full border border-border-soft text-muted-light hover:text-primary hover:border-primary disabled:opacity-40 transition-colors shrink-0"
               >
@@ -801,15 +834,21 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                   }
                 }}
                 rows={1}
-                placeholder={activeQuote ? "Hỏi thêm về đoạn trích..." : "Chọn 1 phiên hoặc bôi đen đoạn trích để hỏi..."}
-                disabled={sending || !activeQuote}
+                placeholder={
+                  activeQuote
+                    ? "Hỏi thêm về đoạn trích..."
+                    : chatReady
+                      ? "Nhập câu hỏi cho Jenny..."
+                      : "Chọn 1 phiên hoặc bôi đen đoạn trích để hỏi..."
+                }
+                disabled={sending || !chatReady}
                 className="flex-1 min-w-0 resize-none overflow-y-auto max-h-40 text-[13.5px] leading-[1.4] px-3.5 py-2 rounded-2xl border border-border-soft bg-surface whitespace-pre-wrap break-words focus:outline-none focus:border-primary disabled:opacity-60"
               />
               <button
                 type="submit"
                 disabled={
                   sending ||
-                  !activeQuote ||
+                  !chatReady ||
                   !input.trim() ||
                   pendingAttachments.some((p) => p.status === "uploading")
                 }

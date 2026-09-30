@@ -1300,32 +1300,38 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 
 def _prompt_key_developments(
-    news_text: str, prices_text: str, target_date: str, topics_present: List[str],
+    news_text: str, target_date: str, topics_present: List[str],
     overrides: Optional[Dict[str, str]] = None,
 ) -> tuple[str, str]:
-    """ "Diễn biến chính" — hiển thị ngay dưới Bảng giá nhanh: các TIN TỨC nổi bật
-    tác động lên cung/cầu EUA (trực tiếp hoặc gián tiếp), mỗi tin BẮT BUỘC có
-    nguồn bài viết (source_index → backend map sang tên/URL thật)."""
+    """ "Diễn biến chính" — hiển thị ngay dưới Bảng giá nhanh: CHỈ các SỰ KIỆN TIN TỨC
+    nổi bật tác động lên cung/cầu EUA (trực tiếp hoặc gián tiếp) — KHÔNG phải diễn
+    biến giá tăng/giảm của các hợp đồng (phần đó đã có ở Bảng giá nhanh). Cố ý KHÔNG
+    đưa dữ liệu giá vào prompt để LLM không viết lại biến động giá. Mỗi tin BẮT BUỘC
+    có nguồn bài viết (source_index → backend map sang tên/URL thật)."""
     framework = _eua_framework(topics_present, full=False, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
-DỮ LIỆU GIÁ (chỉ để tham chiếu bối cảnh, KHÔNG nhắc lại số giá/%Δ — đã có trong Bảng giá nhanh):
-{prices_text}
-
 TIN TỨC đã đánh số [N] — CHỈ trích dẫn số có thật:
 {news_text}
 
-YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: các tin tức nổi bật NHẤT trong danh sách trên có tác động lên CUNG hoặc CẦU hạn ngạch EUA, TRỰC TIẾP (đấu giá, MSR, cap, chính sách EU ETS, CBAM, số liệu phát thải...) hoặc GIÁN TIẾP (giá khí/than/điện → chuyển đổi nhiên liệu → nhu cầu phát thải; địa chính trị, thời tiết, sản lượng công nghiệp, năng lượng tái tạo...).
-- Từ 3 đến 6 mục, xếp theo mức độ tác động lên giá EUA (mạnh → yếu). CHỈ chọn tin có cơ chế tác động RÕ RÀNG — bỏ qua tin không liên quan cung/cầu EUA. Nhiều bài cùng 1 sự kiện → gộp thành 1 mục.
+YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: các SỰ KIỆN TIN TỨC nổi bật NHẤT trong danh sách trên có tác động lên CUNG hoặc CẦU hạn ngạch EUA:
+  • TRỰC TIẾP: quyết định/đề xuất chính sách EU ETS, MSR, cap, lịch/khối lượng đấu giá, phân bổ miễn phí, CBAM, số liệu phát thải được công bố, luật/quy định mới...
+  • GIÁN TIẾP: sự kiện nguồn cung năng lượng (gián đoạn LNG/đường ống, nhà máy điện/hạt nhân dừng hoạt động, lộ trình bỏ than...), địa chính trị, thời tiết bất thường, sản lượng/hoạt động công nghiệp, triển khai năng lượng tái tạo/hydrogen, chính sách năng lượng quốc gia...
+
+QUY TẮC BẮT BUỘC — ĐÂY LÀ MỤC TIN TỨC, KHÔNG PHẢI MỤC GIÁ:
+- TUYỆT ĐỐI KHÔNG viết về diễn biến GIÁ của bất kỳ hợp đồng/hàng hoá nào (EUA, TTF, than, dầu, điện...): không "giá tăng/giảm X%", không giá đóng cửa, không vùng hỗ trợ/kháng cự, không biến động phiên/tuần — phần đó đã có ở Bảng giá nhanh.
+- BỎ QUA các bài chỉ là bản tin thị trường/tổng hợp giá (market wrap, "giá dầu tăng do...") nếu bài không nêu 1 SỰ KIỆN cụ thể; nếu bài có sự kiện cụ thể thì chỉ lấy SỰ KIỆN đó, bỏ phần giá.
+- Mỗi mục phải trả lời được: "CHUYỆN GÌ đã xảy ra/được công bố, ai làm, ở đâu" → "tác động thế nào tới cung/cầu EUA".
+- Từ 3 đến 6 mục, xếp theo mức độ tác động lên cung/cầu EUA (mạnh → yếu). CHỈ chọn tin có cơ chế tác động RÕ RÀNG. Nhiều bài cùng 1 sự kiện → gộp thành 1 mục.
 - Mỗi mục là object {{"text": "...", "impact": "tăng" | "giảm" | "trung lập", "source_index": N}}:
-  + "text": 1–2 câu. Câu đầu nêu SỰ KIỆN/SỐ LIỆU cụ thể từ bài báo; tiếp theo nêu NGẮN GỌN kênh tác động lên cung/cầu EUA (vd "→ tăng nhu cầu phát thải từ nhiệt điện than, hỗ trợ giá EUA"). Mở đầu bằng tag in đậm chủ đề (**EU ETS:**, **Khí gas:**, **Than:**, **Điện:**, **Dầu:**, **Địa chính trị:**, **Chính sách:**, **CBAM:**...). KHÔNG nhắc lại giá/%Δ của Bảng giá nhanh.
-  + "impact": chiều tác động lên GIÁ EUA theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH (không theo chiều tăng/giảm bề ngoài của tin).
+  + "text": 1–2 câu, mở đầu bằng tag in đậm chủ đề (**EU ETS:**, **Chính sách:**, **CBAM:**, **Khí gas:**, **Than:**, **Điện:**, **Dầu:**, **Địa chính trị:**, **Công nghiệp:**, **Thời tiết:**...). Câu đầu nêu SỰ KIỆN cụ thể từ bài báo (số liệu của CHÍNH sự kiện được phép, vd khối lượng đấu giá, công suất nhà máy, mức cắt giảm phân bổ — nhưng KHÔNG phải giá thị trường); tiếp theo nêu NGẮN GỌN kênh tác động lên cung/cầu EUA (vd "→ giảm nguồn cung hạn ngạch trên thị trường", "→ tăng nhu cầu phát thải từ nhiệt điện than").
+  + "impact": chiều tác động của SỰ KIỆN lên cán cân cung–cầu EUA theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH — "tăng" = thắt cung/tăng cầu (hỗ trợ EUA), "giảm" = tăng cung/giảm cầu (gây áp lực EUA), "trung lập" = chưa rõ chiều.
   + "source_index": BẮT BUỘC là số [N] có thật của bài báo làm căn cứ — mục nào không gắn được với 1 bài cụ thể thì BỎ, TUYỆT ĐỐI KHÔNG bịa số.
-- Không có tin nào đạt yêu cầu → "key_developments": [].
+- Không có sự kiện tin tức nào đạt yêu cầu → "key_developments": [].
 
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"dev": {{"key_developments": [{{"text": "**Khí gas:** ...", "impact": "tăng", "source_index": 1}}]}}}}"""
+{{"dev": {{"key_developments": [{{"text": "**Chính sách:** ...", "impact": "tăng", "source_index": 1}}]}}}}"""
     return system, user
 
 
@@ -1767,7 +1773,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             overrides=eua_framework_overrides,
         )),
         ("dev", _prompt_key_developments(
-            dev_news_text, prices_text, target_date, _topics_present(news_by_topic, "dev"),
+            dev_news_text, target_date, _topics_present(news_by_topic, "dev"),
             overrides=eua_framework_overrides,
         )),
         ("3", _prompt_section3(

@@ -243,7 +243,7 @@ function ChatHistoryContent() {
                         <p className="text-[13px] font-semibold text-label truncate min-w-0">{s.user_email}</p>
                         <RatingBadge rating={s.rating} />
                       </div>
-                      <p className="text-[12.5px] leading-snug text-body italic line-clamp-2 break-words">{s.quote}</p>
+                      <p className="text-[12.5px] leading-snug text-body italic line-clamp-2 break-words">{s.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"}</p>
                       <p className="text-[11px] text-muted-light">
                         Báo cáo {s.report_date} · {s.message_count} tin nhắn · {format(new Date(s.updated_at), "HH:mm dd/MM/yyyy")}
                       </p>
@@ -323,7 +323,7 @@ function ChatHistoryContent() {
 
               <div className="rounded-xl bg-tint/40 border border-border-soft px-4 py-3 flex gap-2 items-start">
                 <QuoteIcon size={14} className="text-primary shrink-0 mt-0.5" />
-                <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{detail.quote}</p>
+                <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{detail.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"}</p>
               </div>
 
               {detail.rating === "bad" && detail.rating_reason && (

@@ -59,11 +59,12 @@ const TREND_META: Record<string, { arrow: string; label: string; className: stri
   "đi ngang": { arrow: "↔", label: "GIẰNG CO", className: "text-blue-700" },
 };
 
-// Nhãn chiều tác động lên giá EUA của từng tin trong "Diễn biến chính".
+// Nhãn tác động của từng SỰ KIỆN TIN TỨC trong "Diễn biến chính" lên cán cân
+// cung–cầu EUA (mục này chỉ là tin tức, không phải diễn biến giá hợp đồng).
 const IMPACT_META: Record<string, { arrow: string; label: string; className: string }> = {
-  "tăng": { arrow: "▲", label: "Hỗ trợ giá", className: "text-up border-up/30 bg-up/10" },
-  "giảm": { arrow: "▼", label: "Áp lực giảm", className: "text-down border-down/30 bg-red-50" },
-  "trung lập": { arrow: "↔", label: "Trung lập", className: "text-blue-700 border-blue-200 bg-blue-50" },
+  "tăng": { arrow: "▲", label: "Hỗ trợ EUA", className: "text-up border-up/30 bg-up/10" },
+  "giảm": { arrow: "▼", label: "Áp lực lên EUA", className: "text-down border-down/30 bg-red-50" },
+  "trung lập": { arrow: "↔", label: "Chưa rõ tác động", className: "text-blue-700 border-blue-200 bg-blue-50" },
 };
 
 // "Khuyến nghị vị thế" cũng suy ra trực tiếp từ "direction" có sẵn của kịch
@@ -457,7 +458,11 @@ function BizRecommendationTable({
           <table className="w-full table-fixed border-collapse text-[13px]">
             <thead>
               <tr>
-                <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[32px] sm:w-[36px]">#</th>
+                {/* Cột # rộng hơn khi có nút gỡ (admin) để số thứ tự + nút xếp dọc, căn giữa cân đối */}
+                <th className={clsx(
+                  "text-center font-mono text-[10px] uppercase tracking-wider text-primary-dark px-1 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint",
+                  onDismiss ? "w-[44px]" : "w-[32px] sm:w-[36px]"
+                )}>#</th>
                 {columns.map((col, i) => (
                   <th
                     key={col.key}
@@ -479,11 +484,13 @@ function BizRecommendationTable({
                 return (
                   <Fragment key={ri}>
                     <tr className="align-top even:bg-surface/60 hover:bg-tint/40 transition-colors">
-                      <td className="px-2 sm:px-3 py-2.5 sm:py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">
-                        {ri + 1}
-                        {onDismiss && typeof row.id === "number" && (
-                          <div className="mt-1.5"><DismissButton onClick={() => onDismiss(row.id)} /></div>
-                        )}
+                      <td className="px-1 py-2.5 sm:py-3 border-r border-border bg-surface font-mono text-[12px] text-muted-light">
+                        <div className="flex flex-col items-center gap-2">
+                          <span className="leading-6">{ri + 1}</span>
+                          {onDismiss && typeof row.id === "number" && (
+                            <DismissButton onClick={() => onDismiss(row.id)} />
+                          )}
+                        </div>
                       </td>
                       {columns.map((col, i) => {
                         const isLast = i === columns.length - 1;
@@ -1052,7 +1059,7 @@ export function ReportDocument({
                     .split(/(?<=\.)\s+/)
                     .filter((s: string) => s.trim())
                     .map((s: string, i: number) => (
-                      <p key={i}><RichText text={s} /></p>
+                      <p key={i} className="text-left"><RichText text={s} /></p>
                     ))}
                 </div>
               </div>
@@ -1070,9 +1077,9 @@ export function ReportDocument({
               <table className="w-full sm:table-fixed border-collapse font-mono text-[12px] sm:text-[12.5px]">
                 <thead>
                   <tr>
-                    <th className="w-[28%] sm:w-[20%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
-                    <th className="w-[18%] sm:w-[15%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
-                    <th className="w-[54%] sm:w-[65%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Biến động</th>
+                    <th className="w-[28%] sm:w-[30%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
+                    <th className="w-[18%] sm:w-[18%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
+                    <th className="w-[54%] sm:w-[52%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Biến động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -1171,9 +1178,9 @@ export function ReportDocument({
                 {report.content["2"].key_developments.map((d: any, i: number) => {
                   const meta = IMPACT_META[d.impact] ?? IMPACT_META["trung lập"];
                   return (
-                    <li key={i} className="flex items-start gap-3 px-3 sm:px-4 py-3">
+                    <li key={i} className="flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-3 px-3 sm:px-4 py-3">
                       <span className={clsx(
-                        "shrink-0 mt-0.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide whitespace-nowrap",
+                        "self-start shrink-0 sm:mt-0.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide whitespace-nowrap",
                         meta.className
                       )}>
                         {meta.arrow} {meta.label}
@@ -1242,7 +1249,10 @@ export function ReportDocument({
 
                   <div className="rounded-md border-l-4 border-primary-dark bg-tint/70 px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
                     <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark mb-1">Hành động</h4>
-                    <p className="text-[17px] sm:text-[19px] leading-[1.4] font-extrabold text-label">
+                    {/* Chữ vừa (không đậm cả đoạn — đoạn dài 7–8 dòng in đậm thành 1 mảng
+                        khó đọc trên mobile); chỉ các nhãn/số chính (**Entry:**, **Mục tiêu:**,
+                        **Cắt lỗ**... backend đã đánh dấu) in đậm + màu nhấn để mắt bắt ngay. */}
+                    <p className="text-[15.5px] sm:text-[17px] leading-[1.55] font-medium text-label text-left [&_strong]:font-bold [&_strong]:text-primary-dark">
                       {todaySignal.trading_strategy ? <RichText text={todaySignal.trading_strategy} /> : <span className="text-muted-light font-normal">—</span>}
                     </p>
                   </div>
@@ -1532,7 +1542,7 @@ export function ReportDocument({
                             return (
                               <div key={h} className="flex items-start gap-2.5 px-3 py-2">
                                 <span className={clsx(
-                                  "shrink-0 w-[84px] inline-flex items-center gap-1 rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                  "shrink-0 w-[92px] inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-bold uppercase tracking-wide",
                                   meta.iconBg
                                 )}>
                                   <Icon size={11} className="shrink-0" /> {h}
@@ -1729,8 +1739,11 @@ export function ReportDocument({
                   columns={[
                     { key: "opportunity", label: "Cơ hội" },
                     { key: "solution", label: "Giải pháp đề xuất" },
-                    { key: "expectation", label: "Kỳ vọng" },
                   ]}
+                  // Kỳ vọng thu vào nút "i" (như Lý do ở bảng Ngắn hạn) — 3 cột hẹp
+                  // trên mobile làm mỗi ô chỉ 2–3 chữ/dòng, rất khó đọc.
+                  infoKey="expectation"
+                  infoLabel="Kỳ vọng"
                   onDismiss={onDismissBizSuggestion}
                 />
               </div>

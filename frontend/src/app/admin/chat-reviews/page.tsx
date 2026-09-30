@@ -193,7 +193,7 @@ function ChatReviewsContent() {
                       </td>
                       <td className="px-4 py-2.5 text-body whitespace-nowrap">{s.report_date}</td>
                       <td className="px-4 py-2.5 text-body max-w-xs">
-                        <ExpandableText text={s.quote} className="italic" />
+                        <ExpandableText text={s.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"} className="italic" />
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={clsx("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold", badge.cls)}>

@@ -212,9 +212,10 @@ async def quote_chat_stream(
             raise HTTPException(status_code=404, detail="Chat session not found")
         quote = chat_session.quote
     else:
-        if not body.quote:
-            raise HTTPException(status_code=400, detail="quote là bắt buộc khi bắt đầu phiên chat mới")
-        quote = body.quote
+        # Không bắt buộc quote: người dùng có thể mở "Chat" trực tiếp từ avatar Jenny
+        # (không bôi đen đoạn nào) — lưu quote rỗng, Jenny trả lời theo câu hỏi
+        # (xem services/quote_chat.py::_build_dynamic_context).
+        quote = (body.quote or "").strip()
         chat_session = await create_session(session, user_email=user_email, report_date=date, quote=quote)
 
     # Bộ nhớ ngắn hạn — nạp lại vài tin nhắn gần nhất của phiên từ Postgres,

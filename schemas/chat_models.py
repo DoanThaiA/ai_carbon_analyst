@@ -53,8 +53,9 @@ class ChatTurn(BaseModel):
 
 class QuoteChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000)
-    # None -> tạo phiên mới (bắt buộc phải kèm `quote`). Có giá trị -> hỏi tiếp
-    # trong phiên đã có, quote/lịch sử được lấy lại từ Postgres, không cần gửi lại.
+    # None -> tạo phiên mới (`quote` tuỳ chọn — không có = chat tự do, Jenny trả lời
+    # theo câu hỏi). Có giá trị -> hỏi tiếp trong phiên đã có, quote/lịch sử được
+    # lấy lại từ Postgres, không cần gửi lại.
     session_id: Optional[int] = None
     quote: Optional[str] = Field(None, min_length=1, max_length=4000)
     # File đính kèm CỦA CÂU HỎI NÀY (ảnh/PDF/Word đã upload lên MinIO trước đó
@@ -65,7 +66,8 @@ class QuoteChatRequest(BaseModel):
 
 
 class SuggestedQuestionsRequest(BaseModel):
-    quote: str = Field(..., min_length=1, max_length=4000)
+    # Rỗng = chat tự do (không bôi đen đoạn nào) → trả câu hỏi gợi ý chung.
+    quote: str = Field("", max_length=4000)
 
 
 class SuggestedQuestionsResponse(BaseModel):
