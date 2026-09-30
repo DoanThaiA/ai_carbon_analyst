@@ -38,14 +38,6 @@ const PRESETS: { key: string; label: string; range: () => DateRange }[] = [
       return { from: toIso(f), to: toIso(t) };
     },
   },
-  {
-    key: "month",
-    label: "Tháng này",
-    range: () => {
-      const t = new Date();
-      return { from: toIso(new Date(t.getFullYear(), t.getMonth(), 1)), to: toIso(t) };
-    },
-  },
 ];
 
 const dateInputCls =
