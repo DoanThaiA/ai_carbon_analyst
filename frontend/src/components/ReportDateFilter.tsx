@@ -3,12 +3,23 @@
 import { ArrowRight, CalendarDays, X } from "lucide-react";
 import clsx from "clsx";
 
-export type DateRange = { from: string; to: string };
+// weekdays: các thứ được giữ lại (0 = Chủ nhật … 6 = Thứ 7, theo Date.getDay()); rỗng/bỏ trống = mọi thứ.
+export type DateRange = { from: string; to: string; weekdays?: number[] };
+
+// Thứ của "YYYY-MM-DD" theo lịch địa phương (tránh lệch múi giờ của new Date("YYYY-MM-DD") = UTC).
+const weekdayOf = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay();
+};
 
 // Lọc theo khoảng ngày (YYYY-MM-DD so sánh được trực tiếp theo chuỗi). Bỏ trống 1 đầu = không chặn đầu đó.
 export function filterByDateRange<T extends { report_date: string }>(items: T[], range: DateRange): T[] {
+  const days = range.weekdays ?? [];
   return items.filter(
-    (r) => (!range.from || r.report_date >= range.from) && (!range.to || r.report_date <= range.to)
+    (r) =>
+      (!range.from || r.report_date >= range.from) &&
+      (!range.to || r.report_date <= range.to) &&
+      (days.length === 0 || days.includes(weekdayOf(r.report_date)))
   );
 }
 
@@ -40,6 +51,17 @@ const PRESETS: { key: string; label: string; range: () => DateRange }[] = [
   },
 ];
 
+// Thứ hiển thị từ Thứ 2 → Chủ nhật (giá trị = Date.getDay()).
+const WEEKDAYS: { day: number; label: string; full: string }[] = [
+  { day: 1, label: "T2", full: "Thứ Hai" },
+  { day: 2, label: "T3", full: "Thứ Ba" },
+  { day: 3, label: "T4", full: "Thứ Tư" },
+  { day: 4, label: "T5", full: "Thứ Năm" },
+  { day: 5, label: "T6", full: "Thứ Sáu" },
+  { day: 6, label: "T7", full: "Thứ Bảy" },
+  { day: 0, label: "CN", full: "Chủ nhật" },
+];
+
 const dateInputCls =
   "h-9 w-full min-w-0 bg-transparent px-2 text-sm text-body outline-none [color-scheme:light] cursor-pointer";
 
@@ -54,10 +76,16 @@ export function ReportDateFilter({
   shown: number;
   total: number;
 }) {
-  const active = Boolean(value.from || value.to);
+  const weekdays = value.weekdays ?? [];
+  const active = Boolean(value.from || value.to || weekdays.length);
+  const toggleWeekday = (day: number) =>
+    onChange({
+      ...value,
+      weekdays: weekdays.includes(day) ? weekdays.filter((d) => d !== day) : [...weekdays, day],
+    });
   const activePreset = PRESETS.find((p) => {
     const r = p.range();
-    return r.from === value.from && r.to === value.to;
+    return r.from === value.from && r.to === value.to && weekdays.length === 0;
   })?.key;
 
   return (
@@ -96,7 +124,7 @@ export function ReportDateFilter({
             <button
               key={p.key}
               type="button"
-              onClick={() => onChange(p.range())}
+              onClick={() => onChange({ ...p.range(), weekdays })}
               aria-pressed={activePreset === p.key}
               className={clsx(
                 "h-8 rounded-full border px-3 text-[13px] font-semibold transition-colors",
@@ -118,12 +146,40 @@ export function ReportDateFilter({
           {active && (
             <button
               type="button"
-              onClick={() => onChange({ from: "", to: "" })}
+              onClick={() => onChange({ from: "", to: "", weekdays: [] })}
               className="h-8 inline-flex items-center gap-1 rounded-full px-2.5 text-[13px] font-semibold text-down hover:bg-down/10 transition-colors"
             >
               <X size={14} aria-hidden="true" /> Xoá lọc
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Lọc theo thứ: chọn nhiều thứ cùng lúc; không chọn = tất cả các thứ */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-bold text-label shrink-0">Lọc theo thứ</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {WEEKDAYS.map(({ day, label, full }) => {
+            const on = weekdays.includes(day);
+            return (
+              <button
+                key={day}
+                type="button"
+                title={full}
+                aria-label={full}
+                aria-pressed={on}
+                onClick={() => toggleWeekday(day)}
+                className={clsx(
+                  "h-8 min-w-[2.5rem] rounded-full border px-3 text-[13px] font-semibold transition-colors",
+                  on
+                    ? "bg-primary/15 text-primary-dark border-primary/40"
+                    : "bg-transparent text-body border-primary/20 hover:bg-primary/10 hover:text-primary-dark"
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
