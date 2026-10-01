@@ -45,18 +45,19 @@ const HORIZON_META: Record<string, { icon: typeof Clock; accent: string; iconBg:
 };
 
 const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: string }> = {
-  // Chiều giá dùng riêng bộ xanh lá / đỏ / cam; "Xác suất" dùng bộ tím-chàm riêng
-  // (PROBABILITY_CLASS) để 2 nhãn cạnh nhau không bao giờ trùng tông màu.
-  "tăng": { icon: TrendingUp, className: "text-up border-up/40 bg-up/10" },
-  "giảm": { icon: TrendingDown, className: "text-down border-down/40 bg-red-50" },
-  "đi ngang": { icon: Minus, className: "text-orange-700 border-orange-300 bg-orange-50" },
+  // Chiều giá: nhãn ĐẶC (nền đậm, chữ trắng) xanh lá / đỏ / cam. "Xác suất": nhãn
+  // VIỀN (nền trong, chỉ viền + chữ) màu tím — khác hẳn cả về màu lẫn kiểu nhãn nên
+  // 2 nhãn cạnh nhau không bao giờ bị nhầm hay hiểu là liên quan nhau.
+  "tăng": { icon: TrendingUp, className: "bg-emerald-600 text-white border-emerald-600" },
+  "giảm": { icon: TrendingDown, className: "bg-red-600 text-white border-red-600" },
+  "đi ngang": { icon: Minus, className: "bg-orange-500 text-white border-orange-500" },
 };
 
-// Xác suất: càng cao càng đậm (chàm đặc → chàm nhạt → xám viền) — tách hẳn khỏi màu chiều giá.
+// Xác suất: chỉ đổi độ đậm của viền/chữ tím (Cao đậm + viền dày → Thấp mờ), luôn nền trong.
 const PROBABILITY_CLASS: Record<string, string> = {
-  "Cao": "bg-indigo-600 text-white border-indigo-600",
-  "Trung bình": "bg-indigo-50 text-indigo-700 border-indigo-300",
-  "Thấp": "bg-transparent text-slate-500 border-slate-300",
+  "Cao": "bg-transparent text-violet-800 border-2 border-violet-700 font-bold",
+  "Trung bình": "bg-transparent text-violet-700 border border-violet-500",
+  "Thấp": "bg-transparent text-violet-400 border border-violet-300",
 };
 
 // Nhãn xu hướng dạng mũi tên + chữ cho "Bảng tín hiệu nhanh" (Phần 2) — chỉ là
@@ -1496,13 +1497,13 @@ export function ReportDocument({
                   return (
                     <div className="flex flex-col gap-1.5 items-start">
                       {dirMeta && (
-                        <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border", dirMeta.className)}>
+                        <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
                           <DirIcon size={11} className="shrink-0" /> Chiều giá: {sc.direction}
                         </span>
                       )}
                       {sc.probability && (
                         <span className={clsx(
-                          "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+                          "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
                           PROBABILITY_CLASS[sc.probability] ?? PROBABILITY_CLASS["Trung bình"]
                         )}>Xác suất: {sc.probability}</span>
                       )}
