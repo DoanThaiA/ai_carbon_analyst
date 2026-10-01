@@ -51,14 +51,11 @@ async def otp_request(
     settings: Settings = Depends(get_settings),
 ):
     try:
-        email_sent = await request_otp(session, body.email, settings)
+        await request_otp(session, body.email, settings)
     except OtpError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
     except EmailSendError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
-    if not email_sent:
-        # Đang dùng mã OTP cố định (Settings.otp_fixed_code) — không gửi email.
-        return {"message": "Vui lòng nhập mã OTP được cấp để đăng nhập.", "email_sent": False}
     return {"message": "Mã OTP đã được gửi đến email của bạn.", "email_sent": True}
 
 

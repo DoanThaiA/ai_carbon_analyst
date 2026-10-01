@@ -76,7 +76,7 @@ SECTION_MAX_TOKENS: Dict[str, int] = {
     "2": 4096,    # bảng bullish/bearish
     "3": 8192,    # mục phân tích sâu nhất — JSON lồng sâu nhất, giữ nguyên để tránh cắt cụt
     "4": 2048,    # 3 bullet ngắn
-    "dev": 3072,  # "Diễn biến chính": tối đa 6 tin × 1–2 câu
+    "dev": 3072,  # "Diễn biến chính": tối đa 5 tin × (tiêu đề + 1–2 câu)
     "8": 2048,    # danh sách events
     # 4096 (tăng từ 3072) — 3072 từng không đủ vào ngày có nhiều tin CBAM/VCM/
     # chính sách, khiến LLM sinh nhiều gợi ý hơn dự kiến rồi bị cắt giữa chừng
@@ -533,6 +533,8 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
                 "url": article.url,
                 "region": article.region,
                 "topics": topic_labels,
+                # Ngày đăng bài (fallback ngày crawl) — dùng trích dẫn "(Nguồn, ngày)" ở "Diễn biến chính"
+                "published_date": (article.published_at or article.crawled_at).strftime("%d/%m/%Y"),
             })
 
     return news_by_topic, list(sources)
@@ -1319,23 +1321,21 @@ def _prompt_key_developments(
 TIN TỨC đã đánh số [N] — CHỈ trích dẫn số có thật:
 {news_text}
 
-YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: các SỰ KIỆN TIN TỨC nổi bật NHẤT trong danh sách trên có tác động lên CUNG hoặc CẦU hạn ngạch EUA:
-  • TRỰC TIẾP: quyết định/đề xuất chính sách EU ETS, MSR, cap, lịch/khối lượng đấu giá, phân bổ miễn phí, CBAM, số liệu phát thải được công bố, luật/quy định mới...
-  • GIÁN TIẾP: sự kiện nguồn cung năng lượng (gián đoạn LNG/đường ống, nhà máy điện/hạt nhân dừng hoạt động, lộ trình bỏ than...), địa chính trị, thời tiết bất thường, sản lượng/hoạt động công nghiệp, triển khai năng lượng tái tạo/hydrogen, chính sách năng lượng quốc gia...
+YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: CHỈ các tin tức TÁC ĐỘNG TRỰC TIẾP tới cung/cầu hoặc giá EUA, chọn từ danh sách trên. Tin chỉ tác động gián tiếp, mơ hồ hoặc cần nhiều bước suy diễn (năng lượng, địa chính trị, thời tiết... không có cơ chế nối thẳng sang EUA) → BỎ, không đưa vào đây. Tin trực tiếp gồm: quyết định/đề xuất chính sách EU ETS, MSR, cap, lịch/khối lượng đấu giá, phân bổ miễn phí, CBAM, số liệu phát thải/tuân thủ được công bố, luật/quy định mới ảnh hưởng EU ETS, động thái lớn trên thị trường EUA (quỹ, big players) được bài nêu rõ.
 
 QUY TẮC BẮT BUỘC — ĐÂY LÀ MỤC TIN TỨC, KHÔNG PHẢI MỤC GIÁ:
-- TUYỆT ĐỐI KHÔNG viết về diễn biến GIÁ của bất kỳ hợp đồng/hàng hoá nào (EUA, TTF, than, dầu, điện...): không "giá tăng/giảm X%", không giá đóng cửa, không vùng hỗ trợ/kháng cự, không biến động phiên/tuần — phần đó đã có ở Bảng giá nhanh.
-- BỎ QUA các bài chỉ là bản tin thị trường/tổng hợp giá (market wrap, "giá dầu tăng do...") nếu bài không nêu 1 SỰ KIỆN cụ thể; nếu bài có sự kiện cụ thể thì chỉ lấy SỰ KIỆN đó, bỏ phần giá.
-- Mỗi mục phải trả lời được: "CHUYỆN GÌ đã xảy ra/được công bố, ai làm, ở đâu" → "tác động thế nào tới cung/cầu EUA".
-- Từ 3 đến 6 mục, xếp theo mức độ tác động lên cung/cầu EUA (mạnh → yếu). CHỈ chọn tin có cơ chế tác động RÕ RÀNG. Nhiều bài cùng 1 sự kiện → gộp thành 1 mục.
-- Mỗi mục là object {{"text": "...", "impact": "tăng" | "giảm" | "trung lập", "source_index": N}}:
-  + "text": 1–2 câu, mở đầu bằng tag in đậm chủ đề (**EU ETS:**, **Chính sách:**, **CBAM:**, **Khí gas:**, **Than:**, **Điện:**, **Dầu:**, **Địa chính trị:**, **Công nghiệp:**, **Thời tiết:**...). Câu đầu nêu SỰ KIỆN cụ thể từ bài báo (số liệu của CHÍNH sự kiện được phép, vd khối lượng đấu giá, công suất nhà máy, mức cắt giảm phân bổ — nhưng KHÔNG phải giá thị trường); tiếp theo nêu NGẮN GỌN kênh tác động lên cung/cầu EUA (vd "→ giảm nguồn cung hạn ngạch trên thị trường", "→ tăng nhu cầu phát thải từ nhiệt điện than").
-  + "impact": chiều tác động của SỰ KIỆN lên cán cân cung–cầu EUA theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH — "tăng" = thắt cung/tăng cầu (hỗ trợ EUA), "giảm" = tăng cung/giảm cầu (gây áp lực EUA), "trung lập" = chưa rõ chiều.
-  + "source_index": BẮT BUỘC là số [N] có thật của bài báo làm căn cứ — mục nào không gắn được với 1 bài cụ thể thì BỎ, TUYỆT ĐỐI KHÔNG bịa số.
-- Không có sự kiện tin tức nào đạt yêu cầu → "key_developments": [].
+- TUYỆT ĐỐI KHÔNG viết diễn biến GIÁ (không "giá tăng/giảm X%", giá đóng cửa, hỗ trợ/kháng cự, biến động phiên/tuần) — phần đó đã có ở Bảng giá nhanh. Số liệu của chính sự kiện (khối lượng đấu giá, mức cắt phân bổ...) được phép.
+- BỎ các bài chỉ là bản tin thị trường/tổng hợp giá không nêu sự kiện cụ thể.
+- Từ 0 đến 5 mục, xếp theo mức độ tác động mạnh → yếu. Nhiều bài cùng 1 sự kiện → gộp thành 1 mục. Mục nào không có cơ chế tác động trực tiếp, rõ ràng lên EUA → BỎ.
+- Mỗi mục là object {{"title": "...", "summary": "...", "impact": "tăng" | "giảm" | "trung lập", "source_index": N}}:
+  + "title": tiêu đề bài báo (dịch/rút gọn sang tiếng Việt nếu bài tiếng Anh, giữ đúng ý, không thêm thắt).
+  + "summary": 1–2 câu NGẮN GỌN: nêu nội dung chính của tin, rồi tác động tới cung/cầu EUA (vd "... → giảm nguồn cung hạn ngạch"). KHÔNG chép lại tiêu đề, KHÔNG ghi nguồn/ngày trong câu (hệ thống tự thêm).
+  + "impact": chiều tác động lên cán cân cung–cầu EUA theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH — "tăng" = thắt cung/tăng cầu (hỗ trợ EUA), "giảm" = tăng cung/giảm cầu (gây áp lực EUA), "trung lập" = chưa rõ chiều.
+  + "source_index": BẮT BUỘC là số [N] có thật của bài làm căn cứ — mục nào không gắn được với 1 bài cụ thể thì BỎ, TUYỆT ĐỐI KHÔNG bịa số.
+- Không có tin nào đạt yêu cầu → "key_developments": [].
 
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"dev": {{"key_developments": [{{"text": "**Chính sách:** ...", "impact": "tăng", "source_index": 1}}]}}}}"""
+{{"dev": {{"key_developments": [{{"title": "...", "summary": "...", "impact": "tăng", "source_index": 1}}]}}}}"""
     return system, user
 
 
@@ -1350,16 +1350,19 @@ def _resolve_key_developments(items: Optional[List[Any]], index_lookup: Dict[int
     for it in items or []:
         if not isinstance(it, dict):
             continue
-        text = (it.get("text") or "").strip()
+        title = (it.get("title") or "").strip()
+        text = (it.get("summary") or it.get("text") or "").strip()
         src_art = index_lookup.get(_first_source_index(it.get("source_index")))
         if not text or not src_art:
             continue
         impact = str(it.get("impact") or "").strip().lower()
         resolved.append({
+            "title": title or src_art["title"],
             "text": text,
             "impact": impact if impact in _KEY_DEV_IMPACTS else "trung lập",
             "source_name": src_art["source"],
             "source_url": src_art["url"],
+            "source_date": src_art.get("published_date"),
         })
     return resolved
 
@@ -1391,11 +1394,14 @@ TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_
 YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH CÁC YẾU TỐ NĂNG LƯỢNG TƯƠNG QUAN, CHÍNH SÁCH ẢNH HƯỞNG ĐẾN GIÁ EUA.
 Đây là mục phân tích SÂU NHẤT của báo cáo — PHẢI đầy đủ nội dung bắt buộc, không bỏ trống phần nào bên dưới. NHƯNG PHẢI VIẾT SÚC TÍCH, TRỰC TIẾP: đi thẳng vào số liệu và kết luận, KHÔNG câu dẫn dắt/đệm không mang thông tin, KHÔNG lặp lại số liệu/nội dung đã nêu ở mục/trường khác trong cùng báo cáo — "đủ nội dung" nghĩa là đủ Ý bắt buộc, không phải đủ CÂU CHỮ. Mục này gồm 3 phần con:
 
-A. "instrument_notes": object dạng {{"<mã>": "ghi chú ngắn"}} — GHI CHÚ cho TỪNG MÃ trong "Bảng giá nhanh" (Mục 2), sẽ hiển thị trực tiếp trong cột "Ghi chú" ngay cạnh mã đó trên giao diện. Phần này THAY THẾ HOÀN TOÀN heading "Diễn biến chính" của thiết kế cũ — heading đó KHÔNG còn tồn tại nữa, TUYỆT ĐỐI KHÔNG đưa "Diễn biến chính" vào "analysis_blocks" ở mục B bên dưới. Đây là SỐ LIỆU/THÔNG TIN THỰC TẾ (fact-only, CHƯA phân tích tác động EUA — phần phân tích thuộc heading "Phân tích" ở mục B bên dưới), vẫn tổ chức nội dung theo ĐÚNG 3 NHÓM trong "B. DANH MỤC THEO DÕI" ở KHUNG PHÂN TÍCH trên nhưng PHÂN TÁN về đúng mã liên quan thay vì gộp thành 1 khối văn bản:
-   - NHÓM 1 — Năng lượng & nhiên liệu hóa thạch: (a) mã nào có biến động đáng chú ý trong phiên (TTF, Coal/NEWC/API2, Dầu Brent/WTI, Gasoil, Power Đức DEBY1...) và tin tức có nêu NGUYÊN NHÂN tăng/giảm → viết 1 câu ngắn nêu nguyên nhân đó vào đúng khoá mã tương ứng — TUYỆT ĐỐI KHÔNG nêu lại giá đóng cửa/Δ ngày/Δ tuần trong ghi chú (bảng giá đã tự hiển thị riêng các số này, ghi chú chỉ cần phần "vì sao"). (b) Sự kiện ĐỊA CHÍNH TRỊ/gián đoạn nguồn cung năng lượng (xung đột, sanctions, OPEC+, căng thẳng Trung Đông/Nga/Mỹ/Trung Quốc, rig count, tồn kho EIA/API...) — PHẢI viết vào mã năng lượng liên quan trực tiếp nhất (Brent/WTI cho dầu, TTF cho khí, NEWC/API2 cho than...) dù giá CHƯA kịp phản ánh rõ trong phiên này, KHÔNG được bỏ qua chỉ vì thiếu số liệu giá đi kèm. (c) NĂNG LƯỢNG TÁI TẠO (gió/mặt trời/thủy điện — quy mô sản xuất, dự báo tăng trưởng, dự án/đầu tư) ảnh hưởng cung điện → viết vào "DEBY1"; HYDROGEN (dự án/chính sách hydrogen xanh, thép xanh) không gắn trực tiếp mã nào → viết vào "EUA" (driver chính sách/nhu cầu carbon dài hạn).
-   - NHÓM 2 — Hạn ngạch & tín chỉ carbon: các thông tin chính về EUA/EU ETS trong ngày (đấu giá, MSR, dòng vốn/đầu cơ, động thái big players, dự báo giá từ tổ chức...) → viết vào "EUA". Diễn biến các thị trường carbon compliance NGOÀI EU (China ETS, Korea ETS, California Cap-and-Trade, CORSIA...) hoặc VCM — KHÔNG có mã tương ứng trong bảng giá, theo thiết kế hệ thống các thị trường này KHÔNG fungible với EUA và KHÔNG tạo cầu/cung EUA trực tiếp — BỎ QUA HOÀN TOÀN, KHÔNG cố gán vào "EUA" hay mã khác, trừ khi tin tức nêu rõ 1 cơ chế cụ thể nối sang EUA (khi đó viết vào "EUA").
-   - NHÓM 3 — Chính sách: tin CBAM cụ thể → viết vào "CBAM" nếu mã này có trong DỮ LIỆU GIÁ, nếu không có thì viết vào "EUA"; các chính sách EU khác ảnh hưởng ETS (Fit-for-55, mở rộng phạm vi ETS...) → viết vào "EUA"; chính sách carbon Việt Nam hoặc VCM không có mã tương ứng trong bảng giá → BỎ QUA HOÀN TOÀN.
-   QUY TẮC CHUNG: CHỈ dùng đúng các mã CÓ THẬT xuất hiện trong "DỮ LIỆU GIÁ" ở trên (đúng chính tả mã, vd "EUA", "TTF", "DEBY1", "NEWC", "BRENT", "WTI", "GASOIL", "CBAM" — TUYỆT ĐỐI KHÔNG tự bịa mã không có trong dữ liệu). Mỗi ghi chú tối đa 1–2 câu NGẮN, CHỈ nêu nguyên nhân/sự kiện — KHÔNG nêu lại số giá/Δ ngày/Δ tuần dưới bất kỳ hình thức nào. Mã nào KHÔNG có tin/sự kiện đáng chú ý trong ngày → KHÔNG thêm khoá đó vào object (không viết chuỗi rỗng). Nếu HOÀN TOÀN không có gì đáng ghi chú cho bất kỳ mã nào: "instrument_notes" = {{}}.
+A. "instrument_notes": object dạng {{"<mã>": "ghi chú ngắn"}} — cột "Ghi chú" của Bảng giá nhanh (Mục 2), hiển thị ngay cạnh mã đó trên giao diện. Phần này gộp nội dung "Diễn biến chính" vào bảng tổng hợp giá: heading "Diễn biến chính" KHÔNG còn tồn tại, TUYỆT ĐỐI KHÔNG đưa vào "analysis_blocks" ở mục B. Giá và biến động đã có sẵn trong bảng → ghi chú KHÔNG nêu lại.
+   NGUYÊN TẮC CỐT LÕI (áp dụng cho MỌI mã): mỗi ghi chú PHẢI là NGUYÊN NHÂN/SỰ KIỆN CỤ THỂ, được tin tức NÊU RÕ, làm ảnh hưởng tới giá hoặc CUNG/CẦU của mã đó (hoặc của EUA), kèm TÁC ĐỘNG của nó theo dạng "<sự kiện cụ thể> → <tác động lên giá/cung/cầu>". Ví dụ đúng: "Nhiệt độ thấp hơn trung bình làm tăng nhu cầu sưởi, hỗ trợ giá khí". CẤM: (i) thông tin chi tiết phụ/mô tả về hợp đồng hay thị trường (kỳ hạn, khối lượng giao dịch, vị thế, thanh khoản, lịch đáo hạn, mô tả chung chung "thị trường biến động", "giá được theo dõi"...); (ii) nêu nguyên nhân khi tin tức KHÔNG xác định nguyên nhân đó — không suy diễn, không gán nguyên nhân cho biến động giá nếu bài viết không nói rõ; (iii) dự báo/quan điểm chung của tổ chức không gắn với 1 sự kiện cụ thể; (iv) số giá/Δ ngày/Δ tuần dưới bất kỳ hình thức nào.
+   MỘT TIN ẢNH HƯỞNG NHIỀU HỢP ĐỒNG: nếu 1 sự kiện tác động tới nhiều mã (vd lạnh/thời tiết ảnh hưởng cả TTF và DEBY1; xung đột Trung Đông ảnh hưởng Brent, WTI, TTF; chính sách EU ảnh hưởng cả EUA và CBAM) → ghi vào TỪNG mã bị tác động, mỗi mã nêu đúng tác động của sự kiện lên CHÍNH mã đó (không chép nguyên văn giống nhau cho các mã), và với mã không phải EUA thì nêu cụ thể tác động lên EUA chỉ khi cơ chế truyền dẫn rõ ràng (theo chuỗi nhân quả của KHUNG PHÂN TÍCH).
+   Phân nhóm theo "B. DANH MỤC THEO DÕI":
+   - NHÓM 1 — Năng lượng & nhiên liệu hóa thạch: sự kiện cụ thể (thời tiết, gián đoạn/thay đổi nguồn cung, tồn kho EIA/API, OPEC+, xung đột/sanctions, rig count, sản lượng điện gió/mặt trời/thủy điện thấp hoặc cao bất thường...) mà tin tức nêu rõ là làm đổi cung/cầu hoặc giá của TTF, NEWC/API2, Brent/WTI, GASOIL, DEBY1 → ghi vào mã liên quan trực tiếp (Brent/WTI cho dầu, TTF cho khí, NEWC/API2 cho than, DEBY1 cho điện/năng lượng tái tạo), nêu rõ tác động. Sự kiện địa chính trị/gián đoạn nguồn cung vẫn PHẢI ghi dù giá chưa kịp phản ánh. Hydrogen/thép xanh không gắn mã nào → chỉ ghi vào "EUA" nếu có tác động cụ thể lên nhu cầu/chính sách carbon.
+   - NHÓM 2 — Hạn ngạch & tín chỉ carbon: ghi vào "EUA" CHỈ các yếu tố tác động trực tiếp cung/cầu EUA (lịch/khối lượng đấu giá bất thường, MSR, thay đổi phát thải/nhu cầu tuân thủ, dòng vốn đầu cơ hoặc thay đổi vị thế lớn được nêu là nguyên nhân giá, nhu cầu từ chuyển đổi nhiên liệu...). Thị trường carbon NGOÀI EU (China/Korea ETS, California, CORSIA) và VCM — BỎ QUA HOÀN TOÀN trừ khi tin nêu rõ cơ chế nối sang EUA.
+   - NHÓM 3 — Chính sách: thay đổi chính sách CỤ THỂ nêu rõ tác động tới cung/cầu/giá → "CBAM" (nếu mã có trong DỮ LIỆU GIÁ, nếu không thì "EUA"); chính sách EU khác ảnh hưởng ETS (Fit-for-55, mở rộng phạm vi ETS, thay đổi cap/MSR...) → "EUA"; chính sách carbon Việt Nam hoặc VCM không có mã tương ứng → BỎ QUA HOÀN TOÀN.
+   QUY TẮC CHUNG: CHỈ dùng đúng các mã CÓ THẬT trong "DỮ LIỆU GIÁ" ở trên (đúng chính tả, vd "EUA", "TTF", "DEBY1", "NEWC", "BRENT", "WTI", "GASOIL", "CBAM" — TUYỆT ĐỐI KHÔNG bịa mã). Mỗi ghi chú tối đa 1–2 câu NGẮN. Mã nào KHÔNG có nguyên nhân/sự kiện cụ thể đáp ứng nguyên tắc cốt lõi → KHÔNG thêm khoá đó (không viết chuỗi rỗng, không viết ghi chú cho đủ). Nếu không mã nào đáp ứng: "instrument_notes" = {{}}.
 
 B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích" và "Cần theo dõi" LUÔN PHẢI có mặt; heading "Quan điểm thị trường" LÀ TÙY CHỌN — xem quy tắc riêng ở mục 2 bên dưới. QUY TẮC ĐỘ DÀI CHUNG: mỗi Ý/gạch đầu dòng trong "content" tối đa 1–2 câu NGẮN GỌN, đi thẳng vào số liệu/kết luận — không diễn giải dài dòng, không viết chung chung. NGOẠI LỆ: heading "Phân tích" và "Cần theo dõi" KHÔNG bị giới hạn 1–2 câu mỗi gạch đầu dòng — xem "ĐỘ DÀI RIÊNG" ngay trong quy tắc của từng heading đó bên dưới. "Phân tích" ưu tiên NGẮN GỌN, TRỰC DIỆN (đủ số liệu + kết luận, KHÔNG giải thích lại cơ chế/logic suy luận); "Cần theo dõi" ưu tiên ĐẦY ĐỦ 2 kịch bản trái chiều. Cả hai đều không thêm câu đệm/chuyển tiếp không mang thông tin mới:
    1. heading="Phân tích" — PHÂN TÍCH TÁC ĐỘNG (gộp chung cả phân tích liên thị trường Gas–Than–Điện Đức vào đây, KHÔNG tách thành mục riêng): dựa trên đúng các thông tin đã nêu ở "instrument_notes" (mục A ở trên) và số liệu ở "DỮ LIỆU GIÁ" (KHÔNG lặp lại số liệu, chỉ tham chiếu ngắn gọn khi cần làm căn cứ trực tiếp cho kết luận), phân tích thông tin của TỪNG NHÓM đã có mã tương ứng trong "instrument_notes" sẽ ảnh hưởng thế nào đến CUNG/CẦU và GIÁ EUA. BẮT BUỘC áp dụng ĐÚNG chuỗi nhân quả trong "A. CÁC MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG" của KHUNG PHÂN TÍCH ở trên (fuel switching, CBAM/ETS, chính sách/MSR, địa chính trị...) để XÁC ĐỊNH đúng chiều/mức độ tác động — TUYỆT ĐỐI KHÔNG tự sinh chuỗi nhân quả khác hay suy diễn lệch khỏi khung chuẩn đó.

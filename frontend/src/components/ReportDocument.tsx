@@ -97,8 +97,12 @@ function tagColorClass(tag: string): string {
 
 // Nội dung từ backend đôi khi chứa markdown **bold** thô (đôi khi cả dấu ** lẻ, không cặp đôi)
 // — render thành <strong> và luôn dọn sạch mọi dấu * còn sót lại thay vì hiện literal.
+// tCO2 -> tCO₂ (số 2 viết dạng subscript)
+const subCO2 = (t: string) => t.replace(/CO2/g, "CO\u2082");
+
 function RichText({ text }: { text: string }) {
   if (!text) return null;
+  text = subCO2(text);
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return (
     <>
@@ -147,9 +151,9 @@ const EUA_SENTIMENT_MAP: Record<string, EuaSentiment> = {
 // Tiêu cực: nền đỏ chữ trắng; Trung lập: nền vàng chữ đen; Tích cực: nền xanh chữ trắng.
 // print-color-adjust: exact — giữ màu nền khi in PDF (trình duyệt mặc định bỏ nền).
 const EUA_SENTIMENT_STYLE: Record<EuaSentiment, { box: string }> = {
-  negative: { box: "bg-[#C62828] text-white" },
-  neutral: { box: "bg-[#FACC15] text-black" },
-  positive: { box: "bg-[#2E7D32] text-white" },
+  negative: { box: "bg-[#FBE9E7] border border-[#EFB8B0] text-[#8A3B30]" },
+  neutral: { box: "bg-[#FFF6D6] border border-[#EBD98F] text-[#7A6320]" },
+  positive: { box: "bg-[#E6F3EA] border border-[#B5D8C0] text-[#2D6A44]" },
 };
 
 function parseEuaSentiment(summary: string): { sentiment: EuaSentiment; text: string } {
@@ -280,7 +284,7 @@ const BLOCK_TITLE_CLASS = "text-center text-[15px] sm:text-[16px] font-bold uppe
 
 const FRAME_TONE = {
   primary: { frame: "border-primary-dark", band: "bg-primary-dark" },
-  blue: { frame: "border-blue-600", band: "bg-blue-600" },
+  blue: { frame: "border-[#8fc7a5]", band: "bg-[#5fa57e]" },
 };
 
 function FramedHighlight({
@@ -731,7 +735,7 @@ export function ReportDocument({
       return {
         name: r.name as string,
         price: formatCompactPriceNumber(rawNumber),
-        unit: unitParts.join(" "),
+        unit: subCO2(unitParts.join(" ")),
         dday: r.dday && r.dday !== "-" ? String(r.dday) : null,
       };
     });
@@ -782,7 +786,7 @@ export function ReportDocument({
     const support = Math.min(...chartData.map((c: any) => c.low));
     return { support, resistance, target: resistance + (resistance - support) };
   })() : null;
-  const fmtEua = (n: number) => `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR/tCO2`;
+  const fmtEua = (n: number) => `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR/tCO\u2082`;
   const NO_DATA = <span className="text-muted-light">—</span>;
   const quickSignalRows: { label: string; value: React.ReactNode }[] = [
     {
@@ -1046,7 +1050,7 @@ export function ReportDocument({
             <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
               <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
                 <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
-                <span className="normal-case">EUR/tCO2e</span>
+                <span className="normal-case">EUR/tCO₂e</span>
               </div>
               <CandlestickChart report={report} />
             </div>
@@ -1086,7 +1090,7 @@ export function ReportDocument({
                   {priceRows.map((r: any, i: number) => {
                     const [rawPriceNumber, ...priceUnitParts] = String(r.price || "").split(" ");
                     const priceNumber = formatCompactPriceNumber(rawPriceNumber);
-                    const priceUnit = priceUnitParts.join(" ");
+                    const priceUnit = subCO2(priceUnitParts.join(" "));
                     return (
                       <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
                         <td className="px-1.5 sm:px-2 py-1.5 border-r border-border font-sans font-semibold text-label break-words">
@@ -1174,42 +1178,31 @@ export function ReportDocument({
           {report.content["2"]?.key_developments?.length > 0 && (
             <div className="mt-6">
               <SubHeading>Diễn biến chính</SubHeading>
-              <ul className="list-none space-y-2.5 sm:space-y-3">
-                {report.content["2"].key_developments.map((d: any, i: number) => {
-                  const meta = IMPACT_META[d.impact] ?? IMPACT_META["trung lập"];
-                  return (
-                    <li
-                      key={i}
-                      className={clsx(
-                        "flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 rounded-lg border border-border border-l-4 bg-background px-3.5 sm:px-4 py-3 print:break-inside-avoid",
-                        meta.bar
-                      )}
-                    >
-                      <span className={clsx(
-                        "self-start sm:w-[128px] shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap",
-                        meta.badge
-                      )}>
-                        <span aria-hidden="true">{meta.arrow}</span> {meta.label}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] sm:text-[14.5px] leading-[1.6] text-foreground">
-                          <RichText text={d.text} />
-                        </p>
-                        {d.source_name && (
-                          <a
-                            href={d.source_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-1.5 inline-flex items-center gap-1 text-[12px] text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900"
-                          >
-                            Nguồn: {d.source_name} <ExternalLink size={10} aria-hidden="true" />
-                          </a>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              <DotBullets
+                items={report.content["2"].key_developments}
+                render={(d: any) => (
+                  // Định dạng: **Tiêu đề bài báo**: tóm tắt + tác động EUA (Nguồn, ngày).
+                  // Báo cáo cũ chưa có d.title → chỉ hiện d.text như trước.
+                  <p className="text-[14px] sm:text-[14.5px] leading-[1.6] text-foreground">
+                    {d.title && <strong className="font-bold text-label">{d.title}: </strong>}
+                    <RichText text={d.text} />
+                    {d.source_name && (
+                      <>
+                        {" ("}
+                        <a
+                          href={d.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900"
+                        >
+                          {d.source_name}
+                        </a>
+                        {d.source_date ? `, ${d.source_date}` : ""})
+                      </>
+                    )}
+                  </p>
+                )}
+              />
             </div>
           )}
         </section>
@@ -1228,44 +1221,37 @@ export function ReportDocument({
                 {/* Nhấn mạnh trực diện: xu hướng + độ tin cậy lên đầu dạng nhãn lớn,
                     "Hành động" là chữ to nhất trong khối (ô nền nhạt, vạch nhấn trái),
                     "Cơ sở" cỡ chữ đọc thường nhưng lớn hơn trước. */}
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
+                {/* 1 khung duy nhất, không lồng khung con: dòng xu hướng + độ tin cậy
+                    (chữ, không nhãn viền), rồi Hành động / Cơ sở ngăn bằng vạch mảnh. */}
+                <div className="divide-y divide-border [&>*]:py-3 first:[&>*]:pt-0 last:[&>*]:pb-0">
+                  <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
                     {TREND_META[todaySignal.direction] && (
-                      <span className={clsx(
-                        "inline-flex items-center gap-1.5 rounded-md border-2 px-3 py-1 text-[15px] sm:text-[16px] font-extrabold uppercase tracking-wide",
-                        TREND_META[todaySignal.direction].className,
-                        todaySignal.direction === "tăng" ? "border-up/40 bg-up/10" :
-                          todaySignal.direction === "giảm" ? "border-down/40 bg-red-50" :
-                            "border-blue-300 bg-blue-50"
-                      )}>
-                        {TREND_META[todaySignal.direction].arrow} {TREND_META[todaySignal.direction].label}
-                      </span>
+                      <div className="text-[13px] text-muted-light">
+                        Xu hướng:{" "}
+                        <span className={clsx("text-[16px] font-extrabold uppercase tracking-wide", TREND_META[todaySignal.direction].className)}>
+                          {TREND_META[todaySignal.direction].arrow} {TREND_META[todaySignal.direction].label}
+                        </span>
+                      </div>
                     )}
                     {todaySignal.probability && (
-                      <span className={clsx(
-                        "inline-flex items-center rounded-md border px-3 py-1 text-[13px] sm:text-[14px] font-bold uppercase tracking-wide whitespace-nowrap",
-                        todaySignal.probability === "Cao" ? "text-up border-up/30 bg-up/10" :
-                          todaySignal.probability === "Thấp" ? "text-muted-light border-border" :
-                            "text-warn border-warn/30 bg-warn-tint"
-                      )}>
-                        Độ tin cậy: {todaySignal.probability}
-                      </span>
+                      <div className="text-[13px] text-muted-light">
+                        Độ tin cậy:{" "}
+                        <span className="text-[15px] font-bold text-label">{todaySignal.probability}</span>
+                      </div>
                     )}
                   </div>
 
-                  <div className="rounded-md border-l-4 border-primary-dark bg-tint/70 px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                  <div>
                     <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark mb-1">Hành động</h4>
-                    {/* Chữ vừa (không đậm cả đoạn — đoạn dài 7–8 dòng in đậm thành 1 mảng
-                        khó đọc trên mobile); chỉ các nhãn/số chính (**Entry:**, **Mục tiêu:**,
-                        **Cắt lỗ**... backend đã đánh dấu) in đậm + màu nhấn để mắt bắt ngay. */}
-                    <p className="text-[15.5px] sm:text-[17px] leading-[1.55] font-medium text-label text-left [&_strong]:font-bold [&_strong]:text-primary-dark">
-                      {todaySignal.trading_strategy ? <RichText text={todaySignal.trading_strategy} /> : <span className="text-muted-light font-normal">—</span>}
+                    {/* Chỉ các nhãn/số chính (**Entry:**, **Mục tiêu:**, **Cắt lỗ**...) in đậm + màu nhấn */}
+                    <p className="text-[14.5px] sm:text-[15.5px] leading-[1.6] text-label text-left [&_strong]:font-bold [&_strong]:text-primary-dark">
+                      {todaySignal.trading_strategy ? <RichText text={todaySignal.trading_strategy} /> : <span className="text-muted-light">—</span>}
                     </p>
                   </div>
 
                   <div>
                     <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark mb-1">Cơ sở</h4>
-                    <p className="text-[15px] sm:text-[16px] leading-[1.5] font-medium text-label">
+                    <p className="text-[14.5px] sm:text-[15.5px] leading-[1.6] text-label text-left">
                       {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light">—</span>}
                     </p>
                   </div>

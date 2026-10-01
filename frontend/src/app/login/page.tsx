@@ -40,7 +40,6 @@ function UserLoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  const [emailSent, setEmailSent] = useState(true);
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,7 +48,6 @@ function UserLoginForm() {
     try {
       const res = await api.post("/api/auth/otp/request", { email });
       setInfo(res.data.message || "Mã OTP đã được gửi.");
-      setEmailSent(res.data.email_sent !== false);
       setStep("otp");
     } catch (err: any) {
       setError(err.response?.data?.detail || "Không gửi được mã OTP.");
@@ -104,11 +102,10 @@ function UserLoginForm() {
         </form>
       ) : (
         <form onSubmit={handleVerifyOtp} className="space-y-4">
-          {/* emailSent=false: đang dùng mã OTP cố định, backend không gửi mail → không nhắc kiểm tra hộp thư */}
           {info && (
             <p className="text-sm text-body">
               {info}
-              {emailSent && <> Kiểm tra hộp thư <b className="text-label">{email}</b>.</>}
+              <> Kiểm tra hộp thư <b className="text-label">{email}</b>.</>
             </p>
           )}
           <div>
