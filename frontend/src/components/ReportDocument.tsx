@@ -45,19 +45,11 @@ const HORIZON_META: Record<string, { icon: typeof Clock; accent: string; iconBg:
 };
 
 const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: string }> = {
-  // Chiều giá: nhãn ĐẶC (nền đậm, chữ trắng) xanh lá / đỏ / cam. "Xác suất": nhãn
-  // VIỀN (nền trong, chỉ viền + chữ) màu tím — khác hẳn cả về màu lẫn kiểu nhãn nên
-  // 2 nhãn cạnh nhau không bao giờ bị nhầm hay hiểu là liên quan nhau.
+  // Chiều giá: tăng xanh lá, giảm đỏ, đi ngang xanh dương (nhãn đặc, chữ trắng).
+  // "Xác suất" KHÔNG dùng màu — chỉ là chữ thường (xem dòng "Nhận định" bảng Kịch bản).
   "tăng": { icon: TrendingUp, className: "bg-emerald-600 text-white border-emerald-600" },
   "giảm": { icon: TrendingDown, className: "bg-red-600 text-white border-red-600" },
-  "đi ngang": { icon: Minus, className: "bg-orange-500 text-white border-orange-500" },
-};
-
-// Xác suất: chỉ đổi độ đậm của viền/chữ tím (Cao đậm + viền dày → Thấp mờ), luôn nền trong.
-const PROBABILITY_CLASS: Record<string, string> = {
-  "Cao": "bg-transparent text-violet-800 border-2 border-violet-700 font-bold",
-  "Trung bình": "bg-transparent text-violet-700 border border-violet-500",
-  "Thấp": "bg-transparent text-violet-400 border border-violet-300",
+  "đi ngang": { icon: Minus, className: "bg-blue-600 text-white border-blue-600" },
 };
 
 // Nhãn xu hướng dạng mũi tên + chữ cho "Bảng tín hiệu nhanh" (Phần 2) — chỉ là
@@ -1502,10 +1494,7 @@ export function ReportDocument({
                         </span>
                       )}
                       {sc.probability && (
-                        <span className={clsx(
-                          "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
-                          PROBABILITY_CLASS[sc.probability] ?? PROBABILITY_CLASS["Trung bình"]
-                        )}>Xác suất: {sc.probability}</span>
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-body">Xác suất: {sc.probability}</span>
                       )}
                     </div>
                   );
@@ -1550,10 +1539,7 @@ export function ReportDocument({
                             const Icon = meta.icon;
                             return (
                               <div key={h} className="flex items-start gap-2.5 px-3 py-2">
-                                <span className={clsx(
-                                  "shrink-0 w-[92px] inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-bold uppercase tracking-wide",
-                                  meta.iconBg
-                                )}>
+                                <span className="shrink-0 w-[92px] inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-bold uppercase tracking-wide bg-tint text-primary-dark">
                                   <Icon size={11} className="shrink-0" /> {h}
                                 </span>
                                 <div className="flex-1 min-w-0 text-[13px] text-body leading-[1.5] break-words">
@@ -1581,7 +1567,7 @@ export function ReportDocument({
                           const meta = HORIZON_META[h];
                           const Icon = meta.icon;
                           return (
-                            <th key={h} style={{ width: `${dataColWidthPct}%` }} className={clsx("text-left px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-border", meta.iconBg)}>
+                            <th key={h} style={{ width: `${dataColWidthPct}%` }} className="text-left px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 bg-tint text-primary-dark">
                               <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider">
                                 <Icon size={13} /> {h}
                               </span>
