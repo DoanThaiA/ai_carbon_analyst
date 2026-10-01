@@ -45,9 +45,18 @@ const HORIZON_META: Record<string, { icon: typeof Clock; accent: string; iconBg:
 };
 
 const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: string }> = {
-  "tăng": { icon: TrendingUp, className: "text-up border-up/30 bg-up/10" },
-  "giảm": { icon: TrendingDown, className: "text-down border-down/30 bg-red-50" },
-  "đi ngang": { icon: Minus, className: "text-blue-700 border-blue-300 bg-blue-50" },
+  // Chiều giá dùng riêng bộ xanh lá / đỏ / cam; "Xác suất" dùng bộ tím-chàm riêng
+  // (PROBABILITY_CLASS) để 2 nhãn cạnh nhau không bao giờ trùng tông màu.
+  "tăng": { icon: TrendingUp, className: "text-up border-up/40 bg-up/10" },
+  "giảm": { icon: TrendingDown, className: "text-down border-down/40 bg-red-50" },
+  "đi ngang": { icon: Minus, className: "text-orange-700 border-orange-300 bg-orange-50" },
+};
+
+// Xác suất: càng cao càng đậm (chàm đặc → chàm nhạt → xám viền) — tách hẳn khỏi màu chiều giá.
+const PROBABILITY_CLASS: Record<string, string> = {
+  "Cao": "bg-indigo-600 text-white border-indigo-600",
+  "Trung bình": "bg-indigo-50 text-indigo-700 border-indigo-300",
+  "Thấp": "bg-transparent text-slate-500 border-slate-300",
 };
 
 // Nhãn xu hướng dạng mũi tên + chữ cho "Bảng tín hiệu nhanh" (Phần 2) — chỉ là
@@ -1493,10 +1502,8 @@ export function ReportDocument({
                       )}
                       {sc.probability && (
                         <span className={clsx(
-                          "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border",
-                          sc.probability === "Cao" ? "text-up border-up/30 bg-up/10" :
-                            sc.probability === "Thấp" ? "text-muted-light border-border" :
-                              "text-warn border-warn/30 bg-warn-tint"
+                          "font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+                          PROBABILITY_CLASS[sc.probability] ?? PROBABILITY_CLASS["Trung bình"]
                         )}>Xác suất: {sc.probability}</span>
                       )}
                     </div>
@@ -1839,21 +1846,46 @@ export function ReportDocument({
           <section id="section-sources" className="py-5">
             <PartHeading title={report.content["9"].title || "Nguồn tham khảo"} icon={Link2} />
             {report.content["9"].items?.length > 0 ? (
-              <ul className="space-y-1.5">
-                {report.content["9"].items.map((it: any, i: number) => (
-                  <li key={i} className="font-mono text-[12px] leading-[1.5] text-muted-light">
-                    [{it.source}]{" "}
-                    <a
-                      href={it.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      {it.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              (() => {
+                // Sắp theo ĐÚNG thứ tự Phần 3 (Quốc tế → Việt Nam, đánh số như trên); link
+                // trùng URL thì khớp theo Phần 3, nguồn không nằm ở Phần 3 xếp cuối ("Khác").
+                const all: any[] = report.content["9"].items;
+                const used = new Set<string>();
+                const groups = [
+                  { label: "Quốc tế", list: report.content["6"]?.international ?? [] },
+                  { label: "Việt Nam", list: report.content["6"]?.vietnam ?? [] },
+                ].map(({ label, list }) => ({
+                  label,
+                  entries: list
+                    .map((art: any) => all.find((it: any) => it.url === art.url) ?? { source: art.source, title: art.title, url: art.url })
+                    .filter((it: any) => it?.url && !used.has(it.url) && (used.add(it.url), true)),
+                }));
+                const others = all.filter((it: any) => !used.has(it.url));
+                const rows = [...groups, { label: "Khác", entries: others }].filter((g) => g.entries.length > 0);
+                const multi = rows.length > 1;
+                return rows.map((g) => (
+                  <div key={g.label} className="mb-4 last:mb-0">
+                    {multi && (
+                      <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{g.label}</h4>
+                    )}
+                    <ul className="space-y-1.5">
+                      {g.entries.map((it: any, i: number) => (
+                        <li key={it.url} className="font-mono text-[12px] leading-[1.5] text-muted-light">
+                          {i + 1}. [{it.source}]{" "}
+                          <a
+                            href={it.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            {it.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ));
+              })()
             ) : (
               <p className="font-mono text-[12px] text-muted-light">Không có nguồn tin tức trong 48h qua.</p>
             )}
