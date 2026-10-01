@@ -76,7 +76,7 @@ SECTION_MAX_TOKENS: Dict[str, int] = {
     "2": 4096,    # bảng bullish/bearish
     "3": 8192,    # mục phân tích sâu nhất — JSON lồng sâu nhất, giữ nguyên để tránh cắt cụt
     "4": 2048,    # 3 bullet ngắn
-    "dev": 3072,  # "Diễn biến chính": tối đa 5 tin × (tiêu đề + 1–2 câu)
+    "dev": 4096,  # "Diễn biến chính": tối đa 5 tin × (tiêu đề + 1–2 câu)
     "8": 2048,    # danh sách events
     # 4096 (tăng từ 3072) — 3072 từng không đủ vào ngày có nhiều tin CBAM/VCM/
     # chính sách, khiến LLM sinh nhiều gợi ý hơn dự kiến rồi bị cắt giữa chừng
@@ -1310,7 +1310,8 @@ def _prompt_key_developments(
     overrides: Optional[Dict[str, str]] = None,
 ) -> tuple[str, str]:
     """ "Diễn biến chính" — hiển thị ngay dưới Bảng giá nhanh: CHỈ các SỰ KIỆN TIN TỨC
-    nổi bật tác động lên cung/cầu EUA (trực tiếp hoặc gián tiếp) — KHÔNG phải diễn
+    nổi bật có tác động tới giá/cung/cầu của các hợp đồng theo dõi (EUA + năng lượng,
+    trực tiếp hoặc gián tiếp) — KHÔNG phải diễn
     biến giá tăng/giảm của các hợp đồng (phần đó đã có ở Bảng giá nhanh). Cố ý KHÔNG
     đưa dữ liệu giá vào prompt để LLM không viết lại biến động giá. Mỗi tin BẮT BUỘC
     có nguồn bài viết (source_index → backend map sang tên/URL thật)."""
@@ -1321,16 +1322,16 @@ def _prompt_key_developments(
 TIN TỨC đã đánh số [N] — CHỈ trích dẫn số có thật:
 {news_text}
 
-YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: CHỈ các tin tức TÁC ĐỘNG TRỰC TIẾP tới cung/cầu hoặc giá EUA, chọn từ danh sách trên. Tin chỉ tác động gián tiếp, mơ hồ hoặc cần nhiều bước suy diễn (năng lượng, địa chính trị, thời tiết... không có cơ chế nối thẳng sang EUA) → BỎ, không đưa vào đây. Tin trực tiếp gồm: quyết định/đề xuất chính sách EU ETS, MSR, cap, lịch/khối lượng đấu giá, phân bổ miễn phí, CBAM, số liệu phát thải/tuân thủ được công bố, luật/quy định mới ảnh hưởng EU ETS, động thái lớn trên thị trường EUA (quỹ, big players) được bài nêu rõ.
+YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: các tin tức nổi bật trong danh sách trên CÓ TÁC ĐỘNG ĐẾN GIÁ của các hợp đồng đang theo dõi (EUA, TTF, điện Đức, than, dầu, gasoil...) — trực tiếp hay gián tiếp đều được, miễn bài nêu được sự kiện/nguyên nhân cụ thể ảnh hưởng tới cung, cầu hoặc giá của ít nhất 1 hợp đồng. Gồm: chính sách EU ETS/MSR/cap/đấu giá/CBAM, số liệu phát thải, động thái thị trường carbon, gián đoạn nguồn cung năng lượng, địa chính trị, thời tiết, tồn kho, OPEC+, sản lượng điện tái tạo/hydrogen, dự báo của tổ chức... Không cần bắt buộc tác động thẳng lên EUA.
 
 QUY TẮC BẮT BUỘC — ĐÂY LÀ MỤC TIN TỨC, KHÔNG PHẢI MỤC GIÁ:
 - TUYỆT ĐỐI KHÔNG viết diễn biến GIÁ (không "giá tăng/giảm X%", giá đóng cửa, hỗ trợ/kháng cự, biến động phiên/tuần) — phần đó đã có ở Bảng giá nhanh. Số liệu của chính sự kiện (khối lượng đấu giá, mức cắt phân bổ...) được phép.
 - BỎ các bài chỉ là bản tin thị trường/tổng hợp giá không nêu sự kiện cụ thể.
-- Từ 0 đến 5 mục, xếp theo mức độ tác động mạnh → yếu. Nhiều bài cùng 1 sự kiện → gộp thành 1 mục. Mục nào không có cơ chế tác động trực tiếp, rõ ràng lên EUA → BỎ.
+- Từ 3 đến 6 mục (ít hơn nếu thật sự không đủ tin), xếp theo mức độ tác động mạnh → yếu. Nhiều bài cùng 1 sự kiện → gộp thành 1 mục. Bỏ tin không nêu được tác động nào tới giá/cung/cầu của hợp đồng nào.
 - Mỗi mục là object {{"title": "...", "summary": "...", "impact": "tăng" | "giảm" | "trung lập", "source_index": N}}:
   + "title": tiêu đề bài báo (dịch/rút gọn sang tiếng Việt nếu bài tiếng Anh, giữ đúng ý, không thêm thắt).
-  + "summary": 1–2 câu NGẮN GỌN: nêu nội dung chính của tin, rồi tác động tới cung/cầu EUA (vd "... → giảm nguồn cung hạn ngạch"). KHÔNG chép lại tiêu đề, KHÔNG ghi nguồn/ngày trong câu (hệ thống tự thêm).
-  + "impact": chiều tác động lên cán cân cung–cầu EUA theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH — "tăng" = thắt cung/tăng cầu (hỗ trợ EUA), "giảm" = tăng cung/giảm cầu (gây áp lực EUA), "trung lập" = chưa rõ chiều.
+  + "summary": 1–2 câu NGẮN GỌN: nêu nội dung chính của tin, rồi tác động tới giá/cung/cầu của hợp đồng liên quan, nêu rõ hợp đồng nào (vd "... → hỗ trợ giá TTF, gián tiếp thúc đẩy nhu cầu EUA"). KHÔNG chép lại tiêu đề, KHÔNG ghi nguồn/ngày trong câu (hệ thống tự thêm).
+  + "impact": chiều tác động lên GIÁ của hợp đồng chính bị ảnh hưởng (theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH khi liên quan EUA) — "tăng" = hỗ trợ giá, "giảm" = gây áp lực giảm giá, "trung lập" = chưa rõ chiều.
   + "source_index": BẮT BUỘC là số [N] có thật của bài làm căn cứ — mục nào không gắn được với 1 bài cụ thể thì BỎ, TUYỆT ĐỐI KHÔNG bịa số.
 - Không có tin nào đạt yêu cầu → "key_developments": [].
 
@@ -1926,7 +1927,14 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             section2_data = section_data
         elif section_key == "dev":
             # Gộp vào content["2"] (hiển thị ngay dưới Bảng giá nhanh), không thành mục riêng.
-            key_developments = _resolve_key_developments(section_data.get("key_developments"), dev_index_lookup)
+            raw_dev = section_data.get("key_developments") or []
+            key_developments = _resolve_key_developments(raw_dev, dev_index_lookup)
+            # Phân biệt "LLM trả rỗng" / "bị loại vì source_index sai" / "mục dev lỗi → fallback"
+            # (xem thêm log "Mục dev thất bại" ở trên) khi Diễn biến chính trống.
+            logger.info(
+                "[REPORT] Diễn biến chính: LLM trả %d mục, giữ %d mục (bài ứng viên: %d).",
+                len(raw_dev), len(key_developments), len(dev_index_lookup),
+            )
         elif section_key == "8":
             content["8"] = {
                 **section_data,
