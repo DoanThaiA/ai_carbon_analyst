@@ -1848,7 +1848,7 @@ export function ReportDocument({
             {report.content["9"].items?.length > 0 ? (
               (() => {
                 // Sắp theo ĐÚNG thứ tự Phần 3 (Quốc tế → Việt Nam, đánh số như trên); link
-                // trùng URL thì khớp theo Phần 3, nguồn không nằm ở Phần 3 xếp cuối ("Khác").
+                // trùng URL thì khớp theo Phần 3, nguồn không nằm ở Phần 3 xếp cuối.
                 const all: any[] = report.content["9"].items;
                 const used = new Set<string>();
                 const groups = [
@@ -1861,30 +1861,25 @@ export function ReportDocument({
                     .filter((it: any) => it?.url && !used.has(it.url) && (used.add(it.url), true)),
                 }));
                 const others = all.filter((it: any) => !used.has(it.url));
-                const rows = [...groups, { label: "Khác", entries: others }].filter((g) => g.entries.length > 0);
-                const multi = rows.length > 1;
-                return rows.map((g) => (
-                  <div key={g.label} className="mb-4 last:mb-0">
-                    {multi && (
-                      <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{g.label}</h4>
-                    )}
-                    <ul className="space-y-1.5">
-                      {g.entries.map((it: any, i: number) => (
-                        <li key={it.url} className="font-mono text-[12px] leading-[1.5] text-muted-light">
-                          {i + 1}. [{it.source}]{" "}
-                          <a
-                            href={it.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            {it.title}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ));
+                // Không hiện tiêu đề nhóm: 1 danh sách liền, đánh số liên tục theo thứ tự Phần 3.
+                const entries = [...groups.flatMap((g) => g.entries), ...others];
+                return (
+                  <ul className="space-y-1.5">
+                    {entries.map((it: any, i: number) => (
+                      <li key={it.url} className="font-mono text-[12px] leading-[1.5] text-muted-light">
+                        {i + 1}. [{it.source}]{" "}
+                        <a
+                          href={it.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          {it.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                );
               })()
             ) : (
               <p className="font-mono text-[12px] text-muted-light">Không có nguồn tin tức trong 48h qua.</p>
