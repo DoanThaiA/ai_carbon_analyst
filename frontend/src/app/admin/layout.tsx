@@ -57,7 +57,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         )}
                       >
                         <Icon size={16} className="shrink-0" />
-                        {label}
+                        <span className="hidden group-hover:inline group-focus-within:inline">{label}</span>
                       </Link>
                     </li>
                   ))}
@@ -69,7 +69,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap text-body hover:bg-surface transition-colors duration-300 ease-in-out"
                       >
                         <LogOut size={16} className="shrink-0" />
-                        Đăng xuất
+                        <span className="hidden group-hover:inline group-focus-within:inline">Đăng xuất</span>
                       </button>
                     </li>
                   )}
