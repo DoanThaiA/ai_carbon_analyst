@@ -659,7 +659,7 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                   columns={[
                     { key: "trigger", label: "Tình huống kích hoạt" },
                     { key: "action", label: "Hành động đề xuất" },
-                    { key: "reason", label: "Lý do" },
+                    { key: "reason", label: "Cơ sở của đề xuất" },
                   ]}
                   rows={content["biz"].short_term}
                   onChange={(rows) => patchSection("biz", { short_term: rows })}

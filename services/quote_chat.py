@@ -606,7 +606,7 @@ async def _tool_report_section_text(session: AsyncSession, report_date: str, sec
     return _truncate(formatter(sec), MAX_REPORT_CHARS)
 
 
-_BIZ_STATUS_LABEL = {"pending": "đang theo dõi (chưa kích hoạt)", "triggered": "ĐÃ KÍCH HOẠT", "dismissed": "admin đã gỡ"}
+_BIZ_STATUS_LABEL = {"pending": "đang theo dõi (chưa kích hoạt)", "triggered": "ĐÃ KÍCH HOẠT", "contradicted": "THỰC TẾ NGƯỢC VỚI ĐỀ XUẤT", "dismissed": "admin đã gỡ"}
 
 
 async def _tool_biz_suggestions_text(
@@ -622,7 +622,7 @@ async def _tool_biz_suggestions_text(
         BizSuggestion.first_report_date <= report_date,
     )
     if status == "active":
-        stmt = stmt.where(BizSuggestion.status.in_(("pending", "triggered")))
+        stmt = stmt.where(BizSuggestion.status.in_(("pending", "triggered", "contradicted")))
     elif status != "all":
         stmt = stmt.where(BizSuggestion.status == status)
     if kind != "all":
@@ -641,8 +641,9 @@ async def _tool_biz_suggestions_text(
             f"- [NGẮN HẠN, đề xuất {d}, {_BIZ_STATUS_LABEL.get(r.status, r.status)}] "
             f"Khi: {r.trigger} | Hành động: {r.action} | Lý do: {r.reason}"
         )
-        if r.status == "triggered":
-            line += f" | Kích hoạt ngày {_fmt_vn_date_short(r.triggered_report_date)}: {r.trigger_evidence or ''}"
+        if r.status in ("triggered", "contradicted"):
+            label = "Kích hoạt" if r.status == "triggered" else "Thực tế ngược đề xuất"
+            line += f" | {label} ngày {_fmt_vn_date_short(r.triggered_report_date)}: {r.trigger_evidence or ''}"
             if r.evidence_source_name:
                 line += f" (nguồn: {r.evidence_source_name} {r.evidence_source_url or ''})".rstrip()
         if r.status == "dismissed" and r.dismiss_reason:
@@ -1312,7 +1313,7 @@ Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬ
 - get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
 - get_report_section(section="1".."4"|"6"|"8"|"9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu — bao gồm cả tín hiệu liên thị trường và quan điểm thị trường nếu có + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
-- get_biz_suggestions(status, kind, days, date tuỳ chọn): BỘ NHỚ gợi ý kinh doanh của Jenny đọc thẳng từ DB — gợi ý ngắn/dài hạn đã đề xuất trong ~10 ngày gần nhất kèm trạng thái mới nhất (đang theo dõi / ĐÃ KÍCH HOẠT + bằng chứng + nguồn / admin đã gỡ). Dùng khi hỏi "Jenny đã đề xuất gì", "gợi ý nào đã kích hoạt/đang theo dõi". Chỉ đọc, không tạo/sửa/gỡ được gợi ý.
+- get_biz_suggestions(status, kind, days, date tuỳ chọn): BỘ NHỚ gợi ý kinh doanh của Jenny đọc thẳng từ DB — gợi ý ngắn/dài hạn đã đề xuất trong ~10 ngày gần nhất kèm trạng thái mới nhất (đang theo dõi / ĐÃ KÍCH HOẠT + bằng chứng + nguồn / THỰC TẾ NGƯỢC VỚI ĐỀ XUẤT + bằng chứng / admin đã gỡ). Dùng khi hỏi "Jenny đã đề xuất gì", "gợi ý nào đã kích hoạt/đang theo dõi". Chỉ đọc, không tạo/sửa/gỡ được gợi ý.
 - calc_price_stats(instruments[1-4], start_date, sessions, date tuỳ chọn): thống kê TÍNH SẴN (% thay đổi, cao/thấp nhất, độ biến động, tương quan lợi suất ngày + tỷ lệ/chênh lệch giữa các cặp) — dùng cho câu hỏi định lượng/liên thị trường; KHÔNG tự tính từ chuỗi giá.
 - get_report_history(section, days, date tuỳ chọn): CÙNG 1 mảng ("verdict" nhận định tổng quan, "signal" kịch bản, hoặc Mục 1/2/3/4/6/8/biz) của NHIỀU báo cáo liên tiếp — dùng để so sánh/xem xu hướng qua các ngày ("nhận định 7 ngày qua", "hôm nay khác hôm qua").
 - review_past_forecast(date, sessions tuỳ chọn): ĐỐI CHIẾU nhận định/kịch bản của 1 báo cáo quá khứ với giá EUA thực tế các phiên sau đó (kết quả cùng/ngược chiều tính sẵn) — dùng khi hỏi "dự báo có đúng không".
@@ -1959,7 +1960,7 @@ async def _execute_client_tool(
         elif name == "get_biz_suggestions":
             status = str(tool_input.get("status") or "active")
             kind = str(tool_input.get("kind") or "all")
-            if status not in ("active", "pending", "triggered", "dismissed", "all"):
+            if status not in ("active", "pending", "triggered", "contradicted", "dismissed", "all"):
                 status = "active"
             if kind not in ("short", "long", "all"):
                 kind = "all"

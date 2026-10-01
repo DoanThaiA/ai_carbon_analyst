@@ -61,6 +61,7 @@ async def load_active(session: AsyncSession, report_date: str) -> List[BizSugges
             BizSuggestion.status != "dismissed",  # admin đã gỡ → thôi theo dõi hẳn
             or_(
                 BizSuggestion.status == "pending",
+                # triggered/contradicted ở chính ngày này → sinh lại báo cáo thì kiểm tra lại
                 BizSuggestion.triggered_report_date == report_date,
             ),
             BizSuggestion.first_report_date >= since,
@@ -175,9 +176,11 @@ async def persist(
     active: List[BizSuggestion],
     new_items: List[Dict[str, Any]],
     new_long_items: Optional[List[Dict[str, Any]]] = None,
+    contradicted: Optional[Dict[int, Dict[str, Optional[str]]]] = None,
 ) -> tuple[List[BizSuggestion], List[BizSuggestion]]:
     """Ghi kết quả vào session + flush (KHÔNG commit — caller commit cùng
     report.content). `triggered`: id -> {evidence, source_name, source_url}.
+    `contradicted`: id -> {evidence, source_name, source_url} — thực tế ngược với đề xuất.
     `new_long_items`: gợi ý dài hạn {opportunity, solution, expectation}.
     Trả về (object ngắn hạn mới, object dài hạn mới) — cùng thứ tự đầu vào."""
     # Sinh lại báo cáo ngày này → bỏ gợi ý do lần sinh trước tạo ra (GIỮ lại gợi ý
@@ -191,9 +194,10 @@ async def persist(
 
     # Ghi trạng thái cho MỌI gợi ý đang nhớ — kể cả đưa về 'pending' những gợi ý
     # lần sinh trước của ngày này đã đánh dấu kích hoạt nhưng lần này không còn.
+    contradicted = contradicted or {}
     for s in active:
-        info = triggered.get(s.id)
-        s.status = "triggered" if info else "pending"
+        info = triggered.get(s.id) or contradicted.get(s.id)
+        s.status = "triggered" if s.id in triggered else "contradicted" if info else "pending"
         s.triggered_report_date = report_date if info else None
         s.trigger_evidence = info.get("evidence") if info else None
         s.evidence_source_name = info.get("source_name") if info else None
@@ -227,10 +231,14 @@ async def persist(
 
 
 def reminders_for_content(
-    active: List[BizSuggestion], triggered: Dict[int, Dict[str, Optional[str]]]
+    active: List[BizSuggestion],
+    triggered: Dict[int, Dict[str, Optional[str]]],
+    contradicted: Optional[Dict[int, Dict[str, Optional[str]]]] = None,
 ) -> tuple[List[Dict], List[Dict]]:
-    """Chia gợi ý đang nhớ thành (reminders — vừa kích hoạt hôm nay, Jenny nhắc lại;
-    tracking — chưa kích hoạt, chỉ hiện 1 dòng tham chiếu) để lưu vào report.content."""
+    """Chia gợi ý đang nhớ thành (reminders — hôm nay tình huống đã xảy ra
+    (outcome='triggered') hoặc thực tế đi ngược đề xuất (outcome='contradicted'),
+    Jenny cập nhật trong báo cáo; tracking — chưa có gì, chỉ ở trong bộ nhớ)."""
+    contradicted = contradicted or {}
     reminders, tracking = [], []
     for s in active:
         base = {
@@ -240,10 +248,11 @@ def reminders_for_content(
             "action": s.action,
             "reason": s.reason,
         }
-        info = triggered.get(s.id)
+        info = triggered.get(s.id) or contradicted.get(s.id)
         if info:
             reminders.append({
                 **base,
+                "outcome": "triggered" if s.id in triggered else "contradicted",
                 "evidence": info.get("evidence"),
                 "source_name": info.get("source_name"),
                 "source_url": info.get("source_url"),

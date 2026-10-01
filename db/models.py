@@ -253,9 +253,17 @@ class User(Base):
     bằng email + mã OTP, không có mật khẩu)."""
 
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("relation_type IN ('superior', 'peer')", name="ck_users_relation_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    job_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Quan hệ với Jenny: 'superior' (cấp trên: quyền admin + chỉnh sửa/đánh giá) hoặc
+    # 'peer' (đồng cấp: xem, chat, hỏi tư vấn, đánh giá — không được sửa).
+    relation_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="peer")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -495,14 +503,18 @@ class BizSuggestion(Base):
     pháp cho SIM"). Mỗi gợi ý ngắn hạn sinh ra được lưu lại để các báo cáo sau:
     - kiểm tra "tình huống kích hoạt" đã xảy ra chưa → nếu có thì NHẮC LẠI trong
       báo cáo ngày đó ("Ngày 18/09 Jenny đã đề xuất...") rồi thôi theo dõi;
-    - chưa xảy ra → chỉ hiện 1 dòng tham chiếu, không sinh lại gợi ý trùng ý.
+    - thực tế diễn ra NGƯỢC với giả định của đề xuất (status='contradicted') → báo
+      cập nhật trong báo cáo ngày đó rồi thôi theo dõi;
+    - chưa xảy ra → chỉ nằm trong bộ nhớ Jenny, không hiện trong báo cáo ngày.
     Chỉ nhớ trong BIZ_SUGGESTION_MEMORY_DAYS ngày kể từ first_report_date (xem
     services/biz_memory.py). first_report_date/triggered_report_date cùng định
     dạng "YYYY-MM-DD" với reports.report_date."""
 
     __tablename__ = "biz_suggestions"
     __table_args__ = (
-        CheckConstraint("status IN ('pending', 'triggered', 'dismissed')", name="ck_biz_suggestions_status"),
+        CheckConstraint(
+            "status IN ('pending', 'triggered', 'contradicted', 'dismissed')", name="ck_biz_suggestions_status"
+        ),
         CheckConstraint("kind IN ('short', 'long')", name="ck_biz_suggestions_kind"),
         Index("ix_biz_suggestions_status_date", "status", "first_report_date"),
     )

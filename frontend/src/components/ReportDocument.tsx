@@ -726,6 +726,13 @@ export function ReportDocument({
   const priceRows = report?.content["2"]?.prices || [];
   // Menu hamburger điều hướng section (thanh dưới banner).
   const [navOpen, setNavOpen] = useState(false);
+  const keyDevelopmentItems: any[] = [
+    ...(report.content["2"]?.key_developments ?? []),
+    ...((report.content["4"]?.bullets ?? [])
+      .map((b: any) => (typeof b === "string" ? { text: b } : b))
+      .filter((b: any) => b?.text && !/không có diễn biến/i.test(b.text))),
+  ];
+
   // Thanh trượt giá: tên hợp đồng + giá + Δ ngày, lấy thẳng từ Bảng giá nhanh.
   const tickerItems = priceRows
     .filter((r: any) => r.name && r.price)
@@ -1175,11 +1182,13 @@ export function ReportDocument({
               hoặc gián tiếp), mỗi tin có nhãn chiều tác động + nguồn bài viết.
               Backend: content["2"].key_developments (report_generator.py::
               _prompt_key_developments). Báo cáo cũ chưa có trường này → ẩn. */}
-          {report.content["2"]?.key_developments?.length > 0 && (
+          {/* Mục 4 cũ "Cập nhật tín chỉ carbon & CBAM" (VCM, thép xanh, CBAM) được gộp
+              vào cuối danh sách này; bỏ dòng "không có diễn biến" vì không phải tin. */}
+          {keyDevelopmentItems.length > 0 && (
             <div className="mt-6">
               <SubHeading>Diễn biến chính</SubHeading>
               <DotBullets
-                items={report.content["2"].key_developments}
+                items={keyDevelopmentItems}
                 render={(d: any) => (
                   // Định dạng: **Tiêu đề bài báo**: tóm tắt + tác động EUA (Nguồn, ngày).
                   // Báo cáo cũ chưa có d.title → chỉ hiện d.text như trước.
@@ -1642,7 +1651,7 @@ export function ReportDocument({
                   <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
                     <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-warn/30">
                       <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-                      <div className="text-[14px] sm:text-[15px] font-bold text-label">Jenny nhắc lại đề xuất trước đây</div>
+                      <div className="text-[14px] sm:text-[15px] font-bold text-label">Jenny cập nhật đề xuất trước đây</div>
                     </div>
                     <ul className="list-none divide-y divide-warn/20">
                       {report.content["biz"].reminders.map((r: any, i: number) => (
@@ -1658,9 +1667,15 @@ export function ReportDocument({
                           <p className="text-[13px] leading-[1.5] text-body">
                             <span className="font-semibold">Tình huống kích hoạt:</span> <RichText text={r.trigger} />
                           </p>
-                          <p className="text-[13.5px] leading-[1.5] font-semibold text-up">
-                            ✓ Tình huống đã xảy ra{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
-                          </p>
+                          {r.outcome === "contradicted" ? (
+                            <p className="text-[13.5px] leading-[1.5] font-semibold text-down">
+                              ✗ Thực tế diễn ra ngược với đề xuất{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
+                            </p>
+                          ) : (
+                            <p className="text-[13.5px] leading-[1.5] font-semibold text-up">
+                              ✓ Tình huống đã xảy ra{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
+                            </p>
+                          )}
                           {r.source_name && (
                             r.source_url ? (
                               <a
@@ -1676,7 +1691,9 @@ export function ReportDocument({
                             )
                           )}
                           <p className="text-[13px] italic text-warn font-semibold">
-                            Anh/chị đã thực hiện theo đề xuất này chưa?
+                            {r.outcome === "contradicted"
+                              ? "Đề xuất này không còn phù hợp — Jenny sẽ thôi theo dõi."
+                              : "Anh/chị đã thực hiện theo đề xuất này chưa?"}
                           </p>
                         </li>
                       ))}
@@ -1694,35 +1711,9 @@ export function ReportDocument({
                       { key: "action", label: "Hành động đề xuất" },
                     ]}
                     infoKey="reason"
-                    infoLabel="Lý do"
+                    infoLabel="Cơ sở của đề xuất"
                     onDismiss={onDismissBizSuggestion}
                   />
-                  {/* Gợi ý cũ còn trong trí nhớ nhưng tình huống chưa xảy ra — không viết
-                      lại cả dòng, chỉ tham chiếu ngày đề xuất. */}
-                  {report.content["biz"].tracking?.length > 0 && (
-                    <div className="mt-3 rounded-lg border border-border bg-surface/60 px-3.5 py-2.5">
-                      <h5 className="text-[11.5px] font-bold uppercase tracking-wider text-muted-light mb-1.5">
-                        Đề xuất trước đây — đang theo dõi
-                      </h5>
-                      <ol className="list-none space-y-1.5">
-                        {report.content["biz"].tracking.map((t: any, i: number) => (
-                          <li key={i} className="flex items-start gap-2 text-[13px] leading-[1.5] text-body">
-                            <p className="flex-1 min-w-0">
-                              <span className="font-semibold text-label">{i + 1}.</span>{" "}
-                              <RichText text={t.action} />{" "}
-                              <span className="text-muted-light">
-                                — đã gợi ý từ báo cáo ngày {formatFullDate(t.suggested_date)}, tình huống kích hoạt
-                                (<RichText text={t.trigger} />) chưa xảy ra.
-                              </span>
-                            </p>
-                            {onDismissBizSuggestion && typeof t.id === "number" && (
-                              <DismissButton onClick={() => onDismissBizSuggestion(t.id)} className="shrink-0" />
-                            )}
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  )}
                 </div>
                 <BizRecommendationTable
                   heading="Dài hạn"
@@ -1741,44 +1732,6 @@ export function ReportDocument({
               </div>
             </div>
           )}
-
-          {/* SECTION 4 (text/bullets) — Cập nhật tín chỉ carbon & CBAM */}
-          {["4"].map(key => {
-            const section = report.content[key];
-            if (!section) return null;
-            return (
-              <div key={key} className="mb-6">
-                <SubHeading>{section.title}</SubHeading>
-                {section.bullets ? (
-                  <DotBullets
-                    items={section.bullets}
-                    render={(bullet: any) => {
-                      const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
-                      const sourceName = typeof bullet === "object" ? bullet.source_name : null;
-                      const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
-                      return (
-                        <div>
-                          <ConclusionAware text={b} className="text-[14px] leading-[1.5] text-body" />
-                          {sourceName && (
-                            <a
-                              href={sourceUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
-                            >
-                              Nguồn: {sourceName} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
-                            </a>
-                          )}
-                        </div>
-                      );
-                    }}
-                  />
-                ) : (
-                  <ConclusionAware text={section.text} className="text-[14px] leading-[1.5] text-body" />
-                )}
-              </div>
-            );
-          })}
 
           {/* Lịch sự kiện 7 ngày tới */}
           {report.content["8"] && (
@@ -1837,13 +1790,13 @@ export function ReportDocument({
             ].map(({ key, label }) => {
               const items = report.content["6"][key];
               return (
-                <div key={key} className="mb-6 last:mb-0">
-                  <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-3">{label}</h4>
+                <div key={key} className="mb-4 last:mb-0">
+                  <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{label}</h4>
                   {items?.length > 0 ? (
-                    <div className="space-y-4">
+                    <div className="space-y-2.5">
                       {items.map((art: any, i: number) => (
-                        <div key={i} className="pb-4 border-b border-border-soft last:border-b-0 last:pb-0">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <div key={i} className="pb-2.5 border-b border-border-soft last:border-b-0 last:pb-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                             <p className="text-[14px] font-semibold text-label leading-[1.3]">{i + 1}. {art.title}</p>
                             {art.topics?.map((topic: string, ti: number) => (
                               <span
@@ -1857,15 +1810,18 @@ export function ReportDocument({
                               </span>
                             ))}
                           </div>
-                          <p className="mt-1 text-[13.5px] leading-[1.5] text-body"><RichText text={art.summary} /></p>
-                          <a
-                            href={art.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-1 inline-block font-mono text-[11.5px] text-primary hover:underline"
-                          >
-                            Nguồn: {art.source} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
-                          </a>
+                          {/* Nguồn nằm liền sau nội dung tin (cùng đoạn), chỉ xuống dòng khi hết chỗ */}
+                          <p className="mt-0.5 text-[13.5px] leading-[1.4] text-body">
+                            <RichText text={art.summary} />{" "}
+                            <a
+                              href={art.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-[11.5px] text-primary hover:underline"
+                            >
+                              Nguồn: {art.source} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
+                            </a>
+                          </p>
                         </div>
                       ))}
                     </div>

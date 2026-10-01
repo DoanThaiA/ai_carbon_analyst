@@ -1616,6 +1616,65 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
     return result
 
 
+async def _check_biz_contradictions_llm(
+    candidates: List[Any], news_text: str, index_lookup: Dict[int, Dict], prices_text: str, target_date: str,
+) -> Dict[int, Dict[str, Optional[str]]]:
+    """Hỏi LLM: với từng gợi ý cũ CHƯA kích hoạt, diễn biến thực tế hôm nay (giá + tin
+    tức) có đi NGƯỢC với giả định/kỳ vọng làm nền cho đề xuất không (vd đề xuất mua
+    dự phòng vì kỳ vọng giá năng lượng tăng, nhưng giá giảm mạnh do nguồn cung phục
+    hồi). Chỉ chấp nhận khi bằng chứng cụ thể: bài báo có thật (source_index → tên/URL
+    backend map) HOẶC số liệu giá trong "DỮ LIỆU GIÁ" (source_index null → nguồn ghi
+    "Giá chốt phiên (Barchart)"). Lỗi LLM/không đủ căn cứ → {} (giữ nguyên trạng thái chờ)."""
+    if not candidates:
+        return {}
+    system = f"Bạn là trợ lý theo dõi các đề xuất kinh doanh cho doanh nghiệp SIM.\n{CONCISENESS_RULE}"
+    user = f"""Ngày dữ liệu: {target_date}
+
+CÁC GỢI Ý ĐÃ ĐỀ XUẤT TRƯỚC ĐÂY (tình huống kích hoạt CHƯA xảy ra):
+{biz_memory.describe_for_prompt(candidates)}
+
+DỮ LIỆU GIÁ PHIÊN VỪA QUA:
+{prices_text}
+
+TIN TỨC TRONG NGÀY đã đánh số [N] — CHỈ trích dẫn số có thật:
+{news_text if index_lookup else "Không có tin tức."}
+
+YÊU CẦU: Với TỪNG gợi ý [S<id>], xác định diễn biến thực tế hôm nay có đi NGƯỢC CHIỀU với giả định/kỳ vọng làm nền cho đề xuất hay không (tức đề xuất không còn phù hợp: thị trường/chính sách diễn ra trái với điều đề xuất dựa vào).
+- "contradicted": true CHỈ khi có dữ kiện RÕ RÀNG, trực tiếp trái với giả định của đề xuất — từ bài báo (BẮT BUỘC "source_index" là số [N] có thật) HOẶC từ số liệu trong DỮ LIỆU GIÁ (khi đó "source_index": null và "evidence" nêu mã + biến động cụ thể). KHÔNG suy diễn; chỉ chưa xảy ra/chưa kích hoạt KHÔNG phải là ngược chiều; biến động nhỏ, không rõ hướng → false.
+- "evidence": 1 câu ngắn nêu điều đã xảy ra trái với đề xuất.
+- Không đủ căn cứ → "contradicted": false, "source_index": null, "evidence": null.
+
+CHỈ TRẢ VỀ JSON HỢP LỆ:
+{{"checks": [{{"id": 12, "contradicted": false, "source_index": null, "evidence": null}}]}}"""
+    try:
+        raw = await _call_llm(user, system=system, max_tokens=2048)
+    except Exception:
+        logger.exception("[REPORT] Kiểm tra đề xuất ngược chiều thực tế lỗi — bỏ qua.")
+        return {}
+    parsed = _extract_json(raw) if raw else None
+    valid_ids = {c.id for c in candidates}
+    result: Dict[int, Dict[str, Optional[str]]] = {}
+    for chk in (parsed or {}).get("checks") or []:
+        if not isinstance(chk, dict) or chk.get("contradicted") is not True:
+            continue
+        raw_id = chk.get("id")
+        if isinstance(raw_id, str):
+            raw_id = raw_id.strip().lstrip("Ss")
+        try:
+            sid = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        evidence = (chk.get("evidence") or "").strip()
+        if sid not in valid_ids or not evidence:
+            continue
+        src_art = index_lookup.get(_first_source_index(chk.get("source_index")))
+        if src_art:
+            result[sid] = {"evidence": evidence, "source_name": src_art["source"], "source_url": src_art["url"]}
+        elif chk.get("source_index") is None:
+            result[sid] = {"evidence": evidence, "source_name": "Giá chốt phiên (Barchart)", "source_url": None}
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Main orchestrator
 # ─────────────────────────────────────────────────────────────────────
@@ -1765,7 +1824,12 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     triggered_suggestions.update(
         await _check_biz_triggers_llm(llm_check_candidates, biz_news_text, biz_index_lookup, target_date)
     )
-    still_tracking = [s for s in active_suggestions if s.id not in triggered_suggestions]
+    # Gợi ý chưa kích hoạt → đối chiếu thêm: thực tế hôm nay có đi NGƯỢC giả định của đề xuất không.
+    not_triggered = [s for s in active_suggestions if s.id not in triggered_suggestions]
+    contradicted_suggestions = await _check_biz_contradictions_llm(
+        not_triggered, biz_news_text, biz_index_lookup, prices_text, target_date
+    )
+    still_tracking = [s for s in not_triggered if s.id not in contradicted_suggestions]
     dismissed_suggestions = await biz_memory.load_recent_dismissed(session, report_date)
     valid_price_codes = {str(p["code"]).upper() for p in prices if p.get("code") and p.get("close") is not None}
 
@@ -1954,11 +2018,13 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         for it in biz.get("long_term") or []
         if isinstance(it, dict) and (it.get("opportunity") or "").strip() and (it.get("solution") or "").strip()
     ]
-    reminders, tracking = biz_memory.reminders_for_content(active_suggestions, triggered_suggestions)
+    # "tracking" (đề xuất chưa kích hoạt) chỉ nằm trong bộ nhớ Jenny, không đưa vào báo cáo ngày.
+    reminders, _ = biz_memory.reminders_for_content(active_suggestions, triggered_suggestions, contradicted_suggestions)
     try:
         # flush trong cùng session/transaction — caller commit cùng report.content.
         created, created_long = await biz_memory.persist(
             session, report_date, triggered_suggestions, active_suggestions, new_short_term, new_long_term,
+            contradicted=contradicted_suggestions,
         )
         # Gắn id (có sau flush, cùng thứ tự) để admin gỡ đúng gợi ý trên giao diện.
         for it, obj in zip(new_short_term, created):
@@ -1975,9 +2041,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         # trigger_rule chỉ dùng nội bộ để kiểm tra ngưỡng giá — không lưu vào nội dung hiển thị.
         "short_term": [{k: v for k, v in it.items() if k != "trigger_rule"} for it in new_short_term],
         "long_term": new_long_term,
-        # Gợi ý cũ vừa kích hoạt hôm nay → khối "Jenny nhắc lại"; chưa kích hoạt → dòng tham chiếu.
+        # Chỉ gợi ý cũ vừa kích hoạt hôm nay mới lên báo cáo (khối "Jenny nhắc lại");
+        # gợi ý chưa kích hoạt ở lại trong bộ nhớ (xem tracking_text trong prompt biz).
         "reminders": reminders,
-        "tracking": tracking,
     }
 
     return content
