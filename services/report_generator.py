@@ -1491,18 +1491,18 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
         (c) NẾU XẢY RA THEO HƯỚNG NGƯỢC LẠI (hoặc không xảy ra) — bắt đầu bằng "Nếu [diễn biến ngược lại/không xác nhận]..." → nêu rõ tác động khác hoặc EUA đi ngang/giữ tín hiệu hỗn hợp.
       MỖI watchpoint là 1 DÒNG RIÊNG, đánh số "1.", "2.", "3."... — PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng, TUYỆT ĐỐI KHÔNG viết liền các watchpoint thành 1 đoạn văn dài không xuống dòng. Số lượng watchpoint bám theo đúng số điểm còn chưa chắc chắn thực sự tồn tại ở "Phân tích"/tin tức — KHÔNG bịa thêm watchpoint không có căn cứ chỉ để đủ số lượng.
 
-C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn" (không được bỏ trống horizon nào). ĐÂY LÀ PHẦN CHIẾN LƯỢC QUAN TRỌNG NHẤT BÁO CÁO — viết bằng kiến thức chuyên môn thực sự của 1 chuyên gia trading hàng hoá/carbon dày dạn (KHÔNG phải câu mẫu chung chung, sáo rỗng, hay lặp nguyên văn mục B). Mỗi kịch bản kể theo đúng mạch câu chuyện điều kiện: "Nếu [X] xảy ra, giá EUA có khả năng đi theo hướng [Y]; rủi ro chính là [Z]" — rồi mới khai triển thành 1 chiến lược trading cụ thể theo đúng kịch bản đó. Mỗi kịch bản gồm:
+C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn". Đây là phần người đọc xem để RA QUYẾT ĐỊNH nên phải NGẮN, TRỰC DIỆN, đi thẳng vào giá trị: chỉ nêu điều kiện, mức giá và hành động — KHÔNG giải thích cơ chế, KHÔNG lặp lại mục B, KHÔNG câu đệm/mở đầu/sáo rỗng. Mỗi trường là 1 mệnh đề cô đọng, ưu tiên số liệu cụ thể hơn lời văn. Mỗi kịch bản gồm:
    - "horizon": "ngắn hạn" (1–2 tuần) / "trung hạn" (1–3 tháng) / "dài hạn" (>3 tháng)
    - "probability": xác suất kịch bản này xảy ra — CHỈ 1 trong 3 giá trị "Cao" / "Trung bình" / "Thấp", dựa trên driver ở mục B đã được dữ liệu/tin tức xác nhận rõ (probability cao hơn) hay mới chỉ là suy đoán/tin đồn (probability thấp hơn).
    - "direction": ĐÚNG 1 trong 3 giá trị "tăng" / "giảm" / "đi ngang" — chiều giá EUA của RIÊNG kịch bản này, phải khớp ĐÚNG chiều với "trading_strategy" bên dưới (dùng để hiển thị mũi tên trên giao diện).
-   - "condition" (1 câu): "Nếu [X cụ thể — gắn thẳng với 1 driver đã nêu ở mục B, có số liệu/ngưỡng/ngày tháng cụ thể] xảy ra..." — KHÔNG viết mơ hồ kiểu "nếu thị trường biến động mạnh".
-   - "price_zone" (1 câu, chỉ số liệu): vùng giá EUA tham chiếu CỤ THỂ bằng EUR/tCO2 cho kịch bản này (vùng hỗ trợ gần nhất / vùng kháng cự gần nhất) — PHẢI neo vào đúng số liệu 30-ngày-cao, 30-ngày-thấp, giá đóng cửa, biên độ phiên liền trước đã cung cấp ở trên, TUYỆT ĐỐI KHÔNG bịa con số không có căn cứ từ dữ liệu đã cho.
-   - "key_risk" (tối đa 2 câu): "...rủi ro chính là [Z]..." — kịch bản rủi ro CỤ THỂ gắn với 1 sự kiện/ngưỡng/mốc thời gian rõ ràng (KHÔNG viết chung chung "rủi ro là biến động thị trường"), nêu ngắn gọn nếu rủi ro này xảy ra thì đẩy giá lệch khỏi "price_zone" theo hướng nào, mức độ bao nhiêu.
-   - "trading_strategy": CHIẾN LƯỢC TRADING CHUYÊN NGHIỆP cho riêng kịch bản này — suy luận trực tiếp từ "condition"/"price_zone"/"key_risk" đã nêu ở trên, PHẢI logic chặt chẽ và chính xác, KHÔNG chung chung/sáo rỗng. Bắt buộc đủ 3 phần, mỗi phần 1 câu súc tích, bắt đầu bằng đúng tag in đậm rồi xuống dòng thật (\\n) giữa 3 phần:
-     + "**Entry:**" vùng giá/điều kiện tham gia vị thế CỤ THỂ, ĐÚNG chiều với "direction" ở trên và neo đúng vào "price_zone" (KHÔNG bịa mức giá khác ngoài dữ liệu đã cho).
-     + "**Mục tiêu:**" vùng giá chốt lời hợp lý kế tiếp — dựa trên đúng số liệu 30-ngày-cao/30-ngày-thấp/biên độ phiên đã cung cấp, đảm bảo tỷ lệ risk/reward hợp lý so với Entry.
-     + "**Quản trị rủi ro:**" ngưỡng giá cụ thể để cắt lỗ/thoát vị thế nếu kịch bản bị vô hiệu hóa — gắn thẳng với "key_risk" đã nêu ở trên, nêu rõ mức giá nào xác nhận kịch bản này sai.
-     Đây là chiến lược tham khảo cho người đọc tự cân nhắc (giao diện đã có lưu ý rõ ràng đi kèm) — ĐƯỢC PHÉP nêu mức giá/vùng giá Entry/Target/cắt lỗ cụ thể, nhưng TUYỆT ĐỐI KHÔNG bịa số liệu không có căn cứ từ dữ liệu đã cho ở trên.
+   - "condition" (1 câu, tối đa ~20 từ): "Nếu [X]..." — chỉ nêu trigger cụ thể (số liệu/ngưỡng/ngày) gắn với 1 driver ở mục B, không diễn giải thêm.
+   - "price_zone" (tối đa ~15 từ, chỉ số liệu): vùng hỗ trợ/kháng cự EUA bằng EUR/tCO2, neo đúng 30-ngày-cao/thấp, giá đóng cửa, biên độ phiên đã cung cấp — TUYỆT ĐỐI KHÔNG bịa số.
+   - "key_risk" (1 câu, tối đa ~20 từ): sự kiện/ngưỡng cụ thể làm kịch bản sai và đẩy giá lệch hướng nào — không viết chung chung.
+   - "trading_strategy": đúng 3 dòng, mỗi dòng tối đa ~15 từ, bắt đầu bằng tag in đậm rồi xuống dòng thật (\\n) giữa các dòng:
+     + "**Entry:**" mức giá/điều kiện vào lệnh, đúng chiều "direction", neo vào "price_zone".
+     + "**Mục tiêu:**" mức giá chốt lời kế tiếp, risk/reward hợp lý so với Entry.
+     + "**Quản trị rủi ro:**" mức giá cắt lỗ khi kịch bản bị vô hiệu, gắn với "key_risk".
+     Chỉ dùng mức giá có căn cứ từ dữ liệu đã cho (giao diện đã có lưu ý tham khảo đi kèm) — không thêm giải thích sau mỗi dòng.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 {{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "instrument_notes": {{"EUA": "..."}}, "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "key_risk": "...", "trading_strategy": "..."}}]}}}}"""
