@@ -57,8 +57,8 @@ export default function LandingPage() {
           </h1>
           <p className="text-body text-lg max-w-xl mx-auto md:mx-0 leading-relaxed">
             Tôi theo dõi tin tức và giá thị trường carbon/năng lượng mỗi ngày, tổng hợp thành báo cáo 
-            Daily Carbon Intelligence, và trả lời câu hỏi của bạn về bất kỳ đoạn nào trong báo cáo.
-            Chọn vai trò của bạn bên dưới để bắt đầu.
+            Daily Carbon Intelligence, và trả lời câu hỏi của bạn về bất kỳ nội dung nào liên quan.
+            Cho Jenny biết bạn là ai để chúng ta bắt đầu nhé!
           </p>
         </div>
         <div className="flex-1 w-full flex justify-center md:justify-end">

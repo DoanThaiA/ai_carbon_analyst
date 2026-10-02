@@ -2018,6 +2018,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 llm_note = instrument_notes.get(p["code"])
                 if not llm_note:
                     continue
+                # CBAM chỉ giữ ghi chú cố định "Giá chốt theo quý…" — không nối ghi chú LLM.
+                if p["code"] == "CBAM":
+                    continue
                 p["note"] = f"{p['note']} {llm_note}".strip() if p.get("note") else llm_note
             content["3"] = {k: v for k, v in section_data.items() if k != "instrument_notes"}
         else:

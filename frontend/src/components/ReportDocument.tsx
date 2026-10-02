@@ -919,7 +919,8 @@ export function ReportDocument({
       value: todaySignal ? POSITION_META[todaySignal.direction] ?? NO_DATA : NO_DATA,
     },
     {
-      label: "Vùng mua tham chiếu",
+      label: todaySignal?.direction === "giảm" ? "Vùng bán tham chiếu"
+        : todaySignal?.direction === "đi ngang" ? "Vùng giá tham chiếu" : "Vùng mua tham chiếu",
       value: todaySignal?.price_zone ? <RichText text={todaySignal.price_zone} /> : NO_DATA,
     },
     {
@@ -931,7 +932,7 @@ export function ReportDocument({
       value: technicalLevels ? `${fmtEua(technicalLevels.resistance)} (đỉnh 30 phiên gần nhất)` : NO_DATA,
     },
     {
-      label: "Mục tiêu",
+      label: "Mục tiêu kỹ thuật",
       value: technicalLevels ? `${fmtEua(technicalLevels.target)} (đo biên độ nếu phá kháng cự)` : NO_DATA,
     },
   ];
@@ -1245,7 +1246,8 @@ export function ReportDocument({
                           </div>
                           {r.code === "CBAM" && r.note && (
                             <div className="mt-1 rounded-md bg-tint/60 border border-primary/15 px-2 py-1.5">
-                              {r.note}
+                              {/* Báo cáo cũ có thể đã nối thêm ghi chú LLM phía sau — chỉ lấy phần "Giá chốt…" */}
+                              {String(r.note).match(/^Giá chốt theo quý, tại ngày .*?\d{4}(?:, ngày chốt giá tiếp theo .*?\d{4})?/)?.[0] ?? r.note}
                             </div>
                           )}
                         </td>
@@ -1318,11 +1320,15 @@ export function ReportDocument({
               const priceRe = /(\d[\d.,]*\s*[–\-]\s*\d[\d.,]*\s*EUR\/tCO[₂2]?|\d[\d.,]*\s*EUR\/tCO[₂2]?)/;
               const m = body.match(priceRe);
               if (m && m.index !== undefined) {
+                // Câu còn mức giá khác ngoài cụm vừa tìm (vd "mua chốt tại 86,00; bán chốt tại
+                // 85,00 EUR/tCO₂", hoặc 2 vùng giá Entry) → chọn 1 mức làm số lớn sẽ sai/thiếu
+                // ý → không tách, hiển thị nguyên câu.
+                const rest = body.slice(0, m.index) + " " + body.slice(m.index + m[0].length);
+                if (/\d+[.,]\d+/.test(rest)) return { price: "", desc: body };
                 const price = m[1].replace(/CO2/g, "CO₂");
-                const before = body.slice(0, m.index).trim();
-                const after = body.slice(m.index + m[0].length).replace(/^[\s,;.]+/, "").trim();
-                const desc = [before, after].filter(Boolean).join(" ");
-                return { price, desc };
+                // Giữ NGUYÊN câu gốc làm mô tả — cắt giá ra khỏi câu sẽ làm câu cụt
+                // nghĩa ("Mua khi giá retest vùng và giữ…", "Cắt lỗ nếu đóng cửa dưới vì…").
+                return { price, desc: body };
               }
               return { price: "", desc: body };
             };
