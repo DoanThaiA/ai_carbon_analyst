@@ -121,6 +121,113 @@ function RichText({ text }: { text: string }) {
   );
 }
 
+// Tách "trading_strategy" thành các phần Entry / Mục tiêu / Quản trị rủi ro theo tag
+// in đậm backend sinh ra (xem report_generator.py). Không tách được → trả null để
+// nơi gọi fallback về RichText nguyên khối.
+function parseStrategy(text?: string): { label: string; body: string }[] | null {
+  if (!text) return null;
+  const parts = text
+    .split(/\n+/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(l => {
+      const m = l.match(/^\*\*([^*]+?)\*\*\s*:?\s*(.*)$/);
+      return m ? { label: m[1].replace(/:\s*$/, "").trim(), body: m[2].trim() } : null;
+    });
+  return parts.length > 0 && parts.every(Boolean) ? (parts as { label: string; body: string }[]) : null;
+}
+
+// Mobile: mỗi khung thời gian 1 tab (Ngắn/Trung/Dài hạn) — trong tab đọc liền mạch
+// 1 kịch bản theo đúng mạch "Nếu X → vùng giá → chiến lược → rủi ro".
+function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: Record<string, any> }) {
+  const [active, setActive] = useState(horizons[0]);
+  const current = horizons.includes(active) ? active : horizons[0];
+  const sc = byHorizon[current];
+  const dirMeta = DIRECTION_META[sc.direction];
+  const DirIcon = dirMeta?.icon;
+  const strategy = parseStrategy(sc.trading_strategy);
+
+  return (
+    <div className="sm:hidden border border-border rounded-lg overflow-hidden">
+      <div role="tablist" className="grid bg-tint border-b border-border" style={{ gridTemplateColumns: `repeat(${horizons.length}, minmax(0, 1fr))` }}>
+        {horizons.map(h => {
+          const Icon = HORIZON_META[h].icon;
+          const on = h === current;
+          return (
+            <button
+              key={h}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setActive(h)}
+              className={clsx(
+                "flex items-center justify-center gap-1 min-h-[44px] px-1 text-[12px] font-bold uppercase tracking-wide border-b-2 -mb-px transition-colors",
+                on ? "border-primary bg-white text-primary-dark" : "border-transparent text-muted-light"
+              )}
+            >
+              <Icon size={13} className="shrink-0" /> {h}
+            </button>
+          );
+        })}
+      </div>
+
+      <div role="tabpanel" className="p-3 flex flex-col gap-3 text-[14px] leading-[1.55] text-body break-words">
+        {(dirMeta || sc.probability) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {dirMeta && (
+              <span className={clsx("inline-flex items-center gap-1 font-mono text-[12px] font-bold uppercase tracking-wider rounded px-2 py-1 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
+                <DirIcon size={13} className="shrink-0" /> Chiều giá: {sc.direction}
+              </span>
+            )}
+            {sc.probability && (
+              <span className="font-mono text-[12px] uppercase tracking-wider text-body">Xác suất: <b>{sc.probability}</b></span>
+            )}
+          </div>
+        )}
+
+        {sc.condition && (
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wide text-muted-light mb-0.5">Điều kiện kích hoạt</div>
+            <RichText text={sc.condition} />
+          </div>
+        )}
+
+        <div className="rounded-lg border-l-2 border-primary bg-primary/[0.08] px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-primary-dark mb-0.5">
+            <Target size={13} className="shrink-0" /> Vùng giá tham chiếu
+          </div>
+          {sc.price_zone ? <span className="font-semibold text-primary-dark"><RichText text={sc.price_zone} /></span> : <span className="text-muted-light">—</span>}
+        </div>
+
+        <div className="rounded-lg border-l-2 border-primary bg-primary/[0.06] px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-primary-dark mb-1">
+            <Crosshair size={13} className="shrink-0" /> Chiến lược Trading
+          </div>
+          {strategy ? (
+            <dl className="flex flex-col gap-1.5">
+              {strategy.map((it, i) => (
+                <div key={i}>
+                  <dt className="text-[12px] font-bold text-label">{it.label}</dt>
+                  <dd><RichText text={it.body} /></dd>
+                </div>
+              ))}
+            </dl>
+          ) : sc.trading_strategy ? <RichText text={sc.trading_strategy} /> : <span className="text-muted-light">—</span>}
+        </div>
+
+        {sc.key_risk && (
+          <div className="rounded-lg bg-red-50 px-3 py-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-down mb-0.5">
+              <AlertTriangle size={13} className="shrink-0" /> Rủi ro chính
+            </div>
+            <span className="text-down"><RichText text={sc.key_risk} /></span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function stripMarkdown(text: string) {
   return text.replace(/\*\*/g, "");
 }
@@ -1516,43 +1623,9 @@ export function ReportDocument({
               <div className="mb-6">
                 <SubHeading>Kịch bản hành động</SubHeading>
 
-                {/* Mobile: gộp TẤT CẢ khung thời gian vào 1 khối duy nhất (không còn
-                      tách mỗi khung thời gian thành 1 card riêng) — nhóm theo từng chỉ
-                      tiêu, trong mỗi chỉ tiêu liệt kê liền nhau Ngắn/Trung/Dài hạn để
-                      đọc tập trung và so sánh ngay giữa các khung. Từ sm+ (kể cả khi
-                      in/xuất PDF) dùng bảng % width bên dưới. */}
-                <div className="sm:hidden border border-border rounded-lg overflow-hidden divide-y divide-border">
-                  {ROWS.map((row, ri) => {
-                    const RowIcon = row.icon;
-                    return (
-                      <div key={ri} className={clsx(row.highlight && "bg-primary/[0.06]")}>
-                        <div className={clsx(
-                          "flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold uppercase tracking-wide text-primary-dark",
-                          row.highlight ? "bg-primary/[0.08] border-l-2 border-primary" : "bg-tint"
-                        )}>
-                          {RowIcon && <RowIcon size={13} className="shrink-0" />}
-                          {row.label}
-                        </div>
-                        <div className="divide-y divide-border/70">
-                          {columns.map(h => {
-                            const meta = HORIZON_META[h];
-                            const Icon = meta.icon;
-                            return (
-                              <div key={h} className="flex items-start gap-2.5 px-3 py-2">
-                                <span className="shrink-0 w-[92px] inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 mt-0.5 text-[10px] font-bold uppercase tracking-wide bg-tint text-primary-dark">
-                                  <Icon size={11} className="shrink-0" /> {h}
-                                </span>
-                                <div className="flex-1 min-w-0 text-[13px] text-body leading-[1.5] break-words">
-                                  {byHorizon[h] ? row.render(byHorizon[h]) : <span className="text-muted-light">—</span>}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                {/* Mobile: mỗi khung thời gian 1 tab, đọc liền mạch 1 kịch bản (xem ScenarioTabs).
+                      Từ sm+ (kể cả khi in/xuất PDF) dùng bảng % width bên dưới. */}
+                <ScenarioTabs horizons={columns} byHorizon={byHorizon} />
 
                 {/* sm+ trên màn hình VÀ khi in/xuất PDF: bảng so sánh nhiều cột.
                       table-fixed + width theo % (thay vì min-width theo px) để bảng luôn
