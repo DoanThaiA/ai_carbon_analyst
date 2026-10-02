@@ -1,4 +1,5 @@
 import json
+import re
 import logging
 from datetime import datetime, timedelta, date, time as dtime
 from zoneinfo import ZoneInfo
@@ -1090,6 +1091,9 @@ def _format_recurring_calendar_events(events: List[Dict]) -> str:
     return "\n".join(formatted_lines)
 
 
+SECTION_PARSE_RETRIES = 3  # số lần gọi LLM tối đa cho 1 mục nếu JSON trả về không parse được
+
+
 def _extract_message_text(message: "anthropic.types.Message") -> str:
     """Ghép các TextBlock trong content, bỏ qua ThinkingBlock/các block khác.
 
@@ -1199,6 +1203,36 @@ def _escape_bare_control_chars_in_json_strings(text: str) -> str:
     return "".join(out)
 
 
+def _close_unbalanced_json(text: str) -> str:
+    """Thêm các dấu đóng "}" / "]" còn thiếu ở cuối (quét ngoài string literal).
+
+    Vá trường hợp thiếu ngoặc đóng ở đuôi, string bị cắt ngang, hoặc dấu phẩy treo.
+    """
+    stack = []
+    in_string = False
+    escape_next = False
+    for ch in text:
+        if in_string:
+            if escape_next:
+                escape_next = False
+            elif ch == "\\":
+                escape_next = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    if not stack and not in_string:
+        return text
+    if in_string:
+        text += '"'  # bị cắt giữa string — đóng string (item cuối có thể thiếu field, bước resolve sẽ loại)
+    text = re.sub(r",\s*$", "", text)  # dấu phẩy treo ở cuối
+    return text + "".join(reversed(stack))
+
+
 def _extract_json(raw: str) -> Optional[dict]:
     """Tìm và parse khối JSON đầu tiên trong chuỗi.
 
@@ -1219,8 +1253,25 @@ def _extract_json(raw: str) -> Optional[dict]:
     except json.JSONDecodeError:
         pass
 
+    sanitized = _escape_bare_control_chars_in_json_strings(snippet)
     try:
-        return json.loads(_escape_bare_control_chars_in_json_strings(snippet))
+        return json.loads(sanitized)
+    except json.JSONDecodeError:
+        pass
+
+    # Model đôi khi thiếu dấu đóng ở cuối (vd thiếu "}" ngoài cùng của {"dev": {...}}) —
+    # JSON bị cụt đúng chỗ đó nên nội dung vẫn đủ; tự đóng các ngoặc còn mở rồi thử lại.
+    repaired = _close_unbalanced_json(sanitized)
+    if repaired != sanitized:
+        try:
+            result = json.loads(repaired)
+            logger.warning("[REPORT] JSON thiếu dấu đóng ngoặc ở cuối — đã tự vá và parse thành công.")
+            return result
+        except json.JSONDecodeError:
+            pass
+
+    try:
+        return json.loads(sanitized)
     except json.JSONDecodeError as e:
         # Log vị trí lỗi để biết vì sao mục rơi về fallback (thường là dấu " chưa escape
         # trong text, hoặc JSON bị cắt) thay vì chỉ thấy đuôi raw.
@@ -1894,11 +1945,19 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             logger.info(f"[REPORT] Đang sinh mục {sec_key}...")
             # Tạo khoảng trễ giữa các request liên tiếp để giảm tải rate limit
             await asyncio.sleep(3)
-            raw = await _call_llm(
-                user_prompt, system=system_prompt,
-                max_tokens=SECTION_MAX_TOKENS.get(sec_key, 8192),
-            )
-            parsed = _extract_json(raw) if raw else None
+            raw, parsed = None, None
+            for attempt in range(SECTION_PARSE_RETRIES):
+                raw = await _call_llm(
+                    user_prompt, system=system_prompt,
+                    max_tokens=SECTION_MAX_TOKENS.get(sec_key, 8192),
+                )
+                parsed = _extract_json(raw) if raw else None
+                if parsed:
+                    break
+                logger.warning(
+                    f"[REPORT] Mục {sec_key} parse JSON lỗi (lần {attempt + 1}/{SECTION_PARSE_RETRIES})"
+                    + (", gọi lại LLM..." if attempt < SECTION_PARSE_RETRIES - 1 else "")
+                )
 
             if parsed and sec_key in parsed:
                 sec_data = parsed[sec_key]
