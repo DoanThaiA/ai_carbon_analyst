@@ -121,6 +121,20 @@ function RichText({ text }: { text: string }) {
   );
 }
 
+// Số giá lớn trong thẻ "TÍN HIỆU HÔM NAY": phần số to + đậm để mắt bắt ngay, đơn vị
+// (EUR/tCO₂) nhỏ hơn đứng cạnh để không lấn át con số.
+function BigPrice({ price, className }: { price: string; className?: string }) {
+  const m = price.match(/^(.*?)\s*(EUR\/tCO[₂2]?)$/);
+  const num = m ? m[1] : price;
+  const unit = m ? m[2] : "";
+  return (
+    <p className={clsx("font-extrabold leading-none tabular-nums tracking-tight mb-2 break-words", className)}>
+      <span className="text-[32px] sm:text-[40px]">{num}</span>
+      {unit && <span className="ml-1.5 text-[13px] sm:text-[14px] font-bold tracking-normal opacity-80">{unit}</span>}
+    </p>
+  );
+}
+
 // Tách "trading_strategy" thành các phần Entry / Mục tiêu / Quản trị rủi ro theo tag
 // in đậm backend sinh ra (xem report_generator.py). Không tách được → trả null để
 // nơi gọi fallback về RichText nguyên khối.
@@ -1350,7 +1364,7 @@ export function ReportDocument({
                     <div className="flex items-center gap-2 text-white/90 border-l border-white/30 pl-4 ml-4">
                       <Compass size={15} strokeWidth={2} aria-hidden="true" />
                       <span className="text-[13px]">Xu hướng:</span>
-                      <span className="text-[15px] font-extrabold uppercase tracking-wide">
+                      <span className="text-[17px] sm:text-[19px] font-extrabold uppercase tracking-wide">
                         {trendMeta.arrow} {trendMeta.label}
                       </span>
                     </div>
@@ -1360,7 +1374,7 @@ export function ReportDocument({
                 {/* ═══ Sub-header: độ tin cậy + thị trường ═══ */}
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-2.5 border-b border-primary/10 bg-tint/60">
                   {todaySignal.probability && (
-                    <div className="flex items-center gap-1.5 text-[13px] text-muted-light">
+                    <div className="flex items-center gap-1.5 text-[14px] text-muted-light">
                       <Sparkles size={14} strokeWidth={2} className="text-primary" aria-hidden="true" />
                       <span>Độ tin cậy: <strong className="text-label">{todaySignal.probability}</strong></span>
                     </div>
@@ -1383,10 +1397,8 @@ export function ReportDocument({
                       </div>
                       {entry?.price ? (
                         <>
-                          <p className="text-[22px] sm:text-[24px] font-extrabold text-primary-dark leading-tight mb-1.5">
-                            {entry.price}
-                          </p>
-                          {entry.desc && <p className="text-[13px] leading-[1.5] text-muted-light">{entry.desc}</p>}
+                          <BigPrice price={entry.price} className="text-primary-dark" />
+                          {entry.desc && <p className="text-[14px] leading-[1.5] text-body">{entry.desc}</p>}
                         </>
                       ) : entryPart ? (
                         <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={entryPart.body} /></p>
@@ -1405,10 +1417,8 @@ export function ReportDocument({
                       </div>
                       {risk?.price ? (
                         <>
-                          <p className="text-[22px] sm:text-[24px] font-extrabold text-primary-dark leading-tight mb-1.5">
-                            {risk.price}
-                          </p>
-                          {risk.desc && <p className="text-[13px] leading-[1.5] text-muted-light">{risk.desc}</p>}
+                          <BigPrice price={risk.price} className="text-down" />
+                          {risk.desc && <p className="text-[14px] leading-[1.5] text-body">{risk.desc}</p>}
                         </>
                       ) : riskPart ? (
                         <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={riskPart.body} /></p>
@@ -1427,10 +1437,8 @@ export function ReportDocument({
                       </div>
                       {target?.price ? (
                         <>
-                          <p className="text-[22px] sm:text-[24px] font-extrabold text-primary-dark leading-tight mb-1.5">
-                            {target.price}
-                          </p>
-                          {target.desc && <p className="text-[13px] leading-[1.5] text-muted-light">{target.desc}</p>}
+                          <BigPrice price={target.price} className="text-up" />
+                          {target.desc && <p className="text-[14px] leading-[1.5] text-body">{target.desc}</p>}
                         </>
                       ) : targetPart ? (
                         <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={targetPart.body} /></p>
