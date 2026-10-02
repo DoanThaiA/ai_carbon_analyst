@@ -171,7 +171,7 @@ function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: 
         })}
       </div>
 
-      <div role="tabpanel" className="p-3 flex flex-col gap-3 text-[14px] leading-[1.55] text-body break-words">
+      <div role="tabpanel" className="p-3 flex flex-col gap-3 text-[14.5px] leading-[1.55] text-body break-words">
         {(dirMeta || sc.probability) && (
           <div className="flex flex-wrap items-center gap-2">
             {dirMeta && (
@@ -340,7 +340,7 @@ function ConclusionAware({ text, className }: { text: string; className?: string
     <div className="space-y-1.5">
       {before && <p className={className}><RichText text={before} /></p>}
       <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
-        <p className="text-[13.5px] leading-[1.5] font-bold text-primary-dark">
+        <p className="text-[14.5px] leading-[1.5] font-bold text-primary-dark">
           <RichText text={highlight} />
         </p>
       </div>
@@ -487,7 +487,7 @@ function EventTimeline({ events }: { events: any[] }) {
             </div>
             <div className={clsx("flex-1 min-w-0", !isLast && "pb-4")}>
               <div className="flex items-start justify-between gap-3 pt-1">
-                <span className="text-[13.5px] text-foreground leading-[1.3]">{ev.event}</span>
+                <span className="text-[14.5px] text-foreground leading-[1.3]">{ev.event}</span>
                 <span className={clsx(
                   "shrink-0 font-mono text-[10px] uppercase px-1.5 py-0.5 rounded border",
                   ev.impact === "Cao" ? "text-down border-down/30 bg-red-50" :
@@ -496,7 +496,7 @@ function EventTimeline({ events }: { events: any[] }) {
                 )}>{ev.impact}</span>
               </div>
               {ev.outcome && (
-                <p className="mt-1.5 text-[12.5px] leading-[1.5] text-body italic">
+                <p className="mt-1.5 text-[14.5px] leading-[1.5] text-body italic">
                   <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
                 </p>
               )}
@@ -568,7 +568,7 @@ function BizRecommendationTable({
               1 câu ngắn (xem _prompt_biz_recommendation) nên độ dài tương đương nhau
               — chia đều tránh cột auto-size lệch nhau theo độ dài chữ thực tế, giống
               cách "Bảng giá nhanh"/"Bảng tín hiệu nhanh" đã làm ở trên. */}
-          <table className="w-full table-fixed border-collapse text-[13px]">
+          <table className="w-full table-fixed border-collapse text-[14.5px]">
             <thead>
               <tr>
                 {/* Cột # rộng hơn khi có nút gỡ (admin) để số thứ tự + nút xếp dọc, căn giữa cân đối */}
@@ -639,7 +639,7 @@ function BizRecommendationTable({
                     {info && (
                       <tr className={clsx(isOpen ? "table-row" : "hidden print:table-row")}>
                         <td className="border-r border-border bg-surface" />
-                        <td colSpan={columns.length} className="px-2 sm:px-3 py-2 bg-tint/50 text-[12.5px] leading-[1.5] text-body">
+                        <td colSpan={columns.length} className="px-2 sm:px-3 py-2 bg-tint/50 text-[14.5px] leading-[1.5] text-body">
                           <span className="font-bold text-primary-dark mr-1">{infoLabel || "Chi tiết"}:</span>
                           <RichText text={info} />
                         </td>
@@ -652,7 +652,7 @@ function BizRecommendationTable({
           </table>
         </div>
       ) : (
-        <p className="text-[13.5px] text-muted-light italic">Không có gợi ý nào đủ căn cứ trong kỳ này.</p>
+        <p className="text-[14.5px] text-muted-light italic">Không có gợi ý nào đủ căn cứ trong kỳ này.</p>
       )}
     </div>
   );
@@ -860,18 +860,11 @@ export function ReportDocument({
   const tickerLoop = tickerItems.length > 0
     ? Array.from({ length: Math.ceil(12 / tickerItems.length) }, () => tickerItems).flat()
     : [];
-  // Chỉ số các dòng Bảng giá nhanh đang mở ghi chú (nút "i") — mặc định đóng hết.
-  const [openNotes, setOpenNotes] = useState<Set<number>>(new Set());
-  const toggleNote = (i: number) =>
-    setOpenNotes((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
-      return next;
-    });
   // Mục 3 mặc định hiện đủ phân tích (Diễn biến chính -> Cần theo dõi); ẩn được để
   // user chỉ cần xem nhanh bảng Kịch bản hành động, không cần đọc hết phần phân tích.
   const [showAnalysis, setShowAnalysis] = useState(true);
+  // Khung "Jenny cập nhật đề xuất trước đây" thu vào nút "i" — bấm mới mở (in PDF luôn hiện nội dung, ẩn nút).
+  const [showReminders, setShowReminders] = useState(false);
 
   // Rút dòng "**Tổng hợp:**" (kết luận chung giá EUA) ra khỏi các block phân
   // tích để đưa lên đầu báo cáo, làm phần "Nhận định" trong khối "🚨 ĐIỂM
@@ -1162,8 +1155,8 @@ export function ReportDocument({
         <section id="section-market" className="py-5">
           <PartHeading eyebrow="Phần 1" title="Diễn biến thị trường" icon={LineChart} />
 
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-            <div className="lg:flex-[1.6] bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
+          <div className="flex flex-col lg:flex-row print:flex-row gap-4 items-stretch print:break-inside-avoid">
+            <div className="lg:flex-[1.6] print:flex-[1.6] print:min-w-0 bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
               <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
                 <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
                 <span className="normal-case">EUR/tCO₂e</span>
@@ -1172,9 +1165,9 @@ export function ReportDocument({
             </div>
 
             {report.content["2"]?.key_facts && (
-              <div className="lg:flex-1 lg:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
+              <div className="lg:flex-1 lg:min-w-[200px] print:flex-1 print:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
                 <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
-                <div className="space-y-1 text-[13px] leading-[1.3] text-body">
+                <div className="space-y-1 text-[14.5px] leading-[1.3] text-body">
                   {report.content["2"].key_facts
                     .split(/(?<=\.)\s+/)
                     .filter((s: string) => s.trim())
@@ -1194,7 +1187,7 @@ export function ReportDocument({
 
             {/* Bảng giá full-width */}
             <div className="overflow-x-auto border border-border rounded-lg">
-              <table className="w-full sm:table-fixed border-collapse font-mono text-[12px] sm:text-[12.5px]">
+              <table className="w-full sm:table-fixed border-collapse font-mono text-[14.5px]">
                 <thead>
                   <tr>
                     <th className="w-[28%] sm:w-[30%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
@@ -1235,10 +1228,9 @@ export function ReportDocument({
                             {priceUnit && <span className="text-[10px] text-muted-light break-words">{priceUnit}</span>}
                           </div>
                         </td>
-                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[11px] sm:text-[12px] leading-[1.5] text-body">
-                          {/* Mặc định chỉ hiện Δ Ngày/Δ Tuần; ghi chú giá (instrument_notes)
-                              ẩn sau nút "i", bấm mới mở ra. Khi in PDF luôn hiện ghi chú
-                              (print:block) vì bản in không bấm được. */}
+                        <td className="px-1.5 sm:px-2 py-1.5 font-sans text-[14.5px] leading-[1.5] text-body">
+                          {/* Chỉ hiện Δ Ngày/Δ Tuần; ghi chú giá chỉ giữ cho dòng CBAM
+                              (giá chốt theo quý + ngày chốt tiếp theo). */}
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] sm:text-[11px]">
                             {r.dday !== "-" && (
                               <span className={clsx("tabular-nums", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
@@ -1250,31 +1242,9 @@ export function ReportDocument({
                                 Δ Tuần: {r.dweek}
                               </span>
                             )}
-                            {r.note && (
-                              <button
-                                type="button"
-                                onClick={() => toggleNote(i)}
-                                aria-expanded={openNotes.has(i)}
-                                aria-label={openNotes.has(i) ? "Ẩn ghi chú giá" : "Xem ghi chú giá"}
-                                title={openNotes.has(i) ? "Ẩn ghi chú" : "Xem ghi chú"}
-                                className={clsx(
-                                  "ml-auto inline-flex items-center justify-center w-5 h-5 rounded-full border transition-colors print:hidden",
-                                  openNotes.has(i)
-                                    ? "bg-primary text-white border-primary"
-                                    : "text-primary border-primary/40 hover:bg-tint"
-                                )}
-                              >
-                                <Info size={12} strokeWidth={2.5} aria-hidden="true" />
-                              </button>
-                            )}
                           </div>
-                          {r.note && (
-                            <div
-                              className={clsx(
-                                "mt-1 rounded-md bg-tint/60 border border-primary/15 px-2 py-1.5",
-                                openNotes.has(i) ? "block" : "hidden print:block"
-                              )}
-                            >
+                          {r.code === "CBAM" && r.note && (
+                            <div className="mt-1 rounded-md bg-tint/60 border border-primary/15 px-2 py-1.5">
                               {r.note}
                             </div>
                           )}
@@ -1301,7 +1271,7 @@ export function ReportDocument({
                 render={(d: any) => (
                   // Định dạng: **Tiêu đề bài báo**: tóm tắt + tác động EUA (Nguồn, ngày).
                   // Báo cáo cũ chưa có d.title → chỉ hiện d.text như trước.
-                  <p className="text-[14px] sm:text-[14.5px] leading-[1.6] text-foreground">
+                  <p className="text-[14.5px] leading-[1.6] text-foreground">
                     {d.title && <strong className="font-bold text-label">{d.title}: </strong>}
                     <RichText text={d.text} />
                     {d.source_name && (
@@ -1330,53 +1300,157 @@ export function ReportDocument({
           <PartHeading eyebrow="Phần 2" title="Phân tích và khuyến nghị giao dịch" icon={BarChart3} />
 
           {/* TÍN HIỆU HÔM NAY — nội dung đầu tiên của Phần 2: chiến lược trading
-              cho phiên hôm đó, rút gọn còn đúng 3 phần Hành động / Cơ sở / Độ
-              tin cậy — tái dùng kịch bản "ngắn hạn" đã có ở Mục 3
-              (trading_scenarios), không cần trường dữ liệu mới từ backend. */}
-          {todaySignal && (
+              cho phiên hôm đó, tách thành các thẻ card Entry / Mục tiêu / Quản trị
+              rủi ro / Cơ sở — tái dùng kịch bản "ngắn hạn" đã có ở Mục 3
+              (trading_scenarios), không cần trường dữ liệu mới từ backend.
+              Giao diện dạng card 2 cột, header gradient xanh teal. */}
+          {todaySignal && (() => {
+            const strategy = parseStrategy(todaySignal.trading_strategy);
+            // Tách các phần Entry / Mục tiêu / Quản trị rủi ro từ trading_strategy
+            const entryPart = strategy?.find(s => /entry/i.test(s.label));
+            const targetPart = strategy?.find(s => /mục tiêu/i.test(s.label));
+            const riskPart = strategy?.find(s => /quản trị rủi ro|cắt lỗ|stop.?loss/i.test(s.label));
+            const trendMeta = TREND_META[todaySignal.direction];
+
+            // Hàm trích xuất vùng giá chính (dãy số đầu tiên) và phần mô tả còn lại
+            const splitPriceAndDesc = (body: string): { price: string; desc: string } => {
+              // Tìm cụm giá dạng "86,00–86,25 EUR/tCO₂" hoặc "86,00 EUR/tCO₂"
+              const priceRe = /(\d[\d.,]*\s*[–\-]\s*\d[\d.,]*\s*EUR\/tCO[₂2]?|\d[\d.,]*\s*EUR\/tCO[₂2]?)/;
+              const m = body.match(priceRe);
+              if (m && m.index !== undefined) {
+                const price = m[1].replace(/CO2/g, "CO₂");
+                const before = body.slice(0, m.index).trim();
+                const after = body.slice(m.index + m[0].length).replace(/^[\s,;.]+/, "").trim();
+                const desc = [before, after].filter(Boolean).join(" ");
+                return { price, desc };
+              }
+              return { price: "", desc: body };
+            };
+
+            const entry = entryPart ? splitPriceAndDesc(subCO2(stripMarkdown(entryPart.body))) : null;
+            const target = targetPart ? splitPriceAndDesc(subCO2(stripMarkdown(targetPart.body))) : null;
+            const risk = riskPart ? splitPriceAndDesc(subCO2(stripMarkdown(riskPart.body))) : null;
+
+            return (
             <div className="mb-6">
-              <FramedHighlight title="TÍN HIỆU HÔM NAY">
-                {/* Nhấn mạnh trực diện: xu hướng + độ tin cậy lên đầu dạng nhãn lớn,
-                    "Hành động" là chữ to nhất trong khối (ô nền nhạt, vạch nhấn trái),
-                    "Cơ sở" cỡ chữ đọc thường nhưng lớn hơn trước. */}
-                {/* 1 khung duy nhất, không lồng khung con: dòng xu hướng + độ tin cậy
-                    (chữ, không nhãn viền), rồi Hành động / Cơ sở ngăn bằng vạch mảnh. */}
-                <div className="divide-y divide-border [&>*]:py-3 first:[&>*]:pt-0 last:[&>*]:pb-0">
-                  <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-                    {TREND_META[todaySignal.direction] && (
-                      <div className="text-[13px] text-muted-light">
-                        Xu hướng:{" "}
-                        <span className={clsx("text-[16px] font-extrabold uppercase tracking-wide", TREND_META[todaySignal.direction].className)}>
-                          {TREND_META[todaySignal.direction].arrow} {TREND_META[todaySignal.direction].label}
+              <div className="rounded-xl border border-primary/20 overflow-hidden shadow-[var(--shadow-soft)]">
+                {/* ═══ Header bar: tiêu đề + xu hướng ═══ */}
+                <div className="flex items-center justify-between bg-gradient-to-r from-primary-dark to-[#0d7870] px-4 sm:px-5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                  <div className="flex items-center gap-2 text-white">
+                    <LineChart size={18} strokeWidth={2.5} aria-hidden="true" />
+                    <h2 className="text-[16px] sm:text-[18px] font-extrabold uppercase tracking-wide">TÍN HIỆU HÔM NAY</h2>
+                  </div>
+                  {trendMeta && (
+                    <div className="flex items-center gap-2 text-white/90 border-l border-white/30 pl-4 ml-4">
+                      <Compass size={15} strokeWidth={2} aria-hidden="true" />
+                      <span className="text-[13px]">Xu hướng:</span>
+                      <span className="text-[15px] font-extrabold uppercase tracking-wide">
+                        {trendMeta.arrow} {trendMeta.label}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ═══ Sub-header: độ tin cậy + thị trường ═══ */}
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-2.5 border-b border-primary/10 bg-tint/60">
+                  {todaySignal.probability && (
+                    <div className="flex items-center gap-1.5 text-[13px] text-muted-light">
+                      <Sparkles size={14} strokeWidth={2} className="text-primary" aria-hidden="true" />
+                      <span>Độ tin cậy: <strong className="text-label">{todaySignal.probability}</strong></span>
+                    </div>
+                  )}
+                  <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold uppercase tracking-wider text-primary-dark border border-primary/25 bg-tint rounded-full px-2.5 py-0.5">
+                    Thị trường: Carbon
+                  </span>
+                </div>
+
+                {/* ═══ Body: 2 cột cards ═══ */}
+                <div className="p-4 sm:p-5">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {/* ─── Card: Mức vào lệnh (Entry) ─── */}
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
+                          <ShieldCheck size={12} strokeWidth={2.5} />
                         </span>
+                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Mức vào lệnh (Entry)</h4>
                       </div>
-                    )}
-                    {todaySignal.probability && (
-                      <div className="text-[13px] text-muted-light">
-                        Độ tin cậy:{" "}
-                        <span className="text-[15px] font-bold text-label">{todaySignal.probability}</span>
+                      {entry?.price ? (
+                        <>
+                          <p className="text-[22px] sm:text-[24px] font-extrabold text-primary-dark leading-tight mb-1.5">
+                            {entry.price}
+                          </p>
+                          {entry.desc && <p className="text-[13px] leading-[1.5] text-muted-light">{entry.desc}</p>}
+                        </>
+                      ) : entryPart ? (
+                        <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={entryPart.body} /></p>
+                      ) : (
+                        <span className="text-muted-light">—</span>
+                      )}
+                    </div>
+
+                    {/* ─── Card: Quản trị rủi ro (Stop Loss) ─── */}
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
+                          <ShieldCheck size={12} strokeWidth={2.5} />
+                        </span>
+                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Quản trị rủi ro (Stop Loss)</h4>
                       </div>
-                    )}
-                  </div>
+                      {risk?.price ? (
+                        <>
+                          <p className="text-[22px] sm:text-[24px] font-extrabold text-primary-dark leading-tight mb-1.5">
+                            {risk.price}
+                          </p>
+                          {risk.desc && <p className="text-[13px] leading-[1.5] text-muted-light">{risk.desc}</p>}
+                        </>
+                      ) : riskPart ? (
+                        <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={riskPart.body} /></p>
+                      ) : (
+                        <span className="text-muted-light">—</span>
+                      )}
+                    </div>
 
-                  <div>
-                    <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark mb-1">Hành động</h4>
-                    {/* Chỉ các nhãn/số chính (**Entry:**, **Mục tiêu:**, **Cắt lỗ**...) in đậm + màu nhấn */}
-                    <p className="text-[14.5px] sm:text-[15.5px] leading-[1.6] text-label text-left [&_strong]:font-bold [&_strong]:text-primary-dark">
-                      {todaySignal.trading_strategy ? <RichText text={todaySignal.trading_strategy} /> : <span className="text-muted-light">—</span>}
-                    </p>
-                  </div>
+                    {/* ─── Card: Mục tiêu (Target) ─── */}
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
+                          <Target size={12} strokeWidth={2.5} />
+                        </span>
+                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Mục tiêu (Target)</h4>
+                      </div>
+                      {target?.price ? (
+                        <>
+                          <p className="text-[22px] sm:text-[24px] font-extrabold text-primary-dark leading-tight mb-1.5">
+                            {target.price}
+                          </p>
+                          {target.desc && <p className="text-[13px] leading-[1.5] text-muted-light">{target.desc}</p>}
+                        </>
+                      ) : targetPart ? (
+                        <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={targetPart.body} /></p>
+                      ) : (
+                        <span className="text-muted-light">—</span>
+                      )}
+                    </div>
 
-                  <div>
-                    <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark mb-1">Cơ sở</h4>
-                    <p className="text-[14.5px] sm:text-[15.5px] leading-[1.6] text-label text-left">
-                      {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light">—</span>}
-                    </p>
+                    {/* ─── Card: Cơ sở ─── */}
+                    <div className="rounded-lg border border-border bg-tint/40 p-4">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
+                          <Sparkles size={12} strokeWidth={2.5} />
+                        </span>
+                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Cơ sở</h4>
+                      </div>
+                      <p className="text-[14px] leading-[1.65] text-body italic">
+                        {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light not-italic">—</span>}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </FramedHighlight>
+              </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Bảng tín hiệu nhanh — nằm dưới TÍN HIỆU HÔM NAY, trên Phân tích:
               các chỉ số nào có sẵn từ dữ liệu (trading_scenarios, OHLC 30
@@ -1385,7 +1459,7 @@ export function ReportDocument({
           <div className="mb-6">
             <SubHeading>Bảng tín hiệu nhanh</SubHeading>
             <div className="overflow-x-auto border border-border rounded-lg">
-              <table className="w-full border-collapse text-[12.5px] sm:text-[13px]">
+              <table className="w-full border-collapse text-[14.5px]">
                 <thead>
                   <tr>
                     <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-1.5 sm:px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[42%] sm:w-[34%]">Chỉ số</th>
@@ -1418,7 +1492,7 @@ export function ReportDocument({
                     {report.content["2"].market_drivers.bullish?.length > 0 ? (
                       report.content["2"].market_drivers.bullish.map((d: any, i: number) => (
                         <div key={i}>
-                          <p className="text-[13px] leading-[1.5] text-body">
+                          <p className="text-[14.5px] leading-[1.5] text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
                               d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
@@ -1438,7 +1512,7 @@ export function ReportDocument({
                         </div>
                       ))
                     ) : (
-                      <p className="text-[12.5px] text-muted-light italic">Không có động lực tăng đáng chú ý.</p>
+                      <p className="text-[14.5px] text-muted-light italic">Không có động lực tăng đáng chú ý.</p>
                     )}
                   </div>
                 </div>
@@ -1450,7 +1524,7 @@ export function ReportDocument({
                     {report.content["2"].market_drivers.bearish?.length > 0 ? (
                       report.content["2"].market_drivers.bearish.map((d: any, i: number) => (
                         <div key={i}>
-                          <p className="text-[13px] leading-[1.5] text-body">
+                          <p className="text-[14.5px] leading-[1.5] text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
                               d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
@@ -1470,7 +1544,7 @@ export function ReportDocument({
                         </div>
                       ))
                     ) : (
-                      <p className="text-[12.5px] text-muted-light italic">Không có động lực giảm đáng chú ý.</p>
+                      <p className="text-[14.5px] text-muted-light italic">Không có động lực giảm đáng chú ý.</p>
                     )}
                   </div>
                 </div>
@@ -1500,7 +1574,10 @@ export function ReportDocument({
                 <>
                   {analysisBlocks?.map((block: any, i: number) => (
                     <div key={i} className="mb-5">
-                      <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
+                      {/* Block "Phân tích" trùng với SubHeading "Phân tích" ngay phía trên → ẩn nhãn */}
+                      {block.heading !== "Phân tích" && (
+                        <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
+                      )}
                       <div className="space-y-1.5">
                         {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => {
                           // Backend đôi khi tự chèn gạch đầu dòng thô ("- ...", có thể kèm
@@ -1515,7 +1592,7 @@ export function ReportDocument({
                           if (block.heading === "Phân tích" && GROUP_HEADLINE_PREFIXES.some((p) => trimmed.startsWith(p))) {
                             return (
                               <div key={j} className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
-                                <p className="text-[14px] leading-[1.5] font-bold text-primary-dark">
+                                <p className="text-[14.5px] leading-[1.5] font-bold text-primary-dark">
                                   <RichText text={trimmed} />
                                 </p>
                               </div>
@@ -1523,13 +1600,13 @@ export function ReportDocument({
                           }
                           const dashMatch = trimmed.match(/^[-–—]\s+/);
                           if (!dashMatch) {
-                            return <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.5] text-body" />;
+                            return <ConclusionAware key={j} text={line} className="text-[14.5px] leading-[1.5] text-body" />;
                           }
                           return (
                             <div key={j} className="flex gap-2.5">
                               <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-black shrink-0" aria-hidden="true" />
                               <div className="flex-1 min-w-0">
-                                <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-[14px] leading-[1.5] text-body" />
+                                <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-[14.5px] leading-[1.5] text-body" />
                               </div>
                             </div>
                           );
@@ -1544,22 +1621,22 @@ export function ReportDocument({
                       {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
                         <div className="space-y-2.5 mb-1">
                           {report.content["3"].correlation_analysis.gas_comment && (
-                            <p className="text-[13.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
+                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
                           )}
                           {report.content["3"].correlation_analysis.coal_comment && (
-                            <p className="text-[13.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
+                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
                           )}
                           {report.content["3"].correlation_analysis.power_comment && (
-                            <p className="text-[13.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
+                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
                           )}
                         </div>
                       )}
                       <ConclusionAware
                         text={report.content["3"].correlation_analysis.fuel_switching_chain || report.content["3"].correlation_analysis.gas_coal_power}
-                        className="text-[14px] leading-[1.5] text-body"
+                        className="text-[14.5px] leading-[1.5] text-body"
                       />
                       <div className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
-                        <p className="text-[14px] leading-[1.5] font-bold text-primary-dark">
+                        <p className="text-[14.5px] leading-[1.5] font-bold text-primary-dark">
                           <RichText text={report.content["3"].correlation_analysis.eua_conclusion} />
                         </p>
                       </div>
@@ -1632,7 +1709,7 @@ export function ReportDocument({
                       co vừa khung chứa — kể cả khổ A4 lúc in — nên không còn cần kéo
                       ngang hay fallback card riêng cho print. */}
                 <div className="hidden sm:block border border-border rounded-lg overflow-hidden">
-                  <table className="w-full table-fixed border-collapse text-[13px]">
+                  <table className="w-full table-fixed border-collapse text-[14.5px]">
                     <thead>
                       <tr>
                         <th style={{ width: "16%" }} className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint">Chỉ tiêu</th>
@@ -1658,7 +1735,7 @@ export function ReportDocument({
                             row.highlight ? "bg-primary/[0.06] hover:bg-primary/10" : "even:bg-surface/60 hover:bg-tint/40"
                           )}>
                             <td className={clsx(
-                              "px-2 sm:px-3 py-2.5 sm:py-3 border-r text-[12.5px] break-words",
+                              "px-2 sm:px-3 py-2.5 sm:py-3 border-r text-[14.5px] break-words",
                               row.highlight ? "border-primary/20 bg-primary/[0.08] font-bold text-primary-dark" : "border-border bg-surface font-semibold text-label"
                             )}>
                               <span className="flex items-center gap-1.5">
@@ -1684,7 +1761,7 @@ export function ReportDocument({
                 {/* Lưu ý — chỉ mang tính tham khảo, không phải khuyến nghị đầu tư trực tiếp. */}
                 <div className="mt-3 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn-tint px-3 py-2.5">
                   <Info size={15} className="text-warn shrink-0 mt-0.5" />
-                  <p className="text-[12.5px] leading-[1.5] text-body">
+                  <p className="text-[14.5px] leading-[1.5] text-body">
                     <b className="text-label">Lưu ý:</b> Đây là các chiến lược dựa trên phân tích của Jenny, chỉ mang tính chất tham khảo.
                     Người đọc cần xem xét kỹ, đối chiếu với bối cảnh thực tế và khẩu vị rủi ro của mình trước khi ra quyết định —
                     không phải khuyến nghị đầu tư/giao dịch trực tiếp.
@@ -1701,7 +1778,7 @@ export function ReportDocument({
               <SubHeading>Cần theo dõi</SubHeading>
               <div className="space-y-1.5">
                 {watchpoints.split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
-                  <ConclusionAware key={j} text={line} className="text-[14px] leading-[1.5] text-body" />
+                  <ConclusionAware key={j} text={line} className="text-[14.5px] leading-[1.5] text-body" />
                 ))}
               </div>
             </div>
@@ -1716,30 +1793,45 @@ export function ReportDocument({
                     kích hoạt vừa xảy ra hôm nay (services/biz_memory.py). */}
                 {report.content["biz"].reminders?.length > 0 && (
                   <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                    <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-warn/30">
+                    <div className="flex items-center gap-2.5 px-3.5 py-2.5">
                       <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-                      <div className="text-[14px] sm:text-[15px] font-bold text-label">Jenny cập nhật đề xuất trước đây</div>
+                      <div className="flex-1 min-w-0 text-[14px] sm:text-[15px] font-bold text-label">Jenny cập nhật đề xuất trước đây</div>
+                      <button
+                        type="button"
+                        onClick={() => setShowReminders((v) => !v)}
+                        aria-expanded={showReminders}
+                        aria-label={showReminders ? "Ẩn cập nhật đề xuất" : "Xem cập nhật đề xuất"}
+                        title={showReminders ? "Ẩn" : "Xem chi tiết"}
+                        className={clsx(
+                          "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full border transition-colors print:hidden",
+                          showReminders
+                            ? "bg-primary text-white border-primary"
+                            : "text-primary border-primary/40 bg-background hover:bg-tint"
+                        )}
+                      >
+                        <Info size={13} strokeWidth={2.5} aria-hidden="true" />
+                      </button>
                     </div>
-                    <ul className="list-none divide-y divide-warn/20">
+                    <ul className={clsx("list-none divide-y divide-warn/20 border-t border-warn/30", showReminders ? "block" : "hidden print:block")}>
                       {report.content["biz"].reminders.map((r: any, i: number) => (
                         <li key={i} className="px-3.5 py-3 space-y-1.5">
                           <div className="flex items-start gap-2">
-                            <p className="flex-1 min-w-0 text-[14px] leading-[1.5] text-foreground">
+                            <p className="flex-1 min-w-0 text-[14.5px] leading-[1.5] text-foreground">
                               Ngày <b>{formatFullDate(r.suggested_date)}</b> Jenny đã đề xuất: <b><RichText text={r.action} /></b>
                             </p>
                             {onDismissBizSuggestion && typeof r.id === "number" && (
                               <DismissButton onClick={() => onDismissBizSuggestion(r.id)} className="shrink-0" />
                             )}
                           </div>
-                          <p className="text-[13px] leading-[1.5] text-body">
+                          <p className="text-[14.5px] leading-[1.5] text-body">
                             <span className="font-semibold">Tình huống kích hoạt:</span> <RichText text={r.trigger} />
                           </p>
                           {r.outcome === "contradicted" ? (
-                            <p className="text-[13.5px] leading-[1.5] font-semibold text-down">
+                            <p className="text-[14.5px] leading-[1.5] font-semibold text-down">
                               ✗ Thực tế diễn ra ngược với đề xuất{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
                             </p>
                           ) : (
-                            <p className="text-[13.5px] leading-[1.5] font-semibold text-up">
+                            <p className="text-[14.5px] leading-[1.5] font-semibold text-up">
                               ✓ Tình huống đã xảy ra{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
                             </p>
                           )}
@@ -1757,7 +1849,7 @@ export function ReportDocument({
                               <span className="text-[11.5px] text-muted-light">Nguồn: {r.source_name}</span>
                             )
                           )}
-                          <p className="text-[13px] italic text-warn font-semibold">
+                          <p className="text-[14.5px] italic text-warn font-semibold">
                             {r.outcome === "contradicted"
                               ? "Đề xuất này không còn phù hợp — Jenny sẽ thôi theo dõi."
                               : "Anh/chị đã thực hiện theo đề xuất này chưa?"}
@@ -1840,7 +1932,7 @@ export function ReportDocument({
                 );
               })() : (
                 report.content["8"].bullets?.map((b: string, i: number) => (
-                  <p key={i} className="text-[14px] leading-[1.5] text-body"><RichText text={b} /></p>
+                  <p key={i} className="text-[14.5px] leading-[1.5] text-body"><RichText text={b} /></p>
                 ))
               )}
             </div>
@@ -1864,7 +1956,7 @@ export function ReportDocument({
                       {items.map((art: any, i: number) => (
                         <div key={i} className="pb-2.5 border-b border-border-soft last:border-b-0 last:pb-0">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <p className="text-[14px] font-semibold text-label leading-[1.3]">{i + 1}. {art.title}</p>
+                            <p className="text-[14.5px] font-semibold text-label leading-[1.3]">{i + 1}. {art.title}</p>
                             {art.topics?.map((topic: string, ti: number) => (
                               <span
                                 key={ti}
@@ -1878,7 +1970,7 @@ export function ReportDocument({
                             ))}
                           </div>
                           {/* Nguồn nằm liền sau nội dung tin (cùng đoạn), chỉ xuống dòng khi hết chỗ */}
-                          <p className="mt-0.5 text-[13.5px] leading-[1.4] text-body">
+                          <p className="mt-0.5 text-[14.5px] leading-[1.4] text-body">
                             <RichText text={art.summary} />{" "}
                             <a
                               href={art.url}
@@ -1893,7 +1985,7 @@ export function ReportDocument({
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[13.5px] text-muted-light italic">Không có tin tức {label.toLowerCase()} trong kỳ này.</p>
+                    <p className="text-[14.5px] text-muted-light italic">Không có tin tức {label.toLowerCase()} trong kỳ này.</p>
                   )}
                 </div>
               );

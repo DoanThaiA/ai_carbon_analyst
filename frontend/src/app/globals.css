@@ -203,6 +203,31 @@ svg text {
   thead {
     display: table-header-group;
   }
+  /* Tiêu đề bảng/mục không bị bỏ lại cuối trang một mình: luôn đi cùng nội
+     dung phía sau. Riêng bảng: tên cột (thead) + hàng dữ liệu đầu tiên phải nằm
+     cùng trang — nếu phần còn lại của trang không đủ cho cả 2 thì cả bảng (cùng
+     tiêu đề) sang trang mới, không để thead trơ đuôi trang hay gãy bảng ở hàng 1. */
+  h1, h2, h3, h4, h5, .report-heading {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  thead, thead tr, thead th {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  tbody tr:first-child {
+    break-before: avoid;
+    page-break-before: avoid;
+  }
+  /* Hàng có hàng phụ ngay sau (hàng "Cơ sở" mở rộng của bảng gợi ý) giữ liền nhau */
+  tr, td, th {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Khối biểu đồ + thẻ nhỏ/khung viền không bị cắt đôi */
+  svg, figure, .break-inside-avoid-print {
+    break-inside: avoid;
+  }
   /* overflow-x-auto chỉ cần cho cuộn ngang trên mobile — khi in, overflow
      khác "visible" có thể khiến trình duyệt coi bảng bên trong là 1 khối bị
      giới hạn chiều cao thay vì cho chảy/ngắt trang tự nhiên, gây bảng bị cắt
@@ -219,8 +244,8 @@ svg text {
      5 dòng — orphans/widows tính bằng đơn vị dòng, đúng nghĩa "diện tích còn
      lại < 5 dòng thì mới ngắt trang, còn lại thì phải viết tiếp". ---- */
   p, li {
-    orphans: 5;
-    widows: 5;
+    orphans: 3;
+    widows: 3;
   }
   /* Từng bullet (Tóm tắt điều hành, Phần 4/5...) không bị cắt ngang giữa
      chừng — nhưng KHÔNG áp cho cả <ul>/khung bao ngoài, để danh sách dài vẫn
@@ -263,17 +288,6 @@ svg text {
      giới hạn chiều cao của biểu đồ ở trên, nếu không bị cắt ngang giữa banner. */
   .report-banner-art {
     max-height: none !important;
-  }
-
-  /* ---- Biểu đồ nến + key facts: xếp dọc trên PDF thay vì flex-row ---- */
-  .lg\:flex-row {
-    flex-direction: column !important;
-  }
-  .lg\:flex-\[1\.6\] {
-    flex: unset !important;
-  }
-  .lg\:flex-1 {
-    flex: unset !important;
   }
 
   /* ---- Layout: bỏ padding bọc ngoài để nội dung full-page ---- */
