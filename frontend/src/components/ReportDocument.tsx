@@ -121,63 +121,179 @@ function RichText({ text }: { text: string }) {
   );
 }
 
-// Số giá lớn trong thẻ "TÍN HIỆU HÔM NAY": phần số to + đậm để mắt bắt ngay, đơn vị
-// (EUR/tCO₂) nhỏ hơn đứng cạnh để không lấn át con số.
-function BigPrice({ price, className }: { price: string; className?: string }) {
-  const m = price.match(/^(.*?)\s*(EUR\/tCO[₂2]?)$/);
-  const num = m ? m[1] : price;
-  const unit = m ? m[2] : "";
+// ═══════════════════════════════════════════════════════════════════════════
+// TÍN HIỆU HÔM NAY — Card components chuyên nghiệp 2 cột
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Trích xuất phân loại mua/bán từ body text của Entry
+// Trả về: { buyPrices: string[], sellPrices: string[], rawDesc: string }
+function parseEntryActions(body: string): {
+  buyLabel: string | null; buyPrices: string[];
+  sellLabel: string | null; sellPrices: string[];
+  rawDesc: string;
+} {
+  const clean = subCO2(body.replace(/\*\*/g, "")).replace(/EUR\/tCO[₂2]/g, "").trim();
+  // Try to match "Mua quanh X–Y" / "Bán quanh Z"
+  const buyMatch = clean.match(/[Mm]ua\s+(?:quanh|tại|vùng|khi)?\s*([\d,.\s–\-]+)/);
+  const sellMatch = clean.match(/[Bb]án\s+(?:quanh|tại|vùng|khi)?\s*([\d,.\s–\-]+)/);
+
+  const extractNums = (s: string): string[] => {
+    const matches = s.match(/\d+[.,]\d+/g);
+    return matches ? matches.map(m => m.replace(".", ",")) : [];
+  };
+
+  return {
+    buyLabel: buyMatch ? "MUA QUANH" : null,
+    buyPrices: buyMatch ? extractNums(buyMatch[1]) : [],
+    sellLabel: sellMatch ? "BÁN QUANH" : null,
+    sellPrices: sellMatch ? extractNums(sellMatch[1]) : [],
+    rawDesc: body,
+  };
+}
+
+// Trích xuất target mua/bán từ body text
+function parseTargetActions(body: string): {
+  buyTarget: string | null; sellTarget: string | null;
+  extra: string | null; rawDesc: string;
+} {
+  const clean = subCO2(body.replace(/\*\*/g, "")).replace(/EUR\/tCO[₂2]/g, "").trim();
+  // Tìm target cho vị thế mua (vd "mua chốt tại 86,25") và bán (vd "bán chốt tại 85,00")
+  const buyTargetMatch = clean.match(/[Mm]ua\s+(?:chốt\s+(?:tại|lời\s+tại|ở)|mục\s+tiêu)\s*([\d,.\s–\-]+)/);
+  const sellTargetMatch = clean.match(/[Bb]án\s+(?:chốt\s+(?:tại|lời\s+tại|ở)|mục\s+tiêu)\s*([\d,.\s–\-]+)/);
+  // Fallback: chỉ tìm giá đầu tiên nếu không match cấu trúc "mua/bán"
+  const allNums = clean.match(/\d+[.,]\d+/g);
+  // Tìm "mở rộng X" hoặc "extension X"
+  const extMatch = clean.match(/mở\s+rộng\s*([\d,.\s–\-]+)/i);
+
+  const fmt = (s: string) => s.trim().replace(".", ",");
+
+  let buy: string | null = null;
+  let sell: string | null = null;
+  let extra: string | null = extMatch ? fmt(extMatch[1].match(/\d+[.,]\d+/)?.[0] || "") : null;
+
+  if (buyTargetMatch) buy = fmt(buyTargetMatch[1].match(/\d+[.,]\d+/)?.[0] || "");
+  if (sellTargetMatch) sell = fmt(sellTargetMatch[1].match(/\d+[.,]\d+/)?.[0] || "");
+
+  // Fallback: nếu chỉ có mức giá thô không rõ mua/bán
+  if (!buy && !sell && allNums && allNums.length >= 1) {
+    // Kiểm tra context: nếu body chứa "mua" thì coi là mua, "bán" → bán
+    if (/mua/i.test(clean)) buy = fmt(allNums[0]);
+    else if (/bán/i.test(clean)) sell = fmt(allNums[0]);
+    else {
+      // Không rõ → gán cả 2 nếu có 2 số, hoặc gán 1 nếu chỉ có 1
+      if (allNums.length >= 2) { buy = fmt(allNums[0]); sell = fmt(allNums[1]); }
+      else buy = fmt(allNums[0]);
+    }
+  }
+
+  return { buyTarget: buy || null, sellTarget: sell || null, extra, rawDesc: body };
+}
+
+// Trích xuất stop loss trên/dưới từ body text
+function parseStopLossActions(body: string): {
+  lowerLabel: string | null; lowerPrice: string | null;
+  upperLabel: string | null; upperPrice: string | null;
+  rawDesc: string;
+} {
+  const clean = subCO2(body.replace(/\*\*/g, "")).replace(/EUR\/tCO[₂2]/g, "").trim();
+  const lowerMatch = clean.match(/(?:cắt\s+lỗ\s+(?:dưới|nếu\s+.*?dưới)|[Dd]ưới)\s*([\d,.\s]+)/);
+  const upperMatch = clean.match(/(?:cắt\s+lỗ\s+(?:trên|nếu\s+.*?trên)|[Tt]rên)\s*([\d,.\s]+)/);
+  const allNums = clean.match(/\d+[.,]\d+/g);
+  const fmt = (s: string) => s.trim().replace(".", ",");
+
+  let lower: string | null = null;
+  let upper: string | null = null;
+
+  if (lowerMatch) lower = fmt(lowerMatch[1].match(/\d+[.,]\d+/)?.[0] || "");
+  if (upperMatch) upper = fmt(upperMatch[1].match(/\d+[.,]\d+/)?.[0] || "");
+
+  // Fallback: nếu có 2 số, sorted
+  if (!lower && !upper && allNums && allNums.length >= 2) {
+    const nums = allNums.map(m => parseFloat(m.replace(",", "."))).sort((a, b) => a - b);
+    lower = fmtPrice(nums[0]);
+    upper = fmtPrice(nums[nums.length - 1]);
+  } else if (!lower && !upper && allNums && allNums.length === 1) {
+    // Chỉ 1 số: xem ngữ cảnh
+    if (/dưới/i.test(clean)) lower = fmt(allNums[0]);
+    else if (/trên/i.test(clean)) upper = fmt(allNums[0]);
+    else upper = fmt(allNums[0]); // mặc định = trên
+  }
+
+  return {
+    lowerLabel: lower ? "CẮT LỖ DƯỚI" : null, lowerPrice: lower || null,
+    upperLabel: upper ? "CẮT LỖ TRÊN" : null, upperPrice: upper || null,
+    rawDesc: body,
+  };
+}
+
+// Thanh trượt giá nhỏ gọn cho Entry — hiển thị các mức giá trên 1 trục ngang
+function EntryPriceBar({ buyPrices, sellPrices }: { buyPrices: string[]; sellPrices: string[] }) {
+  const allNums = [...buyPrices, ...sellPrices]
+    .map(p => parseFloat(p.replace(",", ".")))
+    .filter(n => !isNaN(n));
+  if (allNums.length === 0) return null;
+
+  const min = Math.min(...allNums);
+  const max = Math.max(...allNums);
+  const range = max - min || 1;
+  const pad = range * 0.2;
+  const barMin = min - pad;
+  const barMax = max + pad;
+  const barRange = barMax - barMin;
+
+  const toPct = (n: number) => ((n - barMin) / barRange) * 100;
+
+  const buyNums = buyPrices.map(p => parseFloat(p.replace(",", "."))).filter(n => !isNaN(n));
+  const sellNums = sellPrices.map(p => parseFloat(p.replace(",", "."))).filter(n => !isNaN(n));
+
   return (
-    <p className={clsx("font-black leading-none tabular-nums tracking-tight break-words", className)}>
-      <span className="text-[40px] sm:text-[56px]">{num}</span>
-      {unit && <span className="ml-2 text-[14px] sm:text-[16px] font-bold tracking-normal opacity-80 whitespace-nowrap">{unit}</span>}
-    </p>
+    <div className="mt-3 relative h-[38px]">
+      {/* Track */}
+      <div className="absolute top-[14px] left-0 right-0 h-[5px] bg-gray-200 rounded-full" />
+      {/* Buy range highlight */}
+      {buyNums.length >= 2 && (
+        <div
+          className="absolute top-[14px] h-[5px] bg-primary/30 rounded-full"
+          style={{ left: `${toPct(Math.min(...buyNums))}%`, width: `${toPct(Math.max(...buyNums)) - toPct(Math.min(...buyNums))}%` }}
+        />
+      )}
+      {/* Buy dots */}
+      {buyNums.map((n, i) => (
+        <div key={`buy-${i}`} className="absolute top-[10px] w-[12px] h-[12px] rounded-full border-2 border-primary bg-white"
+          style={{ left: `${toPct(n)}%`, transform: "translateX(-50%)" }} />
+      ))}
+      {/* Sell dots */}
+      {sellNums.map((n, i) => (
+        <div key={`sell-${i}`} className="absolute top-[10px] w-[12px] h-[12px] rounded-full border-2 border-[#c98a2e] bg-[#c98a2e]"
+          style={{ left: `${toPct(n)}%`, transform: "translateX(-50%)" }} />
+      ))}
+      {/* Labels */}
+      {buyNums.length > 0 && (
+        <div className="absolute top-[28px] text-[10px] text-muted-light font-mono tabular-nums"
+          style={{ left: `${toPct(buyNums.reduce((a, b) => a + b, 0) / buyNums.length)}%`, transform: "translateX(-50%)" }}>
+          {buyPrices.join(" – ")}
+        </div>
+      )}
+      {sellNums.length > 0 && (
+        <div className="absolute top-[28px] text-[10px] text-[#c98a2e] font-bold font-mono tabular-nums"
+          style={{ left: `${toPct(sellNums.reduce((a, b) => a + b, 0) / sellNums.length)}%`, transform: "translateX(-50%)" }}>
+          {sellPrices.join(" – ")}
+        </div>
+      )}
+    </div>
   );
 }
 
-// Một hàng tín hiệu (Entry / Stop Loss / Target): nhãn hành động + SỐ GIÁ cực lớn
-// bên trái, câu giải thích nhỏ hơn bên phải. Mỗi hàng 1 màu (xanh / đỏ / lục) và dải
-// viền dày bên trái để người dùng thấy ngay con số cần hành động.
-const SIGNAL_TONE = {
-  entry: { box: "border-primary bg-primary/[0.07]", chip: "bg-primary-dark text-white", num: "text-primary-dark" },
-  stop: { box: "border-down bg-red-50", chip: "bg-down text-white", num: "text-down" },
-  target: { box: "border-up bg-up/[0.08]", chip: "bg-up text-white", num: "text-up" },
-};
-
-function SignalRow({
-  tone,
-  action,
-  label,
-  icon: Icon,
-  data,
-  rawBody,
-}: {
-  tone: keyof typeof SIGNAL_TONE;
-  action: string;
-  label: string;
-  icon: React.ElementType;
-  data: { price: string; desc: string } | null;
-  rawBody?: string;
-}) {
-  const t = SIGNAL_TONE[tone];
+// Thanh gradient cho Stop Loss — gradient xanh → đỏ ở 2 đầu
+function StopLossGradientBar({ lower, upper }: { lower: string | null; upper: string | null }) {
+  if (!lower && !upper) return null;
   return (
-    <div className={clsx("rounded-lg border border-l-[6px] p-4 sm:p-5 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", t.box)}>
-      <div className="flex items-center gap-2 mb-3">
-        <span className={clsx("inline-flex items-center gap-1.5 rounded px-2 py-1 text-[12px] font-extrabold uppercase tracking-widest", t.chip)}>
-          <Icon size={13} strokeWidth={3} aria-hidden="true" /> {action}
-        </span>
-        <h4 className="text-[12px] font-bold uppercase tracking-widest text-muted-light">{label}</h4>
+    <div className="mt-3 relative">
+      <div className="h-[5px] rounded-full bg-gradient-to-r from-red-400 via-green-400 to-red-400" />
+      <div className="flex justify-between mt-1.5">
+        <span className="text-[10px] font-mono text-red-500 tabular-nums">{lower || ""}</span>
+        <span className="text-[10px] font-mono text-red-500 tabular-nums">{upper || ""}</span>
       </div>
-      {data?.price ? (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-2">
-          <div className="sm:shrink-0"><BigPrice price={data.price} className={t.num} /></div>
-          {data.desc && <p className="text-[14px] leading-[1.5] text-body sm:border-l sm:border-border sm:pl-6">{data.desc}</p>}
-        </div>
-      ) : rawBody ? (
-        <p className="text-[15px] leading-[1.5] text-body"><RichText text={rawBody} /></p>
-      ) : (
-        <span className="text-muted-light">—</span>
-      )}
     </div>
   );
 }
@@ -896,6 +1012,12 @@ function extractPriceNumbers(text: string): number[] {
   return matches.map(m => parseFloat(m.replace(",", ".")));
 }
 
+// Format số giá: 84.5 → "84,50"
+function fmtPrice(n: number): string {
+  const fixed = n.toFixed(2);
+  return fixed.replace(".", ",");
+}
+
 // Parse entry: tìm "Mua quanh X–Y; bán quanh Z" hoặc tương tự
 function extractEntryPrices(body: string): { buyLow: number; buyHigh: number; sell: number } | null {
   const nums = extractPriceNumbers(body);
@@ -919,84 +1041,6 @@ function extractStopLossPrices(body: string): { lower: number; upper: number } |
     return { lower: sorted[0], upper: sorted[sorted.length - 1] };
   }
   return null;
-}
-
-// Format số giá: 84.5 → "84,50"
-function fmtPrice(n: number): string {
-  const fixed = n.toFixed(2);
-  return fixed.replace(".", ",");
-}
-
-// Thanh trượt giá trực quan cho Mức vào lệnh (Entry) — thanh ngang với
-// 2 điểm mua (range) bên trái và 1 điểm bán bên phải, giống mockup.
-function PriceRangeBar({ buyLow, buyHigh, sell }: { buyLow: number; buyHigh: number; sell: number }) {
-  const min = Math.min(buyLow, sell);
-  const max = Math.max(buyHigh, sell);
-  const range = max - min || 1;
-  const pad = range * 0.15;
-  const barMin = min - pad;
-  const barMax = max + pad;
-  const barRange = barMax - barMin;
-
-  const buyLowPct = ((buyLow - barMin) / barRange) * 100;
-  const buyHighPct = ((buyHigh - barMin) / barRange) * 100;
-  const sellPct = ((sell - barMin) / barRange) * 100;
-
-  return (
-    <div className="mt-4 relative h-[40px]">
-      {/* Track */}
-      <div className="absolute top-[16px] left-0 right-0 h-[6px] bg-gray-200 rounded-full" />
-      {/* Buy range highlight */}
-      <div
-        className="absolute top-[16px] h-[6px] bg-primary/40 rounded-full"
-        style={{ left: `${buyLowPct}%`, width: `${buyHighPct - buyLowPct}%` }}
-      />
-      {/* Buy dot low */}
-      <div
-        className="absolute top-[12px] w-[14px] h-[14px] rounded-full border-2 border-primary bg-white"
-        style={{ left: `${buyLowPct}%`, transform: "translateX(-50%)" }}
-      />
-      {/* Buy dot high */}
-      <div
-        className="absolute top-[12px] w-[14px] h-[14px] rounded-full border-2 border-primary bg-white"
-        style={{ left: `${buyHighPct}%`, transform: "translateX(-50%)" }}
-      />
-      {/* Sell dot */}
-      <div
-        className="absolute top-[12px] w-[14px] h-[14px] rounded-full border-2 border-[#c98a2e] bg-[#c98a2e]"
-        style={{ left: `${sellPct}%`, transform: "translateX(-50%)" }}
-      />
-      {/* Labels */}
-      <div
-        className="absolute top-[32px] text-[11px] text-muted-light font-mono tabular-nums"
-        style={{ left: `${(buyLowPct + buyHighPct) / 2}%`, transform: "translateX(-50%)" }}
-      >
-        {fmtPrice(buyLow)}{buyLow !== buyHigh && ` – ${fmtPrice(buyHigh)}`}
-      </div>
-      <div
-        className="absolute top-[32px] text-[11px] text-[#c98a2e] font-bold font-mono tabular-nums"
-        style={{ left: `${sellPct}%`, transform: "translateX(-50%)" }}
-      >
-        {fmtPrice(sell)}
-      </div>
-    </div>
-  );
-}
-
-// Thanh gradient cho Quản trị rủi ro (Stop Loss) — gradient từ xanh lá qua
-// đỏ, 2 điểm cắt lỗ ở 2 đầu, giống mockup.
-function StopLossBar({ lower, upper }: { lower: number; upper: number }) {
-  return (
-    <div className="mt-3 relative">
-      {/* Gradient bar */}
-      <div className="h-[6px] rounded-full bg-gradient-to-r from-red-400 via-green-400 to-red-400" />
-      {/* Labels */}
-      <div className="flex justify-between mt-1.5">
-        <span className="text-[11px] font-mono text-red-500 tabular-nums">{fmtPrice(lower)}</span>
-        <span className="text-[11px] font-mono text-red-500 tabular-nums">{fmtPrice(upper)}</span>
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -1494,77 +1538,223 @@ export function ReportDocument({
             const riskPart = strategy?.find(s => /quản trị rủi ro|cắt lỗ|stop.?loss/i.test(s.label));
             const trendMeta = TREND_META[todaySignal.direction];
 
-            // Hàm trích xuất vùng giá chính (dãy số đầu tiên) và phần mô tả còn lại
-            const splitPriceAndDesc = (body: string): { price: string; desc: string } => {
-              // Tìm cụm giá dạng "86,00–86,25 EUR/tCO₂" hoặc "86,00 EUR/tCO₂"
-              const priceRe = /(\d[\d.,]*\s*[–\-]\s*\d[\d.,]*\s*EUR\/tCO[₂2]?|\d[\d.,]*\s*EUR\/tCO[₂2]?)/;
-              const m = body.match(priceRe);
-              if (m && m.index !== undefined) {
-                // Câu còn mức giá khác ngoài cụm vừa tìm (vd "mua chốt tại 86,00; bán chốt tại
-                // 85,00 EUR/tCO₂", hoặc 2 vùng giá Entry) → chọn 1 mức làm số lớn sẽ sai/thiếu
-                // ý → không tách, hiển thị nguyên câu.
-                const rest = body.slice(0, m.index) + " " + body.slice(m.index + m[0].length);
-                if (/\d+[.,]\d+/.test(rest)) return { price: "", desc: body };
-                const price = m[1].replace(/CO2/g, "CO₂");
-                // Giữ NGUYÊN câu gốc làm mô tả — cắt giá ra khỏi câu sẽ làm câu cụt
-                // nghĩa ("Mua khi giá retest vùng và giữ…", "Cắt lỗ nếu đóng cửa dưới vì…").
-                return { price, desc: body };
-              }
-              return { price: "", desc: body };
-            };
+            // Parse dữ liệu chi tiết cho từng phần
+            const entryBody = entryPart ? subCO2(stripMarkdown(entryPart.body)) : "";
+            const targetBody = targetPart ? subCO2(stripMarkdown(targetPart.body)) : "";
+            const riskBody = riskPart ? subCO2(stripMarkdown(riskPart.body)) : "";
 
-            const entry = entryPart ? splitPriceAndDesc(subCO2(stripMarkdown(entryPart.body))) : null;
-            const target = targetPart ? splitPriceAndDesc(subCO2(stripMarkdown(targetPart.body))) : null;
-            const risk = riskPart ? splitPriceAndDesc(subCO2(stripMarkdown(riskPart.body))) : null;
+            const entryData = parseEntryActions(entryBody);
+            const targetData = parseTargetActions(targetBody);
+            const stopLossData = parseStopLossActions(riskBody);
+
+            const hasBuy = entryData.buyPrices.length > 0;
+            const hasSell = entryData.sellPrices.length > 0;
+            const hasEntry = hasBuy || hasSell;
 
             return (
             <div className="mb-6">
               <div className="rounded-xl border border-primary/20 overflow-hidden shadow-[var(--shadow-soft)]">
-                {/* ═══ Header bar: tiêu đề + xu hướng ═══ */}
-                <div className="flex items-center justify-between bg-gradient-to-r from-primary-dark to-[#0d7870] px-4 sm:px-5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                  <div className="flex items-center gap-2 text-white">
-                    <LineChart size={18} strokeWidth={2.5} aria-hidden="true" />
-                    <h2 className="text-[16px] sm:text-[18px] font-extrabold uppercase tracking-wide">TÍN HIỆU HÔM NAY</h2>
+                {/* ═══ Header bar: tiêu đề + badge thông tin ═══ */}
+                <div className="bg-gradient-to-r from-primary-dark to-[#0d7870] px-4 sm:px-6 py-3.5 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                  <div className="flex items-center justify-between flex-wrap gap-y-2">
+                    {/* Tiêu đề bên trái */}
+                    <div className="flex items-center gap-2.5 text-white">
+                      <LineChart size={20} strokeWidth={2.5} aria-hidden="true" />
+                      <h2 className="text-[18px] sm:text-[20px] font-extrabold uppercase tracking-wide">TÍN HIỆU HÔM NAY</h2>
+                    </div>
+                    {/* Badge thông tin bên phải: Độ tin cậy · Thị trường · Xu hướng */}
+                    <div className="flex items-center gap-3 sm:gap-4 text-white/90 text-[12px] sm:text-[13px]">
+                      {todaySignal.probability && (
+                        <div className="flex flex-col items-center leading-tight">
+                          <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Độ tin cậy:</span>
+                          <strong className="font-bold text-white">{todaySignal.probability}</strong>
+                        </div>
+                      )}
+                      <div className="w-px h-6 bg-white/25 hidden sm:block" />
+                      <div className="flex flex-col items-center leading-tight">
+                        <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Thị trường:</span>
+                        <strong className="font-bold text-white uppercase">Carbon</strong>
+                      </div>
+                      {trendMeta && (
+                        <>
+                          <div className="w-px h-6 bg-white/25 hidden sm:block" />
+                          <div className="flex flex-col items-center leading-tight">
+                            <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Xu hướng:</span>
+                            <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">
+                              {trendMeta.arrow} {trendMeta.label}
+                            </strong>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  {trendMeta && (
-                    <div className="flex items-center gap-2 text-white/90 border-l border-white/30 pl-4 ml-4">
-                      <Compass size={15} strokeWidth={2} aria-hidden="true" />
-                      <span className="text-[13px]">Xu hướng:</span>
-                      <span className="text-[17px] sm:text-[19px] font-extrabold uppercase tracking-wide">
-                        {trendMeta.arrow} {trendMeta.label}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
-                {/* ═══ Sub-header: độ tin cậy + thị trường ═══ */}
-                <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-2.5 border-b border-primary/10 bg-tint/60">
-                  {todaySignal.probability && (
-                    <div className="flex items-center gap-1.5 text-[14px] text-muted-light">
-                      <Sparkles size={14} strokeWidth={2} className="text-primary" aria-hidden="true" />
-                      <span>Độ tin cậy: <strong className="text-label">{todaySignal.probability}</strong></span>
+                {/* ═══ Body: bố cục 2 cột chuyên nghiệp ═══ */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
+
+                  {/* ── CỘT TRÁI: MỨC VÀO LỆNH (ENTRY) ── */}
+                  <div className="p-4 sm:p-5 sm:border-r border-b sm:border-b-0 border-primary/10">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Crosshair size={16} strokeWidth={2.5} className="text-primary-dark" aria-hidden="true" />
+                      <h3 className="text-[13px] sm:text-[14px] font-extrabold uppercase tracking-wider text-primary-dark">Mức vào lệnh (Entry)</h3>
                     </div>
-                  )}
-                  <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold uppercase tracking-wider text-primary-dark border border-primary/25 bg-tint rounded-full px-2.5 py-0.5">
-                    Thị trường: Carbon
-                  </span>
+                    {hasEntry ? (
+                      <>
+                        {/* Mô tả ngắn */}
+                        <p className="text-[12px] sm:text-[13px] text-muted-light leading-snug mb-4">
+                          {hasBuy && <>Mua quanh {entryData.buyPrices.join("–")}</>}
+                          {hasBuy && hasSell && "; "}
+                          {hasSell && <>bán quanh {entryData.sellPrices.join("–")}</>}
+                          .
+                        </p>
+                        {/* Số giá nổi bật */}
+                        <div className="flex gap-2 sm:gap-3">
+                          {hasBuy && (
+                            <div className="flex-1 min-w-0 rounded-lg bg-primary/[0.06] border border-primary/15 p-3 sm:p-4">
+                              <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-primary mb-1.5">Mua quanh</div>
+                              <p className="font-black text-primary-dark tabular-nums tracking-tight leading-none">
+                                <span className="text-[26px] sm:text-[34px]">{entryData.buyPrices.join("–")}</span>
+                              </p>
+                            </div>
+                          )}
+                          {hasBuy && hasSell && (
+                            <div className="flex items-center">
+                              <div className="w-px h-10 sm:h-14 bg-border" />
+                            </div>
+                          )}
+                          {hasSell && (
+                            <div className="flex-1 min-w-0 rounded-lg bg-amber-50/80 border border-amber-200/50 p-3 sm:p-4">
+                              <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#c98a2e] mb-1.5">Bán quanh</div>
+                              <p className="font-black text-[#a67520] tabular-nums tracking-tight leading-none">
+                                <span className="text-[26px] sm:text-[34px]">{entryData.sellPrices.join("–")}</span>
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {/* Thanh trượt giá */}
+                        <EntryPriceBar buyPrices={entryData.buyPrices} sellPrices={entryData.sellPrices} />
+                      </>
+                    ) : entryPart?.body ? (
+                      <p className="text-[14px] leading-[1.6] text-body"><RichText text={entryPart.body} /></p>
+                    ) : (
+                      <span className="text-muted-light">—</span>
+                    )}
+                  </div>
+
+                  {/* ── CỘT PHẢI: MỤC TIÊU + QUẢN TRỊ RỦI RO ── */}
+                  <div className="flex flex-col gap-0">
+                    {/* Mục tiêu (Target) */}
+                    <div className="p-4 sm:p-5 border-b border-primary/10">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Target size={16} strokeWidth={2.5} className="text-emerald-600" aria-hidden="true" />
+                        <h3 className="text-[13px] sm:text-[14px] font-extrabold uppercase tracking-wider text-label">Mục tiêu (Target)</h3>
+                      </div>
+                      {(targetData.buyTarget || targetData.sellTarget) ? (
+                        <div className="flex gap-2 sm:gap-3">
+                          {targetData.buyTarget && (
+                            <div className="flex-1 min-w-0 text-center">
+                              <div className="flex items-center justify-center gap-1 mb-1.5">
+                                <TrendingUp size={12} strokeWidth={2.5} className="text-emerald-600" />
+                                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-emerald-600">Vị thế mua</span>
+                              </div>
+                              <p className="font-black text-emerald-700 tabular-nums tracking-tight leading-none">
+                                <span className="text-[30px] sm:text-[38px]">{targetData.buyTarget}</span>
+                              </p>
+                            </div>
+                          )}
+                          {targetData.buyTarget && targetData.sellTarget && (
+                            <div className="flex items-center">
+                              <div className="w-px h-12 sm:h-16 bg-border" />
+                            </div>
+                          )}
+                          {targetData.sellTarget && (
+                            <div className="flex-1 min-w-0 text-center">
+                              <div className="flex items-center justify-center gap-1 mb-1.5">
+                                <TrendingDown size={12} strokeWidth={2.5} className="text-red-500" />
+                                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-red-500">Vị thế bán</span>
+                              </div>
+                              <p className="font-black text-red-600 tabular-nums tracking-tight leading-none">
+                                <span className="text-[30px] sm:text-[38px]">{targetData.sellTarget}</span>
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      ) : targetData.extra ? (
+                        <p className="text-[14px] leading-[1.6] text-body">{targetData.extra}</p>
+                      ) : targetPart?.body ? (
+                        <p className="text-[14px] leading-[1.6] text-body"><RichText text={targetPart.body} /></p>
+                      ) : (
+                        <span className="text-muted-light">—</span>
+                      )}
+                      {/* Mở rộng target nếu có */}
+                      {targetData.extra && (targetData.buyTarget || targetData.sellTarget) && (
+                        <p className="mt-2 text-[12px] text-muted-light text-center">
+                          Mở rộng: <strong className="text-label">{targetData.extra}</strong>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Quản trị rủi ro (Stop Loss) */}
+                    <div className="p-4 sm:p-5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <ShieldCheck size={16} strokeWidth={2.5} className="text-muted-light" aria-hidden="true" />
+                        <h3 className="text-[13px] sm:text-[14px] font-extrabold uppercase tracking-wider text-label">Quản trị rủi ro (Stop Loss)</h3>
+                      </div>
+                      {(stopLossData.lowerPrice || stopLossData.upperPrice) ? (
+                        <>
+                          <div className="flex gap-2 sm:gap-3">
+                            {stopLossData.lowerPrice && (
+                              <div className="flex-1 min-w-0 text-center">
+                                <div className="flex items-center justify-center gap-1 mb-1.5">
+                                  <TrendingDown size={12} strokeWidth={2.5} className="text-red-500" />
+                                  <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-red-500">Cắt lỗ dưới</span>
+                                </div>
+                                <p className="font-black text-label tabular-nums tracking-tight leading-none">
+                                  <span className="text-[28px] sm:text-[36px]">{stopLossData.lowerPrice}</span>
+                                </p>
+                              </div>
+                            )}
+                            {stopLossData.lowerPrice && stopLossData.upperPrice && (
+                              <div className="flex items-center">
+                                <div className="w-px h-12 sm:h-16 bg-border" />
+                              </div>
+                            )}
+                            {stopLossData.upperPrice && (
+                              <div className="flex-1 min-w-0 text-center">
+                                <div className="flex items-center justify-center gap-1 mb-1.5">
+                                  <TrendingUp size={12} strokeWidth={2.5} className="text-red-500" />
+                                  <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-red-500">Cắt lỗ trên</span>
+                                </div>
+                                <p className="font-black text-label tabular-nums tracking-tight leading-none">
+                                  <span className="text-[28px] sm:text-[36px]">{stopLossData.upperPrice}</span>
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          <StopLossGradientBar lower={stopLossData.lowerPrice} upper={stopLossData.upperPrice} />
+                        </>
+                      ) : riskPart?.body ? (
+                        <p className="text-[14px] leading-[1.6] text-body"><RichText text={riskPart.body} /></p>
+                      ) : (
+                        <span className="text-muted-light">—</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                {/* ═══ Body: 3 hàng số giá lớn (Entry → Stop Loss → Target) + Cơ sở ═══ */}
-                <div className="p-4 sm:p-5 flex flex-col gap-3">
-                  <SignalRow tone="entry" action="Vào lệnh" label="Mức vào lệnh (Entry)" icon={Crosshair} data={entry} rawBody={entryPart?.body} />
-                  <SignalRow tone="stop" action="Cắt lỗ" label="Quản trị rủi ro (Stop Loss)" icon={ShieldCheck} data={risk} rawBody={riskPart?.body} />
-                  <SignalRow tone="target" action="Chốt lời" label="Mục tiêu (Target)" icon={Target} data={target} rawBody={targetPart?.body} />
-
-                  {/* ─── Cơ sở: nhỏ hơn, chỉ để tham khảo ─── */}
-                  <div className="rounded-lg border border-border bg-tint/40 p-4">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Sparkles size={12} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
-                      <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Cơ sở</h4>
+                {/* ═══ CƠ SỞ — footer tham khảo ═══ */}
+                <div className="border-t border-primary/10 bg-[#f8faf9] px-4 sm:px-6 py-3.5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Sparkles size={14} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
                     </div>
-                    <p className="text-[14px] leading-[1.65] text-body italic">
-                      {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light not-italic">—</span>}
-                    </p>
+                    <div className="min-w-0">
+                      <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">Cơ sở</h4>
+                      <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
+                        {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light">—</span>}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
