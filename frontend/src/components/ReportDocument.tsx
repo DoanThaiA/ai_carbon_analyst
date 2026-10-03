@@ -128,10 +128,57 @@ function BigPrice({ price, className }: { price: string; className?: string }) {
   const num = m ? m[1] : price;
   const unit = m ? m[2] : "";
   return (
-    <p className={clsx("font-extrabold leading-none tabular-nums tracking-tight mb-2 break-words", className)}>
-      <span className="text-[32px] sm:text-[40px]">{num}</span>
-      {unit && <span className="ml-1.5 text-[13px] sm:text-[14px] font-bold tracking-normal opacity-80">{unit}</span>}
+    <p className={clsx("font-black leading-none tabular-nums tracking-tight break-words", className)}>
+      <span className="text-[40px] sm:text-[56px]">{num}</span>
+      {unit && <span className="ml-2 text-[14px] sm:text-[16px] font-bold tracking-normal opacity-80 whitespace-nowrap">{unit}</span>}
     </p>
+  );
+}
+
+// Một hàng tín hiệu (Entry / Stop Loss / Target): nhãn hành động + SỐ GIÁ cực lớn
+// bên trái, câu giải thích nhỏ hơn bên phải. Mỗi hàng 1 màu (xanh / đỏ / lục) và dải
+// viền dày bên trái để người dùng thấy ngay con số cần hành động.
+const SIGNAL_TONE = {
+  entry: { box: "border-primary bg-primary/[0.07]", chip: "bg-primary-dark text-white", num: "text-primary-dark" },
+  stop: { box: "border-down bg-red-50", chip: "bg-down text-white", num: "text-down" },
+  target: { box: "border-up bg-up/[0.08]", chip: "bg-up text-white", num: "text-up" },
+};
+
+function SignalRow({
+  tone,
+  action,
+  label,
+  icon: Icon,
+  data,
+  rawBody,
+}: {
+  tone: keyof typeof SIGNAL_TONE;
+  action: string;
+  label: string;
+  icon: React.ElementType;
+  data: { price: string; desc: string } | null;
+  rawBody?: string;
+}) {
+  const t = SIGNAL_TONE[tone];
+  return (
+    <div className={clsx("rounded-lg border border-l-[6px] p-4 sm:p-5 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", t.box)}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className={clsx("inline-flex items-center gap-1.5 rounded px-2 py-1 text-[12px] font-extrabold uppercase tracking-widest", t.chip)}>
+          <Icon size={13} strokeWidth={3} aria-hidden="true" /> {action}
+        </span>
+        <h4 className="text-[12px] font-bold uppercase tracking-widest text-muted-light">{label}</h4>
+      </div>
+      {data?.price ? (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-2">
+          <div className="sm:shrink-0"><BigPrice price={data.price} className={t.num} /></div>
+          {data.desc && <p className="text-[14px] leading-[1.5] text-body sm:border-l sm:border-border sm:pl-6">{data.desc}</p>}
+        </div>
+      ) : rawBody ? (
+        <p className="text-[15px] leading-[1.5] text-body"><RichText text={rawBody} /></p>
+      ) : (
+        <span className="text-muted-light">—</span>
+      )}
+    </div>
   );
 }
 
@@ -833,6 +880,125 @@ function formatVietnameseDateFull(dateStr: string) {
   return `${dayOfWeek}, ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TÍN HIỆU HÔM NAY — bố cục 2 cột theo mockup mới
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Trích xuất mức giá dạng số từ chuỗi trading_strategy (vd "84,80–85,00 EUR/tCO₂")
+// Trả về mảng các số thực đã parse.
+function extractPriceNumbers(text: string): number[] {
+  if (!text) return [];
+  // Chuẩn hoá CO2 → CO₂, bỏ markdown
+  const clean = text.replace(/CO2/g, "CO₂").replace(/\*\*/g, "");
+  // Match các số dạng "84,80" hoặc "84.80" (dấu phẩy hoặc dấu chấm thập phân)
+  const matches = clean.match(/\d+[.,]\d+/g);
+  if (!matches) return [];
+  return matches.map(m => parseFloat(m.replace(",", ".")));
+}
+
+// Parse entry: tìm "Mua quanh X–Y; bán quanh Z" hoặc tương tự
+function extractEntryPrices(body: string): { buyLow: number; buyHigh: number; sell: number } | null {
+  const nums = extractPriceNumbers(body);
+  if (nums.length >= 3) return { buyLow: nums[0], buyHigh: nums[1], sell: nums[2] };
+  if (nums.length === 2) return { buyLow: nums[0], buyHigh: nums[0], sell: nums[1] };
+  return null;
+}
+
+// Parse target: tìm 2 mức giá cho vị thế mua và vị thế bán
+function extractTargetPrices(body: string): { buy: number; sell: number } | null {
+  const nums = extractPriceNumbers(body);
+  if (nums.length >= 2) return { buy: nums[0], sell: nums[1] };
+  return null;
+}
+
+// Parse stop loss: tìm 2 mức cắt lỗ (dưới + trên)
+function extractStopLossPrices(body: string): { lower: number; upper: number } | null {
+  const nums = extractPriceNumbers(body);
+  if (nums.length >= 2) {
+    const sorted = [...nums].sort((a, b) => a - b);
+    return { lower: sorted[0], upper: sorted[sorted.length - 1] };
+  }
+  return null;
+}
+
+// Format số giá: 84.5 → "84,50"
+function fmtPrice(n: number): string {
+  const fixed = n.toFixed(2);
+  return fixed.replace(".", ",");
+}
+
+// Thanh trượt giá trực quan cho Mức vào lệnh (Entry) — thanh ngang với
+// 2 điểm mua (range) bên trái và 1 điểm bán bên phải, giống mockup.
+function PriceRangeBar({ buyLow, buyHigh, sell }: { buyLow: number; buyHigh: number; sell: number }) {
+  const min = Math.min(buyLow, sell);
+  const max = Math.max(buyHigh, sell);
+  const range = max - min || 1;
+  const pad = range * 0.15;
+  const barMin = min - pad;
+  const barMax = max + pad;
+  const barRange = barMax - barMin;
+
+  const buyLowPct = ((buyLow - barMin) / barRange) * 100;
+  const buyHighPct = ((buyHigh - barMin) / barRange) * 100;
+  const sellPct = ((sell - barMin) / barRange) * 100;
+
+  return (
+    <div className="mt-4 relative h-[40px]">
+      {/* Track */}
+      <div className="absolute top-[16px] left-0 right-0 h-[6px] bg-gray-200 rounded-full" />
+      {/* Buy range highlight */}
+      <div
+        className="absolute top-[16px] h-[6px] bg-primary/40 rounded-full"
+        style={{ left: `${buyLowPct}%`, width: `${buyHighPct - buyLowPct}%` }}
+      />
+      {/* Buy dot low */}
+      <div
+        className="absolute top-[12px] w-[14px] h-[14px] rounded-full border-2 border-primary bg-white"
+        style={{ left: `${buyLowPct}%`, transform: "translateX(-50%)" }}
+      />
+      {/* Buy dot high */}
+      <div
+        className="absolute top-[12px] w-[14px] h-[14px] rounded-full border-2 border-primary bg-white"
+        style={{ left: `${buyHighPct}%`, transform: "translateX(-50%)" }}
+      />
+      {/* Sell dot */}
+      <div
+        className="absolute top-[12px] w-[14px] h-[14px] rounded-full border-2 border-[#c98a2e] bg-[#c98a2e]"
+        style={{ left: `${sellPct}%`, transform: "translateX(-50%)" }}
+      />
+      {/* Labels */}
+      <div
+        className="absolute top-[32px] text-[11px] text-muted-light font-mono tabular-nums"
+        style={{ left: `${(buyLowPct + buyHighPct) / 2}%`, transform: "translateX(-50%)" }}
+      >
+        {fmtPrice(buyLow)}{buyLow !== buyHigh && ` – ${fmtPrice(buyHigh)}`}
+      </div>
+      <div
+        className="absolute top-[32px] text-[11px] text-[#c98a2e] font-bold font-mono tabular-nums"
+        style={{ left: `${sellPct}%`, transform: "translateX(-50%)" }}
+      >
+        {fmtPrice(sell)}
+      </div>
+    </div>
+  );
+}
+
+// Thanh gradient cho Quản trị rủi ro (Stop Loss) — gradient từ xanh lá qua
+// đỏ, 2 điểm cắt lỗ ở 2 đầu, giống mockup.
+function StopLossBar({ lower, upper }: { lower: number; upper: number }) {
+  return (
+    <div className="mt-3 relative">
+      {/* Gradient bar */}
+      <div className="h-[6px] rounded-full bg-gradient-to-r from-red-400 via-green-400 to-red-400" />
+      {/* Labels */}
+      <div className="flex justify-between mt-1.5">
+        <span className="text-[11px] font-mono text-red-500 tabular-nums">{fmtPrice(lower)}</span>
+        <span className="text-[11px] font-mono text-red-500 tabular-nums">{fmtPrice(upper)}</span>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Toàn bộ nội dung "tờ báo cáo" (masthead → footer) — dùng chung cho cả màn
  * hình user (chỉ xem báo cáo đã published) và màn hình admin duyệt báo cáo,
@@ -1384,81 +1550,21 @@ export function ReportDocument({
                   </span>
                 </div>
 
-                {/* ═══ Body: 2 cột cards ═══ */}
-                <div className="p-4 sm:p-5">
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    {/* ─── Card: Mức vào lệnh (Entry) ─── */}
-                    <div className="rounded-lg border border-border bg-background p-4">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
-                          <ShieldCheck size={12} strokeWidth={2.5} />
-                        </span>
-                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Mức vào lệnh (Entry)</h4>
-                      </div>
-                      {entry?.price ? (
-                        <>
-                          <BigPrice price={entry.price} className="text-primary-dark" />
-                          {entry.desc && <p className="text-[14px] leading-[1.5] text-body">{entry.desc}</p>}
-                        </>
-                      ) : entryPart ? (
-                        <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={entryPart.body} /></p>
-                      ) : (
-                        <span className="text-muted-light">—</span>
-                      )}
-                    </div>
+                {/* ═══ Body: 3 hàng số giá lớn (Entry → Stop Loss → Target) + Cơ sở ═══ */}
+                <div className="p-4 sm:p-5 flex flex-col gap-3">
+                  <SignalRow tone="entry" action="Vào lệnh" label="Mức vào lệnh (Entry)" icon={Crosshair} data={entry} rawBody={entryPart?.body} />
+                  <SignalRow tone="stop" action="Cắt lỗ" label="Quản trị rủi ro (Stop Loss)" icon={ShieldCheck} data={risk} rawBody={riskPart?.body} />
+                  <SignalRow tone="target" action="Chốt lời" label="Mục tiêu (Target)" icon={Target} data={target} rawBody={targetPart?.body} />
 
-                    {/* ─── Card: Quản trị rủi ro (Stop Loss) ─── */}
-                    <div className="rounded-lg border border-border bg-background p-4">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
-                          <ShieldCheck size={12} strokeWidth={2.5} />
-                        </span>
-                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Quản trị rủi ro (Stop Loss)</h4>
-                      </div>
-                      {risk?.price ? (
-                        <>
-                          <BigPrice price={risk.price} className="text-down" />
-                          {risk.desc && <p className="text-[14px] leading-[1.5] text-body">{risk.desc}</p>}
-                        </>
-                      ) : riskPart ? (
-                        <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={riskPart.body} /></p>
-                      ) : (
-                        <span className="text-muted-light">—</span>
-                      )}
+                  {/* ─── Cơ sở: nhỏ hơn, chỉ để tham khảo ─── */}
+                  <div className="rounded-lg border border-border bg-tint/40 p-4">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Sparkles size={12} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
+                      <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Cơ sở</h4>
                     </div>
-
-                    {/* ─── Card: Mục tiêu (Target) ─── */}
-                    <div className="rounded-lg border border-border bg-background p-4">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
-                          <Target size={12} strokeWidth={2.5} />
-                        </span>
-                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Mục tiêu (Target)</h4>
-                      </div>
-                      {target?.price ? (
-                        <>
-                          <BigPrice price={target.price} className="text-up" />
-                          {target.desc && <p className="text-[14px] leading-[1.5] text-body">{target.desc}</p>}
-                        </>
-                      ) : targetPart ? (
-                        <p className="text-[14.5px] leading-[1.5] text-body"><RichText text={targetPart.body} /></p>
-                      ) : (
-                        <span className="text-muted-light">—</span>
-                      )}
-                    </div>
-
-                    {/* ─── Card: Cơ sở ─── */}
-                    <div className="rounded-lg border border-border bg-tint/40 p-4">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary shrink-0">
-                          <Sparkles size={12} strokeWidth={2.5} />
-                        </span>
-                        <h4 className="text-[12px] font-extrabold uppercase tracking-widest text-primary-dark">Cơ sở</h4>
-                      </div>
-                      <p className="text-[14px] leading-[1.65] text-body italic">
-                        {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light not-italic">—</span>}
-                      </p>
-                    </div>
+                    <p className="text-[14px] leading-[1.65] text-body italic">
+                      {todaySignal.condition ? <RichText text={todaySignal.condition} /> : <span className="text-muted-light not-italic">—</span>}
+                    </p>
                   </div>
                 </div>
               </div>
