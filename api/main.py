@@ -30,8 +30,10 @@ from api.routers import (
     admin_users,
     auth_admin,
     auth_user,
+    claude_connect,
     feedback,
     hot_news,
+    mcp_gateway,
     quote_chat,
     upload,
 )
@@ -78,6 +80,8 @@ app.include_router(admin_chat_reviews.router)
 app.include_router(admin_eua_framework.router)
 app.include_router(admin_quote_chat_examples.router)
 app.include_router(quote_chat.router)
+app.include_router(claude_connect.router)
+app.include_router(mcp_gateway.router)
 app.include_router(upload.router)
 app.include_router(hot_news.router)
 app.include_router(feedback.router)

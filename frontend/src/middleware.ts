@@ -21,6 +21,13 @@ export function middleware(request: NextRequest) {
     }
   }
 
+  // Trang kết nối Claude Desktop (tạo API token) — cần đăng nhập.
+  if (request.nextUrl.pathname.startsWith('/connect-claude')) {
+    if (!token) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+  }
+
   return NextResponse.next()
 }
 
@@ -29,5 +36,6 @@ export const config = {
   matcher: [
     '/admin/:path*',
     '/dashboard/:path*',
+    '/connect-claude/:path*',
   ],
 }

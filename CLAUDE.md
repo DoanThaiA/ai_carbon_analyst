@@ -163,6 +163,24 @@ Rows are claimed with `FOR UPDATE SKIP LOCKED` and marked only after a successfu
 send, so a failed send retries next crawl. Real-time UI alerts are separate (Postgres
 NOTIFY + SSE, `services/hot_news_broadcast.py`). Manual: `python -m scripts.send_hot_news_digest --dry-run`.
 
+**Kết nối Claude Desktop (MCP)**: user bấm "Hỏi Claude" trên quote → web tạo handoff
+(`POST /api/reports/{date}/quote-chat/handoff`, `api/routers/claude_connect.py`) và trả prompt
+ngắn để dán vào Claude Desktop; Claude Desktop chạy MCP server cục bộ (`mcp_client/`, gói
+`carbon-analyst-mcp`, stdio) gọi `/api/mcp-gateway/*` (`api/routers/mcp_gateway.py`) bằng API token
+cá nhân (`api_tokens`, bearer `cat_...`, chỉ lưu SHA-256). Gateway chỉ đọc và TÁI DÙNG
+`CLIENT_TOOLS`/`_execute_client_tool` của `services/quote_chat.py` — client lấy danh sách tool động qua
+`GET /tools`, nên thêm tool ở đó không cần cập nhật gói trên từng máy. Chỉ role `user` (email+OTP),
+không phải admin. Kết quả Claude sinh ra KHÔNG lưu ngược về hệ thống. `mcp_client` ghim `mcp<2`
+(API decorator của `mcp` 1.x bị bỏ ở 2.x). Test: `python -m pytest tests` (pytest trần không thấy
+package top-level vì repo chưa cấu hình pythonpath).
+Frontend: trang `/connect-claude` (`frontend/src/app/connect-claude/`, tạo/thu hồi token + sinh sẵn
+config Claude Desktop), modal `ClaudeHandoffModal` mở từ nút "Hỏi Claude" cạnh "Hỏi AI" khi bôi đen
+và từ menu avatar Jenny (`QuoteChat.tsx`; chỉ hiện với role `user`). File cài MCP client được web phục
+vụ tại `/downloads/carbon_analyst_mcp-<ver>-py3-none-any.whl` (`frontend/public/downloads/`): phát hành
+bản mới = tăng version ở `mcp_client/pyproject.toml` + `MCP_CLIENT_VERSION` trong
+`frontend/src/lib/claudeConnect.ts`, rồi chạy `scripts/build_mcp_client.sh`. Tên file wheel BẮT BUỘC có
+phiên bản hợp lệ (uv đọc phiên bản từ tên file) — không dùng kiểu `-latest.whl`.
+
 **Market data**: unchanged from the original crawler — `market_data.py` defines a
 `PriceProvider` ABC with `YFinanceProvider` (real data, WTI/Brent only) and
 `ManualOrVendorProvider` (deliberately `NotImplementedError` for EUA/TTF/German

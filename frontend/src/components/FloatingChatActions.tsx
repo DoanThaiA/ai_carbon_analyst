@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { History, MessageSquareWarning, MessageCircleMore, X } from "lucide-react";
+import { History, MessageSquareWarning, MessageCircleMore, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
 
 // Nút nổi của QuoteChat: CHỈ 1 avatar Jenny ở mọi kích thước màn hình. Bấm vào mở
@@ -83,11 +83,14 @@ export function FloatingChatActions({
   onChat,
   onFeedback,
   onHistory,
+  onClaude,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   onChat: () => void;
   onFeedback: () => void;
   onHistory: () => void;
+  // Tuỳ chọn: chỉ truyền khi user được phép "Hỏi Claude" (xem QuoteChat) — không có thì ẩn mục menu.
+  onClaude?: () => void;
 }) {
   // undefined = chưa đo xong (chưa render nút, tránh desktop nháy chế độ fab);
   // null = không đủ chỗ → fab; number = toạ độ left của nút trong khoảng trống.
@@ -198,6 +201,12 @@ export function FloatingChatActions({
                 <MessageCircleMore size={17} className="text-primary" />
                 Chat với Jenny
               </button>
+              {onClaude && (
+                <button onClick={() => pick(onClaude)} className={menuItemCls}>
+                  <Sparkles size={17} className="text-primary" />
+                  Hỏi Claude Desktop
+                </button>
+              )}
               <button onClick={() => pick(onHistory)} className={menuItemCls}>
                 <History size={17} className="text-primary" />
                 Lịch sử hỏi đáp

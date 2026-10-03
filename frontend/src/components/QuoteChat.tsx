@@ -16,6 +16,7 @@ import {
   ThumbsDown,
   Paperclip,
   FileText,
+  Sparkles,
 } from "lucide-react";
 import clsx from "clsx";
 import { formatDistanceToNow, format } from "date-fns";
@@ -32,6 +33,7 @@ import {
 import { AttachmentBadge, type DisplayAttachment } from "@/components/AttachmentBadge";
 import { JennyFeedbackModal } from "@/components/JennyFeedbackModal";
 import { FloatingChatActions } from "@/components/FloatingChatActions";
+import { ClaudeHandoffModal } from "@/components/ClaudeHandoffModal";
 
 interface FloatingTrigger {
   x: number;
@@ -112,6 +114,24 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
+  // "Hỏi Claude" (chuyển câu hỏi khó sang Claude Desktop qua MCP): null = modal đóng;
+  // chuỗi = đang mở với đoạn trích này ("" = không bôi đen, hỏi tự do về báo cáo).
+  // Chỉ hiện cho tài khoản user — admin đăng nhập bằng username nên không có token/handoff.
+  const [claudeQuote, setClaudeQuote] = useState<string | null>(null);
+  const [canAskClaude, setCanAskClaude] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get("/api/auth/me")
+      .then((res) => {
+        if (!cancelled) setCanAskClaude(res.data.role === "user");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -125,7 +145,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
 
   // Phát hiện bôi đen văn bản bên trong nội dung báo cáo.
   useEffect(() => {
-    if (chatOpen) return; // panel đang mở (kể cả chưa có quote) — không tranh chấp với việc chọn text trong panel
+    if (chatOpen || claudeQuote !== null) return; // panel/modal đang mở — không tranh chấp với việc chọn text bên trong
 
     let timeoutId: ReturnType<typeof setTimeout>;
 
@@ -152,7 +172,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       clearTimeout(timeoutId);
       document.removeEventListener("selectionchange", handleSelectionChange);
     };
-  }, [chatOpen]);
+  }, [chatOpen, claudeQuote]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -258,6 +278,13 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     clearPendingAttachments();
     window.getSelection()?.removeAllRanges();
     fetchSuggestions(quote);
+  }
+
+  function openClaudeFromSelection() {
+    if (!trigger) return;
+    setClaudeQuote(trigger.quote);
+    setTrigger(null);
+    window.getSelection()?.removeAllRanges();
   }
 
   // "Chat" từ menu avatar Jenny — hỏi đáp tự do, KHÔNG cần bôi đen đoạn nào:
@@ -464,14 +491,27 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       {children}
 
       {trigger && (
-        <button
+        <div
           style={{ position: "fixed", left: trigger.x, top: trigger.y - 44, transform: "translateX(-50%)" }}
-          onClick={openChat}
-          className="z-50 flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-3 py-2 rounded-full shadow-[var(--shadow-medium)] hover:bg-primary-dark transition-colors print:hidden"
+          className="z-50 flex items-center gap-1.5 print:hidden"
         >
-          <MessageCircleQuestion size={14} />
-          Hỏi AI
-        </button>
+          <button
+            onClick={openChat}
+            className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-3 py-2 rounded-full shadow-[var(--shadow-medium)] hover:bg-primary-dark transition-colors"
+          >
+            <MessageCircleQuestion size={14} />
+            Hỏi AI
+          </button>
+          {canAskClaude && (
+            <button
+              onClick={openClaudeFromSelection}
+              className="flex items-center gap-1.5 bg-background text-primary-dark border border-primary/40 text-xs font-semibold px-3 py-2 rounded-full shadow-[var(--shadow-medium)] hover:border-primary hover:bg-tint transition-colors"
+            >
+              <Sparkles size={14} />
+              Hỏi Claude
+            </button>
+          )}
+        </div>
       )}
 
       {!chatOpen && (
@@ -480,10 +520,17 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
           onChat={openFreeChat}
           onFeedback={() => setFeedbackOpen(true)}
           onHistory={openHistoryPanel}
+          onClaude={canAskClaude ? () => setClaudeQuote("") : undefined}
         />
       )}
 
       <JennyFeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <ClaudeHandoffModal
+        open={claudeQuote !== null}
+        onClose={() => setClaudeQuote(null)}
+        reportDate={reportDate}
+        quote={claudeQuote ?? ""}
+      />
 
       {chatOpen && (
         <div className="fixed inset-0 z-[60] flex justify-end print:hidden">

@@ -570,3 +570,64 @@ class ReportView(Base):
 
     def __repr__(self) -> str:
         return f"ReportView(id={self.id!r}, report_date={self.report_date!r}, viewer={self.viewer!r})"
+
+
+class ApiToken(Base):
+    """Token cá nhân để MCP server cục bộ trên máy user (Claude Desktop) gọi
+    /api/mcp-gateway/* — thay cho cookie JWT (Claude Desktop không có cookie
+    trình duyệt). Chỉ lưu SHA-256 của token (token gốc hiện đúng 1 lần lúc tạo);
+    `token_prefix` là vài ký tự đầu để user nhận ra token nào trong danh sách."""
+
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_api_tokens_token_hash"),
+        Index("idx_api_tokens_user_email", "user_email"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_email: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    token_prefix: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"ApiToken(id={self.id!r}, user_email={self.user_email!r}, prefix={self.token_prefix!r})"
+
+
+class ClaudeHandoff(Base):
+    """1 dòng = 1 lần user bấm "Hỏi Claude" từ quote trong báo cáo: gói quote +
+    câu hỏi + loại tác vụ để Claude Desktop lấy về qua MCP tool `get_handoff`.
+    Chỉ là gói ngữ cảnh đi MỘT CHIỀU — câu trả lời/file do Claude sinh ra ở
+    Claude Desktop KHÔNG được lưu ngược lại hệ thống."""
+
+    __tablename__ = "claude_handoffs"
+    __table_args__ = (
+        CheckConstraint(
+            "task_type IN ('pdf', 'excel', 'strategy', 'other')",
+            name="ck_claude_handoffs_task_type",
+        ),
+        UniqueConstraint("handoff_id", name="uq_claude_handoffs_handoff_id"),
+        Index("idx_claude_handoffs_user_email", "user_email"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    handoff_id: Mapped[str] = mapped_column(Text, nullable=False)  # chuỗi ngắn ngẫu nhiên, dán vào prompt
+    user_email: Mapped[str] = mapped_column(Text, nullable=False)
+    report_date: Mapped[str] = mapped_column(Text, nullable=False)  # trùng Report.report_date
+    quote: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    task_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="other")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # lần ĐẦU Claude lấy gói
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"ClaudeHandoff(id={self.id!r}, handoff_id={self.handoff_id!r}, user_email={self.user_email!r})"

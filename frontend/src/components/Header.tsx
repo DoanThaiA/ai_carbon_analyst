@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { LogoutButton } from "@/components/LogoutButton";
 import { HotNewsBell } from "@/components/HotNewsBell";
-import { Settings, Menu, X, LogOut } from "lucide-react";
+import { Settings, Menu, X, LogOut, Plug } from "lucide-react";
 import { api, setAuthRole } from "@/lib/api";
 import { ADMIN_NAV_GROUPS, ADMIN_NAV_ITEMS } from "@/lib/adminNav";
 
@@ -69,6 +69,16 @@ export function Header() {
               >
                 <Settings size={14} />
                 <span className="hidden sm:inline">Quản Trị</span>
+              </Link>
+            )}
+            {role === "user" && (
+              <Link
+                href="/connect-claude"
+                className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
+                title="Kết nối Claude Desktop"
+              >
+                <Plug size={14} />
+                <span className="hidden md:inline">Kết nối Claude</span>
               </Link>
             )}
             <HotNewsBell />

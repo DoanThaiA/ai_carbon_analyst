@@ -147,3 +147,28 @@ export interface HotNewsItem {
   published_at: string | null;
   crawled_at: string;
 }
+
+// --- Kết nối Claude Desktop (MCP) — xem backend api/routers/claude_connect.py ---
+
+export type ClaudeTaskType = "other" | "pdf" | "excel" | "strategy";
+
+export interface ApiTokenSummary {
+  id: number;
+  name: string;
+  token_prefix: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+// Token gốc chỉ có ở phản hồi lúc tạo — backend chỉ lưu hash, không lấy lại được.
+export interface ApiTokenCreated extends ApiTokenSummary {
+  token: string;
+}
+
+export interface HandoffCreated {
+  handoff_id: string;
+  prompt: string;
+  expires_at: string;
+}

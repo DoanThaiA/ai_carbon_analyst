@@ -6,12 +6,14 @@ các router con (api/routers/*.py) import được mà không tạo circular imp
 from __future__ import annotations
 
 import jwt
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
 from core.security import decode_access_token
+from db.models import ApiToken
 from db.session import build_sessionmaker, create_engine
+from services.claude_connect import authenticate_token
 
 settings = Settings.from_env()
 engine = create_engine(settings.database_url)
@@ -48,3 +50,21 @@ async def get_current_user(access_token: str | None = Cookie(default=None)) -> d
     if payload.get("role") not in ("admin", "user"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền truy cập.")
     return payload
+
+
+async def get_api_token(
+    authorization: str | None = Header(default=None),
+    session: AsyncSession = Depends(get_db),
+) -> ApiToken:
+    """Xác thực bằng token cá nhân (`Authorization: Bearer cat_...`) cho
+    /api/mcp-gateway/* — MCP server cục bộ của Claude Desktop không có cookie JWT."""
+    scheme, _, raw = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not raw.strip():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Thiếu API token.")
+    token = await authenticate_token(session, raw.strip())
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API token không hợp lệ, đã hết hạn hoặc bị thu hồi — tạo token mới trên web.",
+        )
+    return token
