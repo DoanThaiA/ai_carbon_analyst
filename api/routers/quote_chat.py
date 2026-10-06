@@ -45,6 +45,7 @@ from services.embedding import CohereEmbedder
 from services.eua_framework_admin import get_overrides_map
 from services.quote_chat import (
     astream_quote_chat,
+    StatusEvent,
     retrieve_context_for_quote,
     suggest_questions,
 )
@@ -262,6 +263,10 @@ async def quote_chat_stream(
                 few_shot_block=few_shot_block,
                 attachments=body.attachments,
             ):
+                if isinstance(delta, StatusEvent):
+                    # Trạng thái tạm (vd đang dùng trợ lý Sonic) — chỉ hiện trên UI, không vào câu trả lời/lịch sử.
+                    yield _sse("status", {"message": delta.message})
+                    continue
                 answer_parts.append(delta)
                 yield _sse("delta", delta)
 

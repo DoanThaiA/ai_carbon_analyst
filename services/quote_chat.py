@@ -1847,6 +1847,20 @@ CLIENT_TOOLS = [
 MAX_TOOL_ITERATIONS = 12
 
 
+# Tool dùng để thu thập dữ liệu từ nguồn của người dùng → báo cho người dùng biết trong lúc chờ
+# (thường mất vài giây tới ~10s nếu phải mở trình duyệt). Hiển thị thương hiệu "trợ lý Sonic".
+SONIC_TOOLS = ("fetch_user_source",)
+SONIC_STATUS_MESSAGE = "Đang sử dụng trợ lý Sonic cho việc thu thập dữ liệu..."
+
+
+class StatusEvent:
+    """Tín hiệu trạng thái đi cùng luồng text của `astream_quote_chat` — KHÔNG phải nội dung
+    câu trả lời: router phát thành SSE event `status` và KHÔNG lưu vào lịch sử chat."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+
 _DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview")
 
 
@@ -2246,6 +2260,8 @@ async def _stream_anthropic(
         # hơn. Muốn song song thật sự cần refactor cấp router để mỗi tool tự mở session riêng từ 1
         # sessionmaker (như crawl_news/pipeline.py đang làm), không hợp lý để đổi riêng ở đây.
         tool_results = []
+        if any(call.name in SONIC_TOOLS for call in client_tool_calls):
+            yield StatusEvent(SONIC_STATUS_MESSAGE)
         for call in client_tool_calls:
             result_text = await _execute_client_tool(
                 call.name, call.input, session, report_date,

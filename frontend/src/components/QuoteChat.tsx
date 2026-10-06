@@ -43,6 +43,7 @@ interface FloatingTrigger {
 
 interface DisplayMessage extends Omit<ChatTurn, "attachments"> {
   streaming?: boolean;
+  statusText?: string; // trạng thái tạm khi chờ (vd đang dùng trợ lý Sonic), xoá khi có text đầu tiên
   sources?: ChatSource[];
   attachments?: DisplayAttachment[] | null;
 }
@@ -421,7 +422,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       setMessages((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
-        if (last?.role === "assistant") next[next.length - 1] = { ...last, content: last.content + delta };
+        if (last?.role === "assistant") next[next.length - 1] = { ...last, content: last.content + delta, statusText: undefined };
         return next;
       });
     };
@@ -430,7 +431,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
         const next = [...prev];
         const last = next[next.length - 1];
         if (last?.role === "assistant") {
-          next[next.length - 1] = { ...last, content: last.content || extra || "", streaming: false };
+          next[next.length - 1] = { ...last, content: last.content || extra || "", streaming: false, statusText: undefined };
         }
         return next;
       });
@@ -457,6 +458,14 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
         }
       },
       onDelta: appendDelta,
+      onStatus: (message) => {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role === "assistant") next[next.length - 1] = { ...last, statusText: message };
+          return next;
+        });
+      },
       onDone: () => {
         finish();
         if (sessionsLoaded) fetchSessions(); // cập nhật lịch sử: phiên mới hoặc thời gian sửa gần nhất
@@ -678,7 +687,14 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                         {m.streaming && <span className="inline-block w-1.5 h-3.5 bg-primary/60 ml-0.5 align-middle animate-pulse" />}
                       </>
                     ) : m.streaming ? (
-                      <Loader2 size={14} className="animate-spin text-muted-light" />
+                      m.statusText ? (
+                        <span className="flex items-center gap-2 text-muted">
+                          <Loader2 size={14} className="animate-spin text-primary shrink-0" />
+                          {m.statusText}
+                        </span>
+                      ) : (
+                        <Loader2 size={14} className="animate-spin text-muted-light" />
+                      )
                     ) : null}
                   </div>
 

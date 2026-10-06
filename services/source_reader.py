@@ -20,7 +20,7 @@ from urllib.parse import urljoin, urlsplit
 
 import trafilatura
 from curl_cffi import requests as curl_requests
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 logger = logging.getLogger(__name__)
 

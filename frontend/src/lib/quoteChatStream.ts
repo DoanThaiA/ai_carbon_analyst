@@ -14,6 +14,8 @@ interface QuoteChatStreamArgs {
   attachments?: Attachment[];
   onMeta: (meta: { sessionId: number; sources: ChatSource[] }) => void;
   onDelta: (text: string) => void;
+  // Trạng thái tạm trong lúc chờ (vd "Đang sử dụng trợ lý Sonic...") — không thuộc câu trả lời.
+  onStatus?: (message: string) => void;
   onDone: () => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
@@ -29,6 +31,7 @@ export async function streamQuoteChat({
   attachments,
   onMeta,
   onDelta,
+  onStatus,
   onDone,
   onError,
   signal,
@@ -114,6 +117,9 @@ export async function streamQuoteChat({
         onMeta({ sessionId: m.session_id, sources: m.sources ?? [] });
       } else if (eventName === "delta" && typeof payload === "string") {
         onDelta(payload);
+      } else if (eventName === "status") {
+        const message = (payload as { message?: string })?.message;
+        if (message) onStatus?.(message);
       } else if (eventName === "error") {
         const message = (payload as { message?: string })?.message || "Đã xảy ra lỗi, vui lòng thử lại.";
         onError(message);
