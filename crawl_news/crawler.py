@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 import feedparser
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from crawl_news.fetcher import PoliteFetcher
 from schemas.crawl_models import CrawledItem, SourceConfig

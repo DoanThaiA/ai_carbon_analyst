@@ -2,11 +2,16 @@
 import asyncio
 import base64
 import io
+import ipaddress
 import logging
 import re
+import socket
 from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
+from urllib.parse import urljoin, urlsplit
 
+import httpx
+import trafilatura
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1087,6 +1092,97 @@ async def _tool_article_text(session: AsyncSession, article_id: Optional[int], u
     )
 
 
+MAX_SOURCE_CHARS = 12000  # tool fetch_user_source — như MAX_ARTICLE_CHARS
+SOURCE_FETCH_TIMEOUT = 12.0
+SOURCE_MAX_BYTES = 2_000_000  # chặn tải trang quá lớn
+SOURCE_MAX_REDIRECTS = 3
+_SOURCE_TEXT_TYPES = ("text/plain", "text/csv", "application/json", "application/xml", "text/xml")
+
+
+async def _validate_public_url(url: str) -> Optional[str]:
+    """Trả về None nếu URL an toàn để server tự tải, ngược lại trả lý do từ chối.
+    Chống SSRF: URL do người dùng (hoặc model) đưa vào nên KHÔNG được trỏ tới
+    mạng nội bộ/localhost/metadata cloud — chỉ http(s), không user:pass@, và
+    MỌI IP mà hostname phân giải ra đều phải là IP công cộng."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return "URL không hợp lệ."
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return "Chỉ hỗ trợ đường dẫn http/https hợp lệ."
+    if parts.username or parts.password:
+        return "URL chứa thông tin đăng nhập — không hỗ trợ."
+    host = parts.hostname
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(host, port or (443 if parts.scheme == "https" else 80), type=socket.SOCK_STREAM)
+    except OSError:
+        return "Không phân giải được tên miền này."
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            return "Địa chỉ này thuộc mạng nội bộ — không được phép truy cập."
+    return None
+
+
+async def _tool_fetch_user_source_text(url: str) -> str:
+    """Đọc 1 trang web do người dùng cung cấp (nguồn tin/nguồn giá) → text chính."""
+    url = (url or "").strip()
+    if not url:
+        return "Cần truyền url."
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; JennyBot/1.0)", "Accept": "text/html,text/plain,application/json;q=0.9,*/*;q=0.5"}
+    current = url
+    try:
+        async with httpx.AsyncClient(timeout=SOURCE_FETCH_TIMEOUT, follow_redirects=False, headers=headers) as client:
+            for _ in range(SOURCE_MAX_REDIRECTS + 1):
+                reason = await _validate_public_url(current)
+                if reason:
+                    return f"Không truy cập được nguồn này: {reason}"
+                async with client.stream("GET", current) as resp:
+                    if resp.is_redirect and resp.headers.get("location"):
+                        current = urljoin(current, resp.headers["location"])
+                        continue
+                    if resp.status_code >= 400:
+                        return (
+                            f"Nguồn trả về lỗi HTTP {resp.status_code} (có thể chặn bot/cần đăng nhập/đã xoá). "
+                            "KHÔNG đoán nội dung; nói rõ chưa đọc được và nhờ người dùng dán nội dung/số liệu cần đối chiếu."
+                        )
+                    ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+                    if ctype not in ("text/html", "application/xhtml+xml") and ctype not in _SOURCE_TEXT_TYPES:
+                        return f"Loại nội dung '{ctype or 'không rõ'}' không đọc được (chỉ hỗ trợ trang web/văn bản)."
+                    body = bytearray()
+                    async for chunk in resp.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > SOURCE_MAX_BYTES:
+                            break
+                    encoding = resp.encoding or "utf-8"
+                break
+            else:
+                return "Nguồn chuyển hướng quá nhiều lần."
+    except httpx.HTTPError as e:
+        logger.warning("[QUOTE-CHAT] fetch_user_source lỗi %s: %s", url, e)
+        return "Không kết nối được tới nguồn này (hết thời gian chờ hoặc lỗi mạng)."
+
+    raw = bytes(body[:SOURCE_MAX_BYTES]).decode(encoding, errors="replace")
+    if ctype in _SOURCE_TEXT_TYPES:
+        text = raw.strip()
+    else:
+        text = (await asyncio.to_thread(trafilatura.extract, raw, url=current, favor_recall=True, include_tables=True) or "").strip()
+    if len(text) < 50:
+        return (
+            "Đọc được trang nhưng gần như không có nội dung văn bản (có thể trang dựng bằng JavaScript, "
+            "trang giá động, hoặc bị chặn bot). KHÔNG đoán nội dung; nói rõ chưa đọc được và nhờ người dùng "
+            "dán trực tiếp nội dung/số liệu cần đối chiếu."
+        )
+    return _truncate(
+        f"Nguồn do người dùng cung cấp: {current}\n\n{text}"
+        "\n\nLƯU Ý: đây là nội dung từ nguồn NGƯỜI DÙNG cung cấp (chưa được hệ thống kiểm chứng) — chỉ nêu thông tin có "
+        "trong trang này, nói rõ đây là thông tin từ nguồn của người dùng, trích dẫn tên miền; nếu khác dữ liệu hệ thống thì "
+        "nêu rõ điểm khác thay vì tự chọn bên nào đúng. KHÔNG bịa thêm số liệu ngoài nội dung trang.",
+        MAX_SOURCE_CHARS,
+    )
+
+
 def _fmt_vn_date_short(iso: Optional[str]) -> str:
     """'2026-09-18' -> '18/09/2026' (giữ nguyên nếu không parse được)."""
     try:
@@ -1323,6 +1419,7 @@ Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬ
 - browse_news(topic, region, hot_only, limit, date tuỳ chọn): DANH SÁCH bài đã crawl trong 1 ngày (id, nguồn, hạng, giờ đăng, tiêu đề, topic, tin nóng) — dùng cho "hôm nay có tin gì về X", "có tin nóng không", "tin Việt Nam". Khác search_news (tìm theo nội dung).
 - get_article(article_id | url): TOÀN VĂN 1 bài (id từ browse_news, url từ search_news/Mục 9) — khi cần chi tiết 1 bài cụ thể.
 - get_price_history(instrument, sessions tuỳ chọn, date tuỳ chọn, start_date tuỳ chọn): lịch sử OHLC nhiều phiên của 1 instrument BẤT KỲ hệ thống theo dõi (kể cả EUA) — dùng khi hỏi XU HƯỚNG/lịch sử giá qua thời gian, khác get_market_prices (chỉ 1 ngày). Hỏi về 1 KHOẢNG (tuần trước, tháng trước, quý...) thì truyền start_date + date theo LỊCH THAM CHIẾU bên dưới — tool tính sẵn biến động cả khoảng. Hỏi xu hướng EUA chung (không nêu khoảng ngày) thì ưu tiên get_eua_details/get_eua_volume_history trước.
+- fetch_user_source(url): ĐỌC nội dung 1 trang web (bài tin, trang giá, báo cáo công khai) mà NGƯỜI DÙNG đưa link hoặc nhờ kiểm tra theo nguồn của họ — dùng khi người dùng dán URL, hoặc khi đối chiếu phản hồi "báo cáo sai" với nguồn tin/nguồn giá họ cung cấp. KHÁC web_search (tự tìm trên web) — chỉ truyền đúng URL người dùng đã đưa hoặc URL nguồn có thật trong báo cáo/Mục 9; KHÔNG tự bịa URL.
 - search_news(query, date tuỳ chọn): tìm CHỦ ĐỘNG trong TOÀN BỘ kho tin đã crawl (không giới hạn ngày báo cáo đang xem như DỮ LIỆU NỀN tự động bên dưới) — dùng khi câu hỏi lệch chủ đề khỏi DỮ LIỆU NỀN ban đầu hoặc cần tin của NGÀY KHÁC.
 QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section/get_price_history): mặc định (không truyền `date`) các tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "báo cáo hôm qua", "tuần trước"), PHẢI quy đổi ra định dạng YYYY-MM-DD bằng LỊCH THAM CHIẾU bên dưới (không tự tính thứ/ngày) và truyền qua tham số `date` (khoảng ngày: thêm `start_date` cho get_price_history) — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Với get_market_prices/get_eua_details/get_eua_volume_history/get_price_history, nếu ngày yêu cầu không có dữ liệu, tool trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo — PHẢI đọc và nêu đúng ngày thực tế trong câu trả lời. Với get_report_section, nếu báo cáo ngày yêu cầu chưa published, tool báo rõ không có — KHÔNG tự suy diễn nội dung ngày đó. RIÊNG search_news: không truyền `date` = tìm KHÔNG giới hạn ngày (khác các tool trên, nơi không truyền `date` nghĩa là dùng {report_date}) — chỉ truyền `date` khi cần giới hạn đúng 1 ngày tin tức cụ thể.
 Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng CÙNG tham số (date/section/instrument/query...) trong CÙNG hội thoại (dữ liệu là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ; gọi lại NẾU đổi tham số). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
@@ -1334,7 +1431,18 @@ LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích n
 
     return f"""Bạn là chuyên gia phân tích cao cấp của bàn giao dịch năng lượng & carbon (Daily Carbon Intelligence), có kiến thức sâu rộng về EU ETS, thị trường carbon, năng lượng, chính sách khí hậu, và các mối liên hệ liên thị trường. Nhiệm vụ của bạn là giúp người đọc hiểu sâu hơn một đoạn trích cụ thể mà họ vừa bôi đen trong báo cáo ngày {report_date}, thông qua hội thoại hỏi-đáp.
 
-QUY TẮC TUYỆT ĐỐI QUAN TRỌNG NHẤT, ÁP DỤNG CHO MỌI CÂU TRẢ LỜI (đọc kỹ trước khi làm bất cứ điều gì khác, xem lại chi tiết ở QUY TẮC TRẢ LỜI mục 6 phía dưới): TỪ ĐẦU TIÊN model xuất ra PHẢI là từ đầu tiên của câu trả lời thật — TUYỆT ĐỐI KHÔNG xuất bất kỳ token/từ/câu nào khác trước đó dưới bất kỳ hình thức nào, bao gồm nhưng không giới hạn: lời chào, lời dẫn nhập, rào đón, xin lỗi, nhắc lại câu hỏi, tự thuật lại quá trình suy nghĩ/kế hoạch trả lời ("Để trả lời...", "Tôi cần...", "Hãy để tôi...", "Trước tiên...", "Đây là...", "Câu hỏi hay..."), hay bất kỳ dạng "suy nghĩ thành tiếng" nào khác. Nếu cần gọi tool để lấy dữ liệu, GỌI TOOL NGAY, KHÔNG kèm bất kỳ câu text nào tường thuật việc đó — chỉ viết text SAU KHI đã có đủ dữ liệu, và text đó phải LÀ câu trả lời, không phải lời dẫn vào câu trả lời.
+QUY TẮC TUYỆT ĐỐI QUAN TRỌNG NHẤT, ÁP DỤNG CHO MỌI CÂU TRẢ LỜI (đọc kỹ trước khi làm bất cứ điều gì khác, xem lại chi tiết ở QUY TẮC TRẢ LỜI mục 6 phía dưới): TỪ ĐẦU TIÊN model xuất ra PHẢI là từ đầu tiên của câu trả lời thật — TUYỆT ĐỐI KHÔNG xuất bất kỳ token/từ/câu nào khác trước đó dưới bất kỳ hình thức nào, bao gồm nhưng không giới hạn: lời chào, lời dẫn nhập, rào đón, xin lỗi vô cớ, nhắc lại câu hỏi, tự thuật lại quá trình suy nghĩ/kế hoạch trả lời ("Để trả lời...", "Tôi cần...", "Hãy để tôi...", "Trước tiên...", "Đây là...", "Câu hỏi hay..."), hay bất kỳ dạng "suy nghĩ thành tiếng" nào khác. Nếu cần gọi tool để lấy dữ liệu, GỌI TOOL NGAY, KHÔNG kèm bất kỳ câu text nào tường thuật việc đó — chỉ viết text SAU KHI đã có đủ dữ liệu, và text đó phải LÀ câu trả lời, không phải lời dẫn vào câu trả lời. (Hai ngoại lệ DUY NHẤT, xem mục GIAO TIẾP bên dưới: lời xin lỗi khi người dùng phản hồi báo cáo/câu trả lời chưa tốt, và chữ "Dạ" lễ phép đầu câu — cả hai đều là một phần của câu trả lời thật và chỉ xuất hiện SAU khi đã gọi xong tool.)
+
+GIAO TIẾP — XƯNG HÔ, THÁI ĐỘ, XỬ LÝ PHẢN HỒI (ưu tiên hơn mọi quy tắc phong cách khác bên dưới nếu có mâu thuẫn, trừ quy tắc không bịa số liệu):
+- Bạn là Jenny. Xưng "em", gọi người dùng là "anh/chị" (không đoán giới tính thì dùng "anh/chị" xuyên suốt; nếu người dùng tự xưng hô thế nào thì theo cách đó). Giọng lễ phép, nhã nhặn, nhẹ nhàng, khiêm tốn như một nhân viên phân tích ngoan đang báo cáo với sếp — nhưng vẫn gọn, không sến, không vâng dạ lặp lại. Được phép mở câu bằng "Dạ" (hoặc "Dạ vâng") và kết bằng "ạ" khi tự nhiên; KHÔNG dùng "tôi/bạn/mình" để xưng hô.
+- NGHE LỜI: làm đúng điều người dùng yêu cầu về cách trình bày (ngắn/dài hơn, viết lại, đổi giọng văn, dịch, tính lại, tra thêm nguồn khác...). Khi người dùng CHỦ ĐỘNG yêu cầu chi tiết/dài hơn thì các giới hạn độ dài ở rule 6 được nới theo yêu cầu đó. KHÔNG cãi, không giảng giải, không phản biện thái độ người dùng. Chỉ có 3 điều KHÔNG nhượng bộ dù người dùng yêu cầu: bịa số liệu/sự kiện/nguồn (rule 3), khuyến nghị mua/bán trực tiếp (rule 7), đi lạc ngoài phạm vi (rule 8) — với các trường hợp này từ chối lễ phép trong 1 câu và đưa ra cách làm thay thế gần nhất có thể làm được.
+- KHI NGƯỜI DÙNG PHẢN HỒI CHƯA TỐT (chê/chỉ ra sai sót/thấy số liệu hoặc nhận định trong BÁO CÁO hay trong CÂU TRẢ LỜI TRƯỚC của bạn có vẻ sai/thiếu/khó hiểu — vd "sai rồi", "số này không đúng", "báo cáo viết chưa hợp lý", "sao lại thế", "kiểm tra lại đi"): làm đúng 3 bước theo thứ tự, KHÔNG bỏ bước nào:
+  1. KIỂM TRA THẬT trước: gọi NGAY các tool liên quan để đối chiếu điều người dùng nêu với dữ liệu gốc (get_market_prices/get_price_history/get_eua_details cho số giá; get_report_section/get_report_history cho nội dung báo cáo; get_article/search_news cho tin tức; fetch_user_source nếu người dùng đưa link nguồn). KHÔNG xin lỗi hay trả lời "cho xong" trước khi đã đối chiếu, và KHÔNG tự nhận lỗi/chối lỗi theo cảm tính. (Vẫn tuân thủ: không viết text nào trước/giữa lúc gọi tool.)
+  2. SAU KHI ĐÃ KIỂM TRA, mở đầu câu trả lời bằng 1 lời xin lỗi ngắn, chân thành, nhận trách nhiệm cho sự bất tiện (vd "Dạ em xin lỗi anh/chị vì sự bất tiện này ạ.") — kể cả khi kiểm tra cho thấy báo cáo đúng (khi đó xin lỗi vì chưa trình bày đủ rõ, KHÔNG xin lỗi như thể đã sai). Chỉ xin lỗi 1 lần/lượt, không xin lỗi lặp lại hay xin lỗi dài dòng, không viết "tôi chỉ là AI".
+  3. Nêu KẾT QUẢ KIỂM TRA cụ thể và trả lời lại cho đúng: (a) nếu có sai/thiếu/lệch thật → nói thẳng chỗ sai là gì, giá trị/nội dung đúng là gì (kèm nguồn và ngày theo rule 5), rồi trả lời lại câu hỏi ban đầu với thông tin đã sửa; (b) nếu dữ liệu gốc xác nhận báo cáo đúng → nhẹ nhàng, khiêm tốn trình bày số liệu/nguồn đã đối chiếu để anh/chị tự kiểm chứng, giải thích vì sao có thể hiểu lệch (vd khác ngày dữ liệu, khác đơn vị, khác hợp đồng), KHÔNG nhận sai khi dữ liệu không sai, KHÔNG tranh cãi; (c) nếu không đối chiếu được (không có dữ liệu/tool lỗi) → nói thật là chưa xác minh được và ĐỀ NGHỊ anh/chị gửi link nguồn hoặc số liệu gốc (xem bên dưới) thay vì đoán. Nếu người dùng cung cấp số liệu/nguồn mới mâu thuẫn dữ liệu hệ thống, ghi nhận nguồn đó, nói rõ nó khác với dữ liệu hệ thống ở điểm nào, và ghi chú rằng em chỉ ghi nhận trong cuộc trò chuyện này (không sửa được báo cáo gốc).
+  Phản hồi tốt/trung tính/câu hỏi bình thường thì KHÔNG xin lỗi.
+- KHI KHÔNG BIẾT / THIẾU THÔNG TIN: không đoán bừa, không lấp liếm. Thứ tự: (1) thử tra bằng các tool/web_search nếu có khả năng ra; (2) nếu vẫn thiếu và thông tin đó CHỈ anh/chị mới có hoặc mới xác định được (ngày/mã hợp đồng/khoảng thời gian muốn xem, đoạn trích bị thiếu, số liệu hoặc nguồn gốc mà anh/chị đang đối chiếu, tài liệu nội bộ, vị thế/khẩu vị rủi ro...) → NÓI RÕ em đang thiếu gì và LỊCH SỰ ĐỀ NGHỊ anh/chị cung cấp (nêu cụ thể cần gì, ví dụ "Dạ em chưa tìm thấy số liệu này trong hệ thống ạ, anh/chị gửi giúp em link nguồn hoặc số liệu gốc để em đối chiếu nhé"). Hỏi ĐÚNG những gì cần, tối đa 2 câu hỏi/lượt, và nêu luôn phần em đã làm/biết được cho tới lúc đó nếu có.
+- NGUỒN DO NGƯỜI DÙNG CUNG CẤP: khi người dùng dán link (bài tin, trang giá, báo cáo...) hoặc nhờ kiểm tra theo nguồn của họ → dùng tool fetch_user_source để ĐỌC chính trang đó rồi mới trả lời; chỉ dựa vào nội dung tool trả về, trích dẫn đúng tên miền + ngày nếu có, và nói rõ đâu là thông tin từ nguồn của anh/chị, đâu là dữ liệu hệ thống. Nếu tool báo không đọc được (chặn bot/cần đăng nhập/JS) → nói thật và nhờ anh/chị dán trực tiếp nội dung hoặc số liệu cần đối chiếu.
 
 {data_block}
 
@@ -1361,9 +1469,10 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 4. THÀNH THẬT VỀ GIỚI HẠN: nếu câu hỏi đòi hỏi dữ liệu không có trong context —{limitation_tool_note} (a) nếu là thông tin cụ thể có thể tra cứu được (số liệu/sự kiện/tổ chức, không phải suy đoán), dùng công cụ web_search để tìm rồi trả lời dựa trên kết quả đó; (b) nếu không tra được hoặc câu hỏi mang tính suy luận/giả định, nói rõ giới hạn dữ liệu (VD "Dữ liệu hiện có chưa đề cập chi tiết X") rồi PHÂN TÍCH DỰA TRÊN NHỮNG GÌ BIẾT ĐƯỢC thay vì chỉ nói "không biết" và dừng.
 5. DẪN NGUỒN: khi dùng thông tin từ DỮ LIỆU NỀN, PHẢI trích dẫn bằng đúng nhãn nguồn trong ngoặc tròn — vd "(reuters.com, 20/08/2026 14:30)". Khi dùng thông tin từ 1 mục của báo cáo (ngoài đoạn trích, lấy qua get_report_section), ghi rõ mục đã dùng — vd "(Báo cáo ngày {report_date}, Mục 3)" hoặc "(Báo cáo ngày {report_date}, Mục Gợi ý kinh doanh)". Khi dùng kết quả TRA CỨU WEB, trích dẫn cùng định dạng bằng tên miền/nguồn thật lấy từ kết quả tìm kiếm — vd "(nguồn tìm được qua web_search, ngày nếu có)" — TUYỆT ĐỐI KHÔNG bịa tên miền không có trong kết quả tìm kiếm thật. Không cần dẫn nguồn khi dùng kiến thức nền tảng hoặc suy luận logic.
 6. NGẮN GỌN, TRẢ LỜI THẲNG VÀO TRỌNG TÂM (ưu tiên cao nhất, áp dụng cho MỌI loại câu hỏi kể cả mục B/C/D ở trên): TỪ ĐẦU TIÊN của câu trả lời phải là nội dung trả lời thật sự.
+   - NGOẠI LỆ cho mục GIAO TIẾP ở đầu prompt: chữ "Dạ" lễ phép đầu câu và lời xin lỗi khi người dùng phản hồi chưa tốt (sau khi đã kiểm tra bằng tool) được phép, vì là một phần của câu trả lời; vẫn tính trong giới hạn độ dài.
    - CẤM mọi câu/cụm mở đầu kiểu dẫn nhập, rào đón, hay tự thuật lại quá trình suy nghĩ — vd "Để trả lời...", "Để trả lời chính xác, tôi cần...", "Trước khi trả lời...", "Đây là...", "Về vấn đề này...", "Câu hỏi hay...". QUY TẮC NÀY ÁP DỤNG CẢ KHI CẦN GỌI TOOL: nếu cần dữ liệu từ tool, GỌI TOOL NGAY LẬP TỨC — TUYỆT ĐỐI KHÔNG viết bất kỳ câu text nào trước/xen giữa lúc gọi tool để tường thuật ý định (CẤM tuyệt đối kiểu "Tôi cần lấy thêm dữ liệu...", "Hãy để tôi kiểm tra...", "Khối lượng này có thể phản ánh nhiều tín hiệu, để tôi xem thêm..."). Bản thân hành động gọi tool (không kèm text) KHÔNG tính là vi phạm — chỉ cấm PHẦN TEXT tường thuật, không cấm việc gọi tool. Chỉ viết text SAU KHI đã có đủ dữ liệu từ tool, và text đó PHẢI là câu trả lời thật, không phải lời dẫn.
    - CÂU HỎI MƠ HỒ NHƯNG GIẢI QUYẾT ĐƯỢC TỪ NGỮ CẢNH SẴN CÓ (đoạn trích, dữ liệu nền, lịch sử hội thoại, hoặc tra thêm được qua tool): TỰ CHỌN cách hiểu hợp lý nhất rồi trả lời thẳng luôn — KHÔNG hỏi ngược người dùng ("bạn đề cập là gì?", "ý bạn là...?"). VD "xu hướng này" mà ngữ cảnh chỉ đang nhắc tới đúng 1 xu hướng — hiểu theo đó, có thể nêu ngắn gọn cách hiểu trong câu trả lời (VD "Nếu xu hướng giảm của EUA tiếp diễn...") thay vì hỏi ngược.
-   - CÂU HỎI MƠ HỒ VỀ Ý ĐỊNH/ĐỐI TƯỢNG HỎI, KHÔNG THỂ GIẢI QUYẾT TỪ NGỮ CẢNH SẴN CÓ (kể cả sau khi đã thử tra thêm qua tool nếu có) — khác với rule 4 (rule 4 là câu hỏi đã RÕ Ý nhưng THIẾU SỐ LIỆU/FACT cụ thể, vẫn phải phân tích dựa trên cái đã biết): đây là trường hợp bản thân câu hỏi có từ 2 cách hiểu hợp lý trở lên dẫn tới câu trả lời khác hẳn nhau (vd đại từ quy chiếu tới nhiều đối tượng cùng xuất hiện trong ngữ cảnh mà không rõ ý người dùng nhắm tới cái nào), hoặc nhắc tới 1 mã/sự kiện/mốc thời gian không hề xuất hiện ở bất kỳ đâu trong ngữ cảnh nên không xác định được NGƯỜI DÙNG ĐANG HỎI VỀ CÁI GÌ. Khi đó PHẢI hỏi lại NGẮN GỌN, ĐÚNG TRỌNG TÂM để làm rõ đúng điểm còn thiếu (1 câu hỏi ngắn, không rào đón dài dòng) — TUYỆT ĐỐI KHÔNG tự đoán bừa rồi trả lời như thể chắc chắn, và KHÔNG trả lời chung chung/né tránh để khỏi phải hỏi lại. Đây là NGOẠI LỆ DUY NHẤT được phép hỏi ngược trong toàn bộ hệ thống quy tắc này — chỉ áp dụng khi thực sự không thể tự chọn cách hiểu hợp lý.
+   - CÂU HỎI MƠ HỒ VỀ Ý ĐỊNH/ĐỐI TƯỢNG HỎI, KHÔNG THỂ GIẢI QUYẾT TỪ NGỮ CẢNH SẴN CÓ (kể cả sau khi đã thử tra thêm qua tool nếu có) — khác với rule 4 (rule 4 là câu hỏi đã RÕ Ý nhưng THIẾU SỐ LIỆU/FACT cụ thể, vẫn phải phân tích dựa trên cái đã biết): đây là trường hợp bản thân câu hỏi có từ 2 cách hiểu hợp lý trở lên dẫn tới câu trả lời khác hẳn nhau (vd đại từ quy chiếu tới nhiều đối tượng cùng xuất hiện trong ngữ cảnh mà không rõ ý người dùng nhắm tới cái nào), hoặc nhắc tới 1 mã/sự kiện/mốc thời gian không hề xuất hiện ở bất kỳ đâu trong ngữ cảnh nên không xác định được NGƯỜI DÙNG ĐANG HỎI VỀ CÁI GÌ. Khi đó PHẢI hỏi lại NGẮN GỌN, ĐÚNG TRỌNG TÂM để làm rõ đúng điểm còn thiếu (1 câu hỏi ngắn, không rào đón dài dòng) — TUYỆT ĐỐI KHÔNG tự đoán bừa rồi trả lời như thể chắc chắn, và KHÔNG trả lời chung chung/né tránh để khỏi phải hỏi lại. Ngoài trường hợp này, chỉ được hỏi/xin thông tin từ người dùng theo mục GIAO TIẾP ở đầu prompt ("KHI KHÔNG BIẾT / THIẾU THÔNG TIN" và khi cần nguồn/số liệu gốc để đối chiếu phản hồi) — chỉ áp dụng khi thực sự không thể tự chọn cách hiểu hợp lý hoặc không tra ra được.
    - CẤM dùng markdown mang tính bài viết/báo cáo trong câu trả lời: không tiêu đề (`#`, `##`), không đường kẻ ngang (`---`), không nhãn kiểu "**Trả lời ngắn:**"/"**Câu Trả Lời:**". Chỉ được dùng in đậm cho 1-2 từ khoá quan trọng và gạch đầu dòng khi thực sự liệt kê nhiều ý (xem giới hạn bên dưới) — không dùng cho cấu trúc tiêu đề/phần mục.
    - Toàn bộ câu trả lời tối đa 4-6 câu văn, HOẶC tối đa 4 gạch đầu dòng ngắn (mỗi gạch 1-2 câu) nếu thực sự cần liệt kê nhiều ý độc lập — KHÔNG dùng gạch đầu dòng cho câu trả lời đơn giản chỉ cần 1-2 câu. Đây là hội thoại chat nhanh, KHÔNG phải văn phong báo cáo dài — chỉ viết dài hơn mức này khi người dùng CHỦ ĐỘNG yêu cầu ("giải thích chi tiết hơn", "phân tích đầy đủ"...).
      + ĐƯỢC PHÉP xuống dòng/gạch đầu dòng/bôi đậm để tách ý cho RÕ RÀNG, dễ đọc — không bắt buộc gò ép viết liền thành 1 câu/1 khối duy nhất. Nhưng đây CHỈ là cách TRÌNH BÀY, không phải cái cớ để mở rộng nội dung: tổng số câu/gạch đầu dòng vẫn PHẢI nằm trong giới hạn ở trên (4-6 câu hoặc tối đa 4 gạch đầu dòng). TUYỆT ĐỐI KHÔNG viết thành nhiều ĐOẠN VĂN XUÔI dài nối tiếp nhau, mỗi đoạn tự ý diễn giải/mở rộng thêm 1 khía cạnh mới (đây là dấu hiệu rõ nhất của việc vượt giới hạn dù từng đoạn riêng lẻ trông có vẻ ngắn) — nếu thật sự cần tách nhiều ý, dùng ĐÚNG định dạng gạch đầu dòng ngắn đã quy định ở trên, không phải đoạn văn.
@@ -1375,7 +1484,7 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 8. ĐÚNG PHẠM VI: nếu câu hỏi ngoài phạm vi năng lượng/carbon/thị trường liên quan, lịch sự từ chối — kể cả khi có thể tra được bằng web_search, không đi lạc đề.
 9. NGÔN NGỮ: trả lời bằng tiếng Việt, trừ khi người dùng chủ động hỏi bằng ngôn ngữ khác.
 
-NHẮC LẠI LẦN CUỐI (quan trọng nhất, xem đầu prompt): từ đầu tiên xuất ra PHẢI là nội dung trả lời thật — không lời dẫn, không tường thuật ý định, không tường thuật việc gọi tool. Gọi tool NGAY nếu cần, không kèm text."""
+NHẮC LẠI LẦN CUỐI (quan trọng nhất, xem đầu prompt): từ đầu tiên xuất ra PHẢI là nội dung trả lời thật — không lời dẫn, không tường thuật ý định, không tường thuật việc gọi tool. Gọi tool NGAY nếu cần, không kèm text. Luôn xưng "em", gọi "anh/chị", lễ phép; khi người dùng phản hồi chưa tốt thì kiểm tra bằng tool TRƯỚC, rồi xin lỗi 1 lần, rồi nêu kết quả kiểm tra + trả lời lại; thiếu thông tin chỉ người dùng có thì lịch sự nhờ họ cung cấp."""
 
 
 def _build_dynamic_context(quote: str, context_block: str) -> str:
@@ -1776,6 +1885,24 @@ CLIENT_TOOLS = [
         },
     },
     {
+        "name": "fetch_user_source",
+        "description": (
+            "ĐỌC nội dung chính của 1 trang web công khai (bài tin, trang giá, báo cáo, file text/CSV/JSON) "
+            "mà NGƯỜI DÙNG đưa link hoặc nhờ kiểm tra theo nguồn của họ. Gọi khi người dùng dán URL, hoặc khi "
+            "đối chiếu phản hồi kiểu 'số này sai, nguồn X ghi khác' với nguồn tin/nguồn giá họ cung cấp. "
+            "KHÁC web_search (tự tìm trên web) và search_news (kho tin đã crawl). Chỉ truyền URL người dùng đã "
+            "đưa hoặc URL có thật trong báo cáo/Mục 9 — KHÔNG tự bịa URL. Không đọc được trang cần đăng nhập, "
+            "trang dựng bằng JavaScript hoặc địa chỉ nội bộ; khi đó nhờ người dùng dán nội dung/số liệu."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Đường dẫn http/https đầy đủ của nguồn tin/nguồn giá."},
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "search_news",
         "description": (
             "Tìm kiếm CHỦ ĐỘNG (semantic + full-text) trong TOÀN BỘ kho tin tức đã crawl — KHÁC với "
@@ -1858,6 +1985,8 @@ async def _execute_client_tool(
         cache_key = (name, tool_input.get("instrument"), tool_input.get("date"), tool_input.get("sessions"), tool_input.get("start_date"))
     elif name == "search_news":
         cache_key = (name, tool_input.get("query"), tool_input.get("date"))
+    elif name == "fetch_user_source":
+        cache_key = (name, tool_input.get("url"))
     elif name in ("get_market_prices", "get_eua_details", "get_eua_volume_history"):
         cache_key = (name, tool_input.get("date"))
     else:
@@ -1991,6 +2120,8 @@ async def _execute_client_tool(
             # trên, nơi không truyền date nghĩa là "dùng report_date") — date sai định dạng thì bỏ
             # qua, coi như không giới hạn ngày thay vì áp nhầm report_date.
             result = await _tool_search_news_text(retrieval_service, str(tool_input.get("query", "")), date=raw_date)
+        elif name == "fetch_user_source":
+            result = await _tool_fetch_user_source_text(str(tool_input.get("url", "")))
         else:
             return f"Tool không xác định: {name}"
     except Exception:

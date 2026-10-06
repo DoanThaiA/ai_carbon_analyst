@@ -316,7 +316,7 @@ def _parse_decimal_price(raw: str) -> float:
 async def _fetch_cbam_price() -> Optional[Dict]:
     url = CBAM_PRICE_PAGE_URL
     try:
-        from selectolax.parser import HTMLParser
+        from selectolax.lexbor import LexborHTMLParser as HTMLParser
         import httpx
         
         async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
