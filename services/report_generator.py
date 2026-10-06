@@ -296,6 +296,23 @@ async def _get_barchart_symbols(session: AsyncSession) -> Dict[str, str]:
     return {row.instrument_code: row.symbol for row in rows}
 
 
+def _parse_decimal_price(raw: str) -> float:
+    """Parse giá dạng '82.32', '82,32', '1,234.56' hoặc '1.234,56' → float.
+    Dấu xuất hiện CUỐI CÙNG là dấu thập phân; dấu còn lại là phân cách nghìn.
+    Nếu chỉ có một loại dấu và lặp lại nhiều lần thì đó là phân cách nghìn."""
+    s = raw.replace("\xa0", "").replace(" ", "").replace("€", "")
+    last_dot, last_comma = s.rfind("."), s.rfind(",")
+    if last_dot != -1 and last_comma != -1:
+        dec, thou = ("." , ",") if last_dot > last_comma else (",", ".")
+        return float(s.replace(thou, "").replace(dec, "."))
+    sep = "." if last_dot != -1 else "," if last_comma != -1 else None
+    if sep is None:
+        return float(s)
+    if s.count(sep) > 1:
+        return float(s.replace(sep, ""))
+    return float(s.replace(",", "."))
+
+
 async def _fetch_cbam_price() -> Optional[Dict]:
     url = CBAM_PRICE_PAGE_URL
     try:
@@ -328,7 +345,7 @@ async def _fetch_cbam_price() -> Optional[Dict]:
                                     next_date = next_cells[1]
                                     
             if latest_price:
-                clean_price = latest_price.replace(".", "").replace(",", ".")
+                cbam_close = _parse_decimal_price(latest_price)
                 note = f"Giá chốt theo quý, tại ngày {latest_date}"
                 if next_date:
                     note += f", ngày chốt giá tiếp theo {next_date}"
@@ -336,12 +353,12 @@ async def _fetch_cbam_price() -> Optional[Dict]:
                 return {
                     "name": "CBAM Certificate",
                     "code": "CBAM",
-                    "price": f"{float(clean_price):,.2f} EUR/tCO2",
+                    "price": f"{cbam_close:,.2f} EUR/tCO2",
                     "dday": "-",
                     "dweek": "-",
                     "up": True,
                     "note": note,
-                    "close": float(clean_price),
+                    "close": cbam_close,
                     "day_change_pct": None,
                     "week_change_pct": None,
                     "category": "carbon",
