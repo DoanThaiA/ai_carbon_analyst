@@ -1,10 +1,9 @@
-"""Tool fetch_user_source của Quote Chat: chặn SSRF + đọc nguồn do người dùng cung cấp."""
+"""Tool fetch_user_source của Quote Chat (services/source_reader.py): chặn SSRF, 2 tầng fetch."""
 import asyncio
 
-import httpx
 import pytest
 
-from services import quote_chat as qc
+from services import quote_chat as qc, source_reader as sr
 
 
 def run(coro):
@@ -17,7 +16,7 @@ def run(coro):
     "http://user:pw@example.com/", "not a url",
 ])
 def test_rejects_non_public_or_invalid_urls(url):
-    assert run(qc._validate_public_url(url)) is not None
+    assert run(sr.validate_public_url(url)) is not None
 
 
 def test_tool_registered_with_required_url():
@@ -25,29 +24,61 @@ def test_tool_registered_with_required_url():
     assert tool["input_schema"]["required"] == ["url"]
 
 
-def test_fetch_blocked_for_internal_address():
-    out = run(qc._tool_fetch_user_source_text("http://127.0.0.1:5432/"))
-    assert "Không truy cập được" in out
+def test_read_blocked_for_internal_address():
+    assert "Không truy cập được" in run(sr.read_source("http://127.0.0.1:5432/"))
 
 
-def test_fetch_reads_text_source(monkeypatch):
+def _public(monkeypatch):
     async def ok(_url):
         return None
-    monkeypatch.setattr(qc, "_validate_public_url", ok)
-    transport = httpx.MockTransport(lambda req: httpx.Response(
-        200, headers={"content-type": "text/plain; charset=utf-8"},
-        text="CBAM certificate price Q2 2026: 82.32 EUR/tCO2 " * 3))
-    real = httpx.AsyncClient
-    monkeypatch.setattr(qc.httpx, "AsyncClient", lambda **kw: real(transport=transport, **kw))
-    out = run(qc._tool_fetch_user_source_text("https://example.com/p"))
-    assert "82.32" in out and "nguồn NGƯỜI DÙNG cung cấp" in out
+    monkeypatch.setattr(sr, "validate_public_url", ok)
 
 
-def test_fetch_http_error_message(monkeypatch):
-    async def ok(_url):
-        return None
-    monkeypatch.setattr(qc, "_validate_public_url", ok)
-    transport = httpx.MockTransport(lambda req: httpx.Response(403))
-    real = httpx.AsyncClient
-    monkeypatch.setattr(qc.httpx, "AsyncClient", lambda **kw: real(transport=transport, **kw))
-    assert "HTTP 403" in run(qc._tool_fetch_user_source_text("https://example.com/p"))
+def test_curl_tier_reads_page_and_keeps_table(monkeypatch):
+    _public(monkeypatch)
+    html = ("<html><body><article><p>" + "CBAM certificate price commentary. " * 10 + "</p></article>"
+            "<table><tr><th>Quarter</th><th>Date</th><th>Price</th></tr>"
+            "<tr><td>Q3 2026</td><td>5 October 2026</td><td>82.32</td></tr></table></body></html>")
+
+    async def fake_curl(url):
+        return html, "text/html", url
+    monkeypatch.setattr(sr, "_fetch_curl", fake_curl)
+    out = run(sr.read_source("https://example.com/p"))
+    assert "Q3 2026 | 5 October 2026 | 82.32" in out and "nguồn NGƯỜI DÙNG cung cấp" in out
+
+
+def test_falls_back_to_playwright_when_blocked(monkeypatch):
+    _public(monkeypatch)
+
+    async def blocked(url):
+        raise sr._Blocked("HTTP 401")
+
+    async def browser(url):
+        return "<html><body><article><p>" + "Real article text after JS render. " * 10 + "</p></article></body></html>", url
+    monkeypatch.setattr(sr, "_fetch_curl", blocked)
+    monkeypatch.setattr(sr, "_fetch_playwright", browser)
+    assert "Real article text" in run(sr.read_source("https://example.com/p"))
+
+
+def test_bot_wall_page_is_not_returned_as_content(monkeypatch):
+    _public(monkeypatch)
+    wall = "<html><body><p>JavaScript is disabled. In order to continue, we need to verify that you're not a robot. " + "x " * 120 + "</p></body></html>"
+
+    async def fake_curl(url):
+        return wall, "text/html", url
+
+    async def browser(url):
+        return wall, url
+    monkeypatch.setattr(sr, "_fetch_curl", fake_curl)
+    monkeypatch.setattr(sr, "_fetch_playwright", browser)
+    out = run(sr.read_source("https://example.com/p"))
+    assert "Không đọc được" in out and "not a robot" not in out
+
+
+def test_http_404_is_reported_without_playwright(monkeypatch):
+    _public(monkeypatch)
+
+    async def gone(url):
+        raise ValueError("Nguồn trả về lỗi HTTP 404")
+    monkeypatch.setattr(sr, "_fetch_curl", gone)
+    assert "404" in run(sr.read_source("https://example.com/p"))

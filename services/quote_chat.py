@@ -2,16 +2,11 @@
 import asyncio
 import base64
 import io
-import ipaddress
 import logging
 import re
-import socket
 from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
-from urllib.parse import urljoin, urlsplit
 
-import httpx
-import trafilatura
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +15,7 @@ from db.models import Article, BizSuggestion, Report, Instrument
 from schemas.chat_models import MAX_ATTACHMENTS_PER_TURN, Attachment, ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services import minio_service
+from services.source_reader import read_source
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services.report_generator import (
@@ -1094,97 +1090,6 @@ async def _tool_article_text(session: AsyncSession, article_id: Optional[int], u
     )
 
 
-MAX_SOURCE_CHARS = 12000  # tool fetch_user_source — như MAX_ARTICLE_CHARS
-SOURCE_FETCH_TIMEOUT = 12.0
-SOURCE_MAX_BYTES = 2_000_000  # chặn tải trang quá lớn
-SOURCE_MAX_REDIRECTS = 3
-_SOURCE_TEXT_TYPES = ("text/plain", "text/csv", "application/json", "application/xml", "text/xml")
-
-
-async def _validate_public_url(url: str) -> Optional[str]:
-    """Trả về None nếu URL an toàn để server tự tải, ngược lại trả lý do từ chối.
-    Chống SSRF: URL do người dùng (hoặc model) đưa vào nên KHÔNG được trỏ tới
-    mạng nội bộ/localhost/metadata cloud — chỉ http(s), không user:pass@, và
-    MỌI IP mà hostname phân giải ra đều phải là IP công cộng."""
-    try:
-        parts = urlsplit(url)
-        port = parts.port
-    except ValueError:
-        return "URL không hợp lệ."
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        return "Chỉ hỗ trợ đường dẫn http/https hợp lệ."
-    if parts.username or parts.password:
-        return "URL chứa thông tin đăng nhập — không hỗ trợ."
-    host = parts.hostname
-    try:
-        infos = await asyncio.get_running_loop().getaddrinfo(host, port or (443 if parts.scheme == "https" else 80), type=socket.SOCK_STREAM)
-    except OSError:
-        return "Không phân giải được tên miền này."
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global:
-            return "Địa chỉ này thuộc mạng nội bộ — không được phép truy cập."
-    return None
-
-
-async def _tool_fetch_user_source_text(url: str) -> str:
-    """Đọc 1 trang web do người dùng cung cấp (nguồn tin/nguồn giá) → text chính."""
-    url = (url or "").strip()
-    if not url:
-        return "Cần truyền url."
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; JennyBot/1.0)", "Accept": "text/html,text/plain,application/json;q=0.9,*/*;q=0.5"}
-    current = url
-    try:
-        async with httpx.AsyncClient(timeout=SOURCE_FETCH_TIMEOUT, follow_redirects=False, headers=headers) as client:
-            for _ in range(SOURCE_MAX_REDIRECTS + 1):
-                reason = await _validate_public_url(current)
-                if reason:
-                    return f"Không truy cập được nguồn này: {reason}"
-                async with client.stream("GET", current) as resp:
-                    if resp.is_redirect and resp.headers.get("location"):
-                        current = urljoin(current, resp.headers["location"])
-                        continue
-                    if resp.status_code >= 400:
-                        return (
-                            f"Nguồn trả về lỗi HTTP {resp.status_code} (có thể chặn bot/cần đăng nhập/đã xoá). "
-                            "KHÔNG đoán nội dung; nói rõ chưa đọc được và nhờ người dùng dán nội dung/số liệu cần đối chiếu."
-                        )
-                    ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
-                    if ctype not in ("text/html", "application/xhtml+xml") and ctype not in _SOURCE_TEXT_TYPES:
-                        return f"Loại nội dung '{ctype or 'không rõ'}' không đọc được (chỉ hỗ trợ trang web/văn bản)."
-                    body = bytearray()
-                    async for chunk in resp.aiter_bytes():
-                        body.extend(chunk)
-                        if len(body) > SOURCE_MAX_BYTES:
-                            break
-                    encoding = resp.encoding or "utf-8"
-                break
-            else:
-                return "Nguồn chuyển hướng quá nhiều lần."
-    except httpx.HTTPError as e:
-        logger.warning("[QUOTE-CHAT] fetch_user_source lỗi %s: %s", url, e)
-        return "Không kết nối được tới nguồn này (hết thời gian chờ hoặc lỗi mạng)."
-
-    raw = bytes(body[:SOURCE_MAX_BYTES]).decode(encoding, errors="replace")
-    if ctype in _SOURCE_TEXT_TYPES:
-        text = raw.strip()
-    else:
-        text = (await asyncio.to_thread(trafilatura.extract, raw, url=current, favor_recall=True, include_tables=True) or "").strip()
-    if len(text) < 50:
-        return (
-            "Đọc được trang nhưng gần như không có nội dung văn bản (có thể trang dựng bằng JavaScript, "
-            "trang giá động, hoặc bị chặn bot). KHÔNG đoán nội dung; nói rõ chưa đọc được và nhờ người dùng "
-            "dán trực tiếp nội dung/số liệu cần đối chiếu."
-        )
-    return _truncate(
-        f"Nguồn do người dùng cung cấp: {current}\n\n{text}"
-        "\n\nLƯU Ý: đây là nội dung từ nguồn NGƯỜI DÙNG cung cấp (chưa được hệ thống kiểm chứng) — chỉ nêu thông tin có "
-        "trong trang này, nói rõ đây là thông tin từ nguồn của người dùng, trích dẫn tên miền; nếu khác dữ liệu hệ thống thì "
-        "nêu rõ điểm khác thay vì tự chọn bên nào đúng. KHÔNG bịa thêm số liệu ngoài nội dung trang.",
-        MAX_SOURCE_CHARS,
-    )
-
-
 def _fmt_vn_date_short(iso: Optional[str]) -> str:
     """'2026-09-18' -> '18/09/2026' (giữ nguyên nếu không parse được)."""
     try:
@@ -2123,7 +2028,7 @@ async def _execute_client_tool(
             # qua, coi như không giới hạn ngày thay vì áp nhầm report_date.
             result = await _tool_search_news_text(retrieval_service, str(tool_input.get("query", "")), date=raw_date)
         elif name == "fetch_user_source":
-            result = await _tool_fetch_user_source_text(str(tool_input.get("url", "")))
+            result = await read_source(str(tool_input.get("url", "")))
         else:
             return f"Tool không xác định: {name}"
     except Exception:
