@@ -76,6 +76,25 @@ def run_crawl_prices() -> dict:
         return {"prices_saved": 0, "errors": ["unexpected_error"]}
 
 
+async def run_crawl_cbam_price() -> bool:
+    """Crawl giá CBAM Certificate (trang EC) và lưu DB — tách riêng khỏi Barchart vì nguồn khác,
+    lỗi ở đây KHÔNG được làm hỏng job giá chính (chỉ log)."""
+    from core.config import Settings
+    from db.session import build_sessionmaker, create_engine
+    from services.report_generator import save_cbam_price
+    engine = create_engine(Settings.from_env().database_url)
+    try:
+        saved = await save_cbam_price(build_sessionmaker(engine))
+        if not saved:
+            logger.warning("━━━ [CBAM] Không lấy được giá CBAM — giữ nguyên giá đã lưu gần nhất")
+        return saved
+    except Exception:
+        logger.exception("━━━ [CBAM] Lỗi khi lưu giá CBAM")
+        return False
+    finally:
+        await engine.dispose()
+
+
 async def daily_prices_job() -> None:
     """Job lập lịch chạy lúc 06:00 SA (giờ VN) mỗi ngày — chỉ crawl giá."""
     now_vn = datetime.now(TZ_VN)
@@ -83,6 +102,7 @@ async def daily_prices_job() -> None:
     logger.info("🚀 [SCHEDULER] Bắt đầu Daily Prices Job — %s", now_vn.strftime("%Y-%m-%d %H:%M:%S"))
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, run_crawl_prices)
+    await run_crawl_cbam_price()
     logger.info("✅ [SCHEDULER] Daily Prices Job hoàn thành — %s", datetime.now(TZ_VN).strftime("%H:%M:%S"))
     logger.info("=" * 60)
 

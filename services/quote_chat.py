@@ -287,8 +287,10 @@ async def _tool_market_prices_text(session: AsyncSession, target_date: str, requ
         date_note = ""
     return (
         f"{date_note}\n{prices_text}\n"
-        "LƯU Ý: đây là 6 instrument DUY NHẤT hệ thống có dữ liệu giá thật (EUA, TTF/gas, API2/than, "
-        "Brent, WTI, DEBY1/điện Đức). Dùng ĐÚNG số này (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay "
+        "LƯU Ý: hệ thống có dữ liệu giá thật cho EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức, "
+        "và giá tham chiếu CBAM Certificate (EUR/tCO2, chốt theo quý, KHÔNG có Δ ngày/Δ tuần — hỏi 'giá CBAM' "
+        "thì trả lời đúng con số CBAM ở trên kèm ngày chốt/ghi chú, KHÔNG nói hệ thống không theo dõi CBAM, "
+        "KHÔNG thay bằng giá EUA). Dùng ĐÚNG số này (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay "
         "mô tả định tính mơ hồ thay cho con số thật. Hỏi về mã KHÔNG nằm trong 6 mã này → hệ thống "
         "không theo dõi, có thể dùng web_search nếu cần số liệu cụ thể, KHÔNG suy đoán."
     )
@@ -1405,7 +1407,7 @@ def _build_static_instructions(
 
     data_block = f"""=== DỮ LIỆU GIÁ / NỘI DUNG BÁO CÁO — TRA CỨU QUA TOOL, KHÔNG CÓ SẴN Ở ĐÂY ===
 Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬT (round-trip DB/API), người dùng đang chờ trực tiếp — chỉ gọi khi câu hỏi THỰC SỰ cần dữ liệu đó, KHÔNG gọi "cho chắc"/"để minh hoạ thêm bằng số" nếu thông tin đã có sẵn trong đoạn trích/DỮ LIỆU NỀN/lịch sử hội thoại. ĐẶC BIỆT với câu hỏi THUẦN SUY LUẬN ("vì sao", "cơ chế nào", "tại sao X tác động Y") mà đoạn trích/DỮ LIỆU NỀN đã nêu đủ dữ kiện định tính để giải thích — TRẢ LỜI NGAY bằng suy luận (xem NĂNG LỰC mục C bên dưới), KHÔNG gọi get_market_prices/get_eua_details/get_price_history "cho có số liệu minh hoạ" nếu người dùng không hỏi rõ 1 con số cụ thể; chỉ gọi tool giá khi câu hỏi trực tiếp cần SỐ (giá bao nhiêu, tăng/giảm bao nhiêu %, mốc kỹ thuật ở đâu...).
-- get_market_prices(date tuỳ chọn): giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức).
+- get_market_prices(date tuỳ chọn): giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức) + giá tham chiếu CBAM Certificate (EUR/tCO2, chốt theo quý, không có Δ) — hỏi "giá CBAM hôm nay/hiện tại" thì gọi tool này và trả đúng số CBAM.
 - get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
 - get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
 - get_report_section(section="1".."4"|"6"|"8"|"9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu — bao gồm cả tín hiệu liên thị trường và quan điểm thị trường nếu có + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
@@ -1615,8 +1617,8 @@ CLIENT_TOOLS = [
         "name": "get_market_prices",
         "description": (
             "Lấy giá đóng cửa + Δ ngày + Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, "
-            "API2/than, Brent, WTI, DEBY1/điện Đức) cho ngày báo cáo đang xem (hoặc ngày cụ thể "
-            "truyền qua `date`). Gọi khi câu trả lời cần SỐ LIỆU GIÁ CỤ THỂ chưa có sẵn trong đoạn "
+            "API2/than, Brent, WTI, DEBY1/điện Đức) + giá CBAM Certificate (EUR/tCO2, chốt theo quý, "
+            "không có Δ) cho ngày báo cáo đang xem (hoặc ngày cụ thể truyền qua `date`). Gọi khi hỏi 'giá CBAM' hoặc khi câu trả lời cần SỐ LIỆU GIÁ CỤ THỂ chưa có sẵn trong đoạn "
             "trích/dữ liệu nền đã cung cấp."
         ),
         "input_schema": {"type": "object", "properties": {"date": _DATE_PARAM_SCHEMA}},

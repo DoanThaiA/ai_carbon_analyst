@@ -1,7 +1,7 @@
 import json
 import re
 import logging
-from datetime import datetime, timedelta, date, time as dtime
+from datetime import datetime, timedelta, timezone, date, time as dtime
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Optional
 from urllib.parse import quote
@@ -9,6 +9,7 @@ import asyncio
 import anthropic
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db.models import Article, Price, Instrument, PriceCrawlSource, Report
 from core.config import Settings
@@ -369,6 +370,78 @@ async def _fetch_cbam_price() -> Optional[Dict]:
         
     return None
 
+CBAM_CODE = "CBAM"
+CBAM_UNIT = "EUR/tCO2"
+CBAM_SOURCE_NAME = "European Commission - CBAM certificate price"
+
+
+async def save_cbam_price(session_factory) -> bool:
+    """Crawl giá CBAM Certificate từ trang EC rồi upsert vào `instruments`/`prices` (mã CBAM)
+    để mọi nơi đọc DB (báo cáo, tool giá của Jenny) đều tra được — trước đây giá chỉ fetch
+    trực tiếp lúc sinh báo cáo nên Jenny không trả lời được "giá CBAM hôm nay". Giá chốt theo
+    quý nên KHÔNG có Δ ngày/Δ tuần (day/week_change_pct = NULL). Khoá theo NGÀY DỮ LIỆU
+    (hôm qua, giống crawl_barchart) — idempotent, chạy lại cùng ngày chỉ cập nhật dòng cũ.
+    Trả về True nếu đã lưu."""
+    cbam = await _fetch_cbam_price()
+    if not cbam:
+        return False
+    now_vn = datetime.now(timezone(timedelta(hours=7)))
+    data_date = (now_vn.date() - timedelta(days=1)).isoformat()
+    async with session_factory() as session:
+        instrument = (await session.execute(select(Instrument).where(Instrument.code == CBAM_CODE))).scalar_one_or_none()
+        if instrument is None:
+            instrument = Instrument(
+                code=CBAM_CODE, name=cbam["name"], category="carbon",
+                exchange="European Commission", unit=CBAM_UNIT,
+            )
+            session.add(instrument)
+            await session.flush()
+        stmt = pg_insert(Price).values(
+            instrument_id=instrument.id, price_date=data_date, price_time=now_vn.strftime("%H:%M:%S"),
+            close_price=cbam["close"], day_change_pct=None, week_change_pct=None,
+            note=cbam["note"], source_name=CBAM_SOURCE_NAME,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["instrument_id", "price_date"],
+            set_={"price_time": stmt.excluded.price_time, "close_price": stmt.excluded.close_price,
+                  "note": stmt.excluded.note, "source_name": stmt.excluded.source_name},
+        )
+        await session.execute(stmt)
+        await session.commit()
+    logger.info("[CBAM] Đã lưu giá CBAM %.2f %s (ngày dữ liệu %s)", cbam["close"], CBAM_UNIT, data_date)
+    return True
+
+
+async def _get_stored_cbam_price(session: AsyncSession, target_date_str: str) -> Optional[Dict]:
+    """Giá CBAM gần nhất đã lưu với price_date <= target_date_str. CBAM chốt theo quý nên lấy
+    dòng MỚI NHẤT tính đến ngày đó (không đòi trùng đúng ngày như các mã giao dịch hàng ngày)."""
+    row = (await session.execute(
+        select(Price, Instrument)
+        .join(Instrument, Price.instrument_id == Instrument.id)
+        .where(Instrument.code == CBAM_CODE, Price.price_date <= target_date_str)
+        .order_by(desc(Price.price_date))
+        .limit(1)
+    )).first()
+    if row is None:
+        return None
+    price, instrument = row
+    return {
+        "name": instrument.name,
+        "code": CBAM_CODE,
+        "price": f"{price.close_price:,.2f} {instrument.unit or CBAM_UNIT}",
+        "dday": "-",
+        "dweek": "-",
+        "up": True,
+        "note": price.note or "",
+        "close": price.close_price,
+        "day_change_pct": None,
+        "week_change_pct": None,
+        "category": instrument.category,
+        "source_url": CBAM_PRICE_PAGE_URL,
+        "price_date": price.price_date,
+    }
+
+
 def _format_pct_with_abs(pct: Optional[float], close_price: float) -> str:
     """Format % kèm số tuyệt đối tăng/giảm, vd '+2.34% (+1.05)' — suy ngược giá
     kỳ trước từ close_price và pct (không lưu giá kỳ trước riêng trong DB)."""
@@ -399,7 +472,13 @@ def report_data_date(report_date_str: str) -> str:
 async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> tuple[List[Dict], str]:
     """Lấy dữ liệu giá của ngày gần nhất có dữ liệu (<= target_date_str)."""
     # Tìm ngày gần nhất có dữ liệu
-    max_date_stmt = select(func.max(Price.price_date)).where(Price.price_date <= target_date_str)
+    # Loại CBAM khỏi phép tìm "ngày gần nhất": giá CBAM chốt theo quý, có thể mang ngày không
+    # có phiên (cuối tuần) và sẽ kéo max_date lệch khỏi ngày giá thật của các mã còn lại.
+    max_date_stmt = (
+        select(func.max(Price.price_date))
+        .join(Instrument, Price.instrument_id == Instrument.id)
+        .where(Price.price_date <= target_date_str, Instrument.code != CBAM_CODE)
+    )
     max_date = await session.scalar(max_date_stmt)
 
     if not max_date:
@@ -408,7 +487,7 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
     stmt = (
         select(Price, Instrument)
         .join(Instrument, Price.instrument_id == Instrument.id)
-        .where(Price.price_date == max_date)
+        .where(Price.price_date == max_date, Instrument.code != CBAM_CODE)
     )
     result = await session.execute(stmt)
     rows = result.all()
@@ -437,7 +516,9 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             "source_url": _barchart_url(symbol) if symbol else None,
         })
 
-    cbam_price = await _fetch_cbam_price()
+    # Ưu tiên giá CBAM đã lưu DB (as-of target date); chưa có dòng nào (chưa chạy crawl lần đầu)
+    # thì fallback fetch trực tiếp như trước.
+    cbam_price = await _get_stored_cbam_price(session, target_date_str) or await _fetch_cbam_price()
     if cbam_price:
         # Chèn ngay sau EUA trong bảng giá thay vì luôn để cuối danh sách —
         # CBAM và EUA cùng nhóm "carbon", đặt cạnh nhau dễ so sánh hơn.
