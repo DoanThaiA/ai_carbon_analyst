@@ -31,7 +31,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Số bài MỚI (chưa có trong seen_urls) tối đa lấy về mỗi lần crawl 1 listing page HTML
+# khi nguồn không set max_articles. Chỉ đếm bài mới — link đã thấy không chiếm quota, nếu
+# không bài mới nằm sau 25 link cũ đầu trang sẽ bị bỏ sót.
 MAX_LINKS_PER_LISTING_PAGE = 25
+# RSS: mặc định đọc HẾT feed (feed tự giới hạn ~50–60 item) — feed trôi nhanh (vd
+# cafef.vn/home.rss ~18 bài/giờ) mà chỉ đọc 25 item đầu thì mất bài giữa 2 đợt crawl.
+# Riêng entry Google News phải gọi thêm 1 request resolve URL dù đã thấy, nên vẫn chỉ
+# xét MAX_LINKS_PER_LISTING_PAGE entry đầu.
 
 
 async def crawl_source(
@@ -71,9 +78,12 @@ async def _crawl_rss(
         return []
 
     parsed = feedparser.parse(raw_feed)
-    limit = source.max_articles or MAX_LINKS_PER_LISTING_PAGE
+    limit = source.max_articles  # None = lấy mọi bài mới trong feed
     items = []
-    for entry in parsed.entries[:limit]:
+    attempted = 0  # số link MỚI đã thử fetch (kể cả fetch lỗi) — quota tính theo cái này
+    for idx, entry in enumerate(parsed.entries):
+        if limit is not None and attempted >= limit:
+            break
         url = entry.get("link")
         if not url or url in seen_urls:
             continue
@@ -81,6 +91,8 @@ async def _crawl_rss(
         # Google News RSS: follow redirect để lấy URL bài gốc thật sự.
         # (field summary cũng chỉ chứa Google URL, không phải URL bài)
         if "news.google.com" in url:
+            if idx >= MAX_LINKS_PER_LISTING_PAGE:
+                continue
             real_url = await _resolve_gnews_url(url, fetcher)
             if real_url:
                 url = real_url
@@ -91,6 +103,7 @@ async def _crawl_rss(
         if url in seen_urls:
             continue
 
+        attempted += 1
         html = await fetcher.fetch(url)
         if html is None:
             continue
@@ -108,7 +121,7 @@ async def _crawl_rss(
         )
         seen_urls.add(url)
 
-    logger.info("[RSS] %-30s -> %d bài mới", source.domain, len(items))
+    logger.info("[RSS] %-30s -> %d bài mới (feed %d item)", source.domain, len(items), len(parsed.entries))
     return items
 
 
@@ -137,9 +150,13 @@ async def _crawl_html_listing(
     candidate_urls = _extract_article_links(listing_html, source)
     limit = source.max_articles or MAX_LINKS_PER_LISTING_PAGE
     items = []
-    for url in candidate_urls[:limit]:
+    attempted = 0  # số link MỚI đã thử fetch (kể cả fetch lỗi) — quota tính theo cái này
+    for url in candidate_urls:
+        if attempted >= limit:
+            break
         if url in seen_urls:
             continue
+        attempted += 1
         # Chọn fetcher cho bài lẻ:
         # - use_playwright=True: dùng Playwright (site JS-rendered, curl_cffi bị block)
         # - Còn lại: dùng curl_cffi (nhanh hơn, đủ cho site HTML thường)
