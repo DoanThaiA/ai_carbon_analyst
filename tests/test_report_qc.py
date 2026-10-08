@@ -340,7 +340,7 @@ def test_format_qc_report():
 
 def test_qc_tool_is_admin_only():
     from services import quote_chat
-    assert "qc_report" not in {t["name"] for t in quote_chat.CLIENT_TOOLS}  # MCP gateway / role user không thấy
-    assert "qc_report" in {t["name"] for t in quote_chat.ADMIN_TOOLS}
-    out = asyncio.run(quote_chat._execute_client_tool("qc_report", {}, None, REPORT_DATE, tool_cache={}, chart_cache={}))
+    assert "lucy_qc" not in {t["name"] for t in quote_chat.CLIENT_TOOLS}  # MCP gateway / role user không thấy
+    assert "lucy_qc" in {t["name"] for t in quote_chat.ADMIN_TOOLS}
+    out = asyncio.run(quote_chat._execute_client_tool("lucy_qc", {}, None, REPORT_DATE, tool_cache={}, chart_cache={}))
     assert "chỉ dành cho quản trị viên" in out

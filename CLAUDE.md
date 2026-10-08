@@ -181,10 +181,10 @@ bản mới = tăng version ở `mcp_client/pyproject.toml` + `MCP_CLIENT_VERSIO
 `frontend/src/lib/claudeConnect.ts`, rồi chạy `scripts/build_mcp_client.sh`. Tên file wheel BẮT BUỘC có
 phiên bản hợp lệ (uv đọc phiên bản từ tên file) — không dùng kiểu `-latest.whl`.
 
-**Lucy QC báo cáo** (`services/report_qc.py`): tool `qc_report` của Jenny chat, CHỈ bật cho admin
+**Lucy QC báo cáo** (`services/report_qc.py`): tool `lucy_qc` của Jenny chat, CHỈ bật cho admin
 (`ADMIN_TOOLS` trong `services/quote_chat.py`, không nằm trong `CLIENT_TOOLS` nên MCP gateway không thấy;
 `_execute_client_tool(..., allow_admin_tools=...)` chặn thêm ở tầng thực thi). Khi gọi, UI hiện trạng thái
-"Đang dùng trợ lý Lucy để QC báo cáo trên hệ thống..." (`LUCY_TOOLS` → `StatusEvent`). Toàn bộ là Python
+"Đang giao cho Lucy QC báo cáo — Lucy đang đối chiếu dữ liệu trên hệ thống..."; người dùng gọi tên "Lucy" là Jenny gọi tool (xem mô tả tool) (`LUCY_TOOLS` → `StatusEvent`). Toàn bộ là Python
 rule-based, KHÔNG gọi LLM: giá Mục 2 ↔ bảng `prices`, kịch bản Mục 3 ↔ nhãn "**Tổng hợp:**", URL nguồn
 Mục 1/4/9 ↔ `articles`, lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurring_calendar_events`, gợi ý biz ↔
 `biz_suggestions.trigger_rule`, độ phủ tin tức ↔ bài crawl trong khung tin của báo cáo (cùng khung với

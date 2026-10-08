@@ -1844,17 +1844,19 @@ CLIENT_TOOLS = [
 # được cả báo cáo draft. Xem services/report_qc.py.
 ADMIN_TOOLS = [
     {
-        "name": "qc_report",
+        "name": "lucy_qc",
         "description": (
-            "Gọi trợ lý Lucy QC (kiểm tra chất lượng) 1 báo cáo ngày — đối chiếu tự động bằng code với dữ liệu "
-            "hệ thống, KHÔNG dùng AI: giá trong Bảng giá nhanh ↔ giá DB; kịch bản giao dịch (đủ trường, chiều giá "
-            "khớp nhãn Tổng hợp); URL nguồn có tồn tại trong DB; lịch EIA/Baker Hughes đúng ngày; gợi ý kinh doanh "
-            "đủ điều kiện kích hoạt + hành động; thống kê số lượng tin tức trong ngày (theo vùng, chủ đề, nguồn) và "
-            "độ phủ của báo cáo. Trả về điểm tổng, điểm từng hạng mục, thống kê tin tức và danh sách vấn đề theo mục. "
-            "Gọi khi admin yêu cầu QC/kiểm tra/rà soát báo cáo trước khi duyệt, hoặc hỏi số lượng tin tức của báo cáo. "
-            "Trình bày lại: điểm tổng trước, rồi vấn đề theo từng mục (lỗi trước, cảnh báo sau, gợi ý gom gọn cuối), "
-            "rồi thống kê tin tức; giữ nguyên số liệu tool trả về, KHÔNG tự thêm lỗi tool không nêu, KHÔNG tự sửa "
-            "báo cáo — chỉ gợi ý admin cần sửa gì."
+            "LUCY — trợ lý QC (kiểm tra chất lượng) báo cáo của hệ thống, đồng nghiệp của Jenny. Gọi tool này "
+            "NGAY khi người dùng nhắc tới Lucy (vd 'Lucy ơi', 'Lucy QC giúp', 'nhờ Lucy kiểm tra', 'gọi Lucy', "
+            "'cho Lucy xem báo cáo') HOẶC yêu cầu QC/kiểm tra/rà soát/soát lỗi báo cáo trước khi duyệt, hoặc hỏi số "
+            "lượng tin tức của báo cáo — KHÔNG tự trả lời thay Lucy, KHÔNG nói không biết Lucy là ai. Lucy đối chiếu "
+            "tự động bằng code với dữ liệu hệ thống, KHÔNG dùng AI: giá Bảng giá nhanh ↔ giá DB; kịch bản giao dịch "
+            "(đủ 3 horizon, đúng định dạng Entry/Mục tiêu/Quản trị rủi ro, mức giá đúng phía, chiều giá khớp nhãn "
+            "Tổng hợp); URL nguồn có tồn tại trong DB; lịch EIA/Baker Hughes đúng ngày; gợi ý kinh doanh đủ điều kiện "
+            "kích hoạt + hành động; thống kê số lượng tin tức trong ngày (vùng, chủ đề, nguồn) và độ phủ của báo cáo. "
+            "Trình bày lại dưới danh nghĩa Lucy (vd 'Lucy đã kiểm tra xong: ...'): điểm tổng trước, rồi vấn đề theo "
+            "từng mục (lỗi trước, cảnh báo sau, gợi ý gom gọn cuối), rồi thống kê tin tức; giữ nguyên số liệu tool trả "
+            "về, KHÔNG tự thêm lỗi Lucy không nêu, KHÔNG tự sửa báo cáo — chỉ nêu admin cần sửa gì."
         ),
         "input_schema": {
             "type": "object",
@@ -1876,8 +1878,8 @@ MAX_TOOL_ITERATIONS = 12
 # (thường mất vài giây tới ~10s nếu phải mở trình duyệt). Hiển thị thương hiệu "trợ lý Sonic".
 SONIC_TOOLS = ("fetch_user_source",)
 SONIC_STATUS_MESSAGE = "Đang sử dụng trợ lý Sonic cho việc thu thập dữ liệu..."
-LUCY_TOOLS = ("qc_report",)
-LUCY_STATUS_MESSAGE = "Đang dùng trợ lý Lucy để QC báo cáo trên hệ thống..."
+LUCY_TOOLS = ("lucy_qc",)
+LUCY_STATUS_MESSAGE = "Đang giao cho Lucy QC báo cáo — Lucy đang đối chiếu dữ liệu trên hệ thống..."
 
 
 class StatusEvent:
@@ -1888,7 +1890,7 @@ class StatusEvent:
         self.message = message
 
 
-_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "qc_report")
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "lucy_qc")
 
 
 async def _execute_client_tool(
@@ -1902,7 +1904,7 @@ async def _execute_client_tool(
     retrieval_service: Optional[RetrievalService] = None,
     allow_admin_tools: bool = False,
 ) -> str:
-    """`allow_admin_tools`: cho phép ADMIN_TOOLS (qc_report) — chặn ở tầng thực thi, không chỉ
+    """`allow_admin_tools`: cho phép ADMIN_TOOLS (lucy_qc) — chặn ở tầng thực thi, không chỉ
     dựa vào việc tool không được khai báo cho model (MCP gateway gọi thẳng hàm này theo tên).
 
     `tool_cache`: nhớ lại kết quả TRONG PHẠM VI 1 câu hỏi (1 lượt gọi
@@ -1919,7 +1921,7 @@ async def _execute_client_tool(
         cache_key = (name, tool_input.get("section"), tool_input.get("days"), tool_input.get("date"))
     elif name == "review_past_forecast":
         cache_key = (name, tool_input.get("date"), tool_input.get("sessions"))
-    elif name in ("get_report_overview", "qc_report"):
+    elif name in ("get_report_overview", "lucy_qc"):
         cache_key = (name, tool_input.get("date"))
     elif name == "get_calendar_events":
         cache_key = (name, tool_input.get("start_date"), tool_input.get("end_date"))
@@ -1963,7 +1965,7 @@ async def _execute_client_tool(
     # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
     if raw_date:
         target_date = raw_date
-    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "qc_report"):
+    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "lucy_qc"):
         target_date = report_date
     else:
         target_date = report_data_date(report_date)
@@ -2074,9 +2076,9 @@ async def _execute_client_tool(
             result = await _tool_search_news_text(retrieval_service, str(tool_input.get("query", "")), date=raw_date)
         elif name == "fetch_user_source":
             result = await read_source(str(tool_input.get("url", "")))
-        elif name == "qc_report":
+        elif name == "lucy_qc":
             if not allow_admin_tools:
-                return "Tool qc_report chỉ dành cho quản trị viên."
+                return "Tool lucy_qc chỉ dành cho quản trị viên."
             result = await qc_report_text(session, target_date)
         else:
             return f"Tool không xác định: {name}"
@@ -2366,7 +2368,7 @@ async def astream_quote_chat(
     (xem services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở
     router rồi truyền xuống đây — None = dùng toàn bộ bản mặc định trong code.
 
-    `is_admin`: bật thêm ADMIN_TOOLS (qc_report — Lucy QC báo cáo).
+    `is_admin`: bật thêm ADMIN_TOOLS (lucy_qc — Lucy QC báo cáo).
 
     `few_shot_block`: khối ví dụ mẫu admin đã chọn lọc (xem
     services/quote_chat_examples.py::build_few_shot_prompt_block), lấy 1 lần ở

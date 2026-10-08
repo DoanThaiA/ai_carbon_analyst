@@ -634,7 +634,7 @@ class ClaudeHandoff(Base):
 
 
 class ReportQCResult(Base):
-    """KHÔNG CÒN ĐƯỢC GHI — Lucy QC giờ là tool `qc_report` của Jenny chat, trả kết quả thẳng
+    """KHÔNG CÒN ĐƯỢC GHI — Lucy QC giờ là tool `lucy_qc` của Jenny chat, trả kết quả thẳng
     trong hội thoại, không lưu bảng này. Giữ model + bảng để không mất lịch sử và không phá
     chuỗi migration đã chạy; xoá bằng 1 migration mới khi chắc chắn không cần nữa.
 

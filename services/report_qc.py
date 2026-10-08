@@ -1,4 +1,4 @@
-"""Lucy — QC báo cáo ngày, chạy dưới dạng tool `qc_report` của Jenny chat (chỉ admin —
+"""Lucy — QC báo cáo ngày, chạy dưới dạng tool `lucy_qc` của Jenny chat (chỉ admin —
 xem services/quote_chat.py::ADMIN_TOOLS). Toàn bộ là check RULE-BASED bằng Python, KHÔNG gọi
 LLM: đối chiếu nội dung JSON báo cáo (`reports.content`) với dữ liệu thật trong DB / lịch cố định.
 
@@ -1018,7 +1018,7 @@ def format_qc_report(report_date: str, status: str, result: Dict[str, Any]) -> s
 
 
 async def qc_report_text(session: AsyncSession, report_date: str) -> str:
-    """Entry point cho tool `qc_report` của Jenny chat."""
+    """Entry point cho tool `lucy_qc` của Jenny chat."""
     report = (await session.execute(select(Report).where(Report.report_date == report_date))).scalars().first()
     if not report:
         return f"Không có báo cáo nào ngày {report_date}."
