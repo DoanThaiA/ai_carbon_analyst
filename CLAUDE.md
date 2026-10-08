@@ -181,18 +181,20 @@ bản mới = tăng version ở `mcp_client/pyproject.toml` + `MCP_CLIENT_VERSIO
 `frontend/src/lib/claudeConnect.ts`, rồi chạy `scripts/build_mcp_client.sh`. Tên file wheel BẮT BUỘC có
 phiên bản hợp lệ (uv đọc phiên bản từ tên file) — không dùng kiểu `-latest.whl`.
 
-**Lucy QC báo cáo** (`services/report_qc.py`): admin bấm "QC với Lucy" trên báo cáo draft →
-`POST /api/admin/reports/{date}/qc` tạo dòng `report_qc_results` (status `running`) và chạy nền 5 check
-rule-based (không gọi LLM): giá Mục 2 ↔ bảng `prices`, kịch bản Mục 3 ↔ nhãn "**Tổng hợp:**", URL nguồn
+**Lucy QC báo cáo** (`services/report_qc.py`): tool `qc_report` của Jenny chat, CHỈ bật cho admin
+(`ADMIN_TOOLS` trong `services/quote_chat.py`, không nằm trong `CLIENT_TOOLS` nên MCP gateway không thấy;
+`_execute_client_tool(..., allow_admin_tools=...)` chặn thêm ở tầng thực thi). Khi gọi, UI hiện trạng thái
+"Đang dùng trợ lý Lucy để QC báo cáo trên hệ thống..." (`LUCY_TOOLS` → `StatusEvent`). Toàn bộ là Python
+rule-based, KHÔNG gọi LLM: giá Mục 2 ↔ bảng `prices`, kịch bản Mục 3 ↔ nhãn "**Tổng hợp:**", URL nguồn
 Mục 1/4/9 ↔ `articles`, lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurring_calendar_events`, gợi ý biz ↔
-`biz_suggestions.trigger_rule`. Điểm mỗi check = 100 − 25/error − 10/warning − 2/info; tổng = trung bình.
-Frontend poll `GET .../qc-results`, gắn note theo `issue.section` (khớp key `report.content`) qua
-`components/ReportQC.tsx::QCSectionNotes`. Các hàm `check_*` là hàm thuần — test ở `tests/test_report_qc.py`.
-Đợt 2 thêm 2 check LLM (`services/report_qc_llm.py`, model `REPORT_QC_MODEL`, mặc định
-`claude-sonnet-5-5`): `consistency` (Mục 1 ↔ 2 ↔ 3 ↔ biz, số liệu trong văn bản ↔ bảng giá) và `causal`
-(suy luận ↔ khung `eua_causal_chains` kèm override admin, nằm trong system prompt có cache). Gọi song song,
-structured outputs, `fallbacks: "default"`. LLM lỗi → điểm check đó `None` (không tính vào tổng) + note info.
-`POST .../qc?llm=false` chỉ chạy 5 check rule-based.
+`biz_suggestions.trigger_rule`, độ phủ tin tức ↔ bài crawl trong khung tin của báo cáo (cùng khung với
+`get_news_for_report`). Điểm mỗi check = 100 − 25/error − 10/warning − 2/info; tổng = trung bình 6 check.
+`qc_report_text()` trả văn bản (điểm, thống kê tin, vấn đề theo mục) làm tool_result. Các hàm `check_*` là
+hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cáo sạch đúng định dạng bộ sinh, PHẢI ra
+0 vấn đề — đổi định dạng output của `report_generator.py` thì cập nhật fixture này). `parse_strategy` /
+`parse_signal_levels` là bản port 1-1 parser thẻ TÍN HIỆU HÔM NAY trong `ReportDocument.tsx` — sửa bên nào
+phải sửa cả bên kia. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
+giữ lại để không phá chuỗi migration.
 
 **Market data**: unchanged from the original crawler — `market_data.py` defines a
 `PriceProvider` ABC with `YFinanceProvider` (real data, WTI/Brent only) and

@@ -262,6 +262,7 @@ async def quote_chat_stream(
                 eua_framework_overrides=eua_framework_overrides,
                 few_shot_block=few_shot_block,
                 attachments=body.attachments,
+                is_admin=payload.get("role") == "admin",
             ):
                 if isinstance(delta, StatusEvent):
                     # Trạng thái tạm (vd đang dùng trợ lý Sonic) — chỉ hiện trên UI, không vào câu trả lời/lịch sử.

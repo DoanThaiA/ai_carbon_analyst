@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -9,9 +9,8 @@ from sqlalchemy.orm import defer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import async_session_maker, get_current_admin, get_db
-from db.models import Report, ReportQCResult
+from db.models import Report
 from services import biz_memory
-from services.report_qc import run_report_qc
 from services.report_generator import generate_report_content
 
 logger = logging.getLogger(__name__)
@@ -193,116 +192,6 @@ async def update_report(date: str, body: ReportUpdate, session: AsyncSession = D
     report.content = body.content
     await session.commit()
     return {"message": f"Draft report for {date} updated successfully."}
-
-
-# Job QC "running" quá lâu (server restart giữa chừng...) coi như chết — cho phép chạy lại.
-# Phải lớn hơn thời gian tối đa của check LLM (report_qc_llm: timeout 300s × 2 lần thử).
-QC_STALE_AFTER = timedelta(minutes=15)
-
-
-def _serialize_qc(qc: ReportQCResult) -> Dict[str, Any]:
-    return {
-        "id": qc.id,
-        "report_date": qc.report_date,
-        "status": qc.status,
-        "overall_score": qc.overall_score,
-        "price_accuracy_score": qc.price_accuracy_score,
-        "scenario_score": qc.scenario_score,
-        "source_score": qc.source_score,
-        "calendar_score": qc.calendar_score,
-        "biz_score": qc.biz_score,
-        "consistency_score": qc.consistency_score,
-        "causal_score": qc.causal_score,
-        "issues": qc.issues or [],
-        "error_message": qc.error_message,
-        "checked_at": qc.checked_at,
-        "checked_by": qc.checked_by,
-    }
-
-
-async def _latest_qc(session: AsyncSession, date: str) -> Optional[ReportQCResult]:
-    stmt = (
-        select(ReportQCResult)
-        .where(ReportQCResult.report_date == date)
-        .order_by(ReportQCResult.id.desc())
-        .limit(1)
-    )
-    return (await session.execute(stmt)).scalars().first()
-
-
-async def _run_report_qc_job(qc_id: int, date: str, use_llm: bool) -> None:
-    """Chạy nền sau khi POST /{date}/qc trả về — session RIÊNG (giống _run_report_generation_job).
-    Đọc content tại thời điểm chạy, ghi điểm + issues vào đúng dòng qc_id."""
-    async with async_session_maker() as session:
-        qc = await session.get(ReportQCResult, qc_id)
-        if not qc:
-            return
-        try:
-            report = (await session.execute(select(Report).where(Report.report_date == date))).scalars().first()
-            if not report or not report.content:
-                raise ValueError("Báo cáo không còn nội dung để QC.")
-            result = await run_report_qc(session, date, report.content, use_llm=use_llm)
-        except Exception as e:
-            logger.exception("[REPORT-QC] Lỗi khi QC báo cáo %s", date)
-            await session.rollback()
-            qc = await session.get(ReportQCResult, qc_id)
-            if qc:
-                qc.status = "failed"
-                qc.error_message = str(e)
-                await session.commit()
-            return
-
-        scores = result["scores"]
-        qc.status = "done"
-        qc.overall_score = result["overall_score"]
-        qc.price_accuracy_score = scores["price"]
-        qc.scenario_score = scores["scenario"]
-        qc.source_score = scores["source"]
-        qc.calendar_score = scores["calendar"]
-        qc.biz_score = scores["biz"]
-        qc.consistency_score = scores["consistency"]
-        qc.causal_score = scores["causal"]
-        qc.issues = result["issues"]
-        qc.checked_at = datetime.now(timezone.utc)
-        await session.commit()
-
-
-@router.post("/{date}/qc", status_code=202)
-async def trigger_report_qc(
-    date: str,
-    background_tasks: BackgroundTasks,
-    llm: bool = True,
-    session: AsyncSession = Depends(get_db),
-    admin: dict = Depends(get_current_admin),
-):
-    """Lucy QC báo cáo draft — chạy NỀN, trả về ngay; client poll GET /{date}/qc-results.
-    `llm=false`: chỉ 5 check rule-based (dưới 1 giây, không tốn API); mặc định chạy thêm
-    2 check LLM (~vài chục giây)."""
-    report = (await session.execute(
-        select(Report).options(defer(Report.content)).where(Report.report_date == date)
-    )).scalars().first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    if report.status != "draft":
-        raise HTTPException(status_code=400, detail="Chỉ QC được báo cáo ở trạng thái draft.")
-
-    latest = await _latest_qc(session, date)
-    if latest and latest.status == "running" and datetime.now(timezone.utc) - latest.checked_at < QC_STALE_AFTER:
-        raise HTTPException(status_code=409, detail="Lucy đang kiểm tra báo cáo này, vui lòng đợi.")
-
-    qc = ReportQCResult(report_date=date, status="running", checked_by=admin.get("sub"))
-    session.add(qc)
-    await session.commit()
-
-    background_tasks.add_task(_run_report_qc_job, qc.id, date, llm)
-    return {"status": "qc_checking", "id": qc.id}
-
-
-@router.get("/{date}/qc-results")
-async def get_report_qc_results(date: str, session: AsyncSession = Depends(get_db)):
-    """Kết quả QC MỚI NHẤT của báo cáo (status running/done/failed), hoặc null nếu chưa chạy."""
-    qc = await _latest_qc(session, date)
-    return _serialize_qc(qc) if qc else None
 
 
 class BizSuggestionDismiss(BaseModel):

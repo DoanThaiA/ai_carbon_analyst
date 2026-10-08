@@ -16,6 +16,7 @@ from schemas.chat_models import MAX_ATTACHMENTS_PER_TURN, Attachment, ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services import minio_service
 from services.source_reader import read_source
+from services.report_qc import qc_report_text
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services.report_generator import (
@@ -1838,6 +1839,30 @@ CLIENT_TOOLS = [
     },
 ]
 
+# Tool CHỈ bật cho admin (không nằm trong CLIENT_TOOLS nên MCP gateway / Claude Desktop của
+# role user cũng không thấy) — QC lộ thông tin nội bộ (nguồn thiếu, lệch DB...) và cần đọc
+# được cả báo cáo draft. Xem services/report_qc.py.
+ADMIN_TOOLS = [
+    {
+        "name": "qc_report",
+        "description": (
+            "Gọi trợ lý Lucy QC (kiểm tra chất lượng) 1 báo cáo ngày — đối chiếu tự động bằng code với dữ liệu "
+            "hệ thống, KHÔNG dùng AI: giá trong Bảng giá nhanh ↔ giá DB; kịch bản giao dịch (đủ trường, chiều giá "
+            "khớp nhãn Tổng hợp); URL nguồn có tồn tại trong DB; lịch EIA/Baker Hughes đúng ngày; gợi ý kinh doanh "
+            "đủ điều kiện kích hoạt + hành động; thống kê số lượng tin tức trong ngày (theo vùng, chủ đề, nguồn) và "
+            "độ phủ của báo cáo. Trả về điểm tổng, điểm từng hạng mục, thống kê tin tức và danh sách vấn đề theo mục. "
+            "Gọi khi admin yêu cầu QC/kiểm tra/rà soát báo cáo trước khi duyệt, hoặc hỏi số lượng tin tức của báo cáo. "
+            "Trình bày lại: điểm tổng trước, rồi vấn đề theo từng mục (lỗi trước, cảnh báo sau, gợi ý gom gọn cuối), "
+            "rồi thống kê tin tức; giữ nguyên số liệu tool trả về, KHÔNG tự thêm lỗi tool không nêu, KHÔNG tự sửa "
+            "báo cáo — chỉ gợi ý admin cần sửa gì."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo cần QC. Không truyền = báo cáo đang xem."}},
+        },
+    },
+]
+
 # Chặn lặp vô hạn nếu model cứ liên tục gọi tool. Báo cáo có tới 10 mục
 # (get_report_section: "1".."9" + "biz") — nếu model cần dò vài mục để tìm
 # đúng vị trí đoạn trích bị thiếu ngữ cảnh (xem "LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH
@@ -1851,6 +1876,8 @@ MAX_TOOL_ITERATIONS = 12
 # (thường mất vài giây tới ~10s nếu phải mở trình duyệt). Hiển thị thương hiệu "trợ lý Sonic".
 SONIC_TOOLS = ("fetch_user_source",)
 SONIC_STATUS_MESSAGE = "Đang sử dụng trợ lý Sonic cho việc thu thập dữ liệu..."
+LUCY_TOOLS = ("qc_report",)
+LUCY_STATUS_MESSAGE = "Đang dùng trợ lý Lucy để QC báo cáo trên hệ thống..."
 
 
 class StatusEvent:
@@ -1861,7 +1888,7 @@ class StatusEvent:
         self.message = message
 
 
-_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview")
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "qc_report")
 
 
 async def _execute_client_tool(
@@ -1873,8 +1900,12 @@ async def _execute_client_tool(
     tool_cache: Dict[tuple, str],
     chart_cache: Dict[str, List[Any]],
     retrieval_service: Optional[RetrievalService] = None,
+    allow_admin_tools: bool = False,
 ) -> str:
-    """`tool_cache`: nhớ lại kết quả TRONG PHẠM VI 1 câu hỏi (1 lượt gọi
+    """`allow_admin_tools`: cho phép ADMIN_TOOLS (qc_report) — chặn ở tầng thực thi, không chỉ
+    dựa vào việc tool không được khai báo cho model (MCP gateway gọi thẳng hàm này theo tên).
+
+    `tool_cache`: nhớ lại kết quả TRONG PHẠM VI 1 câu hỏi (1 lượt gọi
     `_stream_anthropic`) — hệ thống prompt đã yêu cầu model "KHÔNG gọi lại 1
     tool đã dùng trong CÙNG hội thoại", nhưng đó chỉ là yêu cầu qua prompt,
     không được đảm bảo (model vẫn có thể lỡ gọi lại, đặc biệt qua nhiều vòng
@@ -1888,7 +1919,7 @@ async def _execute_client_tool(
         cache_key = (name, tool_input.get("section"), tool_input.get("days"), tool_input.get("date"))
     elif name == "review_past_forecast":
         cache_key = (name, tool_input.get("date"), tool_input.get("sessions"))
-    elif name == "get_report_overview":
+    elif name in ("get_report_overview", "qc_report"):
         cache_key = (name, tool_input.get("date"))
     elif name == "get_calendar_events":
         cache_key = (name, tool_input.get("start_date"), tool_input.get("end_date"))
@@ -1932,7 +1963,7 @@ async def _execute_client_tool(
     # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
     if raw_date:
         target_date = raw_date
-    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview"):
+    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "qc_report"):
         target_date = report_date
     else:
         target_date = report_data_date(report_date)
@@ -2043,6 +2074,10 @@ async def _execute_client_tool(
             result = await _tool_search_news_text(retrieval_service, str(tool_input.get("query", "")), date=raw_date)
         elif name == "fetch_user_source":
             result = await read_source(str(tool_input.get("url", "")))
+        elif name == "qc_report":
+            if not allow_admin_tools:
+                return "Tool qc_report chỉ dành cho quản trị viên."
+            result = await qc_report_text(session, target_date)
         else:
             return f"Tool không xác định: {name}"
     except Exception:
@@ -2071,6 +2106,7 @@ async def _stream_anthropic(
     report_date: str = "",
     enable_web_search: bool = False,
     enable_client_tools: bool = False,
+    enable_admin_tools: bool = False,
     retrieval_service: Optional[RetrievalService] = None,
 ) -> AsyncIterator[str]:
     """PROMPT CACHING (2 breakpoint, tối đa cho phép là 4):
@@ -2106,6 +2142,8 @@ async def _stream_anthropic(
     tools: List[dict] = []
     if enable_client_tools:
         tools.extend(CLIENT_TOOLS)
+        if enable_admin_tools:
+            tools.extend(ADMIN_TOOLS)
     if enable_web_search:
         tools.append(WEB_SEARCH_TOOL)
     extra = {"tools": tools} if tools else {}
@@ -2262,10 +2300,13 @@ async def _stream_anthropic(
         tool_results = []
         if any(call.name in SONIC_TOOLS for call in client_tool_calls):
             yield StatusEvent(SONIC_STATUS_MESSAGE)
+        if any(call.name in LUCY_TOOLS for call in client_tool_calls):
+            yield StatusEvent(LUCY_STATUS_MESSAGE)
         for call in client_tool_calls:
             result_text = await _execute_client_tool(
                 call.name, call.input, session, report_date,
                 tool_cache=tool_cache, chart_cache=chart_cache, retrieval_service=retrieval_service,
+                allow_admin_tools=enable_admin_tools,
             )
             tool_results.append({"type": "tool_result", "tool_use_id": call.id, "content": result_text})
         anthropic_messages.append({"role": "user", "content": tool_results})
@@ -2296,6 +2337,7 @@ async def astream_quote_chat(
     eua_framework_overrides: Optional[Dict[str, str]] = None,
     few_shot_block: str = "",
     attachments: Optional[Sequence[Attachment]] = None,
+    is_admin: bool = False,
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta). Luôn dùng backend
     Anthropic (client tools + server tool web_search) — Cohere trong repo này
@@ -2324,6 +2366,8 @@ async def astream_quote_chat(
     (xem services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở
     router rồi truyền xuống đây — None = dùng toàn bộ bản mặc định trong code.
 
+    `is_admin`: bật thêm ADMIN_TOOLS (qc_report — Lucy QC báo cáo).
+
     `few_shot_block`: khối ví dụ mẫu admin đã chọn lọc (xem
     services/quote_chat_examples.py::build_few_shot_prompt_block), lấy 1 lần ở
     router — rỗng nếu chưa có ví dụ nào.
@@ -2350,6 +2394,7 @@ async def astream_quote_chat(
         report_date=report_date,
         enable_web_search=True,
         enable_client_tools=True,
+        enable_admin_tools=is_admin,
         retrieval_service=retrieval_service,
     )
 

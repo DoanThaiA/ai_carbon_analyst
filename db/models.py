@@ -634,7 +634,11 @@ class ClaudeHandoff(Base):
 
 
 class ReportQCResult(Base):
-    """1 dòng = 1 lần Lucy QC báo cáo `report_date` trước khi duyệt (services/report_qc.py).
+    """KHÔNG CÒN ĐƯỢC GHI — Lucy QC giờ là tool `qc_report` của Jenny chat, trả kết quả thẳng
+    trong hội thoại, không lưu bảng này. Giữ model + bảng để không mất lịch sử và không phá
+    chuỗi migration đã chạy; xoá bằng 1 migration mới khi chắc chắn không cần nữa.
+
+    (Thiết kế cũ) 1 dòng = 1 lần Lucy QC báo cáo `report_date` trước khi duyệt.
     Giữ lịch sử mọi lần chạy — GET /api/admin/reports/{date}/qc-results chỉ lấy dòng MỚI NHẤT.
     status='running': job nền đang chạy (điểm = None); 'done': có điểm + issues;
     'failed': job lỗi (error_message). Mỗi phần tử `issues`:

@@ -7,8 +7,7 @@ import {
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X, Trash2,
 } from "lucide-react";
-import type { QCIssue, Report } from "@/lib/types";
-import { QCSectionNotes } from "@/components/ReportQC";
+import type { Report } from "@/lib/types";
 
 // "YYYY-MM-DD" -> "dd/MM" (nhãn trục X) — tránh phụ thuộc date-fns chỉ cho 1 format đơn giản.
 function formatShortDate(dateStr: string) {
@@ -1165,13 +1164,10 @@ function formatVietnameseDateFull(dateStr: string) {
 export function ReportDocument({
   report,
   onDismissBizSuggestion,
-  qcIssues,
 }: {
   report: Report;
   // Chỉ màn hình admin truyền vào — hiện nút gỡ gợi ý kinh doanh (services/biz_memory.py).
   onDismissBizSuggestion?: (id: number) => void;
-  // Chỉ màn hình admin duyệt draft truyền vào — note Lucy QC đầu từng mục (services/report_qc.py).
-  qcIssues?: QCIssue[];
 }) {
   const priceRows = report?.content["2"]?.prices || [];
   // Menu hamburger điều hướng section (thanh dưới banner).
@@ -1454,7 +1450,6 @@ export function ReportDocument({
             </div>
           )}
 
-          <QCSectionNotes issues={qcIssues} section="1" />
           <FramedHighlight title="Tóm tắt điều hành" tone="blue">
             <ul className="list-none -my-0.5">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
@@ -1497,7 +1492,6 @@ export function ReportDocument({
             sau vì không đủ chỗ còn lại trên trang hiện tại. */}
         <section id="section-market" className="py-5">
           <PartHeading eyebrow="Phần 1" title="Diễn biến thị trường" icon={LineChart} />
-          <QCSectionNotes issues={qcIssues} section="2" />
 
           <div className="flex flex-col lg:flex-row print:flex-row gap-4 items-stretch print:break-inside-avoid">
             <div className="lg:flex-[1.6] print:flex-[1.6] print:min-w-0 bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
@@ -1611,7 +1605,6 @@ export function ReportDocument({
           {keyDevelopmentItems.length > 0 && (
             <div className="mt-6">
               <SubHeading>Diễn biến chính</SubHeading>
-              <QCSectionNotes issues={qcIssues} section="4" />
               <DotBullets
                 items={keyDevelopmentItems}
                 render={(d: any) => (
@@ -1644,7 +1637,6 @@ export function ReportDocument({
         {/* PHẦN 2 — PHÂN TÍCH VÀ KHUYẾN NGHỊ GIAO DỊCH */}
         <section id="section-analysis" className="py-5">
           <PartHeading eyebrow="Phần 2" title="Phân tích và khuyến nghị giao dịch" icon={BarChart3} />
-          <QCSectionNotes issues={qcIssues} section="3" />
 
           {/* TÍN HIỆU HÔM NAY — nội dung đầu tiên của Phần 2: chiến lược trading cho
               phiên hôm đó, tái dùng kịch bản "ngắn hạn" đã có ở Mục 3
@@ -1988,7 +1980,6 @@ export function ReportDocument({
           {report.content["biz"] && (
             <div className="mb-6">
               <SubHeading>{report.content["biz"].title}</SubHeading>
-              <QCSectionNotes issues={qcIssues} section="biz" />
               <div className="flex flex-col gap-6">
                 {/* Jenny nhắc lại — gợi ý ở báo cáo trước (trong 10 ngày) mà tình huống
                     kích hoạt vừa xảy ra hôm nay (services/biz_memory.py). */}
@@ -2097,7 +2088,6 @@ export function ReportDocument({
           {report.content["8"] && (
             <div className="mb-2">
               <SubHeading>{report.content["8"].title}</SubHeading>
-              <QCSectionNotes issues={qcIssues} section="8" />
               {report.content["8"].events?.length > 0 ? (() => {
                 // Tách rõ 2 nhóm thay vì 1 timeline gộp lẫn lộn: sự kiện ĐÃ có "outcome"
                 // (đã diễn ra, đã cập nhật kết quả) đứng riêng khỏi sự kiện CHƯA diễn ra —
@@ -2199,7 +2189,6 @@ export function ReportDocument({
         {report.content["9"] && (
           <section id="section-sources" className="py-5">
             <PartHeading title={report.content["9"].title || "Nguồn tham khảo"} icon={Link2} />
-            <QCSectionNotes issues={qcIssues} section="9" />
             {report.content["9"].items?.length > 0 ? (
               (() => {
                 // Sắp theo ĐÚNG thứ tự Phần 3 (Quốc tế → Việt Nam, đánh số như trên); link
