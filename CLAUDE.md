@@ -154,8 +154,19 @@ so a connection isn't held idle while awaiting the Claude API.
   `crawl_news/` or `scripts/` creates tables at runtime anymore — a missing
   table/column is a signal migrations haven't been applied, not a bug to code around.
 
+**Lịch crawl** (`scheduler.py`): giá 06:00; tin tức MỖI GIỜ (`hourly_news_crawl_job`,
+toàn bộ nguồn `is_active`, `max_instances=1` + `coalesce=True` — 2 đợt không chạy chồng);
+auto report 07:00. `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
+Để crawl hàng giờ không gọi LLM lặp lại, URL đã xử lý nhưng KHÔNG lưu thành article
+(irrelevant, ngoài cửa sổ ngày, trùng hash, extract/classify lỗi, link Bloomberg gốc) được
+ghi vào bảng `crawl_seen_urls` (`pipeline/crawl_pipeline.py::process_source` →
+`storage.record_seen_urls`) và gộp vào `seen_urls` bởi `storage.load_recent_urls`; trạng thái
+lỗi tạm thời được thử lại tới `SEEN_MAX_ATTEMPTS` lần. Lọc ngày đăng là cửa sổ TRƯỢT
+`CRAWL_LOOKBACK_HOURS` (mặc định 36h) — việc chia bài vào báo cáo ngày nào dựa vào
+`crawled_at`, không dựa vào cửa sổ này.
+
 **Hot news email digest** (`services/hot_news_email.py`): at the end of every
-`main.main()` crawl run (scheduler 06:00/12:00), all `is_hot_news` articles with
+`main.main()` crawl run (scheduler mỗi giờ; bỏ qua trong `HOT_NEWS_EMAIL_QUIET_HOURS`), all `is_hot_news` articles with
 `hot_news_emailed_at IS NULL` (crawled within `HOT_NEWS_EMAIL_MAX_AGE_HOURS`) are
 sent as ONE digest to every active `users` row via Resend (`services/email_sender.py`, httpx) —
 each recipient gets their own email via `POST /emails/batch` (batched by `HOT_NEWS_EMAIL_BATCH_SIZE`, ≤100).

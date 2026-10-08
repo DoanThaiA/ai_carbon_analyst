@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, TYPE_CHECKING
 
-# Múi giờ Việt Nam (UTC+7) — dùng cho cửa sổ lọc ngày publish
-TZ_VN = timezone(timedelta(hours=7))
-
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -64,64 +61,62 @@ async def process_url(
     return await _dedupe_classify_store(ctx, article)
 
 
+# Cửa sổ ngày đăng mặc định cho process_source (today_only=True) — xem docstring.
+DEFAULT_LOOKBACK_HOURS = 36
+
+
 async def process_source(
     ctx: PipelineContext,
     source: SourceConfig,
     seen_urls: Optional[set] = None,
     limit: Optional[int] = None,
     today_only: bool = True,
+    lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
 ) -> List[PipelineResult]:
-    """Crawl 1 nguồn, lọc bài trong cửa sổ 06:00 VN hôm qua → 06:00 VN hôm nay.
+    """Crawl 1 nguồn, chỉ giữ bài đăng trong `lookback_hours` giờ gần nhất.
 
-    Quy tắc lọc ngày (áp dụng khi today_only=True):
-      - Cửa sổ hợp lệ: [06:00 VN ngày T, 06:00 VN ngày T+1)
-        (tương đương [23:00 UTC ngày T-1, 23:00 UTC ngày T))
-      - Bài có published_at nằm TRONG cửa sổ → GIỮ LẠI.
-      - Bài có published_at NGOÀI cửa sổ (quá cũ hoặc quá mới) → bỏ qua (skipped_old).
+    Quy tắc lọc ngày (áp dụng khi today_only=True) — cửa sổ TRƯỢT theo giờ chạy, vì
+    crawl chạy MỖI GIỜ (scheduler.py):
+      - Cửa sổ hợp lệ: [now − lookback_hours, now + 1 ngày)
+      - Bài cũ hơn cửa sổ → bỏ qua (skipped_old) và ghi vào crawl_seen_urls để đợt sau
+        không fetch lại.
+      - Bài có ngày đăng quá xa trong tương lai (metadata sai) → bỏ qua, KHÔNG ghi nhớ.
+        Biên +1 ngày cho bài chỉ có ngày (trafilatura trả 00:00 UTC) hoặc lệch múi giờ.
       - Bài KHÔNG có published_at (None) → GIỮ LẠI an toàn (tránh bỏ sót nguồn
         không gắn meta ngày; dedup hash sẽ loại trùng lặp ở lần crawl sau).
 
-    Cửa sổ cố định theo giờ VN giúp cả đợt crawl 06:00 lẫn 12:00 đều nhất quán:
-    đợt 12:00 chỉ bổ sung bài bị miss trong cùng khung 06:00→06:00, không
-    vô tình lấy bài mới hơn 06:00 VN hôm nay vào báo cáo của ngày hôm qua.
+    Việc chia tin vào báo cáo ngày nào KHÔNG dựa vào cửa sổ này mà dựa vào
+    `articles.crawled_at` (services/report_generator.py::get_news_for_report) —
+    cửa sổ ở đây chỉ để không nhận bài quá cũ mới lần đầu xuất hiện trên listing.
+    Mặc định 36h (> 24h) để không mất bài chỉ có ngày đăng (00:00 UTC = 07:00 VN).
 
     today_only=False: bỏ qua filter cửa sổ (dùng khi backfill / test).
     limit: cắt bớt số bài sau filter — dùng khi test để tiết kiệm gọi LLM.
     """
     seen_urls = seen_urls if seen_urls is not None else set()
-    items = await crawl_source(ctx.fetcher, source, seen_urls, ctx.playwright_fetcher)
+    # (url, status) của các URL đã xử lý nhưng không lưu thành article — ghi vào
+    # crawl_seen_urls ở cuối hàm để đợt crawl sau bỏ qua (xem db/models.py::CrawlSeenUrl).
+    seen_log: List[tuple[str, str]] = []
+    items = await crawl_source(ctx.fetcher, source, seen_urls, ctx.playwright_fetcher, seen_log)
 
     # Bước extract trước để có published_at phục vụ date filter
     results: List[PipelineResult] = []
     extracted = []
 
-    now_vn = datetime.now(TZ_VN)
-    today_06_vn = now_vn.replace(hour=6, minute=0, second=0, microsecond=0)
-    noon_vn     = now_vn.replace(hour=12, minute=0, second=0, microsecond=0)
-
-    if now_vn < noon_vn:
-        # Morning crawl (trước 12:00 VN) — window = hôm qua
-        window_end_vn   = today_06_vn
-        window_start_vn = today_06_vn - timedelta(days=1)
-    else:
-        # Noon crawl (từ 12:00 VN) — window = hôm nay
-        window_start_vn = today_06_vn
-        window_end_vn   = today_06_vn + timedelta(days=1)
-
-    window_start_utc = window_start_vn.astimezone(timezone.utc)
-    window_end_utc   = window_end_vn.astimezone(timezone.utc)
+    now_utc = datetime.now(timezone.utc)
+    window_start_utc = now_utc - timedelta(hours=lookback_hours)
+    window_end_utc = now_utc + timedelta(days=1)
     logger.debug(
-        "[DATE-FILTER] Cửa sổ hợp lệ (%s): [%s, %s) VN",
-        "morning" if now_vn < noon_vn else "noon",
-        window_start_vn.strftime("%Y-%m-%d %H:%M"),
-        window_end_vn.strftime("%Y-%m-%d %H:%M"),
+        "[DATE-FILTER] Cửa sổ hợp lệ: [%s, %s) UTC",
+        window_start_utc.strftime("%Y-%m-%d %H:%M"),
+        window_end_utc.strftime("%Y-%m-%d %H:%M"),
     )
-
 
     for item in items:
         article = extract_article(item)
         if article is None:
             results.append(PipelineResult(url=item.url, status="extraction_failed"))
+            seen_log.append((item.url, "extraction_failed"))
         else:
             # Lọc ngày: chỉ áp dụng khi bài có published_at VÀ today_only=True
             if today_only and article.published_at is not None:
@@ -137,6 +132,8 @@ async def process_source(
                         window_end_utc.strftime("%Y-%m-%d %H:%M UTC"),
                     )
                     results.append(PipelineResult(url=article.url, status="skipped_old"))
+                    if pub < window_start_utc:
+                        seen_log.append((article.url, "skipped_old"))
                     continue
             extracted.append(article)
 
@@ -144,8 +141,9 @@ async def process_source(
         if len(items) == 0 and not results:
             reason = "tất cả link ứng viên đã crawl trước đó hoặc fetch lỗi"
         else:
-            reason = "không có bài nào trong cửa sổ 06:00 VN hôm qua→hôm nay hoặc không extract được nội dung"
+            reason = f"không có bài nào đăng trong {lookback_hours}h gần nhất hoặc không extract được nội dung"
         logger.info("[SKIP] %s: %s, bỏ qua.", source.domain, reason)
+        await _record_seen(ctx, source, seen_log)
         return results
 
     if limit is not None:
@@ -158,10 +156,37 @@ async def process_source(
     for res in article_results:
         if isinstance(res, Exception):
             logger.error("[PIPELINE-ERROR] Exception không mong đợi: %s", res)
-        else:
-            results.append(res)
+            continue
+        results.append(res)
+        seen_status = _seen_status_for(res)
+        if seen_status:
+            seen_log.append((res.url, seen_status))
 
+    await _record_seen(ctx, source, seen_log)
     return results
+
+
+def _seen_status_for(res: PipelineResult) -> Optional[str]:
+    """Map kết quả _dedupe_classify_store sang status crawl_seen_urls (None = không ghi)."""
+    if res.status in ("irrelevant", "duplicate"):
+        return res.status
+    if res.status == "classification_failed":
+        # "No topic found" là kết luận của LLM (gọi lại vẫn vậy) → coi như irrelevant;
+        # còn lại là lỗi API/parse → cho thử lại (giới hạn bởi SEEN_MAX_ATTEMPTS).
+        return "irrelevant" if res.detail == "No topic found" else "classification_failed"
+    return None
+
+
+async def _record_seen(ctx: PipelineContext, source: SourceConfig, seen_log: List[tuple[str, str]]) -> None:
+    """Ghi seen_log vào crawl_seen_urls — lỗi chỉ log, không làm hỏng crawl (tệ nhất là
+    đợt sau xử lý lại những URL đó, như trước khi có bảng này)."""
+    if not seen_log:
+        return
+    try:
+        async with ctx.session_factory() as session:
+            await storage.record_seen_urls(session, source.domain, seen_log)
+    except Exception as e:
+        logger.warning("[SEEN-URLS] Không ghi được %d URL đã loại của %s: %s", len(seen_log), source.domain, e)
 
 
 async def _dedupe_classify_store(ctx: PipelineContext, article: ExtractedArticle) -> PipelineResult:

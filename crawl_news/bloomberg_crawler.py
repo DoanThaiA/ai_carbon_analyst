@@ -305,8 +305,20 @@ async def crawl_bloomberg_rss(
     playwright_fetcher,
     source: SourceConfig,
     seen_urls: Set[str],
+    seen_log: Optional[List[Tuple[str, str]]] = None,
 ) -> List[CrawledItem]:
-    """Crawl Bloomberg qua RSS feeds → Google News RSS search → fetch trang trung gian."""
+    """Crawl Bloomberg qua RSS feeds → Google News RSS search → fetch trang trung gian.
+
+    Bài lưu vào `articles` mang URL syndicated (Yahoo, MSN, ...), không phải link
+    Bloomberg gốc — nên link Bloomberg không bao giờ có trong seen_urls nạp từ
+    `articles`. seen_log nhận (bloomberg_url, "bloomberg_resolved"/"bloomberg_unresolved")
+    để lưu vào crawl_seen_urls, tránh mỗi đợt crawl (hàng giờ) lại search Google News
+    cho cùng tiêu đề.
+    """
+    def _log_seen(url: str, status: str) -> None:
+        if seen_log is not None and url:
+            seen_log.append((url, status))
+
     if not source.bloomberg_feeds:
         logger.warning("[Bloomberg] Nguồn %s không có bloomberg_feeds, bỏ qua.", source.name)
         return []
@@ -376,6 +388,7 @@ async def crawl_bloomberg_rss(
                 
         if not gnews_entries:
             logger.info("[Bloomberg] Không tìm thấy bài syndicated cho: '%.70s'", title)
+            _log_seen(bloomberg_url, "bloomberg_unresolved")
             continue
 
         # Sắp xếp URL theo độ ưu tiên (ưa chuộng Yahoo, MSN...)
@@ -385,6 +398,7 @@ async def crawl_bloomberg_rss(
                 "[Bloomberg] Không có domain phù hợp trong %d kết quả cho: '%.60s'",
                 len(gnews_entries), title,
             )
+            _log_seen(bloomberg_url, "bloomberg_unresolved")
             continue
 
         # Thử từng candidate: decode link Google News ra URL bài gốc + fetch,
@@ -404,6 +418,7 @@ async def crawl_bloomberg_rss(
 
         if html is None or syndicated_url is None:
             logger.info("[Bloomberg] Không fetch được bài nào cho: '%.60s'", title)
+            _log_seen(bloomberg_url, "bloomberg_unresolved")
             continue
 
         items.append(
@@ -421,6 +436,7 @@ async def crawl_bloomberg_rss(
         seen_urls.add(syndicated_url)
         if bloomberg_url:
             seen_urls.add(bloomberg_url)
+        _log_seen(bloomberg_url, "bloomberg_resolved")
 
     logger.info(
         "[Bloomberg] %-30s -> %d bài mới (từ %d entries RSS)",

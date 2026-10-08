@@ -582,10 +582,10 @@ async def get_historical_ohlc_for_report(
 async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tuple[Dict[str, List[Dict]], List[str]]:
     """Lấy tin tức trong khung 07:00 (VN) ngày báo cáo → 07:00 (VN) ngày hôm sau.
 
-    Khớp với lịch tự động: news_crawl chạy 06:00 & 12:00 (VN) mỗi ngày, report cho
-    ngày T được auto-generate lúc 07:00 (VN) ngày T+1 — nên tin tức đưa vào báo cáo
-    ngày T là tin thu thập từ 07:00 (VN) ngày T đến 07:00 (VN) ngày T+1 (bao gồm cả
-    đợt crawl 06:00 của ngày T+1, chạy ngay trước khi report được sinh).
+    Khớp với lịch tự động: news_crawl chạy MỖI GIỜ (VN), report cho ngày T được
+    auto-generate lúc 07:00 (VN) ngày T+1 — nên tin tức đưa vào báo cáo ngày T là tin
+    thu thập từ 07:00 (VN) ngày T đến 07:00 (VN) ngày T+1 (bao gồm cả đợt crawl 06:00
+    của ngày T+1, chạy ngay trước khi report được sinh).
     Ví dụ: dữ liệu ngày 23/08 (báo cáo sinh lúc 07:00 ngày 24/08, lưu report_date =
     24/08 — xem report_data_date) lấy tin từ 07:00 ngày 23/08 đến 07:00 ngày 24/08.
     `target_date_str` ở đây là NGÀY DỮ LIỆU, không phải report_date.

@@ -17,7 +17,7 @@ from schemas.crawl_models import SourceConfig
 from pipeline.crawl_pipeline import PipelineContext, PipelineResult, process_source
 from db.session import build_sessionmaker, create_engine
 from services import storage
-from services.hot_news_email import send_pending_hot_news_digest
+from services.hot_news_email import in_quiet_hours, send_pending_hot_news_digest
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -64,7 +64,7 @@ async def load_sources_from_db(session_factory, *, noon_only: bool = False) -> L
     """Đọc nguồn is_active=True từ bảng news_crawl_sources (thay cho sources.yaml
     — xem api/routers/admin_news_sources.py cho CRUD, scripts/migrate_sources.py
     cho backfill 1 lần từ sources.yaml cũ). noon_only=True -> chỉ lấy thêm nguồn
-    is_noon_crawl=True (đợt crawl phụ 12:00, xem scheduler.py::noon_news_crawl_job)."""
+    is_noon_crawl=True (chỉ còn dùng khi chạy tay — scheduler.py crawl toàn bộ nguồn mỗi giờ)."""
     stmt = select(NewsCrawlSource).where(NewsCrawlSource.is_active == True)  # noqa: E712
     if noon_only:
         stmt = stmt.where(NewsCrawlSource.is_noon_crawl == True)  # noqa: E712
@@ -106,9 +106,8 @@ def _print_summary(source_name: str, results: List[PipelineResult]) -> None:
 async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> None:
     """domains=None -> crawl toàn bộ nguồn is_active=True trong news_crawl_sources
     (mặc định). Truyền list domain -> lọc thêm theo domain (test thủ công 1 nhóm
-    nguồn). noon_only=True -> chỉ lấy nguồn is_noon_crawl=True (đợt crawl phụ
-    12:00, xem scheduler.py::noon_news_crawl_job) — thay cho danh sách
-    NOON_TIER_A_DOMAINS viết cứng trước đây."""
+    nguồn). noon_only=True -> chỉ lấy nguồn is_noon_crawl=True (chỉ còn dùng khi
+    chạy tay — scheduler.py gọi main() mỗi giờ với toàn bộ nguồn)."""
     settings = Settings.from_env()
     logger.info("[CONFIG] Backend: %s | Model: %s", settings.classifier_backend, settings.classifier_model)
 
@@ -147,7 +146,7 @@ async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> 
     )
     fingerprinter = Sha256Fingerprinter()
 
-    # 4. seed seen_urls và seen_hashes từ DB
+    # 4. seed seen_urls (bài đã lưu + URL đã loại ở crawl_seen_urls) và seen_hashes từ DB
     logger.info("[SEEN-URLS] Đang load URL và Hash đã biết từ DB...")
     async with session_factory() as session:
         seen_urls: set = await storage.load_recent_urls(session, days=7)
@@ -173,7 +172,10 @@ async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> 
         for source in demo_sources:
             logger.info(">>> Đang xử lý nguồn: %s (%s)", source.name, source.domain)
             try:
-                res = await process_source(ctx, source, seen_urls=seen_urls, limit=None, today_only=True)
+                res = await process_source(
+                    ctx, source, seen_urls=seen_urls, limit=None, today_only=True,
+                    lookback_hours=settings.crawl_lookback_hours,
+                )
                 all_results.append(res)
             except Exception as e:
                 logger.error("[ERROR] Nguồn %s thất bại: %s", source.name, e)
@@ -188,8 +190,13 @@ async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> 
         total_stored += sum(1 for r in results if r.status == "stored")
 
     # 6. Gửi 1 email digest gom toàn bộ hot news của đợt crawl này (tự bắt lỗi,
-    # không làm hỏng job — xem services/hot_news_email.py)
-    await send_pending_hot_news_digest(session_factory, settings)
+    # không làm hỏng job — xem services/hot_news_email.py). Trong khung giờ yên lặng
+    # thì để dồn lại, đợt crawl đầu tiên sau khung sẽ gửi.
+    if in_quiet_hours(settings):
+        logger.info("[HOT-NEWS-EMAIL] Đang trong khung giờ yên lặng (%s) — dời digest sang đợt sau.",
+                    settings.hot_news_email_quiet_hours)
+    else:
+        await send_pending_hot_news_digest(session_factory, settings)
 
     # 7. Dọn dẹp
     await fetcher.close()

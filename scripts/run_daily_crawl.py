@@ -108,7 +108,9 @@ async def main() -> None:
         seen_urls: set = set()
         all_results = []
         for source in sources:
-            results = await process_source(ctx, source, seen_urls, limit=args.limit)
+            results = await process_source(
+                ctx, source, seen_urls, limit=args.limit, lookback_hours=settings.crawl_lookback_hours,
+            )
             all_results.extend(results)
 
         by_status: dict = {}

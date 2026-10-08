@@ -200,8 +200,8 @@ class NewsCrawlSource(Base):
     khác nhau trong cùng domain, y hệt sources.yaml cũ) — unique key thực tế là `name`.
     `source_type` ứng với field `type` của schemas.crawl_models.SourceConfig (đổi tên
     tránh nhầm với builtin `type`, cùng quy ước với Chunk.source_type).
-    is_noon_crawl: thay cho scheduler.py::NOON_TIER_A_DOMAINS hardcode — noon_news_crawl_job
-    query domain của các row is_noon_crawl=True thay vì list domain viết cứng trong code."""
+    is_noon_crawl: trước đây chọn nhóm nguồn cho đợt crawl phụ 12:00; scheduler.py giờ crawl
+    TOÀN BỘ nguồn mỗi giờ nên cờ này chỉ còn dùng khi chạy tay main.main(noon_only=True)."""
 
     __tablename__ = "news_crawl_sources"
     __table_args__ = (
@@ -673,3 +673,41 @@ class ReportQCResult(Base):
 
     def __repr__(self) -> str:
         return f"ReportQCResult(id={self.id!r}, date={self.report_date!r}, status={self.status!r})"
+
+
+class CrawlSeenUrl(Base):
+    """URL crawler đã fetch/xử lý nhưng KHÔNG thành 1 dòng `articles` (bị LLM loại,
+    ngoài cửa sổ ngày, extract lỗi, ...). `articles` chỉ chứa bài đã lưu, nên nếu không
+    nhớ các URL này thì mỗi đợt crawl (chạy MỖI GIỜ — xem scheduler.py) lại fetch +
+    gọi LLM phân loại lại đúng những bài đó. main.py gộp các URL này vào `seen_urls`
+    (services/storage.py::load_recent_urls) để crawler bỏ qua ngay từ listing page.
+
+    status (xem services/storage.py::SEEN_PERMANENT_STATUSES / SEEN_RETRY_STATUSES):
+      - irrelevant / skipped_old / duplicate / bloomberg_resolved: bỏ qua luôn.
+      - extraction_failed / classification_failed / bloomberg_unresolved: lỗi có thể
+        tạm thời — vẫn thử lại, chỉ bỏ qua khi `attempts` đạt ngưỡng.
+    Chỉ giữ tác dụng trong cửa sổ `last_seen_at` gần đây (cùng 7 ngày như `articles`)."""
+
+    __tablename__ = "crawl_seen_urls"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('irrelevant', 'skipped_old', 'duplicate', 'extraction_failed', "
+            "'classification_failed', 'bloomberg_resolved', 'bloomberg_unresolved')",
+            name="ck_crawl_seen_urls_status",
+        ),
+        Index("idx_crawl_seen_urls_last_seen_at", "last_seen_at"),
+    )
+
+    url: Mapped[str] = mapped_column(Text, primary_key=True)
+    source_domain: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"CrawlSeenUrl(url={self.url!r}, status={self.status!r}, attempts={self.attempts!r})"

@@ -2,13 +2,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Sequence, Set
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schemas.crawl_models import DateConfidence, NewsTopic, Tier
-from db.models import Article, Chunk
+from db.models import Article, Chunk, CrawlSeenUrl
 
 logger = logging.getLogger(__name__)
 
@@ -24,19 +24,67 @@ async def exists(session: AsyncSession, *, url: str, content_hash: str) -> bool:
     return result.first() is not None
 
 
-async def load_recent_urls(session: AsyncSession, days: int = 7) -> Set[str]:
-    """Load tập URL đã crawl trong `days` ngày gần nhất.
+# Trạng thái crawl_seen_urls bỏ qua NGAY ở lần crawl sau (kết quả không đổi nếu xử lý lại).
+SEEN_PERMANENT_STATUSES = ("irrelevant", "skipped_old", "duplicate", "bloomberg_resolved")
+# Trạng thái có thể do lỗi tạm thời (bot bị chặn, API LLM lỗi, Google News chưa có bài
+# syndicated) — vẫn thử lại ở các đợt crawl sau, chỉ bỏ qua khi đã thử đủ số lần này.
+SEEN_RETRY_STATUSES = ("extraction_failed", "classification_failed", "bloomberg_unresolved")
+SEEN_MAX_ATTEMPTS = 3
 
-    Dùng để seed seen_urls khi khởi động, tránh fetch lại HTML của bài đã biết.
-    Với lịch chạy hàng ngày, 7 ngày đủ để bỏ qua toàn bộ bài cũ trong listing page
-    (thường hiển thị 1–4 tuần gần nhất).
+
+async def load_recent_urls(session: AsyncSession, days: int = 7) -> Set[str]:
+    """Load tập URL đã biết trong `days` ngày gần nhất: bài đã lưu (`articles`) + URL đã
+    xử lý nhưng bị loại (`crawl_seen_urls` — LLM đánh không liên quan, ngoài cửa sổ ngày,
+    extract lỗi quá SEEN_MAX_ATTEMPTS lần, ...).
+
+    Dùng để seed seen_urls khi khởi động, tránh fetch lại HTML (và gọi lại LLM) cho bài
+    đã biết — quan trọng vì crawl chạy MỖI GIỜ. 7 ngày đủ để bỏ qua toàn bộ bài cũ trong
+    listing page (thường hiển thị 1–4 tuần gần nhất).
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     stmt = select(Article.url).where(Article.crawled_at >= cutoff)
     result = await session.execute(stmt)
     urls = {row[0] for row in result.fetchall()}
-    logger.info("[SEEN-URLS] Load %d URL đã biết từ DB (%d ngày gần nhất)", len(urls), days)
-    return urls
+
+    seen_stmt = select(CrawlSeenUrl.url).where(
+        CrawlSeenUrl.last_seen_at >= cutoff,
+        or_(
+            CrawlSeenUrl.status.in_(SEEN_PERMANENT_STATUSES),
+            CrawlSeenUrl.attempts >= SEEN_MAX_ATTEMPTS,
+        ),
+    )
+    rejected = {row[0] for row in (await session.execute(seen_stmt)).fetchall()}
+    logger.info(
+        "[SEEN-URLS] Load %d URL đã lưu + %d URL đã loại từ DB (%d ngày gần nhất)",
+        len(urls), len(rejected - urls), days,
+    )
+    return urls | rejected
+
+
+async def record_seen_urls(
+    session: AsyncSession, source_domain: str, entries: Sequence[tuple[str, str]]
+) -> None:
+    """Upsert (url, status) vào crawl_seen_urls rồi commit. URL đã có thì cập nhật
+    status mới nhất, tăng attempts, cập nhật last_seen_at."""
+    # 1 câu INSERT ... ON CONFLICT DO UPDATE không được đụng cùng 1 dòng 2 lần — gộp
+    # theo url trước (giữ status cuối cùng).
+    by_url = {url: status for url, status in entries if url}
+    if not by_url:
+        return
+    stmt = pg_insert(CrawlSeenUrl).values([
+        {"url": url, "source_domain": source_domain, "status": status}
+        for url, status in by_url.items()
+    ])
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["url"],
+        set_={
+            "status": stmt.excluded.status,
+            "attempts": CrawlSeenUrl.attempts + 1,
+            "last_seen_at": func.now(),
+        },
+    )
+    await session.execute(stmt)
+    await session.commit()
 
 
 async def load_recent_content_hashes(session: AsyncSession, days: int = 7) -> Set[str]:

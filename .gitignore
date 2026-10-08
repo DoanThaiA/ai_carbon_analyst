@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Scheduler logs (scheduler.py)
+logs/

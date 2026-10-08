@@ -1,9 +1,9 @@
 """Gửi email digest Hot News cho user đã đăng ký SAU MỖI đợt crawl.
 
 Tại sao gom theo đợt crawl thay vì debounce timer trong API server:
-- Crawl chạy theo lô (06:00 toàn bộ nguồn, 12:00 nhóm is_noon_crawl — xem
-  scheduler.py), nên "hết đợt crawl" chính là ranh giới gom nhóm tự nhiên:
-  1 đợt = tối đa 1 email, dù đợt đó kéo dài bao lâu. Timer cố định (vd 10 phút)
+- Crawl chạy theo lô (mỗi giờ, toàn bộ nguồn — xem scheduler.py), nên "hết đợt
+  crawl" chính là ranh giới gom nhóm tự nhiên: 1 đợt = tối đa 1 email (≤ 24
+  email/ngày; HOT_NEWS_EMAIL_QUIET_HOURS để im lặng ban đêm), dù đợt đó kéo dài bao lâu. Timer cố định (vd 10 phút)
   vẫn tách 1 đợt crawl dài thành nhiều email.
 - Trạng thái "đã gửi" nằm ở DB (`articles.hot_news_emailed_at`), không phải
   buffer in-memory — restart/deploy giữa chừng không mất email, chạy nhiều
@@ -29,6 +29,29 @@ from db.models import Article, User
 from services.email_sender import EmailSendError, email_configured, send_hot_news_digest_email
 
 logger = logging.getLogger(__name__)
+
+
+# Múi giờ Việt Nam (UTC+7) — khung giờ yên lặng tính theo giờ VN
+TZ_VN = timezone(timedelta(hours=7))
+
+
+def in_quiet_hours(settings: Settings, now: datetime | None = None) -> bool:
+    """True nếu giờ VN hiện tại nằm trong settings.hot_news_email_quiet_hours ("22-6" =
+    22:00 → trước 06:00, cho phép vắt qua nửa đêm). Trống/sai định dạng = không có khung."""
+    spec = settings.hot_news_email_quiet_hours
+    if not spec:
+        return False
+    try:
+        start_s, end_s = spec.split("-", 1)
+        start, end = int(start_s), int(end_s)
+    except ValueError:
+        logger.warning("[HOT-NEWS-EMAIL] HOT_NEWS_EMAIL_QUIET_HOURS=%r sai định dạng (vd '22-6') — bỏ qua.", spec)
+        return False
+    if not (0 <= start <= 23 and 0 <= end <= 23) or start == end:
+        logger.warning("[HOT-NEWS-EMAIL] HOT_NEWS_EMAIL_QUIET_HOURS=%r không hợp lệ — bỏ qua.", spec)
+        return False
+    hour = (now or datetime.now(TZ_VN)).astimezone(TZ_VN).hour
+    return start <= hour < end if start < end else (hour >= start or hour < end)
 
 
 @dataclass

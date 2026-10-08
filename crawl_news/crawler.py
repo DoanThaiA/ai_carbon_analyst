@@ -17,7 +17,7 @@ import logging
 import re
 from base64 import urlsafe_b64decode
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List, Optional, Set
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 import feedparser
@@ -39,8 +39,13 @@ async def crawl_source(
     source: SourceConfig,
     seen_urls: Set[str],
     playwright_fetcher: Optional["PlaywrightFetcher"] = None,
+    seen_log: Optional[List[Tuple[str, str]]] = None,
 ) -> List[CrawledItem]:
     """Crawl 1 nguồn theo config, trả về danh sách bài viết chưa từng thấy.
+
+    seen_log: nếu truyền list, crawler append (url, status) cho các URL đã xử lý mà
+    không trả về thành CrawledItem (hiện chỉ Bloomberg dùng) — process_source lưu
+    chúng vào crawl_seen_urls để đợt crawl sau bỏ qua.
 
     Nếu source.use_playwright=True và playwright_fetcher được cung cấp,
     sẽ dùng Playwright để lấy HTML listing page (JS render xong rồi mới parse link).
@@ -49,7 +54,7 @@ async def crawl_source(
     try:
         if source.type == "bloomberg_rss":
             from crawl_news.bloomberg_crawler import crawl_bloomberg_rss
-            return await crawl_bloomberg_rss(fetcher, playwright_fetcher, source, seen_urls)
+            return await crawl_bloomberg_rss(fetcher, playwright_fetcher, source, seen_urls, seen_log)
         if source.type == "rss" and source.rss_url:
             return await _crawl_rss(fetcher, source, seen_urls)
         return await _crawl_html_listing(fetcher, source, seen_urls, playwright_fetcher)

@@ -73,7 +73,7 @@ class Settings:
     otp_max_attempts: int
 
     # Email digest Hot News (services/hot_news_email.py) — gửi 1 email tổng hợp
-    # SAU MỖI đợt crawl (06:00/12:00), không gửi từng bài. max_age_hours: chỉ gửi
+    # SAU MỖI đợt crawl (mỗi giờ, xem scheduler.py), không gửi từng bài. max_age_hours: chỉ gửi
     # bài crawl trong N giờ gần nhất (tránh "xả" tồn đọng cũ khi gửi mail hỏng lâu
     # ngày). batch_size: số email tối đa/1 request Resend batch (mỗi người nhận
     # 1 email riêng; Resend giới hạn 100). app_base_url: link "Mở Carbon Analyst" trong email (trống = ẩn).
@@ -88,6 +88,16 @@ class Settings:
     # đúng 5 phiên giao dịch thứ 2 → thứ 6 (CN/thứ 2 không có phiên mới để báo cáo).
     # Crawl giá/tin vẫn chạy MỖI NGÀY; admin vẫn sinh tay được bất kỳ ngày nào.
     auto_report_days: str
+
+    # Khung giờ VN KHÔNG gửi email digest Hot News, dạng "22-6" (22:00 → trước 06:00;
+    # trống = gửi mọi giờ). Bài hot news trong khung này dồn lại, gửi ở đợt crawl đầu tiên
+    # sau khung — nên khung phải ngắn hơn hot_news_email_max_age_hours, nếu không bài cũ
+    # bị lọc mất. Chỉ áp dụng cho digest tự động sau crawl (main.py), không chặn
+    # scripts/send_hot_news_digest.py chạy tay.
+    hot_news_email_quiet_hours: str = ""
+    # Cửa sổ ngày đăng bài khi crawl (pipeline/crawl_pipeline.py::process_source):
+    # chỉ nhận bài đăng trong N giờ gần nhất.
+    crawl_lookback_hours: int = 36
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -141,4 +151,6 @@ class Settings:
             hot_news_email_batch_size=int(os.environ.get("HOT_NEWS_EMAIL_BATCH_SIZE", "100")),
             app_base_url=os.environ.get("APP_BASE_URL", "").rstrip("/"),
             auto_report_days=os.environ.get("AUTO_REPORT_DAYS", "tue-sat").strip().lower() or "tue-sat",
+            hot_news_email_quiet_hours=os.environ.get("HOT_NEWS_EMAIL_QUIET_HOURS", "").strip(),
+            crawl_lookback_hours=int(os.environ.get("CRAWL_LOOKBACK_HOURS", "36")),
         )

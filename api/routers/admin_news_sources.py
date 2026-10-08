@@ -1,8 +1,9 @@
 """
 Admin CRUD cho bảng news_crawl_sources — thay thế sources.yaml hardcode.
 main.py::load_sources_from_db() đọc các nguồn is_active=True từ bảng này;
-scheduler.py::noon_news_crawl_job() lọc thêm is_noon_crawl=True (xem
-scripts/migrate_sources.py cho việc backfill dữ liệu từ sources.yaml cũ).
+scheduler.py crawl toàn bộ nguồn đó MỖI GIỜ — cờ is_noon_crawl chỉ còn tác dụng khi
+chạy tay main.main(noon_only=True) (xem scripts/migrate_sources.py cho việc backfill
+dữ liệu từ sources.yaml cũ).
 
 POST /test-crawl chạy thử crawl_source() với cấu hình DRAFT gửi từ form (CHƯA
 lưu vào DB), giới hạn TEST_CRAWL_LIMIT bài, KHÔNG qua extract/dedupe/classify/
