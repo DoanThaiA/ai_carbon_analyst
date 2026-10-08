@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download, Sparkles } from "lucide-react";
+import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download, Sparkles, Undo2 } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -24,6 +24,7 @@ export default function AdminReportReview() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
+  const [unpublishing, setUnpublishing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState("");
@@ -119,6 +120,20 @@ export default function AdminReportReview() {
       alert(err.response?.data?.detail || "Lỗi khi duyệt báo cáo");
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    if (!confirm("Đưa báo cáo về DRAFT? User sẽ không xem được báo cáo này cho tới khi bạn duyệt & xuất bản lại.")) return;
+
+    setUnpublishing(true);
+    try {
+      await api.post(`/api/admin/reports/${date}/unpublish`);
+      setReport(prev => prev ? { ...prev, status: "draft", published_at: null } : null);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Lỗi khi đưa báo cáo về draft");
+    } finally {
+      setUnpublishing(false);
     }
   };
 
@@ -288,6 +303,17 @@ export default function AdminReportReview() {
             <Trash2 size={16} />
             {deleting ? "Đang xóa..." : "Xóa"}
           </button>
+
+          {report.status === 'published' && (
+            <button
+              onClick={handleUnpublish}
+              disabled={unpublishing}
+              className="flex items-center gap-1.5 bg-surface hover:bg-surface-alt border border-border text-foreground px-4 py-1.5 rounded-full font-semibold text-sm transition-colors duration-500 ease-in-out disabled:opacity-50"
+            >
+              <Undo2 size={14} />
+              {unpublishing ? "Đang xử lý..." : "Quay về Draft"}
+            </button>
+          )}
 
           {report.status === 'draft' && !isEditing && (
             <button

@@ -151,6 +151,30 @@ async def publish_report(date: str, session: AsyncSession = Depends(get_db)):
     return {"message": f"Report for {date} published successfully."}
 
 
+@router.post("/{date}/unpublish")
+async def unpublish_report(
+    date: str,
+    session: AsyncSession = Depends(get_db),
+    admin: dict = Depends(get_current_admin),
+):
+    """Admin đưa báo cáo đã xuất bản về lại draft để sửa — user không còn thấy báo cáo
+    (mọi API phía user chỉ lọc status='published') cho tới khi duyệt lại. Lúc duyệt không
+    có tác dụng phụ nào khác (email, thông báo...) nên chỉ cần đổi lại status."""
+    stmt = select(Report).options(defer(Report.content)).where(Report.report_date == date)
+    report = (await session.execute(stmt)).scalars().first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.status != "published":
+        raise HTTPException(status_code=400, detail="Chỉ đưa về draft được báo cáo đã xuất bản.")
+
+    report.status = "draft"
+    report.published_at = None
+    await session.commit()
+    logger.info("[REPORT] Admin %s đưa báo cáo %s về draft.", admin.get("sub"), date)
+    return {"message": f"Report for {date} reverted to draft."}
+
+
 @router.put("/{date}")
 async def update_report(date: str, body: ReportUpdate, session: AsyncSession = Depends(get_db)):
     """Admin sửa nội dung JSON của bản draft báo cáo."""
