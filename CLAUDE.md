@@ -188,6 +188,11 @@ Mục 1/4/9 ↔ `articles`, lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurr
 `biz_suggestions.trigger_rule`. Điểm mỗi check = 100 − 25/error − 10/warning − 2/info; tổng = trung bình.
 Frontend poll `GET .../qc-results`, gắn note theo `issue.section` (khớp key `report.content`) qua
 `components/ReportQC.tsx::QCSectionNotes`. Các hàm `check_*` là hàm thuần — test ở `tests/test_report_qc.py`.
+Đợt 2 thêm 2 check LLM (`services/report_qc_llm.py`, model `REPORT_QC_MODEL`, mặc định
+`claude-sonnet-5-5`): `consistency` (Mục 1 ↔ 2 ↔ 3 ↔ biz, số liệu trong văn bản ↔ bảng giá) và `causal`
+(suy luận ↔ khung `eua_causal_chains` kèm override admin, nằm trong system prompt có cache). Gọi song song,
+structured outputs, `fallbacks: "default"`. LLM lỗi → điểm check đó `None` (không tính vào tổng) + note info.
+`POST .../qc?llm=false` chỉ chạy 5 check rule-based.
 
 **Market data**: unchanged from the original crawler — `market_data.py` defines a
 `PriceProvider` ABC with `YFinanceProvider` (real data, WTI/Brent only) and

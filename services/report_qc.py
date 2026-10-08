@@ -16,9 +16,11 @@ Mỗi issue: {"check", "section", "severity": "error"|"warning"|"info",
 "message", "field_path"}; `section` khớp key của report.content để frontend
 gắn note đúng chỗ (components/ReportDocument.tsx).
 
-Đợt 2 (sau MVP, chưa làm): check LLM nhất quán nội bộ Mục 1 ↔ Mục 2 ↔ Mục 3 và
-chuỗi nhân quả EUA (services/eua_causal_chains.py).
+Đợt 2: thêm 2 check LLM — "consistency" (nhất quán nội bộ Mục 1 ↔ 2 ↔ 3 ↔ biz) và
+"causal" (chuỗi nhân quả EUA) — xem services/report_qc_llm.py. Bỏ qua được bằng
+use_llm=False (QC nhanh); LLM lỗi thì điểm check đó = None, không tính vào tổng.
 """
+import asyncio
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -28,7 +30,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Article, BizSuggestion, Instrument, Price
-from services import biz_memory
+from services import biz_memory, report_qc_llm
+from services.eua_framework_admin import get_overrides_map
 from services.report_generator import (
     CBAM_CODE,
     _compute_recurring_calendar_events,
@@ -38,7 +41,8 @@ from services.report_generator import (
 
 logger = logging.getLogger(__name__)
 
-CHECKS = ("price", "scenario", "source", "calendar", "biz")
+RULE_CHECKS = ("price", "scenario", "source", "calendar", "biz")
+CHECKS = RULE_CHECKS + report_qc_llm.LLM_CHECKS
 SEVERITY_PENALTY = {"error": 25, "warning": 10, "info": 2}
 
 # Sai số cho phép khi so giá báo cáo với DB — giá DB lưu float, báo cáo hiển thị 4 số lẻ.
@@ -538,15 +542,23 @@ def score_issues(issues: List[Dict[str, str]]) -> int:
     return max(0, 100 - sum(SEVERITY_PENALTY.get(it["severity"], 0) for it in issues))
 
 
-def summarize(issues_by_check: Dict[str, List[Dict[str, str]]]) -> Dict[str, Any]:
-    """-> {"scores": {check: điểm}, "overall_score": trung bình 5 check, "issues": [...]}."""
-    scores = {check: score_issues(issues_by_check.get(check, [])) for check in CHECKS}
+def summarize(
+    issues_by_check: Dict[str, List[Dict[str, str]]], skipped: Iterable[str] = ()
+) -> Dict[str, Any]:
+    """-> {"scores": {check: điểm | None}, "overall_score": trung bình các check đã chạy, "issues": [...]}.
+    `skipped`: check không chạy/không chạy được (điểm None, không tính vào tổng; issue của
+    nó — vd note "không chạy được" — vẫn được liệt kê nhưng không trừ điểm)."""
+    skipped = set(skipped)
+    scores: Dict[str, Optional[int]] = {
+        check: None if check in skipped else score_issues(issues_by_check.get(check, [])) for check in CHECKS
+    }
+    ran = [v for v in scores.values() if v is not None]
     severity_order = {"error": 0, "warning": 1, "info": 2}
     all_issues = [it for check in CHECKS for it in issues_by_check.get(check, [])]
     all_issues.sort(key=lambda it: severity_order.get(it["severity"], 3))  # sort ổn định — giữ thứ tự trong cùng mức
     return {
         "scores": scores,
-        "overall_score": round(sum(scores.values()) / len(CHECKS)),
+        "overall_score": round(sum(ran) / len(ran)) if ran else 0,
         "issues": all_issues,
     }
 
@@ -581,8 +593,34 @@ async def _load_db_prices(session: AsyncSession, target_date: str, price_date: O
     return db_prices, latest
 
 
-async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[str, Any]) -> Dict[str, Any]:
-    """Chạy 5 check rule-based cho báo cáo `report_date` -> kết quả của summarize()."""
+async def _run_llm_checks(content: Dict[str, Any], report_date: str, overrides) -> tuple:
+    """-> (issues_by_check, skipped). 2 check chạy song song; check nào lỗi thì bỏ điểm + ghi note."""
+    prompts = report_qc_llm.build_prompts(content, report_date, overrides)
+    results = await asyncio.gather(
+        *(report_qc_llm.run_llm_check(check, *prompts[check]) for check in report_qc_llm.LLM_CHECKS),
+        return_exceptions=True,
+    )
+    issues_by_check: Dict[str, List[Dict[str, str]]] = {}
+    skipped: Set[str] = set()
+    for check, res in zip(report_qc_llm.LLM_CHECKS, results):
+        if isinstance(res, BaseException):
+            logger.error("[REPORT-QC] Check LLM %s lỗi cho %s: %s", check, report_date, res)
+            skipped.add(check)
+            reason = str(res) if isinstance(res, report_qc_llm.LLMCheckError) else type(res).__name__
+            issues_by_check[check] = [_issue(
+                check, "3", "info",
+                f"Lucy không chạy được check AI \"{report_qc_llm.LLM_CHECK_LABELS[check]}\" ({reason}) — điểm check này bỏ trống.",
+                "3",
+            )]
+        else:
+            issues_by_check[check] = res
+    return issues_by_check, skipped
+
+
+async def run_report_qc(
+    session: AsyncSession, report_date: str, content: Dict[str, Any], use_llm: bool = True
+) -> Dict[str, Any]:
+    """Chạy 5 check rule-based (+ 2 check LLM nếu use_llm) cho báo cáo `report_date` -> summarize()."""
     target_date = report_data_date(report_date)
 
     db_prices, latest_price_date = await _load_db_prices(session, target_date, report_price_date(content))
@@ -602,6 +640,10 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
         for s in (await session.execute(select(BizSuggestion).where(BizSuggestion.id.in_(biz_ids)))).scalars():
             suggestions[s.id] = {"trigger_rule": s.trigger_rule}
     valid_codes = {c.upper() for c in (await session.execute(select(Instrument.code))).scalars()}
+    overrides = await get_overrides_map(session) if use_llm else None
+    # Đóng transaction đọc NGAY — trả connection về pool thay vì giữ nó trong lúc chờ LLM
+    # (vài chục giây). expire_on_commit=False nên object đang có trong session không bị expire.
+    await session.commit()
 
     issues_by_check = {
         "price": check_prices(content, db_prices, latest_price_date),
@@ -610,7 +652,11 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
         "calendar": check_calendar(content, report_date),
         "biz": check_biz(content, suggestions, valid_codes, (content.get("2") or {}).get("prices") or []),
     }
-    result = summarize(issues_by_check)
+    skipped: Set[str] = set(report_qc_llm.LLM_CHECKS)
+    if use_llm:
+        llm_issues, skipped = await _run_llm_checks(content, report_date, overrides)
+        issues_by_check.update(llm_issues)
+    result = summarize(issues_by_check, skipped)
     logger.info(
         "[REPORT-QC] %s: %d/100 (%s), %d issue.",
         report_date, result["overall_score"], result["scores"], len(result["issues"]),

@@ -15,12 +15,15 @@ const SEVERITY_META: Record<QCSeverity, { icon: typeof AlertCircle; label: strin
 };
 const SEVERITIES: QCSeverity[] = ["error", "warning", "info"];
 
-const CHECK_META: { key: QCCheck; label: string; field: keyof QCResult }[] = [
+// `ai`: check chạy bằng LLM (đợt 2) — điểm có thể null nếu gọi LLM lỗi (note lý do nằm ở Mục 3).
+const CHECK_META: { key: QCCheck; label: string; field: keyof QCResult; ai?: boolean }[] = [
   { key: "price", label: "Giá số liệu", field: "price_accuracy_score" },
   { key: "scenario", label: "Kịch bản giao dịch", field: "scenario_score" },
   { key: "source", label: "Nguồn tin", field: "source_score" },
   { key: "calendar", label: "Lịch sự kiện", field: "calendar_score" },
   { key: "biz", label: "Gợi ý kinh doanh", field: "biz_score" },
+  { key: "consistency", label: "Nhất quán nội bộ", field: "consistency_score", ai: true },
+  { key: "causal", label: "Chuỗi nhân quả EUA", field: "causal_score", ai: true },
 ];
 
 export function qcTone(qc: QCResult): "good" | "warn" | "bad" {
@@ -147,15 +150,26 @@ export function QCSummaryPanel({
           <div className={clsx("text-4xl font-extrabold font-mono", scoreClass(qc.overall_score))}>{qc.overall_score ?? "—"}</div>
           <div className="text-[11px] text-muted-light uppercase tracking-wider">/ 100 điểm</div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
           {CHECK_META.map((c) => {
             const score = qc[c.field] as number | null;
             const issues = qc.issues.filter((i) => i.check === c.key);
             return (
               <div key={c.key} className="rounded-lg border border-border px-2.5 py-2">
-                <div className="text-[11.5px] text-muted-light leading-tight">{c.label}</div>
+                <div className="flex items-center gap-1 text-[11.5px] text-muted-light leading-tight">
+                  {c.label}
+                  {c.ai && (
+                    <span className="px-1 rounded bg-violet-100 text-violet-700 text-[9.5px] font-bold" title="Kiểm tra bằng AI">AI</span>
+                  )}
+                </div>
                 <div className={clsx("text-lg font-bold font-mono", scoreClass(score))}>{score ?? "—"}</div>
-                {issues.length > 0 ? <SeverityCounts issues={issues} /> : <span className="text-[11.5px] text-up">Không có lỗi</span>}
+                {score === null ? (
+                  <span className="text-[11.5px] text-muted-light">Không chạy được</span>
+                ) : issues.length > 0 ? (
+                  <SeverityCounts issues={issues} />
+                ) : (
+                  <span className="text-[11.5px] text-up">Không có lỗi</span>
+                )}
               </div>
             );
           })}

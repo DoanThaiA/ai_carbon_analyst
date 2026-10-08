@@ -176,7 +176,7 @@ export interface HandoffCreated {
 // --- Lucy QC báo cáo trước khi duyệt — xem backend services/report_qc.py ---
 
 export type QCSeverity = "error" | "warning" | "info";
-export type QCCheck = "price" | "scenario" | "source" | "calendar" | "biz";
+export type QCCheck = "price" | "scenario" | "source" | "calendar" | "biz" | "consistency" | "causal";
 
 export interface QCIssue {
   check: QCCheck;
@@ -197,6 +197,9 @@ export interface QCResult {
   source_score: number | null;
   calendar_score: number | null;
   biz_score: number | null;
+  // 2 check AI (services/report_qc_llm.py) — null nếu không chạy được (LLM lỗi) hoặc QC nhanh.
+  consistency_score: number | null;
+  causal_score: number | null;
   issues: QCIssue[];
   error_message: string | null;
   checked_at: string;

@@ -657,6 +657,9 @@ class ReportQCResult(Base):
     source_score: Mapped[Optional[int]] = mapped_column(Integer)
     calendar_score: Mapped[Optional[int]] = mapped_column(Integer)
     biz_score: Mapped[Optional[int]] = mapped_column(Integer)
+    # 2 check LLM (services/report_qc_llm.py) — None nếu chạy QC nhanh (llm=false) hoặc gọi LLM lỗi.
+    consistency_score: Mapped[Optional[int]] = mapped_column(Integer)
+    causal_score: Mapped[Optional[int]] = mapped_column(Integer)
     issues: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     checked_at: Mapped[datetime] = mapped_column(

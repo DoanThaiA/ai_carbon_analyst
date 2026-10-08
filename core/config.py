@@ -34,6 +34,10 @@ class Settings:
     # thể đổi qua ENV nếu cần, không cần sửa code.
     quote_chat_model: str
 
+    # Lucy QC — 2 check LLM (nhất quán nội bộ + chuỗi nhân quả EUA) trong
+    # services/report_qc_llm.py. Đổi qua ENV, không cần sửa code.
+    report_qc_model: str
+
     # File đính kèm Quote Chat (ảnh/PDF/Word) lưu trên MinIO (S3-compatible).
     # QUAN TRỌNG: `minio_endpoint` PHẢI là host:port PUBLIC-reachable từ trình
     # duyệt (vd "storage.mcv.network" hoặc "sim.mcv.network:9000") — KHÔNG
@@ -119,6 +123,7 @@ class Settings:
             rerank_model=os.environ.get("RERANK_MODEL", "rerank-v3.5"),
             cohere_embed_throttle_seconds=float(os.environ.get("COHERE_EMBED_THROTTLE_SECONDS", "1.5")),
             quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", "claude-sonnet-5"),
+            report_qc_model=os.environ.get("REPORT_QC_MODEL", "claude-sonnet-5-5"),
             minio_endpoint=os.environ.get("MINIO_ENDPOINT", ""),
             minio_access_key=os.environ.get("MINIO_ACCESS_KEY", ""),
             minio_secret_key=os.environ.get("MINIO_SECRET_KEY", ""),

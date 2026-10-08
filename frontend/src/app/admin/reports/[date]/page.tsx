@@ -13,8 +13,8 @@ import { QuoteChat } from "@/components/QuoteChat";
 import { QCSummaryPanel, qcTone } from "@/components/ReportQC";
 
 const POLL_INTERVAL_MS = 5000;
-// Lucy QC rule-based chạy rất nhanh (vài trăm ms) — poll dày hơn để kết quả hiện gần như tức thì.
-const QC_POLL_INTERVAL_MS = 1500;
+// Lucy QC: 5 check rule-based xong trong <1s, 2 check AI (LLM) mất khoảng 30–60s.
+const QC_POLL_INTERVAL_MS = 3000;
 
 export default function AdminReportReview() {
   const params = useParams();
@@ -222,7 +222,7 @@ export default function AdminReportReview() {
                   className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200 cursor-wait"
                 >
                   <Loader2 size={14} className="animate-spin" />
-                  Lucy đang kiểm tra...
+                  Lucy đang kiểm tra (~1 phút)...
                 </button>
               );
             }
