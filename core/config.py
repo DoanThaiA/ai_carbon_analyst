@@ -73,7 +73,7 @@ class Settings:
     otp_max_attempts: int
 
     # Email digest Hot News (services/hot_news_email.py) — gửi 1 email tổng hợp
-    # SAU MỖI đợt crawl (mỗi giờ, xem scheduler.py), không gửi từng bài. max_age_hours: chỉ gửi
+    # SAU MỖI đợt crawl (mỗi giờ trong giờ hành chính, xem scheduler.py), không gửi từng bài. max_age_hours: chỉ gửi
     # bài crawl trong N giờ gần nhất (tránh "xả" tồn đọng cũ khi gửi mail hỏng lâu
     # ngày). batch_size: số email tối đa/1 request Resend batch (mỗi người nhận
     # 1 email riêng; Resend giới hạn 100). app_base_url: link "Mở Carbon Analyst" trong email (trống = ẩn).

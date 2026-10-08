@@ -1,9 +1,10 @@
 """Gửi email digest Hot News cho user đã đăng ký SAU MỖI đợt crawl.
 
 Tại sao gom theo đợt crawl thay vì debounce timer trong API server:
-- Crawl chạy theo lô (mỗi giờ, toàn bộ nguồn — xem scheduler.py), nên "hết đợt
-  crawl" chính là ranh giới gom nhóm tự nhiên: 1 đợt = tối đa 1 email (≤ 24
-  email/ngày; HOT_NEWS_EMAIL_QUIET_HOURS để im lặng ban đêm), dù đợt đó kéo dài bao lâu. Timer cố định (vd 10 phút)
+- Crawl chạy theo lô (mỗi giờ 08:00–17:00, nguồn VN theo giờ VN + nguồn quốc tế theo
+  giờ New York — xem scheduler.py), nên "hết đợt crawl" chính là ranh giới gom nhóm tự
+  nhiên: 1 đợt = tối đa 1 email (≤ 20 email/ngày; nhóm quốc tế chạy ban đêm giờ VN —
+  HOT_NEWS_EMAIL_QUIET_HOURS để im lặng), dù đợt đó kéo dài bao lâu. Timer cố định (vd 10 phút)
   vẫn tách 1 đợt crawl dài thành nhiều email.
 - Trạng thái "đã gửi" nằm ở DB (`articles.hot_news_emailed_at`), không phải
   buffer in-memory — restart/deploy giữa chừng không mất email, chạy nhiều

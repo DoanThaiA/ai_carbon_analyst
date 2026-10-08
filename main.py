@@ -60,14 +60,19 @@ def _source_config_from_row(row: NewsCrawlSource) -> SourceConfig:
     return SourceConfig(**kwargs)
 
 
-async def load_sources_from_db(session_factory, *, noon_only: bool = False) -> List[SourceConfig]:
+async def load_sources_from_db(
+    session_factory, *, noon_only: bool = False, region: Optional[str] = None,
+) -> List[SourceConfig]:
     """Đọc nguồn is_active=True từ bảng news_crawl_sources (thay cho sources.yaml
     — xem api/routers/admin_news_sources.py cho CRUD, scripts/migrate_sources.py
     cho backfill 1 lần từ sources.yaml cũ). noon_only=True -> chỉ lấy thêm nguồn
-    is_noon_crawl=True (chỉ còn dùng khi chạy tay — scheduler.py crawl toàn bộ nguồn mỗi giờ)."""
+    is_noon_crawl=True (chỉ còn dùng khi chạy tay). region='vietnam'/'international' ->
+    chỉ lấy nguồn của vùng đó (scheduler.py chạy 2 nhóm theo 2 khung giờ hành chính khác nhau)."""
     stmt = select(NewsCrawlSource).where(NewsCrawlSource.is_active == True)  # noqa: E712
     if noon_only:
         stmt = stmt.where(NewsCrawlSource.is_noon_crawl == True)  # noqa: E712
+    if region:
+        stmt = stmt.where(NewsCrawlSource.region == region)
     async with session_factory() as session:
         rows = (await session.execute(stmt)).scalars().all()
     return [_source_config_from_row(r) for r in rows]
@@ -103,11 +108,14 @@ def _print_summary(source_name: str, results: List[PipelineResult]) -> None:
             )
 
 
-async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> None:
+async def main(
+    domains: Optional[List[str]] = None, noon_only: bool = False, region: Optional[str] = None,
+) -> None:
     """domains=None -> crawl toàn bộ nguồn is_active=True trong news_crawl_sources
     (mặc định). Truyền list domain -> lọc thêm theo domain (test thủ công 1 nhóm
     nguồn). noon_only=True -> chỉ lấy nguồn is_noon_crawl=True (chỉ còn dùng khi
-    chạy tay — scheduler.py gọi main() mỗi giờ với toàn bộ nguồn)."""
+    chạy tay). region -> chỉ lấy nguồn của vùng đó — scheduler.py gọi main(region=...)
+    đầu mỗi giờ 08:00–17:00 theo giờ địa phương của từng vùng."""
     settings = Settings.from_env()
     logger.info("[CONFIG] Backend: %s | Model: %s", settings.classifier_backend, settings.classifier_model)
 
@@ -118,7 +126,7 @@ async def main(domains: Optional[List[str]] = None, noon_only: bool = False) -> 
     logger.info("[DB] Database san sang.")
 
     # 2. Đọc danh sách nguồn từ DB (news_crawl_sources)
-    all_sources = await load_sources_from_db(session_factory, noon_only=noon_only)
+    all_sources = await load_sources_from_db(session_factory, noon_only=noon_only, region=region)
     demo_sources = (
         [s for s in all_sources if s.domain in domains] if domains else all_sources
     )

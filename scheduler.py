@@ -1,31 +1,35 @@
 """
 scheduler.py
 ============
-Script chạy ngầm 24/7, tự động kích hoạt 3 tác vụ độc lập theo giờ Việt Nam:
+Script chạy ngầm 24/7, tự động kích hoạt các tác vụ độc lập:
 
-  1. daily_prices_job       06:00   — crawl giá các hợp đồng tương lai (BarchartPriceCrawler)
-  2. hourly_news_crawl_job  HH:00   — MỖI GIỜ crawl tin tức TOÀN BỘ nguồn is_active=True (bảng
-                                      news_crawl_sources — xem api/routers/admin_news_sources.py).
-                                      Cờ is_noon_crawl không còn ảnh hưởng lịch tự động.
-  3. auto_report_job        07:00   — CHỈ thứ 3 → thứ 7 (cấu hình AUTO_REPORT_DAYS trong .env)
+  1. daily_prices_job       06:00 VN       — crawl giá các hợp đồng tương lai (BarchartPriceCrawler)
+  2. news_crawl_job         08:00 → 17:00  — crawl tin tức đầu mỗi giờ trong giờ hành chính, mọi ngày,
+                                             tách 2 job theo `region` của news_crawl_sources (xem
+                                             api/routers/admin_news_sources.py, NEWS_CRAWL_SCHEDULES):
+                                               - vn_news_crawl:   region='vietnam', giờ VN
+                                               - intl_news_crawl: region='international', giờ New York
+                                                 (≈ 19:00/20:00 → 04:00/05:00 giờ VN, tuỳ giờ mùa hè Mỹ)
+                                             Cờ is_noon_crawl không còn ảnh hưởng lịch tự động.
+  3. auto_report_job        07:00 VN       — CHỈ thứ 3 → thứ 7 (cấu hình AUTO_REPORT_DAYS trong .env)
                                       tự động sinh 1 báo cáo/ngày bằng Claude, lưu report_date = HÔM NAY
                                       (VN) — dữ liệu vẫn là giá/tin của hôm qua, xem
                                       services/report_generator.py::report_data_date
 
-Crawl mỗi giờ không nhân chi phí LLM vì mỗi đợt chỉ xử lý URL MỚI: URL đã lưu (`articles`)
+Crawl theo giờ không nhân chi phí LLM vì mỗi đợt chỉ xử lý URL MỚI: URL đã lưu (`articles`)
 và URL đã bị loại (`crawl_seen_urls` — LLM đánh không liên quan, ngoài cửa sổ ngày, ...)
 đều được bỏ qua ngay từ listing page (services/storage.py::load_recent_urls). Bài chỉ được
 nhận nếu đăng trong CRAWL_LOOKBACK_HOURS giờ gần nhất (cửa sổ trượt, pipeline/crawl_pipeline.py).
 
 Tin tức đưa vào báo cáo được lọc theo crawled_at ở
 services/report_generator.py::get_news_for_report (07:00 VN ngày T-1 → 07:00 VN ngày T,
-với T = report_date = ngày sinh báo cáo) — đợt crawl 07:00 chạy cùng lúc với auto_report_job
-nên bài của đợt đó thuộc báo cáo hôm sau. Job này chỉ tạo báo cáo mới nếu ngày đó CHƯA có report (hoặc report cũ
+với T = report_date = ngày sinh báo cáo) — cả 2 nhóm nguồn đều đã crawl xong trước 07:00 VN
+(nguồn quốc tế kết thúc khoảng 04:00–05:00 VN). Job auto report chỉ tạo báo cáo mới nếu ngày đó CHƯA có report (hoặc report cũ
 bị 'failed') — không đụng vào report đã 'draft'/'published' do admin thao tác thủ công,
 các API /api/admin/reports/* (generate/publish/edit/delete) vẫn hoạt động độc lập như cũ.
 
 Chạy thủ công để test:
-  python scheduler.py --now        # chạy ngay cả 3 job theo thứ tự (không cần đợi giờ)
+  python scheduler.py --now        # chạy ngay giá → tin (toàn bộ nguồn) → báo cáo (không cần đợi giờ)
   python scheduler.py              # chạy nền, chờ đúng lịch mỗi ngày
 """
 
@@ -42,7 +46,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 # Ghi vào logs/ (volume scheduler_logs trong docker-compose mount /app/logs), xoay vòng
-# mỗi nửa đêm, giữ 14 ngày — crawl mỗi giờ nên log tăng nhanh, không để 1 file phình mãi.
+# mỗi nửa đêm, giữ 14 ngày — crawl nhiều đợt/ngày nên log tăng nhanh, không để 1 file phình mãi.
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -109,32 +113,46 @@ async def daily_prices_job() -> None:
     logger.info("=" * 60)
 
 
-# ─── Job 2: Crawl News (mỗi giờ, toàn bộ nguồn) ──────────────────────────────
+# ─── Job 2: Crawl News (mỗi giờ trong giờ hành chính, tách theo vùng) ──────────
 
-async def run_crawl_news() -> None:
-    """Chạy pipeline crawl news (async) cho toàn bộ nguồn is_active=True. Import tại
-    runtime để tránh xung đột asyncio.run()."""
+# Giờ hành chính: chạy đầu mỗi giờ từ 08:00 đến 17:00 (cả 2 đầu), MỌI ngày trong tuần,
+# theo giờ địa phương của nhóm nguồn — báo trong nước theo giờ VN, báo quốc tế theo giờ
+# New York (APScheduler tự xử lý giờ mùa hè/đông của Mỹ). Khoảng nghỉ dài nhất giữa 2
+# đợt là 17:00 → 08:00 = 15h, vẫn nằm trong CRAWL_LOOKBACK_HOURS (36h) nên không mất bài.
+NEWS_CRAWL_HOURS = "8-17"
+
+# (job_id, region của news_crawl_sources, múi giờ lịch chạy, nhãn log)
+NEWS_CRAWL_SCHEDULES = (
+    ("vn_news_crawl", "vietnam", "Asia/Ho_Chi_Minh", "nguồn trong nước, giờ VN"),
+    ("intl_news_crawl", "international", "America/New_York", "nguồn quốc tế, giờ New York"),
+)
+
+
+async def run_crawl_news(region: str | None = None) -> None:
+    """Chạy pipeline crawl news (async) cho các nguồn is_active=True của `region`
+    (None = toàn bộ nguồn). Import tại runtime để tránh xung đột asyncio.run()."""
     from main import main as crawl_news_main
-    logger.info("━━━ [NEWS] Bắt đầu crawl tin tức (toàn bộ nguồn)...")
+    label = f"region={region}" if region else "toàn bộ nguồn"
+    logger.info("━━━ [NEWS] Bắt đầu crawl tin tức (%s)...", label)
     try:
-        await crawl_news_main()
-        logger.info("━━━ [NEWS] Hoàn thành crawl tin tức (toàn bộ nguồn).")
+        await crawl_news_main(region=region)
+        logger.info("━━━ [NEWS] Hoàn thành crawl tin tức (%s).", label)
     except Exception:
-        logger.exception("━━━ [NEWS] Lỗi không mong đợi khi crawl tin tức!")
+        logger.exception("━━━ [NEWS] Lỗi không mong đợi khi crawl tin tức (%s)!", label)
 
 
-async def hourly_news_crawl_job() -> None:
-    """Job lập lịch chạy đầu mỗi giờ (giờ VN) — crawl TOÀN BỘ nguồn."""
+async def news_crawl_job(region: str | None = None, label: str = "toàn bộ nguồn") -> None:
+    """Job lập lịch chạy đầu mỗi giờ trong giờ hành chính — crawl các nguồn của `region`."""
     started = datetime.now(TZ_VN)
     logger.info("=" * 60)
-    logger.info("🚀 [SCHEDULER] Bắt đầu Hourly News Crawl Job (toàn bộ nguồn) — %s", started.strftime("%Y-%m-%d %H:%M:%S"))
-    await run_crawl_news()
+    logger.info("🚀 [SCHEDULER] Bắt đầu News Crawl Job (%s) — %s VN", label, started.strftime("%Y-%m-%d %H:%M:%S"))
+    await run_crawl_news(region)
     finished = datetime.now(TZ_VN)
     elapsed = (finished - started).total_seconds()
-    logger.info("✅ [SCHEDULER] Hourly News Crawl Job hoàn thành — %s (%.0f giây)", finished.strftime("%H:%M:%S"), elapsed)
+    logger.info("✅ [SCHEDULER] News Crawl Job (%s) hoàn thành — %s VN (%.0f giây)", label, finished.strftime("%H:%M:%S"), elapsed)
     if elapsed > 3600:
         # max_instances=1 → APScheduler bỏ qua đợt kế tiếp nếu đợt này chưa xong.
-        logger.warning("⚠️ [SCHEDULER] Đợt crawl kéo dài hơn 1 giờ — đợt kế tiếp đã bị bỏ qua.")
+        logger.warning("⚠️ [SCHEDULER] Đợt crawl (%s) kéo dài hơn 1 giờ — đợt kế tiếp đã bị bỏ qua.", label)
     logger.info("=" * 60)
 
 
@@ -193,7 +211,7 @@ async def run_auto_report_job() -> None:
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
-    # Nếu gọi với --now → chạy ngay lập tức cả 3 job theo thứ tự (dùng để test)
+    # Nếu gọi với --now → chạy ngay lập tức giá → tin → báo cáo theo thứ tự (dùng để test)
     run_now = "--now" in sys.argv
 
     scheduler = AsyncIOScheduler(timezone="Asia/Ho_Chi_Minh")
@@ -206,19 +224,22 @@ async def main() -> None:
         replace_existing=True,
         misfire_grace_time=3600,  # Nếu server tạm dừng, vẫn chạy nếu trễ < 1 tiếng
     )
-    # 1 job duy nhất cho tin tức: max_instances=1 để 2 đợt không bao giờ chạy chồng nhau
-    # (seen_urls/seen_hashes nằm trong RAM từng đợt — chạy chồng sẽ gọi LLM 2 lần cho cùng
-    # bài); coalesce=True gộp các lần lỡ (server dừng / đợt trước chạy quá giờ) thành 1.
-    scheduler.add_job(
-        hourly_news_crawl_job,
-        trigger=CronTrigger(minute=0, timezone="Asia/Ho_Chi_Minh"),
-        id="hourly_news_crawl",
-        name="Hourly News Crawl (toàn bộ nguồn)",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=1800,
-    )
+    # Mỗi nhóm nguồn 1 job: max_instances=1 để 2 đợt CÙNG nhóm không bao giờ chạy chồng
+    # nhau (seen_urls/seen_hashes nằm trong RAM từng đợt — chạy chồng sẽ gọi LLM 2 lần cho
+    # cùng bài); 2 nhóm khác nhau có tập nguồn riêng nên chồng giờ cũng không sao.
+    # coalesce=True gộp các lần lỡ (server dừng / đợt trước chạy quá giờ) thành 1.
+    for job_id, region, tz, label in NEWS_CRAWL_SCHEDULES:
+        scheduler.add_job(
+            news_crawl_job,
+            trigger=CronTrigger(hour=NEWS_CRAWL_HOURS, minute=0, timezone=tz),
+            args=[region, label],
+            id=job_id,
+            name=f"News Crawl ({label})",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=1800,
+        )
     # Chỉ tự động sinh báo cáo vào các ngày cấu hình ở AUTO_REPORT_DAYS (mặc định
     # thứ 3 → thứ 7, xem core/config.py::Settings.auto_report_days).
     from core.config import Settings
@@ -235,19 +256,20 @@ async def main() -> None:
     scheduler.start()
     logger.info("📅 Scheduler đã khởi động:")
     logger.info("   - Giá:      06:00 SA (giờ VN) mỗi ngày")
-    logger.info("   - Tin tức:  đầu mỗi giờ (toàn bộ nguồn)")
+    for _, _, tz, label in NEWS_CRAWL_SCHEDULES:
+        logger.info("   - Tin tức:  đầu mỗi giờ %s:00 (%s, %s)", NEWS_CRAWL_HOURS.replace("-", ":00 → "), label, tz)
     logger.info("   - Báo cáo:  07:00 SA (giờ VN), chỉ các ngày '%s' (AUTO_REPORT_DAYS)", auto_report_days)
 
     if run_now:
-        logger.info("⚡ Chế độ --now: chạy cả 3 job ngay lập tức để test (Prices → News → Report)...")
+        logger.info("⚡ Chế độ --now: chạy ngay để test (Prices → News toàn bộ nguồn → Report)...")
         await daily_prices_job()
-        await hourly_news_crawl_job()
+        await news_crawl_job()
         await run_auto_report_job()
         scheduler.shutdown()
         return
 
     # In thông tin lần chạy tiếp theo của từng job
-    for job_id in ("daily_prices", "hourly_news_crawl", "auto_report"):
+    for job_id in ("daily_prices", *(j[0] for j in NEWS_CRAWL_SCHEDULES), "auto_report"):
         job = scheduler.get_job(job_id)
         if job and job.next_run_time:
             logger.info("⏰ [%s] Lần chạy tiếp theo: %s", job_id, job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z"))

@@ -154,9 +154,10 @@ so a connection isn't held idle while awaiting the Claude API.
   `crawl_news/` or `scripts/` creates tables at runtime anymore — a missing
   table/column is a signal migrations haven't been applied, not a bug to code around.
 
-**Lịch crawl** (`scheduler.py`): giá 06:00; tin tức MỖI GIỜ (`hourly_news_crawl_job`,
-toàn bộ nguồn `is_active`, `max_instances=1` + `coalesce=True` — 2 đợt không chạy chồng);
-auto report 07:00. `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
+**Lịch crawl** (`scheduler.py`): giá 06:00 VN; tin tức đầu mỗi giờ 08:00–17:00 MỌI ngày, tách
+theo `news_crawl_sources.region` (`NEWS_CRAWL_SCHEDULES`): `vietnam` theo giờ VN, `international`
+theo giờ New York (`America/New_York`, tự theo giờ mùa hè Mỹ); mỗi job `max_instances=1` +
+`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report 07:00 VN. `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
 Để crawl hàng giờ không gọi LLM lặp lại, URL đã xử lý nhưng KHÔNG lưu thành article
 (irrelevant, ngoài cửa sổ ngày, trùng hash, extract/classify lỗi, link Bloomberg gốc) được
 ghi vào bảng `crawl_seen_urls` (`pipeline/crawl_pipeline.py::process_source` →
@@ -166,7 +167,7 @@ lỗi tạm thời được thử lại tới `SEEN_MAX_ATTEMPTS` lần. Lọc n
 `crawled_at`, không dựa vào cửa sổ này.
 
 **Hot news email digest** (`services/hot_news_email.py`): at the end of every
-`main.main()` crawl run (scheduler mỗi giờ; bỏ qua trong `HOT_NEWS_EMAIL_QUIET_HOURS`), all `is_hot_news` articles with
+`main.main()` crawl run (mỗi đợt crawl của cả 2 nhóm nguồn — nhóm quốc tế chạy ban đêm giờ VN; bỏ qua trong `HOT_NEWS_EMAIL_QUIET_HOURS`), all `is_hot_news` articles with
 `hot_news_emailed_at IS NULL` (crawled within `HOT_NEWS_EMAIL_MAX_AGE_HOURS`) are
 sent as ONE digest to every active `users` row via Resend (`services/email_sender.py`, httpx) —
 each recipient gets their own email via `POST /emails/batch` (batched by `HOT_NEWS_EMAIL_BATCH_SIZE`, ≤100).
