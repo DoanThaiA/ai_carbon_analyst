@@ -81,12 +81,20 @@ QUY TẮC PHÂN LOẠI NGHIÊM NGẶT:
 3. BÀI KHÔNG LIÊN QUAN: CHỈ trả về topics=[] và is_relevant=false khi bài KHÔNG có tác động rõ ràng (trực tiếp hoặc gián tiếp, có chuỗi nhân quả cụ thể) nào tới energy, carbon, climate, commodities, hay finance/policy/địa chính trị ảnh hưởng đến các thị trường trên — chỉ nhắc tên/đề cập thoáng qua không tính là liên quan.
 
 
-HOT NEWS — đánh giá ĐỘC LẬP với việc gắn topic ở trên, chỉ đánh dấu is_hot_news=true khi bài khớp ĐÚNG 1 trong 4 tiêu chí sau (nghiêm ngặt, KHÔNG suy diễn rộng ra ngoài định nghĩa):
+HOT NEWS — đánh giá ĐỘC LẬP với việc gắn topic ở trên, chỉ đánh dấu is_hot_news=true khi bài khớp ĐÚNG 1 trong 5 tiêu chí sau (nghiêm ngặt, KHÔNG suy diễn rộng ra ngoài định nghĩa):
 1. Đảo chiều giá EUA: bài xác nhận một sự đảo chiều xu hướng giá EUA (từ tăng sang giảm hoặc ngược lại), không phải biến động thông thường trong xu hướng đang có.
 2. CBAM thay đổi quy định đột ngột: đưa ra quy định CBAM MỚI mà trước đó không hề được nhắc đến, hoặc thay đổi ĐỘT NGỘT so với lộ trình CBAM đã công bố trước đó — không phải cập nhật tiến độ thông thường theo đúng lộ trình.
 3. Địa chính trị tiềm ẩn xung đột: nguy cơ chiến tranh/xung đột giữa khu vực tiêu thụ nhiều khí gas và khu vực cung cấp khí gas, giữa khu vực phát thải mạnh và khu vực đánh thuế phát thải (CBAM/carbon tax), hoặc xung đột lợi ích cấp quốc gia rõ ràng liên quan năng lượng/carbon.
 4. Quốc gia lớn rút khỏi decarbonization: một nước lớn (G20, EU member lớn, Mỹ, Trung Quốc...) tuyên bố CHÍNH THỨC không tham gia/rút khỏi chương trình giảm biến đổi khí hậu toàn cầu.
-Nếu không rơi vào 1 trong 4 trường hợp trên → is_hot_news=false, hot_news_reason=null. Nếu true, hot_news_reason là 1 câu ngắn (tiếng Việt) nêu rõ bài khớp tiêu chí nào.\
+5. Cú sốc cung/cầu LỚN ở các yếu tố dẫn dắt giá EUA: bài đưa tin 1 sự kiện CỤ THỂ (đã xảy ra, đã được công bố chính thức, hoặc sắp xảy ra có mốc thời gian/nguồn xác nhận) làm thay đổi ĐÁNG KỂ cân bằng cung hoặc cầu ở quy mô khu vực/toàn cầu của: dầu, gas/LNG, than, điện châu Âu, hoặc chính nguồn cung EUA. "Lớn" nghĩa là đủ sức dịch chuyển giá của thị trường đó, bài thường nêu được quy mô bằng số liệu. Ví dụ mức tham chiếu (không phải ngưỡng cứng):
+   - Dầu: thay đổi nguồn cung cỡ ≥1 triệu thùng/ngày (OPEC+ tăng/cắt sản lượng lớn, gián đoạn mỏ/tuyến vận chuyển lớn), xả kho dự trữ chiến lược hoặc một lượng dầu cỡ hàng chục–trăm triệu thùng sắp tràn ra thị trường, dỡ/áp lệnh trừng phạt làm thay đổi lớn dòng dầu xuất khẩu.
+   - Gas/LNG: gián đoạn hoặc khôi phục đường ống/nhà máy LNG lớn cấp châu Âu (vd dòng khí Nauy, Nga, Qatar, Mỹ), tồn kho gas EU ở mức bất thường/kỷ lục, thay đổi lớn dòng LNG nhập khẩu vào châu Âu.
+   - Than: nước xuất khẩu lớn cấm/hạn chế xuất khẩu, gián đoạn lớn ở mỏ/cảng chủ chốt.
+   - Điện châu Âu: hàng loạt lò hạt nhân dừng/khởi động lại, hạn hán làm thủy điện giảm mạnh, thay đổi lớn công suất phát điện của 1 nước lớn (đóng/mở nhà máy than/khí quy mô lớn).
+   - Cầu: cú sốc cầu lớn và cụ thể (đợt rét/nóng bất thường kéo dài làm cầu gas/điện tăng vọt, ngành công nghiệp nặng châu Âu cắt giảm sản xuất quy mô lớn).
+   - Cung EUA: thay đổi đột ngột lượng EUA đưa ra thị trường (bán thêm hạn ngạch, thay đổi lịch đấu giá/MSR ngoài lộ trình đã biết).
+   KHÔNG tính tiêu chí 5: báo cáo định kỳ (tồn kho hàng tuần EIA, số giàn khoan Baker Hughes...) với biến động trong biên độ bình thường; dự báo/bình luận/phân tích chung chung không gắn sự kiện cụ thể; biến động giá hằng ngày; sự cố nhỏ hoặc cục bộ; tin đồn không có nguồn xác nhận; kế hoạch dài hạn nhiều năm không có tác động ngắn–trung hạn.
+Nếu không rơi vào 1 trong 5 trường hợp trên → is_hot_news=false, hot_news_reason=null. Nếu true, hot_news_reason là 1 câu ngắn (tiếng Việt) nêu rõ bài khớp tiêu chí nào.\
 """
 
 _JSON_INSTRUCTION = """

@@ -121,9 +121,11 @@ class ClassificationResult:
     Tác động trực tiếp hoặc gián tiếp rõ ràng vẫn được coi là is_relevant=True
     (kèm ít nhất 1 topic sát nhất).
 
-    is_hot_news=True: bài khớp 1 trong 4 tiêu chí HOT NEWS (đảo chiều giá EUA,
+    is_hot_news=True: bài khớp 1 trong 5 tiêu chí HOT NEWS (đảo chiều giá EUA,
     CBAM thay đổi đột ngột, địa chính trị tiềm ẩn xung đột, nước lớn rút khỏi
-    decarbonization) — pipeline sẽ đẩy lên chuông thông báo trên header.
+    decarbonization, cú sốc cung/cầu lớn ở dầu/gas/than/điện/EUA — xem
+    crawl_news/classification.py::_SYSTEM_PROMPT) — pipeline sẽ đẩy lên chuông
+    thông báo trên header.
     """
     topics: List[NewsTopic]
     confidence: float
