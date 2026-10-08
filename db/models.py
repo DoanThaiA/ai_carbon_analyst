@@ -631,3 +631,38 @@ class ClaudeHandoff(Base):
 
     def __repr__(self) -> str:
         return f"ClaudeHandoff(id={self.id!r}, handoff_id={self.handoff_id!r}, user_email={self.user_email!r})"
+
+
+class ReportQCResult(Base):
+    """1 dòng = 1 lần Lucy QC báo cáo `report_date` trước khi duyệt (services/report_qc.py).
+    Giữ lịch sử mọi lần chạy — GET /api/admin/reports/{date}/qc-results chỉ lấy dòng MỚI NHẤT.
+    status='running': job nền đang chạy (điểm = None); 'done': có điểm + issues;
+    'failed': job lỗi (error_message). Mỗi phần tử `issues`:
+    {"check", "section", "severity": "error"|"warning"|"info", "message", "field_path"}."""
+
+    __tablename__ = "report_qc_results"
+    __table_args__ = (
+        CheckConstraint("status IN ('running', 'done', 'failed')", name="ck_report_qc_results_status"),
+        Index("ix_report_qc_results_report_date", "report_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_date: Mapped[str] = mapped_column(
+        Text, ForeignKey("reports.report_date", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="running")
+    overall_score: Mapped[Optional[int]] = mapped_column(Integer)
+    price_accuracy_score: Mapped[Optional[int]] = mapped_column(Integer)
+    scenario_score: Mapped[Optional[int]] = mapped_column(Integer)
+    source_score: Mapped[Optional[int]] = mapped_column(Integer)
+    calendar_score: Mapped[Optional[int]] = mapped_column(Integer)
+    biz_score: Mapped[Optional[int]] = mapped_column(Integer)
+    issues: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    checked_by: Mapped[Optional[str]] = mapped_column(Text)  # JWT "sub" của admin bấm QC
+
+    def __repr__(self) -> str:
+        return f"ReportQCResult(id={self.id!r}, date={self.report_date!r}, status={self.status!r})"

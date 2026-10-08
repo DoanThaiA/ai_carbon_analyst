@@ -181,6 +181,14 @@ bản mới = tăng version ở `mcp_client/pyproject.toml` + `MCP_CLIENT_VERSIO
 `frontend/src/lib/claudeConnect.ts`, rồi chạy `scripts/build_mcp_client.sh`. Tên file wheel BẮT BUỘC có
 phiên bản hợp lệ (uv đọc phiên bản từ tên file) — không dùng kiểu `-latest.whl`.
 
+**Lucy QC báo cáo** (`services/report_qc.py`): admin bấm "QC với Lucy" trên báo cáo draft →
+`POST /api/admin/reports/{date}/qc` tạo dòng `report_qc_results` (status `running`) và chạy nền 5 check
+rule-based (không gọi LLM): giá Mục 2 ↔ bảng `prices`, kịch bản Mục 3 ↔ nhãn "**Tổng hợp:**", URL nguồn
+Mục 1/4/9 ↔ `articles`, lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurring_calendar_events`, gợi ý biz ↔
+`biz_suggestions.trigger_rule`. Điểm mỗi check = 100 − 25/error − 10/warning − 2/info; tổng = trung bình.
+Frontend poll `GET .../qc-results`, gắn note theo `issue.section` (khớp key `report.content`) qua
+`components/ReportQC.tsx::QCSectionNotes`. Các hàm `check_*` là hàm thuần — test ở `tests/test_report_qc.py`.
+
 **Market data**: unchanged from the original crawler — `market_data.py` defines a
 `PriceProvider` ABC with `YFinanceProvider` (real data, WTI/Brent only) and
 `ManualOrVendorProvider` (deliberately `NotImplementedError` for EUA/TTF/German

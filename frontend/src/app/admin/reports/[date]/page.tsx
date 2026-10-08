@@ -2,16 +2,19 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download } from "lucide-react";
+import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download, Sparkles } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
 import { api } from "@/lib/api";
-import type { Report } from "@/lib/types";
+import type { QCResult, Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
 import { ReportEditor } from "@/components/ReportEditor";
 import { QuoteChat } from "@/components/QuoteChat";
+import { QCSummaryPanel, qcTone } from "@/components/ReportQC";
 
 const POLL_INTERVAL_MS = 5000;
+// Lucy QC rule-based chạy rất nhanh (vài trăm ms) — poll dày hơn để kết quả hiện gần như tức thì.
+const QC_POLL_INTERVAL_MS = 1500;
 
 export default function AdminReportReview() {
   const params = useParams();
@@ -29,6 +32,13 @@ export default function AdminReportReview() {
   const [editContent, setEditContent] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
+  // Lucy QC (services/report_qc.py): kết quả mới nhất, đang gửi yêu cầu, panel tổng kết mở/đóng.
+  // qcStale: admin đã sửa nội dung sau lần QC → ẩn note cũ (có thể lệch vị trí), mời chạy lại.
+  const [qc, setQc] = useState<QCResult | null>(null);
+  const [qcStarting, setQcStarting] = useState(false);
+  const [qcPanelOpen, setQcPanelOpen] = useState(false);
+  const [qcStale, setQcStale] = useState(false);
+
   const fetchReport = useCallback(async () => {
     try {
       const res = await api.get(`/api/admin/reports/${date}`);
@@ -43,6 +53,39 @@ export default function AdminReportReview() {
   useEffect(() => {
     if (date) fetchReport();
   }, [date, fetchReport]);
+
+  const fetchQc = useCallback(async () => {
+    try {
+      const res = await api.get(`/api/admin/reports/${date}/qc-results`);
+      setQc(res.data);
+    } catch {
+      // QC chỉ là phụ trợ — lỗi tải kết quả không chặn màn hình duyệt.
+    }
+  }, [date]);
+
+  useEffect(() => {
+    if (report?.status === "draft") fetchQc();
+  }, [report?.status, fetchQc]);
+
+  useEffect(() => {
+    if (qc?.status !== "running") return;
+    const timer = setTimeout(fetchQc, QC_POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [qc, fetchQc]);
+
+  const handleRunQc = async () => {
+    setQcStarting(true);
+    try {
+      await api.post(`/api/admin/reports/${date}/qc`);
+      setQcStale(false);
+      setQcPanelOpen(true);
+      await fetchQc();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Lỗi khi gọi Lucy QC");
+    } finally {
+      setQcStarting(false);
+    }
+  };
 
   // /generate chạy nền — trong lúc report.status === 'generating', poll lại
   // mỗi POLL_INTERVAL_MS để tự cập nhật khi job xong (hoặc lỗi).
@@ -122,6 +165,7 @@ export default function AdminReportReview() {
       await api.put(`/api/admin/reports/${date}`, { content: editContent });
       setReport(prev => prev ? { ...prev, content: editContent } : null);
       setIsEditing(false);
+      if (qc) setQcStale(true);
     } catch (err: any) {
       alert(err.response?.data?.detail || "Lỗi khi lưu báo cáo");
     } finally {
@@ -168,6 +212,48 @@ export default function AdminReportReview() {
               Tải PDF
             </button>
           )}
+
+          {report.status === 'draft' && !isEditing && (() => {
+            const qcRunning = qcStarting || qc?.status === "running";
+            if (qcRunning) {
+              return (
+                <button
+                  disabled
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200 cursor-wait"
+                >
+                  <Loader2 size={14} className="animate-spin" />
+                  Lucy đang kiểm tra...
+                </button>
+              );
+            }
+            if (qc?.status === "done" && !qcStale) {
+              const tone = qcTone(qc);
+              return (
+                <button
+                  onClick={() => setQcPanelOpen((v) => !v)}
+                  className={clsx(
+                    "flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors",
+                    tone === "good" ? "bg-tint text-primary-dark border-primary/30 hover:border-primary" :
+                    tone === "bad" ? "bg-red-50 text-down border-down/30 hover:border-down" :
+                    "bg-warn-tint text-warn border-warn/30 hover:border-warn"
+                  )}
+                >
+                  {tone === "good" ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                  {qc.overall_score}/100 · {tone === "bad" ? "Có lỗi" : "Xem chi tiết"}
+                </button>
+              );
+            }
+            return (
+              <button
+                onClick={handleRunQc}
+                title={qc?.status === "failed" ? `Lần QC trước lỗi: ${qc.error_message || "không rõ"}` : undefined}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:from-violet-700 hover:to-fuchsia-600 shadow-sm transition-colors"
+              >
+                <Sparkles size={14} />
+                {qcStale ? "QC lại với Lucy" : qc?.status === "failed" ? "QC lỗi · Thử lại" : "QC với Lucy"}
+              </button>
+            );
+          })()}
 
           <div className={clsx(
             "px-2.5 py-1 text-xs font-mono font-semibold rounded flex items-center gap-2",
@@ -271,9 +357,23 @@ export default function AdminReportReview() {
           </button>
         </div>
       ) : (
-        <QuoteChat reportDate={date}>
-          <ReportDocument report={report} onDismissBizSuggestion={handleDismissBizSuggestion} />
-        </QuoteChat>
+        <>
+          {report.status === 'draft' && qcPanelOpen && qc?.status === "done" && !qcStale && (
+            <QCSummaryPanel
+              qc={qc}
+              onRerun={handleRunQc}
+              onClose={() => setQcPanelOpen(false)}
+              rerunning={qcStarting}
+            />
+          )}
+          <QuoteChat reportDate={date}>
+            <ReportDocument
+              report={report}
+              onDismissBizSuggestion={handleDismissBizSuggestion}
+              qcIssues={report.status === 'draft' && qc?.status === "done" && !qcStale ? qc.issues : undefined}
+            />
+          </QuoteChat>
+        </>
       )}
     </div>
   );

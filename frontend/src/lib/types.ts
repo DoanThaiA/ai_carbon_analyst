@@ -172,3 +172,33 @@ export interface HandoffCreated {
   prompt: string;
   expires_at: string;
 }
+
+// --- Lucy QC báo cáo trước khi duyệt — xem backend services/report_qc.py ---
+
+export type QCSeverity = "error" | "warning" | "info";
+export type QCCheck = "price" | "scenario" | "source" | "calendar" | "biz";
+
+export interface QCIssue {
+  check: QCCheck;
+  // Khớp key của report.content: "1" | "2" | "3" | "4" | "8" | "9" | "biz"
+  section: string;
+  severity: QCSeverity;
+  message: string;
+  field_path: string;
+}
+
+export interface QCResult {
+  id: number;
+  report_date: string;
+  status: "running" | "done" | "failed";
+  overall_score: number | null;
+  price_accuracy_score: number | null;
+  scenario_score: number | null;
+  source_score: number | null;
+  calendar_score: number | null;
+  biz_score: number | null;
+  issues: QCIssue[];
+  error_message: string | null;
+  checked_at: string;
+  checked_by: string | null;
+}
