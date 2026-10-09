@@ -807,7 +807,7 @@ def _extract_eua_verdict(content: dict) -> Optional[str]:
 
 
 def _scenario(content: dict, horizon: str) -> Optional[dict]:
-    """Kịch bản theo horizon ('ngắn hạn'/'trung hạn') — frontend dùng đúng so khớp này cho TÍN HIỆU HÔM NAY."""
+    """Kịch bản theo horizon ('ngắn hạn'/'trung hạn') — frontend dùng đúng so khớp này cho KHUYẾN NGHỊ VỊ THẾ."""
     for sc in ((content.get("3") or {}).get("trading_scenarios") or []):
         if isinstance(sc, dict) and sc.get("horizon") == horizon:
             return sc

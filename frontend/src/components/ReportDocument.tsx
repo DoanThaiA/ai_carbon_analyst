@@ -6,7 +6,7 @@ import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X, Trash2,
-  Leaf, Database, Calendar, RefreshCw
+  Leaf, Calendar, RefreshCw
 } from "lucide-react";
 import type { Report } from "@/lib/types";
 
@@ -53,7 +53,7 @@ const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: strin
   "đi ngang": { icon: Minus, className: "bg-blue-600 text-white border-blue-600" },
 };
 
-// Nhãn xu hướng dạng mũi tên + chữ cho "Bảng tín hiệu nhanh" (Phần 2) — chỉ là
+// Nhãn xu hướng dạng mũi tên + chữ cho thẻ KHUYẾN NGHỊ VỊ THẾ (Phần 2) — chỉ là
 // cách gọi tên khác của cùng "direction" (tăng/giảm/đi ngang) đã có sẵn trong
 // trading_scenarios, KHÔNG phải trường dữ liệu mới/suy diễn thêm.
 const TREND_META: Record<string, { arrow: string; label: string; className: string }> = {
@@ -123,7 +123,7 @@ function RichText({ text }: { text: string }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TÍN HIỆU HÔM NAY — thẻ chiến lược trading của phiên (kịch bản "ngắn hạn")
+// KHUYẾN NGHỊ VỊ THẾ (trước đây "TÍN HIỆU HÔM NAY") — thẻ chiến lược trading của phiên (kịch bản "ngắn hạn")
 // ═══════════════════════════════════════════════════════════════════════════
 // Backend (report_generator.py, mục C) sinh mỗi kịch bản gồm: direction (tăng/
 // giảm/đi ngang), probability, condition, price_zone, key_risk và
@@ -302,9 +302,15 @@ function KpiBox({ label, value, sub, className }: { label: string; value: string
   );
 }
 
-function TodaySignalCard({ signal, lastClose }: { signal: any; lastClose?: number }) {
+interface TechnicalLevels { support: number; resistance: number; target: number }
+
+function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: {
+  signal: any; midTermSignal?: any; technicalLevels: TechnicalLevels | null; lastClose?: number;
+}) {
   const dir: Dir = (["tăng", "giảm", "đi ngang"] as const).includes(signal.direction) ? signal.direction : "đi ngang";
   const trendMeta = TREND_META[dir];
+  const midTrendMeta = midTermSignal ? TREND_META[midTermSignal.direction] : undefined;
+  const position = POSITION_META[dir];
   const strategy = parseStrategy(signal.trading_strategy);
   const body = (re: RegExp) => {
     const p = strategy?.find(s => re.test(s.label));
@@ -368,7 +374,7 @@ function TodaySignalCard({ signal, lastClose }: { signal: any; lastClose?: numbe
           <div className="flex items-center justify-between flex-wrap gap-y-2">
             <div className="flex items-center gap-2.5 text-white">
               <LineChart size={20} strokeWidth={2.5} aria-hidden="true" />
-              <h2 className="text-[18px] sm:text-[20px] font-extrabold uppercase tracking-wide">TÍN HIỆU HÔM NAY</h2>
+              <h2 className="text-[18px] sm:text-[20px] font-extrabold uppercase tracking-wide">KHUYẾN NGHỊ VỊ THẾ</h2>
             </div>
             <div className="flex items-center gap-3 sm:gap-4 text-white/90 text-[12px] sm:text-[13px]">
               {signal.probability && (
@@ -386,8 +392,17 @@ function TodaySignalCard({ signal, lastClose }: { signal: any; lastClose?: numbe
                 <>
                   <div className="w-px h-6 bg-white/25 hidden sm:block" />
                   <div className="flex flex-col items-center leading-tight">
-                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Xu hướng:</span>
+                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Ngắn hạn (1–2 tuần):</span>
                     <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{trendMeta.arrow} {trendMeta.label}</strong>
+                  </div>
+                </>
+              )}
+              {midTrendMeta && (
+                <>
+                  <div className="w-px h-6 bg-white/25 hidden sm:block" />
+                  <div className="flex flex-col items-center leading-tight">
+                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Trung hạn (1–3 tháng):</span>
+                    <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{midTrendMeta.arrow} {midTrendMeta.label}</strong>
                   </div>
                 </>
               )}
@@ -395,14 +410,22 @@ function TodaySignalCard({ signal, lastClose }: { signal: any; lastClose?: numbe
           </div>
         </div>
 
-        {/* ═══ Vùng giá tham chiếu (price_zone) ═══ */}
-        {signal.price_zone && (
-          <div className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-tint border-b border-primary/10 text-[13px] sm:text-[14px] text-body [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-            <Compass size={15} strokeWidth={2.5} className="shrink-0 text-primary-dark" aria-hidden="true" />
-            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0">Vùng giá</span>
-            <span><HighlightNumbers text={signal.price_zone} /></span>
-          </div>
-        )}
+        {/* ═══ Vị thế khuyến nghị (theo chiều kịch bản ngắn hạn) + Vùng giá tham chiếu (price_zone) ═══ */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-2 px-4 sm:px-6 py-2.5 bg-tint border-b border-primary/10 text-[13px] sm:text-[14px] text-body [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+          {position && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark">Vị thế</span>
+              <strong className={clsx("font-extrabold", trendMeta?.className)}>{position}</strong>
+            </div>
+          )}
+          {signal.price_zone && (
+            <div className="flex items-start gap-2 min-w-0 sm:border-l sm:border-primary/15 sm:pl-6">
+              <Compass size={15} strokeWidth={2.5} className="shrink-0 mt-0.5 text-primary-dark" aria-hidden="true" />
+              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0 mt-[3px]">Vùng giá</span>
+              <span><HighlightNumbers text={signal.price_zone} /></span>
+            </div>
+          )}
+        </div>
 
         {hasLevels ? (
           <>
@@ -428,6 +451,23 @@ function TodaySignalCard({ signal, lastClose }: { signal: any; lastClose?: numbe
             <HighlightNumbers text={fallbackText} />
           </div>
         ) : null}
+
+        {/* ═══ Mốc kỹ thuật — tính từ OHLC thật 30 phiên (xem technicalLevels ở ReportDocument) ═══ */}
+        {technicalLevels && (
+          <div className="grid grid-cols-3 border-t border-primary/10 divide-x divide-primary/10">
+            {[
+              { label: "Hỗ trợ", value: technicalLevels.support, sub: "đáy 30 phiên" },
+              { label: "Kháng cự", value: technicalLevels.resistance, sub: "đỉnh 30 phiên" },
+              { label: "Mục tiêu kỹ thuật", value: technicalLevels.target, sub: "nếu phá kháng cự" },
+            ].map(t => (
+              <div key={t.label} className="px-3 sm:px-6 py-3 text-center sm:text-left">
+                <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light">{t.label}</div>
+                <div className="font-extrabold tabular-nums text-label text-[18px] sm:text-[20px] leading-tight">{fmtPrice(t.value)}</div>
+                <div className="text-[10px] sm:text-[11px] text-muted-light">{t.sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ═══ Cơ sở (condition) + Rủi ro chính (key_risk) ═══ */}
         <div className="grid grid-cols-1 sm:grid-cols-2 border-t border-primary/10 bg-[#f8faf9] [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
@@ -697,7 +737,7 @@ function isPositiveDelta(value: string) {
 //  - PartHeading: đầu mục lớn nhất ("Phần 1/2/3", hoặc đứng riêng như "Tóm tắt
 //    điều hành"/"Nguồn tham khảo" không cần nhãn "Phần").
 //  - FramedHighlight: khung viền nổi bật, tiêu đề là dải nền màu nằm trong khung
-//    — dùng cho các khối cần nhấn mạnh nhất (Tóm tắt điều hành, Tín hiệu hôm nay).
+//    — dùng cho các khối cần nhấn mạnh nhất (Tóm tắt điều hành, Khuyến nghị vị thế).
 //  - SubHeading: đầu mục con trong 1 Phần, dải nền xanh dương full-width + in
 //    đậm để dễ quét mắt mà không cần số thứ tự.
 // Icon chỉ giữ lại ở PartHeading (Phần 1/2/3, Nguồn tham khảo) — FramedHighlight
@@ -724,9 +764,9 @@ function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: 
 
 // Khung viền nổi bật, tiêu đề nằm hẳn TRONG khung (dải nền màu trên cùng, chữ
 // trắng) — không dùng nhãn bo tròn đè lên viền trên nữa. Dùng cho Tóm tắt điều
-// hành (tone "blue", đầu báo cáo) và TÍN HIỆU HÔM NAY (tone "primary", đầu Phần 2).
+// hành (tone "blue", đầu báo cáo) và KHUYẾN NGHỊ VỊ THẾ (tone "primary", đầu Phần 2).
 // Kiểu chữ DÙNG CHUNG cho tiêu đề các khối nổi bật (Nhận định tổng quan, Tóm tắt
-// điều hành, Tín hiệu hôm nay) — cùng cỡ, in hoa, căn giữa.
+// điều hành, Khuyến nghị vị thế) — cùng cỡ, in hoa, căn giữa.
 const BLOCK_TITLE_CLASS = "text-center text-[15px] sm:text-[16px] font-bold uppercase tracking-wide leading-tight";
 
 const FRAME_TONE = {
@@ -905,7 +945,7 @@ function BizRecommendationTable({
           {/* table-fixed + w-1/3 trên 3 cột nội dung: mỗi trường trong prompt tối đa
               1 câu ngắn (xem _prompt_biz_recommendation) nên độ dài tương đương nhau
               — chia đều tránh cột auto-size lệch nhau theo độ dài chữ thực tế, giống
-              cách "Bảng giá nhanh"/"Bảng tín hiệu nhanh" đã làm ở trên. */}
+              cách "Bảng giá nhanh" đã làm ở trên. */}
           <table className="w-full table-fixed border-collapse text-[14.5px]">
             <thead>
               <tr>
@@ -1305,126 +1345,100 @@ function EuaDashboardWidget({ report }: { report: Report }) {
   const volChangePct = avgVol ? ((vol - avgVol) / avgVol) * 100 : 0;
 
   return (
-    <div className="bg-surface-alt border border-border rounded-xl p-3 sm:p-5 shadow-[var(--shadow-soft)] print:break-inside-avoid">
-      <div className="flex flex-col lg:flex-row gap-5 items-stretch">
-        {/* Cột trái (Chart) */}
-        <div className="lg:flex-[1.6] flex flex-col min-w-0 bg-background border border-border rounded-xl p-4 shadow-sm">
-          {/* Header chart */}
-          <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-primary text-white p-2 rounded-xl shadow-sm">
-                <Leaf size={24} />
-              </div>
-              <div>
-                <h3 className="font-bold text-label text-[17px]">EUA Dec-26 <span className="text-muted-light font-normal text-[14px]">· Nến 30 ngày</span></h3>
-                <p className="text-muted text-[13px] mt-0.5">Thị trường quyền phát thải CO₂ châu Âu</p>
-              </div>
+    <div className="bg-surface-alt border border-border rounded-xl p-3 sm:p-5 shadow-[var(--shadow-soft)] flex flex-col gap-4">
+      {/* Tầng 1 — Biểu đồ nến, full chiều ngang */}
+      <div className="bg-background border border-border rounded-xl p-4 sm:p-5 shadow-sm min-w-0 print:break-inside-avoid">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 mb-4 pb-4 border-b border-border">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="bg-primary text-white p-2 rounded-xl shadow-sm shrink-0">
+              <Leaf size={24} />
             </div>
-            <div className="flex flex-col items-end gap-1.5">
-              <div className="flex items-center text-[12px] text-muted gap-1.5 font-medium">
-                <Calendar size={14} /> Cập nhật: {lastDate}
-              </div>
-              <div className="bg-tint text-primary-dark text-[11px] font-bold px-2.5 py-1 rounded-full border border-primary/20">
-                EUR/tCO₂e
-              </div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-label text-[17px] flex flex-wrap items-center gap-x-2 gap-y-1">
+                EUA Dec-26
+                {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-primary text-white">1M</span>
+                <span className="text-muted-light font-normal text-[13px]">Nến ngày · 30 phiên</span>
+              </h3>
+              <p className="text-muted-light text-[13px] mt-0.5">Thị trường quyền phát thải CO₂ châu Âu · EUR/tCO₂e</p>
             </div>
           </div>
-          
-          {/* Controls */}
-          <div className="flex items-center justify-between mb-3 border-b border-border pb-3">
-            {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
-            <div className="px-3 py-1.5 rounded-md text-[12px] font-bold bg-primary text-white shadow-sm">1M</div>
-            <div className="flex items-center text-[12px] font-bold text-primary-dark gap-1.5">
-              <TrendingUp size={16} /> EUR/tCO₂e
+          <div className="flex flex-col items-end gap-1 ml-auto">
+            <div className="flex items-baseline gap-2.5">
+              <span className="text-[30px] sm:text-[34px] font-bold leading-none text-label tabular-nums">{lastClose.toFixed(2)}</span>
+              <span className={clsx("inline-flex items-center gap-0.5 text-white text-[13px] font-bold px-2.5 py-1 rounded-full tabular-nums", dayChange >= 0 ? "bg-up" : "bg-down")}>
+                {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
+                {dayChange > 0 ? "+" : ""}{dayChange.toFixed(2)} ({dayChangePct > 0 ? "+" : ""}{dayChangePct.toFixed(2)}%)
+              </span>
             </div>
-          </div>
-          
-          {/* Chart */}
-          <div className="-mx-1">
-            <CandlestickChart report={report} />
+            <div className="flex items-center text-[12px] text-muted-light gap-1.5 font-medium">
+              <Calendar size={13} /> Đóng cửa phiên {formatFullDate(lastDate)}
+            </div>
           </div>
         </div>
 
-        {/* Cột phải (Stats & Insights) */}
-        <div className="lg:flex-1 flex flex-col gap-4">
-          {/* Last Close Card */}
-          <div className="bg-primary-dark text-white rounded-xl p-5 shadow-sm relative overflow-hidden">
-             <div className="absolute -right-4 -bottom-4 opacity-10"><Database size={100} /></div>
-             <div className="flex items-center text-[13px] font-semibold mb-3 opacity-90 gap-2">
-               <Database size={16} /> Giá đóng cửa phiên trước ({lastDate})
-             </div>
-             <div className="flex items-baseline gap-2 mb-1">
-               <span className="text-[40px] font-bold leading-none">{lastClose.toFixed(2)}</span>
-               <span className="text-[14px] font-medium opacity-90">EUR/tCO₂e</span>
-             </div>
-             <div className="flex items-center justify-end mt-2">
-               <div className={clsx("inline-flex items-center gap-1 text-white text-[14px] font-bold px-3 py-1.5 rounded-full shadow-sm", dayChange >= 0 ? "bg-up" : "bg-down")}>
-                 {dayChange >= 0 ? <ChevronUp size={18} strokeWidth={3} /> : <ChevronDown size={18} strokeWidth={3} />}
-                 {dayChange > 0 ? "+" : ""}{dayChange.toFixed(2)} ({dayChangePct > 0 ? "+" : ""}{dayChangePct.toFixed(2)}%)
-               </div>
-             </div>
+        <CandlestickChart report={report} />
+      </div>
+
+      {/* Tầng 2 — Số liệu */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:break-inside-avoid">
+        <StatTile icon={<RefreshCw size={14} />} label="Biên độ phiên gần nhất"
+          value={`${dayLow.toFixed(2)} – ${dayHigh.toFixed(2)}`}
+          sub={`biên độ ${dayRange.toFixed(2)} (~${dayRangePct.toFixed(1)}%)`} />
+        <StatTile
+          icon={sevenDayChange >= 0 ? <TrendingUp size={14} className="text-up" /> : <TrendingDown size={14} className="text-down" />}
+          label={`${sevenDayChange >= 0 ? "Tăng" : "Giảm"} 7 phiên`}
+          value={`${sevenDayChange > 0 ? "+" : ""}${sevenDayChange.toFixed(2)}`}
+          valueClass={sevenDayChange >= 0 ? "text-up" : "text-down"}
+          sub={`${sevenDayChangePct > 0 ? "+" : ""}${sevenDayChangePct.toFixed(2)}% so với ${sevenDaysAgo.toFixed(2)}`} />
+        <StatTile icon={<CalendarRange size={14} />} label="Vùng giá 30 phiên"
+          value={`${monthLow.toFixed(2)} – ${monthHigh.toFixed(2)}`}
+          sub={`thấp nhất – cao nhất`} />
+        <StatTile
+          icon={monthChange >= 0 ? <TrendingUp size={14} className="text-up" /> : <TrendingDown size={14} className="text-down" />}
+          label="Thay đổi 30 phiên"
+          value={`${firstClose.toFixed(2)} → ${lastClose.toFixed(2)}`}
+          sub={`${monthChangePct >= 0 ? "tăng" : "giảm"} ${Math.abs(monthChangePct).toFixed(1)}%`}
+          subClass={monthChangePct >= 0 ? "text-up font-bold" : "text-down font-bold"} />
+      </div>
+
+      {/* Tầng 3 — Nhận định */}
+      <div className="bg-background rounded-xl p-4 sm:p-5 border border-border shadow-sm print:break-inside-avoid">
+        <div className="flex items-center gap-2 text-primary-dark font-bold text-[14px] mb-4">
+          <div className="p-1.5 rounded-full bg-tint"><Info size={16} /></div> Nhận định thị trường
+        </div>
+        <div className="grid md:grid-cols-2 gap-x-8 gap-y-3.5 text-[13px] text-body">
+          <div className="flex items-start gap-2.5">
+            <TrendDot up={sevenDayChange >= 0} />
+            <div className="leading-snug"><strong className="text-label font-bold">Xu hướng 7 phiên:</strong> {sevenDayChange >= 0 ? "tăng" : "giảm"} {Math.abs(sevenDayChange).toFixed(2)} ({sevenDayChangePct > 0 ? "+" : ""}{sevenDayChangePct.toFixed(2)}%) so với 7 phiên trước.</div>
           </div>
-          
-          {/* Grid Stats */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
-              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5"><RefreshCw size={14}/> Biến động ngày</div>
-              <div className="text-[15px] font-bold text-label mb-1">{dayLow.toFixed(2)} — {dayHigh.toFixed(2)}</div>
-              <div className="text-[11px] text-muted-light font-medium">(biên độ {dayRange.toFixed(2)}, ~{dayRangePct.toFixed(1)}%)</div>
-            </div>
-            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
-              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5">{sevenDayChange >= 0 ? <TrendingUp size={14} className="text-up"/> : <TrendingDown size={14} className="text-down"/>} {sevenDayChange >= 0 ? "Tăng" : "Giảm"} 7 ngày</div>
-              <div className={clsx("text-[15px] font-bold mb-1", sevenDayChange >= 0 ? "text-up" : "text-down")}>
-                {sevenDayChange > 0 ? "+" : ""}{sevenDayChange.toFixed(2)} ({sevenDayChangePct > 0 ? "+" : ""}{sevenDayChangePct.toFixed(2)}%)
-              </div>
-              <div className="text-[11px] text-muted-light font-medium">so với 7 ngày trước</div>
-            </div>
-            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
-              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5"><CalendarRange size={14}/> EUA 30 ngày</div>
-              <div className="text-[15px] font-bold text-label mb-1">{monthLow.toFixed(2)} → {monthHigh.toFixed(2)}</div>
-              <div className={clsx("text-[11px] font-bold", monthChangePct >= 0 ? "text-up" : "text-down")}>
-                ({monthChangePct > 0 ? "+" : ""}{monthChangePct.toFixed(1)}%)
-              </div>
-            </div>
-            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
-              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5">{monthChange >= 0 ? <TrendingUp size={14} className="text-up"/> : <TrendingDown size={14} className="text-down"/>} Biến động 30 ngày</div>
-              <div className="text-[15px] font-bold text-label mb-1">{firstClose.toFixed(2)} → {lastClose.toFixed(2)}</div>
-              <div className={clsx("text-[11px] font-bold", monthChangePct >= 0 ? "text-up" : "text-down")}>
-                ({monthChangePct >= 0 ? "tăng" : "giảm"} {Math.abs(monthChangePct).toFixed(1)}%)
-              </div>
-            </div>
+          <div className="flex items-start gap-2.5">
+            <TrendDot up={lastClose >= dayOpen} />
+            <div className="leading-snug"><strong className="text-label font-bold">Phiên gần nhất:</strong> mở {dayOpen.toFixed(2)} — cao {dayHigh.toFixed(2)} — thấp {dayLow.toFixed(2)} — đóng {lastClose.toFixed(2)}; {lastClose >= dayOpen ? "tăng" : "giảm"} so với giá mở cửa, biên độ {dayRange.toFixed(2)} (~{dayRangePct.toFixed(1)}%).</div>
           </div>
-          
-          {/* Insights */}
-          <div className="bg-background rounded-xl p-4 border border-border shadow-sm flex-1 flex flex-col">
-            <div className="flex items-center gap-2 text-primary-dark font-bold text-[14px] mb-4">
-              <div className="p-1.5 rounded-full bg-tint"><Info size={16} /></div> Nhận định thị trường
-            </div>
-            <div className="space-y-3.5 text-[13px] text-body">
-              <div className="flex items-start gap-2.5">
-                <TrendDot up={sevenDayChange >= 0} />
-                <div className="leading-snug"><strong className="text-label font-bold">Xu hướng 7 ngày:</strong> {sevenDayChange >= 0 ? "Tăng so với 7 ngày trước" : "Giảm so với 7 ngày trước"}, với mức {sevenDayChange >= 0 ? "tăng" : "giảm"} <br/>{Math.abs(sevenDayChange).toFixed(2)} ({sevenDayChangePct > 0 ? "+" : ""}{sevenDayChangePct.toFixed(2)}%) so với 7 ngày trước.</div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <TrendDot up={lastClose >= dayOpen} />
-                <div className="leading-snug"><strong className="text-label font-bold">Biến động trong ngày:</strong> mở {dayOpen.toFixed(2)} — cao {dayHigh.toFixed(2)} — thấp {dayLow.toFixed(2)} — đóng cửa {lastClose.toFixed(2)} EUR/tCO₂e, <br/>(biên độ {dayRange.toFixed(2)}, ~{dayRangePct.toFixed(1)}% so với giá đóng cửa).</div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <div className="mt-0.5 shrink-0 w-[22px] h-[22px] rounded-full bg-[#9ca3af] flex items-center justify-center text-white"><Minus size={14} strokeWidth={3} /></div>
-                <div className="leading-snug"><strong className="text-label font-bold">EUA 30 ngày:</strong> {firstClose.toFixed(2)} → {lastClose.toFixed(2)}, đóng gần nhất {lastClose.toFixed(2)} ({monthChangePct > 0 ? "+" : ""}{monthChangePct.toFixed(1)}%); 30-ngày-cao {monthHigh.toFixed(2)}, 30-ngày-thấp {monthLow.toFixed(2)}.</div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <TrendDot up={volChangePct >= 0} />
-                <div className="leading-snug"><strong className="text-label font-bold">Khối lượng giao dịch:</strong> EUA phiên gần nhất ({lastDate}): {vol.toLocaleString("en-US")} hợp đồng, so với TB 20 phiên gần nhất ({avgVol.toLocaleString("en-US")} hợp đồng) — ở mức {volChangePct >= 0 ? "cao hơn" : "thấp hơn"} trung bình ({volChangePct > 0 ? "+" : ""}{volChangePct.toFixed(1)}%).</div>
-              </div>
-              <div className="flex items-start gap-2.5 pt-1">
-                <div className="mt-0.5 shrink-0 w-[22px] h-[22px] rounded-full bg-muted-light/20 flex items-center justify-center text-muted"><Info size={14} strokeWidth={3} /></div>
-                <div className="leading-snug text-muted-light font-medium italic">Giá phiên đó {lastClose >= dayOpen ? "tăng" : "giảm"} so với giá mở cửa cùng phiên.</div>
-              </div>
-            </div>
+          <div className="flex items-start gap-2.5">
+            <TrendDot up={monthChange >= 0} />
+            <div className="leading-snug"><strong className="text-label font-bold">EUA 30 phiên:</strong> {firstClose.toFixed(2)} → {lastClose.toFixed(2)} ({monthChangePct > 0 ? "+" : ""}{monthChangePct.toFixed(1)}%); cao nhất {monthHigh.toFixed(2)}, thấp nhất {monthLow.toFixed(2)}.</div>
+          </div>
+          <div className="flex items-start gap-2.5">
+            <TrendDot up={volChangePct >= 0} />
+            <div className="leading-snug"><strong className="text-label font-bold">Khối lượng:</strong> {vol.toLocaleString("en-US")} hợp đồng phiên {formatFullDate(lastDate)}, {volChangePct >= 0 ? "cao hơn" : "thấp hơn"} TB 20 phiên ({avgVol.toLocaleString("en-US")}) {volChangePct > 0 ? "+" : ""}{volChangePct.toFixed(1)}%.</div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Ô số liệu dưới biểu đồ EUA — cùng khung, cùng cỡ chữ để 4 ô thẳng hàng.
+function StatTile({ icon, label, value, sub, valueClass, subClass }: {
+  icon: React.ReactNode; label: string; value: string; sub: string; valueClass?: string; subClass?: string;
+}) {
+  return (
+    <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm min-w-0">
+      <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5">{icon} {label}</div>
+      <div className={clsx("text-[16px] font-bold mb-0.5 tabular-nums", valueClass ?? "text-label")}>{value}</div>
+      <div className={clsx("text-[11.5px] tabular-nums", subClass ?? "text-muted-light font-medium")}>{sub}</div>
     </div>
   );
 }
@@ -1486,12 +1500,11 @@ export function ReportDocument({
   const { cleanedBlocks: analysisBlocks, watchpoints } = extractWatchpoints(blocksAfterSummary);
   const hasMarketDrivers =
     report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0;
-  // TÍN HIỆU HÔM NAY (đầu Phần 2) tái dùng đúng kịch bản "ngắn hạn" đã có
+  // KHUYẾN NGHỊ VỊ THẾ (đầu Phần 2) tái dùng đúng kịch bản "ngắn hạn" đã có
   // trong trading_scenarios (Mục 3) — không cần trường dữ liệu riêng cho
   // "hôm nay" từ backend.
   const todaySignal = report.content["3"]?.trading_scenarios?.find((sc: any) => sc.horizon === "ngắn hạn");
-  // Bảng tín hiệu nhanh (ngay dưới TÍN HIỆU HÔM NAY) tái dùng kịch bản "trung
-  // hạn" cho dòng xu hướng 1-3 tháng.
+  // Kịch bản "trung hạn" → ô xu hướng 1–3 tháng trên header thẻ KHUYẾN NGHỊ VỊ THẾ.
   const midTermSignal = report.content["3"]?.trading_scenarios?.find((sc: any) => sc.horizon === "trung hạn");
   // Hỗ trợ/Kháng cự/Mục tiêu — tính trực tiếp từ OHLC thật 30 phiên
   // (report.content["2"].chart_data), ĐÚNG công thức với backend
@@ -1500,52 +1513,11 @@ export function ReportDocument({
   // diễn. "Cắt lỗ" không có công thức xác nhận từ dữ liệu thật nên để trống
   // (hiển thị "—") thay vì tự bịa mốc.
   const chartData = report.content["2"]?.chart_data || [];
-  const technicalLevels = chartData.length > 0 ? (() => {
+  const technicalLevels: TechnicalLevels | null = chartData.length > 0 ? (() => {
     const resistance = Math.max(...chartData.map((c: any) => c.high));
     const support = Math.min(...chartData.map((c: any) => c.low));
     return { support, resistance, target: resistance + (resistance - support) };
   })() : null;
-  const fmtEua = (n: number) => `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR/tCO\u2082`;
-  const NO_DATA = <span className="text-muted-light">—</span>;
-  const quickSignalRows: { label: string; value: React.ReactNode }[] = [
-    {
-      label: "Xu hướng ngắn hạn (1–2 tuần)",
-      value: todaySignal ? (
-        <span className={TREND_META[todaySignal.direction]?.className}>
-          {TREND_META[todaySignal.direction]?.arrow} {TREND_META[todaySignal.direction]?.label}
-        </span>
-      ) : NO_DATA,
-    },
-    {
-      label: "Xu hướng trung hạn (1–3 tháng)",
-      value: midTermSignal ? (
-        <span className={TREND_META[midTermSignal.direction]?.className}>
-          {TREND_META[midTermSignal.direction]?.arrow} {TREND_META[midTermSignal.direction]?.label}
-        </span>
-      ) : NO_DATA,
-    },
-    {
-      label: "Khuyến nghị vị thế",
-      value: todaySignal ? POSITION_META[todaySignal.direction] ?? NO_DATA : NO_DATA,
-    },
-    {
-      label: todaySignal?.direction === "giảm" ? "Vùng bán tham chiếu"
-        : todaySignal?.direction === "đi ngang" ? "Vùng giá tham chiếu" : "Vùng mua tham chiếu",
-      value: todaySignal?.price_zone ? <RichText text={todaySignal.price_zone} /> : NO_DATA,
-    },
-    {
-      label: "Hỗ trợ",
-      value: technicalLevels ? `${fmtEua(technicalLevels.support)} (đáy 30 phiên gần nhất)` : NO_DATA,
-    },
-    {
-      label: "Kháng cự",
-      value: technicalLevels ? `${fmtEua(technicalLevels.resistance)} (đỉnh 30 phiên gần nhất)` : NO_DATA,
-    },
-    {
-      label: "Mục tiêu kỹ thuật",
-      value: technicalLevels ? `${fmtEua(technicalLevels.target)} (đo biên độ nếu phá kháng cự)` : NO_DATA,
-    },
-  ];
 
 
   return (
@@ -1889,39 +1861,21 @@ export function ReportDocument({
         <section id="section-analysis" className="py-5">
           <PartHeading eyebrow="Phần 2" title="Phân tích và khuyến nghị giao dịch" icon={BarChart3} />
 
-          {/* TÍN HIỆU HÔM NAY — nội dung đầu tiên của Phần 2: chiến lược trading cho
-              phiên hôm đó, tái dùng kịch bản "ngắn hạn" đã có ở Mục 3
-              (trading_scenarios) — xem TodaySignalCard. Giá hiện tại = giá đóng
-              cửa phiên gần nhất trong chart_data. */}
-          {todaySignal && <TodaySignalCard signal={todaySignal} lastClose={chartData.length ? chartData[chartData.length - 1].close : undefined} />}
+          {/* KHUYẾN NGHỊ VỊ THẾ — nội dung đầu tiên của Phần 2: chiến lược trading cho
+              phiên hôm đó, tái dùng kịch bản "ngắn hạn" (+ xu hướng "trung hạn") đã có ở
+              Mục 3 (trading_scenarios) và mốc kỹ thuật từ OHLC 30 phiên — xem
+              TodaySignalCard. Giá hiện tại = giá đóng cửa phiên gần nhất trong chart_data.
+              (Đã gộp "Bảng tín hiệu nhanh" cũ vào thẻ này.) */}
+          {todaySignal && (
+            <TodaySignalCard
+              signal={todaySignal}
+              midTermSignal={midTermSignal}
+              technicalLevels={technicalLevels}
+              lastClose={chartData.length ? chartData[chartData.length - 1].close : undefined}
+            />
+          )}
 
-          {/* Bảng tín hiệu nhanh — nằm dưới TÍN HIỆU HÔM NAY, trên Phân tích:
-              các chỉ số nào có sẵn từ dữ liệu (trading_scenarios, OHLC 30
-              phiên) thì lấy đúng giá trị thật; chỉ số nào chưa có công thức
-              xác nhận (Cắt lỗ) thì để trống, không suy diễn qua LLM. */}
-          <div className="mb-6">
-            <SubHeading>Bảng tín hiệu nhanh</SubHeading>
-            <div className="overflow-x-auto border border-border rounded-lg">
-              <table className="w-full border-collapse text-[14.5px]">
-                <thead>
-                  <tr>
-                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-1.5 sm:px-3 py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint w-[42%] sm:w-[34%]">Chỉ số</th>
-                    <th className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-1.5 sm:px-3 py-2.5 border-b-2 border-primary/30 bg-tint">Giá trị</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {quickSignalRows.map((row, i) => (
-                    <tr key={i} className="align-top even:bg-surface/60">
-                      <td className="px-1.5 sm:px-3 py-1.5 border-r border-border font-sans font-semibold text-label">{row.label}</td>
-                      <td className="px-1.5 sm:px-3 py-1.5 leading-[1.5] text-body">{row.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Động lực thị trường — nằm dưới Bảng tín hiệu nhanh, trên Phân tích
+          {/* Động lực thị trường — nằm dưới KHUYẾN NGHỊ VỊ THẾ, trên Phân tích
               (chuyển từ Bảng giá nhanh (Phần 1) sang đây trước đó). */}
           {hasMarketDrivers && (
             <div className="mb-6">

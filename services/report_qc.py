@@ -245,7 +245,7 @@ def extract_eua_summary(content: Dict[str, Any]) -> Optional[str]:
 
 # Port 1-1 của parseStrategy/priceNums/splitBuySell/parseSignalLevels trong
 # frontend/src/components/ReportDocument.tsx — QC kiểm ĐÚNG những mức giá mà thẻ
-# "TÍN HIỆU HÔM NAY" sẽ hiển thị. Sửa parser bên frontend thì phải sửa cả ở đây.
+# "KHUYẾN NGHỊ VỊ THẾ" sẽ hiển thị. Sửa parser bên frontend thì phải sửa cả ở đây.
 _STRATEGY_LINE_RE = re.compile(r"^\*\*([^*]+?)\*\*\s*:?\s*(.*)$")
 
 
@@ -352,7 +352,7 @@ def _check_strategy(sc: Dict[str, Any], label: str, path: str, eua_close: Option
         issues.append(_issue(
             "scenario", "3", "warning",
             f"{label}: chiến lược không đúng định dạng các dòng \"**Entry:**\" / \"**Mục tiêu:**\" / \"**Quản trị rủi ro:**\""
-            + (" — thẻ TÍN HIỆU HÔM NAY sẽ không tách được mức giá." if is_short else "."),
+            + (" — thẻ KHUYẾN NGHỊ VỊ THẾ sẽ không tách được mức giá." if is_short else "."),
             f"{path}.trading_strategy",
         ))
         return issues
@@ -383,7 +383,7 @@ def _check_strategy(sc: Dict[str, Any], label: str, path: str, eua_close: Option
         if is_short:
             issues.append(_issue(
                 "scenario", "3", "info",
-                f"{label}: không tách được mức {'Mục tiêu' if target is None else 'Cắt lỗ'} — thẻ TÍN HIỆU HÔM NAY sẽ thiếu thang giá.",
+                f"{label}: không tách được mức {'Mục tiêu' if target is None else 'Cắt lỗ'} — thẻ KHUYẾN NGHỊ VỊ THẾ sẽ thiếu thang giá.",
                 f"{path}.trading_strategy",
             ))
     else:
@@ -480,7 +480,7 @@ def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
     # Prompt Mục 3 yêu cầu ĐÚNG 3 kịch bản, đủ cả 3 horizon.
     for horizon in VALID_HORIZONS:
         if horizon not in seen_horizons:
-            note = " — khối TÍN HIỆU HÔM NAY sẽ bị ẩn" if horizon == "ngắn hạn" else ""
+            note = " — khối KHUYẾN NGHỊ VỊ THẾ sẽ bị ẩn" if horizon == "ngắn hạn" else ""
             issues.append(_issue("scenario", "3", "warning", f"Thiếu kịch bản \"{horizon}\"{note}.", "3.trading_scenarios"))
 
     short = next((sc for sc in scenarios if isinstance(sc, dict) and sc.get("horizon") == "ngắn hạn"), None)
