@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import clsx from "clsx";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
@@ -1059,17 +1060,31 @@ function CandlestickChart({ report }: { report: Report }) {
   // viewBox cố định bằng preserveAspectRatio="none" — kiểu cũ làm méo chữ và nến.
   // 640 là bề rộng mặc định khi chưa đo được (SSR, lần render đầu, in PDF).
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [W, setW] = useState(640);
+  const [measuredW, setMeasuredW] = useState(640);
+  // Khi in: vẽ lại theo đúng bề rộng vùng in A4 (~640px sau khi trừ margin/padding)
+  // thay vì bề rộng màn hình — in từ điện thoại (bề rộng ~340px) sẽ không còn ra
+  // biểu đồ to tướng, chữ phóng to. flushSync để render xong TRƯỚC khi trình duyệt
+  // chụp layout in.
+  const [printing, setPrinting] = useState(false);
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(entries => {
       const w = Math.round(entries[0].contentRect.width);
-      if (w > 0) setW(w);
+      if (w > 0) setMeasuredW(w);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    const before = () => flushSync(() => setPrinting(true));
+    const after = () => setPrinting(false);
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+    };
   }, []);
+  const W = printing ? 640 : measuredW;
 
   if (candles.length === 0) {
     return (
@@ -1080,7 +1095,7 @@ function CandlestickChart({ report }: { report: Report }) {
   }
 
   const compact = W < 480;
-  const H = compact ? 300 : 360;
+  const H = printing ? 290 : compact ? 300 : 360;
   // Trục giá đặt bên PHẢI (kiểu terminal giao dịch) để nhãn giá hiện tại nằm sát nến cuối.
   const padL = 4, padR = compact ? 50 : 58, padT = 8, padB = 24;
   const gap = 14;
@@ -1161,7 +1176,7 @@ function CandlestickChart({ report }: { report: Report }) {
       </div>
 
       <svg
-        width="100%" viewBox={`0 0 ${W} ${H}`} className="block w-full h-auto cursor-crosshair select-none touch-pan-y"
+        width="100%" viewBox={`0 0 ${W} ${H}`} className="candle-chart block w-full h-auto cursor-crosshair select-none touch-pan-y"
         role="img" aria-label={`Biểu đồ nến ${candles.length} phiên, đóng cửa gần nhất ${last.close.toFixed(2)}`}
         onMouseMove={handlePointer}
         onMouseLeave={() => setHoverIndex(null)}
@@ -1345,9 +1360,12 @@ function EuaDashboardWidget({ report }: { report: Report }) {
   const volChangePct = avgVol ? ((vol - avgVol) / avgVol) * 100 : 0;
 
   return (
-    <div className="bg-surface-alt border border-border rounded-xl p-3 sm:p-5 shadow-[var(--shadow-soft)] flex flex-col gap-4">
+    // Khung nền xám chỉ dùng trên màn hình >= sm. Mobile bỏ khung để các thẻ dùng hết
+    // bề ngang; khi in bỏ hẳn (nền xám + break-inside-avoid của từng tầng từng để lại
+    // 1 dải xám cuối trang khi biểu đồ bị đẩy sang trang sau).
+    <div className="flex flex-col gap-3 sm:gap-4 sm:bg-surface-alt sm:border sm:border-border sm:rounded-xl sm:p-5 sm:shadow-[var(--shadow-soft)] print:bg-transparent! print:border-0! print:p-0! print:shadow-none! print:gap-3!">
       {/* Tầng 1 — Biểu đồ nến, full chiều ngang */}
-      <div className="bg-background border border-border rounded-xl p-4 sm:p-5 shadow-sm min-w-0 print:break-inside-avoid">
+      <div className="bg-background border border-border rounded-xl p-3.5 sm:p-5 shadow-sm min-w-0 print:p-4! print:shadow-none! print:break-inside-avoid">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 mb-4 pb-4 border-b border-border">
           <div className="flex items-center gap-3 min-w-0">
             <div className="bg-primary text-white p-2 rounded-xl shadow-sm shrink-0">
@@ -1403,7 +1421,7 @@ function EuaDashboardWidget({ report }: { report: Report }) {
       </div>
 
       {/* Tầng 3 — Nhận định */}
-      <div className="bg-background rounded-xl p-4 sm:p-5 border border-border shadow-sm print:break-inside-avoid">
+      <div className="bg-background rounded-xl p-3.5 sm:p-5 border border-border shadow-sm print:p-4! print:shadow-none! print:break-inside-avoid">
         <div className="flex items-center gap-2 text-primary-dark font-bold text-[14px] mb-4">
           <div className="p-1.5 rounded-full bg-tint"><Info size={16} /></div> Nhận định thị trường
         </div>
@@ -1435,7 +1453,7 @@ function StatTile({ icon, label, value, sub, valueClass, subClass }: {
   icon: React.ReactNode; label: string; value: string; sub: string; valueClass?: string; subClass?: string;
 }) {
   return (
-    <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm min-w-0">
+    <div className="bg-background border border-border rounded-xl p-3 sm:p-3.5 shadow-sm min-w-0 print:shadow-none!">
       <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5">{icon} {label}</div>
       <div className={clsx("text-[16px] font-bold mb-0.5 tabular-nums", valueClass ?? "text-label")}>{value}</div>
       <div className={clsx("text-[11.5px] tabular-nums", subClass ?? "text-muted-light font-medium")}>{sub}</div>
