@@ -7,7 +7,8 @@ Script chạy ngầm 24/7, tự động kích hoạt các tác vụ độc lập
   2. news_crawl_job         08:00 → 17:00  — crawl tin tức đầu mỗi giờ trong giờ hành chính, mọi ngày,
                                              tách 2 job theo `region` của news_crawl_sources (xem
                                              api/routers/admin_news_sources.py, NEWS_CRAWL_SCHEDULES):
-                                               - vn_news_crawl:   region='vietnam', giờ VN
+                                               - vn_news_crawl:   region='vietnam', giờ VN, thêm 1 đợt
+                                                 06:00 để tin qua đêm kịp vào báo cáo 07:00
                                                - intl_news_crawl: region='international', giờ New York
                                                  (≈ 19:00/20:00 → 04:00/05:00 giờ VN, tuỳ giờ mùa hè Mỹ)
                                              Cờ is_noon_crawl không còn ảnh hưởng lịch tự động.
@@ -117,14 +118,15 @@ async def daily_prices_job() -> None:
 
 # Giờ hành chính: chạy đầu mỗi giờ từ 08:00 đến 17:00 (cả 2 đầu), MỌI ngày trong tuần,
 # theo giờ địa phương của nhóm nguồn — báo trong nước theo giờ VN, báo quốc tế theo giờ
-# New York (APScheduler tự xử lý giờ mùa hè/đông của Mỹ). Khoảng nghỉ dài nhất giữa 2
-# đợt là 17:00 → 08:00 = 15h, vẫn nằm trong CRAWL_LOOKBACK_HOURS (36h) nên không mất bài.
-NEWS_CRAWL_HOURS = "8-17"
+# New York (APScheduler tự xử lý giờ mùa hè/đông của Mỹ). Nhóm trong nước có thêm 1 đợt
+# 06:00 VN để tin qua đêm kịp vào báo cáo 07:00 (nhóm quốc tế đã xong lúc ~04:00–05:00 VN).
+# Khoảng nghỉ dài nhất giữa 2 đợt là 17:00 → 08:00 = 15h, vẫn nằm trong
+# CRAWL_LOOKBACK_HOURS (36h) nên không mất bài.
 
-# (job_id, region của news_crawl_sources, múi giờ lịch chạy, nhãn log)
+# (job_id, region của news_crawl_sources, giờ chạy — cú pháp `hour` của cron, múi giờ lịch chạy, nhãn log)
 NEWS_CRAWL_SCHEDULES = (
-    ("vn_news_crawl", "vietnam", "Asia/Ho_Chi_Minh", "nguồn trong nước, giờ VN"),
-    ("intl_news_crawl", "international", "America/New_York", "nguồn quốc tế, giờ New York"),
+    ("vn_news_crawl", "vietnam", "6,8-17", "Asia/Ho_Chi_Minh", "nguồn trong nước, giờ VN"),
+    ("intl_news_crawl", "international", "8-17", "America/New_York", "nguồn quốc tế, giờ New York"),
 )
 
 
@@ -160,7 +162,7 @@ async def news_crawl_job(region: str | None = None, label: str = "toàn bộ ngu
 
 async def run_auto_report_job() -> None:
     """Tự động sinh 1 báo cáo/ngày, lưu report_date = HÔM NAY (VN) — chạy sau đợt news
-    crawl 06:00. Dữ liệu trong báo cáo vẫn là của hôm qua (giá phiên đóng cửa hôm qua,
+    crawl 06:00 (nguồn trong nước).Dữ liệu trong báo cáo vẫn là của hôm qua (giá phiên đóng cửa hôm qua,
     tin crawl 07:00 hôm qua → 07:00 hôm nay) — generate_report_content tự lùi 1 ngày
     qua report_data_date(), ở đây chỉ quyết định ngày LƯU.
 
@@ -228,10 +230,10 @@ async def main() -> None:
     # nhau (seen_urls/seen_hashes nằm trong RAM từng đợt — chạy chồng sẽ gọi LLM 2 lần cho
     # cùng bài); 2 nhóm khác nhau có tập nguồn riêng nên chồng giờ cũng không sao.
     # coalesce=True gộp các lần lỡ (server dừng / đợt trước chạy quá giờ) thành 1.
-    for job_id, region, tz, label in NEWS_CRAWL_SCHEDULES:
+    for job_id, region, hours, tz, label in NEWS_CRAWL_SCHEDULES:
         scheduler.add_job(
             news_crawl_job,
-            trigger=CronTrigger(hour=NEWS_CRAWL_HOURS, minute=0, timezone=tz),
+            trigger=CronTrigger(hour=hours, minute=0, timezone=tz),
             args=[region, label],
             id=job_id,
             name=f"News Crawl ({label})",
@@ -256,8 +258,8 @@ async def main() -> None:
     scheduler.start()
     logger.info("📅 Scheduler đã khởi động:")
     logger.info("   - Giá:      06:00 SA (giờ VN) mỗi ngày")
-    for _, _, tz, label in NEWS_CRAWL_SCHEDULES:
-        logger.info("   - Tin tức:  đầu mỗi giờ %s:00 (%s, %s)", NEWS_CRAWL_HOURS.replace("-", ":00 → "), label, tz)
+    for _, _, hours, tz, label in NEWS_CRAWL_SCHEDULES:
+        logger.info("   - Tin tức:  đầu giờ %s (%s, %s)", hours, label, tz)
     logger.info("   - Báo cáo:  07:00 SA (giờ VN), chỉ các ngày '%s' (AUTO_REPORT_DAYS)", auto_report_days)
 
     if run_now:

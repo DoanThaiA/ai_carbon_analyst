@@ -154,7 +154,7 @@ so a connection isn't held idle while awaiting the Claude API.
   `crawl_news/` or `scripts/` creates tables at runtime anymore — a missing
   table/column is a signal migrations haven't been applied, not a bug to code around.
 
-**Lịch crawl** (`scheduler.py`): giá 06:00 VN; tin tức đầu mỗi giờ 08:00–17:00 MỌI ngày, tách
+**Lịch crawl** (`scheduler.py`): giá 06:00 VN; tin tức đầu mỗi giờ 08:00–17:00 MỌI ngày (nhóm `vietnam` thêm đợt 06:00 VN trước báo cáo 07:00), tách
 theo `news_crawl_sources.region` (`NEWS_CRAWL_SCHEDULES`): `vietnam` theo giờ VN, `international`
 theo giờ New York (`America/New_York`, tự theo giờ mùa hè Mỹ); mỗi job `max_instances=1` +
 `coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report 07:00 VN. `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.

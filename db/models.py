@@ -202,7 +202,7 @@ class NewsCrawlSource(Base):
     tránh nhầm với builtin `type`, cùng quy ước với Chunk.source_type).
     is_noon_crawl: trước đây chọn nhóm nguồn cho đợt crawl phụ 12:00; scheduler.py giờ crawl
     nguồn theo `region` mỗi giờ trong giờ hành chính nên cờ này chỉ còn dùng khi chạy tay
-    main.main(noon_only=True). `region` quyết định khung giờ crawl: 'vietnam' 08–17h giờ VN,
+    main.main(noon_only=True). `region` quyết định khung giờ crawl: 'vietnam' 06h + 08–17h giờ VN,
     'international' 08–17h giờ New York (xem scheduler.py::NEWS_CRAWL_SCHEDULES)."""
 
     __tablename__ = "news_crawl_sources"

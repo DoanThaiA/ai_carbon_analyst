@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X, Trash2,
+  Leaf, Database, Calendar, RefreshCw
 } from "lucide-react";
 import type { Report } from "@/lib/types";
 
@@ -995,129 +996,237 @@ function BizRecommendationTable({
   );
 }
 
+// Bước chia trục "đẹp" (1/2/2.5/5 × 10^n) để mức giá trên trục là số tròn, dễ đọc.
+function niceStep(range: number, targetTicks: number) {
+  const raw = range / Math.max(1, targetTicks);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
+  return nice * mag;
+}
+
+function formatVolume(v: number) {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(v >= 10_000 ? 0 : 1)}K`;
+  return String(Math.round(v));
+}
+
 function CandlestickChart({ report }: { report: Report }) {
   const rawData = report?.content["2"]?.chart_data;
   const candles = rawData && rawData.length > 0 ? rawData : [];
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  // Vẽ theo đúng bề rộng thật của khung (đo bằng ResizeObserver) thay vì kéo giãn 1
+  // viewBox cố định bằng preserveAspectRatio="none" — kiểu cũ làm méo chữ và nến.
+  // 640 là bề rộng mặc định khi chưa đo được (SSR, lần render đầu, in PDF).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(640);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w > 0) setW(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   if (candles.length === 0) {
     return (
-      <div className="w-full h-[200px] sm:h-[260px] flex items-center justify-center text-muted-light text-sm border border-border rounded-lg bg-background">
+      <div className="w-full h-[300px] sm:h-[360px] flex items-center justify-center text-muted-light text-sm border border-border rounded-lg bg-background">
         Đang cập nhật dữ liệu...
       </div>
     );
   }
 
-  // padT/padB nhỏ + biên độ giá 5% (thay vì 8%) để nến lấp gần hết chiều cao khung,
-  // tránh khoảng trống thừa phía trên/dưới khi thu nhỏ khung trên mobile.
-  const W = 640, H = 260, padL = 48, padR = 12, padT = 6, padB = 20;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-  const allVals = candles.flatMap((c: any) => [c.high, c.low]);
-  const min = Math.min(...allVals), max = Math.max(...allVals);
-  const range = max - min || 1;
-  const pMin = min - range * 0.05;
-  const pMax = max + range * 0.05;
+  const compact = W < 480;
+  const H = compact ? 300 : 360;
+  // Trục giá đặt bên PHẢI (kiểu terminal giao dịch) để nhãn giá hiện tại nằm sát nến cuối.
+  const padL = 4, padR = compact ? 50 : 58, padT = 8, padB = 24;
+  const gap = 14;
+  const volH = compact ? 48 : 64;
+  const plotH = H - padT - padB - gap - volH;
+  const plotW = W - padL - padR;
+  const volTop = padT + plotH + gap;
+  const volBottom = volTop + volH;
+
+  const min = Math.min(...candles.map((c: any) => c.low));
+  const max = Math.max(...candles.map((c: any) => c.high));
+  const range = max - min || Math.abs(max) * 0.01 || 1;
+  const pMin = min - range * 0.08;
+  const pMax = max + range * 0.08;
+  const step = niceStep(pMax - pMin, compact ? 4 : 5);
+  const ticks: number[] = [];
+  for (let v = Math.ceil(pMin / step) * step; v <= pMax + 1e-9; v += step) ticks.push(v);
+  const tickDecimals = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+
+  const maxVol = Math.max(...candles.map((c: any) => c.volume || 0));
+  const hasVolume = maxVol > 0;
 
   const yScale = (v: number) => padT + plotH - ((v - pMin) / (pMax - pMin)) * plotH;
   const cw = plotW / candles.length;
-  // Nhãn ngày trên trục X: giãn cách để tối đa ~6 nhãn, tránh chữ chồng lên nhau với 30 nến.
-  const xLabelStep = Math.max(1, Math.ceil(candles.length / 6));
+  const bodyW = Math.max(2, Math.min(cw * 0.66, 14));
+  // +0.5 để đường 1px rơi đúng giữa pixel → nét sắc, không bị nhoè 2px.
+  const xOf = (i: number) => Math.round(padL + i * cw + cw / 2) + 0.5;
+
+  // Nhãn ngày: lấy mốc từ CUỐI về đầu để nhãn phiên gần nhất luôn có và không đè nhau.
+  const maxLabels = Math.max(2, Math.floor(plotW / (compact ? 56 : 70)));
+  const xLabelStep = Math.max(1, Math.ceil(candles.length / maxLabels));
+  const xLabelIdx = new Set<number>();
+  for (let i = candles.length - 1; i >= 0; i -= xLabelStep) xLabelIdx.add(i);
+
+  const last = candles[candles.length - 1];
+  const lastUp = last.close >= last.open;
+  const lastY = yScale(last.close);
 
   const handlePointer = (e: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
-    const svg = e.currentTarget;
-    const rect = svg.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const clientX = "touches" in e ? e.touches[0]?.clientX : e.clientX;
     if (clientX === undefined) return;
-    const xInSvg = (clientX - rect.left) * (W / rect.width);
-    const idx = Math.min(candles.length - 1, Math.max(0, Math.floor((xInSvg - padL) / cw)));
-    setHoverIndex(idx);
+    const x = (clientX - rect.left) * (W / rect.width);
+    setHoverIndex(Math.min(candles.length - 1, Math.max(0, Math.floor((x - padL) / cw))));
   };
 
-  const hovered = hoverIndex !== null ? candles[hoverIndex] : null;
-  const hoveredX = hoverIndex !== null ? padL + hoverIndex * cw + cw / 2 : 0;
-  // Lật tooltip sang trái khi nến được hover nằm ở nửa phải biểu đồ, tránh tràn ra ngoài.
-  const tooltipLeftPct = hoverIndex !== null ? (hoverIndex / candles.length) * 100 : 0;
-  const flipTooltip = tooltipLeftPct > 55;
+  // Dải thông tin OHLC phía trên chart (kiểu TradingView) thay cho tooltip nổi — không
+  // che nến, đọc được cả trên mobile. Mặc định hiện phiên gần nhất.
+  const activeIdx = hoverIndex ?? candles.length - 1;
+  const active = candles[activeIdx];
+  const prevClose = activeIdx > 0 ? candles[activeIdx - 1].close : active.open;
+  const chg = active.close - prevClose;
+  const chgPct = prevClose ? (chg / prevClose) * 100 : 0;
+  const activeUp = active.close >= active.open;
+  const hoverX = hoverIndex !== null ? xOf(hoverIndex) : 0;
+  const hoverY = hoverIndex !== null ? yScale(active.close) : 0;
+  const dateTagW = 64;
 
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative w-full">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-1 mb-2 font-mono text-[11.5px] tabular-nums min-h-[18px]">
+        <span className="text-label font-semibold">{formatFullDate(active.date)}</span>
+        {(["open", "high", "low", "close"] as const).map((k, j) => (
+          <span key={k} className="whitespace-nowrap">
+            <span className="text-muted-light mr-1">{["O", "H", "L", "C"][j]}</span>
+            <span className={clsx("font-semibold", activeUp ? "text-up" : "text-down")}>{active[k].toFixed(2)}</span>
+          </span>
+        ))}
+        <span className={clsx("font-semibold whitespace-nowrap", chg >= 0 ? "text-up" : "text-down")}>
+          {chg >= 0 ? "+" : ""}{chg.toFixed(2)} ({chg >= 0 ? "+" : ""}{chgPct.toFixed(2)}%)
+        </span>
+        {hasVolume && active.volume !== undefined && (
+          <span className="whitespace-nowrap">
+            <span className="text-muted-light mr-1">Vol</span>
+            <span className="text-foreground">{active.volume.toLocaleString("en-US")}</span>
+          </span>
+        )}
+      </div>
+
       <svg
-        width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-[200px] sm:h-[260px] cursor-crosshair"
+        width="100%" viewBox={`0 0 ${W} ${H}`} className="block w-full h-auto cursor-crosshair select-none touch-pan-y"
+        role="img" aria-label={`Biểu đồ nến ${candles.length} phiên, đóng cửa gần nhất ${last.close.toFixed(2)}`}
         onMouseMove={handlePointer}
         onMouseLeave={() => setHoverIndex(null)}
+        onTouchStart={handlePointer}
         onTouchMove={handlePointer}
         onTouchEnd={() => setHoverIndex(null)}
       >
-        {/* Gridlines + trục giá (Y) */}
-        {[0, 1, 2, 3, 4].map(i => {
-          const y = padT + (plotH / 4) * i;
-          const val = pMax - ((pMax - pMin) / 4) * i;
+        {/* Lưới ngang + trục giá (phải) */}
+        {ticks.map(v => {
+          const y = Math.round(yScale(v)) + 0.5;
           return (
-            <g key={`grid-${i}`}>
-              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" strokeWidth="1" strokeDasharray={i === 4 ? undefined : "2,3"} />
-              <text x={padL - 6} y={y + 3} textAnchor="end" className="font-mono text-[9px] fill-muted-light">
-                {val.toFixed(2)}
+            <g key={`grid-${v}`}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" strokeWidth="1" />
+              <text x={W - padR + 8} y={y + 3.5} className="font-mono text-[10.5px] fill-muted-light tabular-nums">
+                {v.toFixed(tickDecimals)}
               </text>
             </g>
           );
         })}
+
+        {/* Lưới dọc nhẹ tại các mốc ngày */}
+        {[...xLabelIdx].map(i => (
+          <line key={`vg-${i}`} x1={xOf(i)} y1={padT} x2={xOf(i)} y2={hasVolume ? volBottom : padT + plotH}
+            stroke="var(--color-border)" strokeWidth="1" opacity={0.6} />
+        ))}
+
+        {/* Khung volume */}
+        {hasVolume && (
+          <>
+            <line x1={padL} y1={volTop - gap / 2} x2={W - padR} y2={volTop - gap / 2} stroke="var(--color-border-soft)" strokeWidth="1" />
+            <text x={W - padR + 8} y={volTop + 9} className="font-mono text-[10px] fill-muted-light tabular-nums">{formatVolume(maxVol)}</text>
+            <text x={padL + 2} y={volTop + 9} className="font-mono text-[9.5px] fill-muted-light uppercase tracking-wide">Vol</text>
+          </>
+        )}
+        <line x1={padL} y1={(hasVolume ? volBottom : padT + plotH) + 0.5} x2={W - padR} y2={(hasVolume ? volBottom : padT + plotH) + 0.5}
+          stroke="var(--color-border-soft)" strokeWidth="1" />
+
         {/* Trục ngày (X) */}
-        {candles.map((c: any, i: number) => {
-          if (i % xLabelStep !== 0 && i !== candles.length - 1) return null;
-          const x = padL + i * cw + cw / 2;
+        {[...xLabelIdx].map(i => (
+          <text key={`xl-${i}`} x={xOf(i)} y={H - 7} textAnchor="middle" className="font-mono text-[10.5px] fill-muted-light tabular-nums">
+            {formatShortDate(candles[i].date)}
+          </text>
+        ))}
+
+        {/* Volume */}
+        {hasVolume && candles.map((c: any, i: number) => {
+          if (!c.volume) return null;
+          const vH = Math.max(1, (c.volume / maxVol) * (volH - 12));
+          const isUp = c.close >= c.open;
+          const isHover = hoverIndex === i;
           return (
-            <text key={`xl-${i}`} x={x} y={H - 6} textAnchor="middle" className="font-mono text-[8.5px] fill-muted-light">
-              {formatShortDate(c.date)}
-            </text>
+            <rect key={`v-${i}`} x={xOf(i) - bodyW / 2} y={volBottom - vH} width={bodyW} height={vH} rx={1}
+              fill={isUp ? "var(--color-up)" : "var(--color-down)"}
+              opacity={isHover ? 0.75 : hoverIndex !== null ? 0.18 : 0.32} />
           );
         })}
+
+        {/* Đường giá đóng cửa gần nhất */}
+        <line x1={padL} y1={Math.round(lastY) + 0.5} x2={W - padR} y2={Math.round(lastY) + 0.5}
+          stroke={lastUp ? "var(--color-up)" : "var(--color-down)"} strokeWidth="1" strokeDasharray="3,3" opacity={0.7} />
+
         {/* Nến */}
         {candles.map((c: any, i: number) => {
-          const x = padL + i * cw + cw / 2;
+          const x = xOf(i);
           const isUp = c.close >= c.open;
           const color = isUp ? "var(--color-up)" : "var(--color-down)";
-          const yHigh = yScale(c.high);
-          const yLow = yScale(c.low);
-          const yOpen = yScale(c.open);
-          const yClose = yScale(c.close);
-          const bodyTop = Math.min(yOpen, yClose);
-          const bodyH = Math.max(Math.abs(yClose - yOpen), 1.2);
-          const dimmed = hoverIndex !== null && hoverIndex !== i;
-
+          const yO = yScale(c.open), yC = yScale(c.close);
+          const bodyTop = Math.min(yO, yC);
+          const bodyH = Math.max(Math.abs(yC - yO), 1.5);
           return (
-            <g key={`candle-${i}`} opacity={dimmed ? 0.4 : 1}>
-              <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={color} strokeWidth="1.2" />
-              <rect x={x - cw * 0.32} y={bodyTop} width={cw * 0.64} height={bodyH} rx={0.6} fill={color} />
+            <g key={`c-${i}`} opacity={hoverIndex !== null && hoverIndex !== i ? 0.45 : 1}>
+              <line x1={x} y1={yScale(c.high)} x2={x} y2={yScale(c.low)} stroke={color} strokeWidth="1" />
+              <rect x={x - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} rx={Math.min(1.5, bodyW / 6)} fill={color} />
             </g>
           );
         })}
+
+        {/* Nhãn giá hiện tại trên trục phải */}
+        <g>
+          <rect x={W - padR + 2} y={lastY - 9} width={padR - 4} height={18} rx={3}
+            fill={lastUp ? "var(--color-up)" : "var(--color-down)"} />
+          <text x={W - padR / 2} y={lastY + 3.8} textAnchor="middle" className="font-mono text-[10.5px] font-bold tabular-nums" fill="#fff">
+            {last.close.toFixed(2)}
+          </text>
+        </g>
+
         {/* Crosshair khi hover */}
-        {hovered && (
-          <line x1={hoveredX} y1={padT} x2={hoveredX} y2={H - padB} stroke="var(--color-muted-light)" strokeWidth="1" strokeDasharray="3,3" />
+        {hoverIndex !== null && (
+          <g pointerEvents="none">
+            <line x1={hoverX} y1={padT} x2={hoverX} y2={hasVolume ? volBottom : padT + plotH}
+              stroke="var(--color-muted-light)" strokeWidth="1" strokeDasharray="3,3" />
+            <line x1={padL} y1={hoverY} x2={W - padR} y2={hoverY}
+              stroke="var(--color-muted-light)" strokeWidth="1" strokeDasharray="3,3" />
+            <rect x={W - padR + 2} y={hoverY - 9} width={padR - 4} height={18} rx={3} fill="var(--color-label)" />
+            <text x={W - padR / 2} y={hoverY + 3.8} textAnchor="middle" className="font-mono text-[10.5px] font-bold tabular-nums" fill="#fff">
+              {active.close.toFixed(2)}
+            </text>
+            <rect x={Math.min(Math.max(hoverX - dateTagW / 2, padL), W - padR - dateTagW)} y={H - padB + 3} width={dateTagW} height={18} rx={3} fill="var(--color-label)" />
+            <text x={Math.min(Math.max(hoverX, padL + dateTagW / 2), W - padR - dateTagW / 2)} y={H - 7} textAnchor="middle"
+              className="font-mono text-[10.5px] font-bold tabular-nums" fill="#fff">
+              {formatShortDate(active.date)}
+            </text>
+          </g>
         )}
       </svg>
-
-      {hovered && (
-        <div
-          className="absolute top-1 pointer-events-none bg-background border border-border rounded-md shadow-[var(--shadow-medium)] px-3 py-2 font-mono text-[11px] z-10 min-w-[128px]"
-          style={
-            flipTooltip
-              ? { right: `${100 - tooltipLeftPct}%`, marginRight: 8 }
-              : { left: `${tooltipLeftPct}%`, marginLeft: 8 }
-          }
-        >
-          <div className="text-label font-semibold mb-1.5 whitespace-nowrap">{formatFullDate(hovered.date)}</div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-            <span className="text-muted-light">Mở</span><span className="text-foreground text-right">{hovered.open.toFixed(2)}</span>
-            <span className="text-muted-light">Cao</span><span className="text-foreground text-right">{hovered.high.toFixed(2)}</span>
-            <span className="text-muted-light">Thấp</span><span className="text-foreground text-right">{hovered.low.toFixed(2)}</span>
-            <span className="text-muted-light">Đóng</span>
-            <span className={clsx("text-right font-semibold", hovered.close >= hovered.open ? "text-up" : "text-down")}>
-              {hovered.close.toFixed(2)}
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1154,6 +1263,170 @@ function formatVietnameseDateFull(dateStr: string) {
 
   const dayOfWeek = VIETNAMESE_DAYS[d.getDay()];
   return `${dayOfWeek}, ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
+}
+
+// Chấm icon tăng/giảm cho các dòng "Nhận định thị trường" — màu & mũi tên theo dữ liệu thật.
+function TrendDot({ up }: { up: boolean }) {
+  return (
+    <div className={clsx("mt-0.5 shrink-0 w-[22px] h-[22px] rounded-full flex items-center justify-center text-white", up ? "bg-up" : "bg-down")}>
+      {up ? <ChevronUp size={14} strokeWidth={3} /> : <ChevronDown size={14} strokeWidth={3} />}
+    </div>
+  );
+}
+
+function EuaDashboardWidget({ report }: { report: Report }) {
+  const chartData = report.content["2"]?.chart_data || [];
+  if (chartData.length === 0) return null;
+
+  const lastClose = chartData[chartData.length - 1].close;
+  const lastDate = chartData[chartData.length - 1].date;
+  const prevClose = chartData.length > 1 ? chartData[chartData.length - 2].close : lastClose;
+  const dayChange = lastClose - prevClose;
+  const dayChangePct = prevClose ? (dayChange / prevClose) * 100 : 0;
+  
+  const dayOpen = chartData[chartData.length - 1].open;
+  const dayHigh = chartData[chartData.length - 1].high;
+  const dayLow = chartData[chartData.length - 1].low;
+  const dayRange = dayHigh - dayLow;
+  const dayRangePct = lastClose ? (dayRange / lastClose) * 100 : 0;
+  
+  const sevenDaysAgo = chartData.length > 7 ? chartData[chartData.length - 8].close : chartData[0].close;
+  const sevenDayChange = lastClose - sevenDaysAgo;
+  const sevenDayChangePct = sevenDaysAgo ? (sevenDayChange / sevenDaysAgo) * 100 : 0;
+
+  const monthHigh = Math.max(...chartData.map((c: any) => c.high));
+  const monthLow = Math.min(...chartData.map((c: any) => c.low));
+  const firstClose = chartData[0].close;
+  const monthChange = lastClose - firstClose;
+  const monthChangePct = firstClose ? (monthChange / firstClose) * 100 : 0;
+
+  const vol = chartData[chartData.length - 1].volume || 0;
+  const avgVol = report.content["2"]?.avg_volume_20 || 0;
+  const volChangePct = avgVol ? ((vol - avgVol) / avgVol) * 100 : 0;
+
+  return (
+    <div className="bg-surface-alt border border-border rounded-xl p-3 sm:p-5 shadow-[var(--shadow-soft)] print:break-inside-avoid">
+      <div className="flex flex-col lg:flex-row gap-5 items-stretch">
+        {/* Cột trái (Chart) */}
+        <div className="lg:flex-[1.6] flex flex-col min-w-0 bg-background border border-border rounded-xl p-4 shadow-sm">
+          {/* Header chart */}
+          <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary text-white p-2 rounded-xl shadow-sm">
+                <Leaf size={24} />
+              </div>
+              <div>
+                <h3 className="font-bold text-label text-[17px]">EUA Dec-26 <span className="text-muted-light font-normal text-[14px]">· Nến 30 ngày</span></h3>
+                <p className="text-muted text-[13px] mt-0.5">Thị trường quyền phát thải CO₂ châu Âu</p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1.5">
+              <div className="flex items-center text-[12px] text-muted gap-1.5 font-medium">
+                <Calendar size={14} /> Cập nhật: {lastDate}
+              </div>
+              <div className="bg-tint text-primary-dark text-[11px] font-bold px-2.5 py-1 rounded-full border border-primary/20">
+                EUR/tCO₂e
+              </div>
+            </div>
+          </div>
+          
+          {/* Controls */}
+          <div className="flex items-center justify-between mb-3 border-b border-border pb-3">
+            {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
+            <div className="px-3 py-1.5 rounded-md text-[12px] font-bold bg-primary text-white shadow-sm">1M</div>
+            <div className="flex items-center text-[12px] font-bold text-primary-dark gap-1.5">
+              <TrendingUp size={16} /> EUR/tCO₂e
+            </div>
+          </div>
+          
+          {/* Chart */}
+          <div className="-mx-1">
+            <CandlestickChart report={report} />
+          </div>
+        </div>
+
+        {/* Cột phải (Stats & Insights) */}
+        <div className="lg:flex-1 flex flex-col gap-4">
+          {/* Last Close Card */}
+          <div className="bg-primary-dark text-white rounded-xl p-5 shadow-sm relative overflow-hidden">
+             <div className="absolute -right-4 -bottom-4 opacity-10"><Database size={100} /></div>
+             <div className="flex items-center text-[13px] font-semibold mb-3 opacity-90 gap-2">
+               <Database size={16} /> Giá đóng cửa phiên trước ({lastDate})
+             </div>
+             <div className="flex items-baseline gap-2 mb-1">
+               <span className="text-[40px] font-bold leading-none">{lastClose.toFixed(2)}</span>
+               <span className="text-[14px] font-medium opacity-90">EUR/tCO₂e</span>
+             </div>
+             <div className="flex items-center justify-end mt-2">
+               <div className={clsx("inline-flex items-center gap-1 text-white text-[14px] font-bold px-3 py-1.5 rounded-full shadow-sm", dayChange >= 0 ? "bg-up" : "bg-down")}>
+                 {dayChange >= 0 ? <ChevronUp size={18} strokeWidth={3} /> : <ChevronDown size={18} strokeWidth={3} />}
+                 {dayChange > 0 ? "+" : ""}{dayChange.toFixed(2)} ({dayChangePct > 0 ? "+" : ""}{dayChangePct.toFixed(2)}%)
+               </div>
+             </div>
+          </div>
+          
+          {/* Grid Stats */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
+              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5"><RefreshCw size={14}/> Biến động ngày</div>
+              <div className="text-[15px] font-bold text-label mb-1">{dayLow.toFixed(2)} — {dayHigh.toFixed(2)}</div>
+              <div className="text-[11px] text-muted-light font-medium">(biên độ {dayRange.toFixed(2)}, ~{dayRangePct.toFixed(1)}%)</div>
+            </div>
+            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
+              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5">{sevenDayChange >= 0 ? <TrendingUp size={14} className="text-up"/> : <TrendingDown size={14} className="text-down"/>} {sevenDayChange >= 0 ? "Tăng" : "Giảm"} 7 ngày</div>
+              <div className={clsx("text-[15px] font-bold mb-1", sevenDayChange >= 0 ? "text-up" : "text-down")}>
+                {sevenDayChange > 0 ? "+" : ""}{sevenDayChange.toFixed(2)} ({sevenDayChangePct > 0 ? "+" : ""}{sevenDayChangePct.toFixed(2)}%)
+              </div>
+              <div className="text-[11px] text-muted-light font-medium">so với 7 ngày trước</div>
+            </div>
+            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
+              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5"><CalendarRange size={14}/> EUA 30 ngày</div>
+              <div className="text-[15px] font-bold text-label mb-1">{monthLow.toFixed(2)} → {monthHigh.toFixed(2)}</div>
+              <div className={clsx("text-[11px] font-bold", monthChangePct >= 0 ? "text-up" : "text-down")}>
+                ({monthChangePct > 0 ? "+" : ""}{monthChangePct.toFixed(1)}%)
+              </div>
+            </div>
+            <div className="bg-background border border-border rounded-xl p-3.5 shadow-sm">
+              <div className="text-[12px] text-muted-light font-bold mb-1.5 flex items-center gap-1.5">{monthChange >= 0 ? <TrendingUp size={14} className="text-up"/> : <TrendingDown size={14} className="text-down"/>} Biến động 30 ngày</div>
+              <div className="text-[15px] font-bold text-label mb-1">{firstClose.toFixed(2)} → {lastClose.toFixed(2)}</div>
+              <div className={clsx("text-[11px] font-bold", monthChangePct >= 0 ? "text-up" : "text-down")}>
+                ({monthChangePct >= 0 ? "tăng" : "giảm"} {Math.abs(monthChangePct).toFixed(1)}%)
+              </div>
+            </div>
+          </div>
+          
+          {/* Insights */}
+          <div className="bg-background rounded-xl p-4 border border-border shadow-sm flex-1 flex flex-col">
+            <div className="flex items-center gap-2 text-primary-dark font-bold text-[14px] mb-4">
+              <div className="p-1.5 rounded-full bg-tint"><Info size={16} /></div> Nhận định thị trường
+            </div>
+            <div className="space-y-3.5 text-[13px] text-body">
+              <div className="flex items-start gap-2.5">
+                <TrendDot up={sevenDayChange >= 0} />
+                <div className="leading-snug"><strong className="text-label font-bold">Xu hướng 7 ngày:</strong> {sevenDayChange >= 0 ? "Tăng so với 7 ngày trước" : "Giảm so với 7 ngày trước"}, với mức {sevenDayChange >= 0 ? "tăng" : "giảm"} <br/>{Math.abs(sevenDayChange).toFixed(2)} ({sevenDayChangePct > 0 ? "+" : ""}{sevenDayChangePct.toFixed(2)}%) so với 7 ngày trước.</div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <TrendDot up={lastClose >= dayOpen} />
+                <div className="leading-snug"><strong className="text-label font-bold">Biến động trong ngày:</strong> mở {dayOpen.toFixed(2)} — cao {dayHigh.toFixed(2)} — thấp {dayLow.toFixed(2)} — đóng cửa {lastClose.toFixed(2)} EUR/tCO₂e, <br/>(biên độ {dayRange.toFixed(2)}, ~{dayRangePct.toFixed(1)}% so với giá đóng cửa).</div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 shrink-0 w-[22px] h-[22px] rounded-full bg-[#9ca3af] flex items-center justify-center text-white"><Minus size={14} strokeWidth={3} /></div>
+                <div className="leading-snug"><strong className="text-label font-bold">EUA 30 ngày:</strong> {firstClose.toFixed(2)} → {lastClose.toFixed(2)}, đóng gần nhất {lastClose.toFixed(2)} ({monthChangePct > 0 ? "+" : ""}{monthChangePct.toFixed(1)}%); 30-ngày-cao {monthHigh.toFixed(2)}, 30-ngày-thấp {monthLow.toFixed(2)}.</div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <TrendDot up={volChangePct >= 0} />
+                <div className="leading-snug"><strong className="text-label font-bold">Khối lượng giao dịch:</strong> EUA phiên gần nhất ({lastDate}): {vol.toLocaleString("en-US")} hợp đồng, so với TB 20 phiên gần nhất ({avgVol.toLocaleString("en-US")} hợp đồng) — ở mức {volChangePct >= 0 ? "cao hơn" : "thấp hơn"} trung bình ({volChangePct > 0 ? "+" : ""}{volChangePct.toFixed(1)}%).</div>
+              </div>
+              <div className="flex items-start gap-2.5 pt-1">
+                <div className="mt-0.5 shrink-0 w-[22px] h-[22px] rounded-full bg-muted-light/20 flex items-center justify-center text-muted"><Info size={14} strokeWidth={3} /></div>
+                <div className="leading-snug text-muted-light font-medium italic">Giá phiên đó {lastClose >= dayOpen ? "tăng" : "giảm"} so với giá mở cửa cùng phiên.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -1493,29 +1766,7 @@ export function ReportDocument({
         <section id="section-market" className="py-5">
           <PartHeading eyebrow="Phần 1" title="Diễn biến thị trường" icon={LineChart} />
 
-          <div className="flex flex-col lg:flex-row print:flex-row gap-4 items-stretch print:break-inside-avoid">
-            <div className="lg:flex-[1.6] print:flex-[1.6] print:min-w-0 bg-background border border-border rounded-lg pt-2.5 pb-2 px-3 sm:p-4">
-              <div className="flex justify-between font-mono text-[11px] text-muted-light mb-1.5 uppercase tracking-wider">
-                <b className="text-label font-sans normal-case text-[13px]">EUA Dec-26 · Nến 30 ngày</b>
-                <span className="normal-case">EUR/tCO₂e</span>
-              </div>
-              <CandlestickChart report={report} />
-            </div>
-
-            {report.content["2"]?.key_facts && (
-              <div className="lg:flex-1 lg:min-w-[200px] print:flex-1 print:min-w-[200px] flex flex-col justify-center border-l-2 border-primary bg-tint/40 rounded-r-lg px-3.5 py-2.5">
-                <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-primary-dark mb-1">Số liệu chính</h4>
-                <div className="space-y-1 text-[14.5px] leading-[1.3] text-body">
-                  {report.content["2"].key_facts
-                    .split(/(?<=\.)\s+/)
-                    .filter((s: string) => s.trim())
-                    .map((s: string, i: number) => (
-                      <p key={i} className="text-left"><RichText text={s} /></p>
-                    ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <EuaDashboardWidget report={report} />
 
           <div className="mt-5">
             <SubHeading>Bảng giá nhanh</SubHeading>
