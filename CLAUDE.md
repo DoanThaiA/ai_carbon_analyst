@@ -181,7 +181,7 @@ ngắn để dán vào Claude Desktop; Claude Desktop chạy MCP server cục b�
 `carbon-analyst-mcp`, stdio) gọi `/api/mcp-gateway/*` (`api/routers/mcp_gateway.py`) bằng API token
 cá nhân (`api_tokens`, bearer `cat_...`, chỉ lưu SHA-256). Gateway chỉ đọc và TÁI DÙNG
 `CLIENT_TOOLS`/`_execute_client_tool` của `services/quote_chat.py` — client lấy danh sách tool động qua
-`GET /tools`, nên thêm tool ở đó không cần cập nhật gói trên từng máy. Chỉ role `user` (email+OTP),
+`GET /tools` và ngữ cảnh chung (đưa vào `instructions` của MCP server) qua `GET /instructions` (`DESKTOP_SERVER_INSTRUCTIONS` trong `services/claude_connect.py`), nên thêm tool ở đó không cần cập nhật gói trên từng máy. Mô tả tool cho Desktop đi qua `adapt_tools_for_desktop` (thay cụm chỉ có ở prompt Jenny như "LỊCH THAM CHIẾU"); client 0.1.0 không gửi header `X-Carbon-MCP-Client` nên vẫn nhận mô tả kèm ghi chú ngữ cảnh lặp ở từng tool. Instructions có giải thích Jenny là tác giả báo cáo (Desktop KHÔNG tự xưng Jenny); MCP prompt `jenny` ("Trò chuyện với Jenny", `GET/POST /prompts`, `DESKTOP_PROMPTS` + `_JENNY_DESKTOP_PERSONA`) cho người dùng chủ động chọn để Claude đóng vai Jenny — persona là bản rút gọn khối GIAO TIẾP của `_build_static_instructions` (sửa bên đó thì xem lại bên này) và CỐ Ý không chứa khung phân tích EUA nội bộ (có test chặn). Chỉ role `user` (email+OTP),
 không phải admin. Kết quả Claude sinh ra KHÔNG lưu ngược về hệ thống. `mcp_client` ghim `mcp<2`
 (API decorator của `mcp` 1.x bị bỏ ở 2.x). Test: `python -m pytest tests` (pytest trần không thấy
 package top-level vì repo chưa cấu hình pythonpath).

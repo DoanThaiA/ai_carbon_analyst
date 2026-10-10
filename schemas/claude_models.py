@@ -56,12 +56,41 @@ class GatewayToolDef(BaseModel):
 
 class GatewayToolCall(BaseModel):
     # None = báo cáo published mới nhất. Client MCP truyền ngày của handoff đang làm.
-    report_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    # Định dạng YYYY-MM-DD được validate ở router (lỗi trả `detail` dạng chuỗi dễ đọc).
+    report_date: Optional[str] = None
     input: Dict[str, Any] = Field(default_factory=dict)
 
 
 class GatewayToolResult(BaseModel):
     result: str
+    # Ngày báo cáo ngữ cảnh đã dùng — MCP client báo lại cho Claude để không nhầm ngày.
+    report_date: Optional[str] = None
+
+
+class GatewayInstructions(BaseModel):
+    instructions: str
+
+
+class GatewayPromptArgument(BaseModel):
+    name: str
+    description: str
+    required: bool = False
+
+
+class GatewayPromptDef(BaseModel):
+    name: str
+    title: str
+    description: str
+    arguments: List[GatewayPromptArgument] = Field(default_factory=list)
+
+
+class GatewayPromptRequest(BaseModel):
+    arguments: Dict[str, str] = Field(default_factory=dict)
+
+
+class GatewayPromptResult(BaseModel):
+    description: str
+    text: str
 
 
 class GatewayMe(BaseModel):

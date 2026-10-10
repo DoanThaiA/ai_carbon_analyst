@@ -5,7 +5,7 @@ import type { ApiTokenSummary, ClaudeTaskType } from "@/lib/types";
 // wheel nên tên file phải đúng chuẩn `<tên>-<phiên bản>-py3-none-any.whl` (không dùng
 // "latest"); khi phát hành bản mới thì tăng số này + build lại bằng scripts/build_mcp_client.sh
 // — đổi URL cũng là cách buộc uv bỏ qua cache bản cũ.
-export const MCP_CLIENT_VERSION = "0.1.0";
+export const MCP_CLIENT_VERSION = "0.1.1";
 
 // Khớp HandoffCreateRequest.quote (max_length=4000) ở backend schemas/claude_models.py.
 export const MAX_QUOTE_CHARS = 4000;

@@ -614,47 +614,74 @@ _BIZ_STATUS_LABEL = {"pending": "đang theo dõi (chưa kích hoạt)", "trigger
 
 
 async def _tool_biz_suggestions_text(
-    session: AsyncSession, report_date: str, status: str, kind: str, days: int
+    session: AsyncSession, report_date: str, status: str, kind: str, days: int, *, published_only: bool = True
 ) -> str:
     """Bộ nhớ gợi ý kinh doanh của Jenny (bảng biz_suggestions, xem services/biz_memory.py)
     — CHỈ ĐỌC. Lấy gợi ý đề xuất trong `days` ngày kết thúc ở `report_date` (gồm cả ngày đó).
     Khác get_report_section('biz'): đọc thẳng bảng nên có trạng thái mới nhất, bằng chứng
-    kích hoạt và cả gợi ý đã gỡ; không phụ thuộc nội dung đóng băng trong báo cáo cũ."""
-    since = (date_cls.fromisoformat(report_date) - timedelta(days=days)).isoformat()
+    kích hoạt và cả gợi ý đã gỡ; không phụ thuộc nội dung đóng băng trong báo cáo cũ.
+
+    `published_only`: bảng được ghi ngay lúc SINH báo cáo (còn draft, trước khi admin duyệt) —
+    cả gợi ý mới lẫn trạng thái kích hoạt của gợi ý cũ. Với người không phải admin, chỉ lộ dữ
+    liệu tới báo cáo published gần nhất: bỏ gợi ý đề xuất sau mốc đó, và trạng thái kích hoạt do
+    báo cáo sau mốc đó ghi thì hiển thị như 'đang theo dõi'."""
+    end_date = report_date
+    cap: Optional[str] = None
+    if published_only:
+        cap = (await session.execute(
+            select(func.max(Report.report_date)).where(Report.status == "published")
+        )).scalar_one_or_none()
+        if cap is None:
+            return "Chưa có báo cáo nào được published nên chưa có gợi ý kinh doanh để xem."
+        end_date = min(end_date, cap)
+    since = (date_cls.fromisoformat(end_date) - timedelta(days=days)).isoformat()
     stmt = select(BizSuggestion).where(
         BizSuggestion.first_report_date >= since,
-        BizSuggestion.first_report_date <= report_date,
+        BizSuggestion.first_report_date <= end_date,
     )
-    if status == "active":
-        stmt = stmt.where(BizSuggestion.status.in_(("pending", "triggered", "contradicted")))
-    elif status != "all":
-        stmt = stmt.where(BizSuggestion.status == status)
     if kind != "all":
         stmt = stmt.where(BizSuggestion.kind == kind)
     rows = (await session.execute(stmt.order_by(BizSuggestion.first_report_date, BizSuggestion.id))).scalars().all()
-    if not rows:
-        return f"Không có gợi ý nào (status={status}, kind={kind}) trong {days} ngày đến {report_date}."
+
+    def _effective_status(r: BizSuggestion) -> str:
+        if (
+            cap is not None
+            and r.status in ("triggered", "contradicted")
+            and (r.triggered_report_date or "") > cap
+        ):
+            return "pending"
+        return r.status
+
+    # Lọc status SAU khi quy đổi trạng thái hiển thị (bảng nhỏ, tối đa 30 ngày) — lọc ở SQL
+    # sẽ để lọt/loại nhầm gợi ý vừa bị báo cáo draft đổi trạng thái.
+    items = [(r, _effective_status(r)) for r in rows]
+    if status == "active":
+        items = [(r, st) for r, st in items if st in ("pending", "triggered", "contradicted")]
+    elif status != "all":
+        items = [(r, st) for r, st in items if st == status]
+    if not items:
+        return f"Không có gợi ý nào (status={status}, kind={kind}) trong {days} ngày đến {end_date}."
 
     lines = []
-    for r in rows:
+    for r, st in items:
         d = _fmt_vn_date_short(r.first_report_date)
         if r.kind == "long":
             lines.append(f"- [DÀI HẠN, đề xuất {d}] Cơ hội: {r.trigger} | Giải pháp: {r.action} | Kỳ vọng: {r.reason}")
             continue
         line = (
-            f"- [NGẮN HẠN, đề xuất {d}, {_BIZ_STATUS_LABEL.get(r.status, r.status)}] "
+            f"- [NGẮN HẠN, đề xuất {d}, {_BIZ_STATUS_LABEL.get(st, st)}] "
             f"Khi: {r.trigger} | Hành động: {r.action} | Lý do: {r.reason}"
         )
-        if r.status in ("triggered", "contradicted"):
-            label = "Kích hoạt" if r.status == "triggered" else "Thực tế ngược đề xuất"
+        if st in ("triggered", "contradicted"):
+            label = "Kích hoạt" if st == "triggered" else "Thực tế ngược đề xuất"
             line += f" | {label} ngày {_fmt_vn_date_short(r.triggered_report_date)}: {r.trigger_evidence or ''}"
             if r.evidence_source_name:
                 line += f" (nguồn: {r.evidence_source_name} {r.evidence_source_url or ''})".rstrip()
-        if r.status == "dismissed" and r.dismiss_reason:
+        if st == "dismissed" and r.dismiss_reason:
             line += f" | Lý do gỡ: {r.dismiss_reason}"
         lines.append(line)
     return _truncate(
-        f"Gợi ý kinh doanh của Jenny — {days} ngày đến {report_date} (status={status}, kind={kind}):\n"
+        f"Gợi ý kinh doanh của Jenny — {days} ngày đến {end_date} (status={status}, kind={kind}):\n"
         + "\n".join(lines)
         + "\nLƯU Ý: chỉ nêu đúng các gợi ý và bằng chứng ở trên; gợi ý chưa kích hoạt nghĩa là hệ thống chưa "
         "ghi nhận tình huống xảy ra, KHÔNG tự khẳng định thêm. Bạn không thể tạo/sửa/gỡ gợi ý — việc gỡ do admin thực hiện.",
@@ -2054,7 +2081,9 @@ async def _execute_client_tool(
                 days = int(tool_input.get("days") or 10)
             except (TypeError, ValueError):
                 days = 10
-            result = await _tool_biz_suggestions_text(session, target_date, status, kind, max(1, min(days, 30)))
+            result = await _tool_biz_suggestions_text(
+                session, target_date, status, kind, max(1, min(days, 30)), published_only=not allow_admin_tools
+            )
         elif name == "get_price_history":
             raw_sessions = tool_input.get("sessions")
             try:
