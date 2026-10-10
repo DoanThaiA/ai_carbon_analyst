@@ -495,6 +495,13 @@ def _format_section2(sec: dict) -> str:
         + (f" (nguồn: {d['source_name']}" + (f" — {d['source_url']}" if d.get("source_url") else "") + ")" if d.get("source_name") else "")
         for d in sec.get("key_developments") or []
     )
+    if sec.get("no_price_data"):
+        # Báo cáo Chủ Nhật/Thứ Hai (report_generator.py::is_no_price_report) — không có bảng giá.
+        return (
+            f"{sec.get('title', 'Diễn biến chính')}\n"
+            f"{sec.get('no_price_notice') or 'Không có phiên giao dịch — báo cáo không có dữ liệu giá.'}\n"
+            f"Diễn biến chính:\n{developments or '(không có)'}"
+        )
     return (
         f"{sec.get('title', 'Bảng giá nhanh')}\n"
         f"{sec.get('price_timestamp', '')}\n"
@@ -972,8 +979,13 @@ async def _tool_report_overview_text(session: AsyncSession, report_date: str) ->
         f"- Nhận định tổng quan EUA: {_extract_eua_verdict(c) or '(không có)'}",
         f"- Kịch bản ngắn hạn: {_format_scenario(_scenario(c, 'ngắn hạn'))}",
         f"- Mục 1 Tóm tắt điều hành: {n((c.get('1') or {}).get('bullets'))} ý",
-        f"- Mục 2 Bảng giá nhanh: {n(sec2.get('prices'))} instrument, {n(sec2.get('key_developments'))} diễn biến chính, "
-        f"{n((sec2.get('market_drivers') or {}).get('bullish'))} yếu tố hỗ trợ tăng / {n((sec2.get('market_drivers') or {}).get('bearish'))} hỗ trợ giảm",
+        (
+            f"- Mục 2: KHÔNG có bảng giá ({sec2.get('no_price_notice') or 'không có phiên giao dịch'}), "
+            f"{n(sec2.get('key_developments'))} diễn biến chính"
+            if sec2.get("no_price_data") else
+            f"- Mục 2 Bảng giá nhanh: {n(sec2.get('prices'))} instrument, {n(sec2.get('key_developments'))} diễn biến chính, "
+            f"{n((sec2.get('market_drivers') or {}).get('bullish'))} yếu tố hỗ trợ tăng / {n((sec2.get('market_drivers') or {}).get('bearish'))} hỗ trợ giảm"
+        ),
         f"- Mục 3 Phân tích: {n((c.get('3') or {}).get('analysis_blocks'))} khối, {n((c.get('3') or {}).get('trading_scenarios'))} kịch bản giao dịch",
         f"- Mục 4 Tín chỉ carbon & CBAM: {n((c.get('4') or {}).get('bullets'))} ý",
         f"- Mục 6 Tin tức: {n(sec6.get('international'))} tin quốc tế, {n(sec6.get('vietnam'))} tin Việt Nam",

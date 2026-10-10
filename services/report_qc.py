@@ -35,6 +35,7 @@ from services.report_generator import (
     TOPIC_DISPLAY_LABELS,
     _compute_recurring_calendar_events,
     _parse_event_date,
+    is_no_price_report,
     report_data_date,
 )
 
@@ -124,17 +125,55 @@ def report_price_date(content: Dict[str, Any]) -> Optional[str]:
     return m.group(0) if m else None
 
 
+def is_no_price_content(content: Dict[str, Any]) -> bool:
+    """Báo cáo sinh ở chế độ chỉ tin tức (Chủ Nhật/Thứ Hai — xem report_generator.is_no_price_report)."""
+    return bool((content.get("2") or {}).get("no_price_data"))
+
+
+def check_no_price_leaks(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Báo cáo không có phiên giá KHÔNG được còn sót phần nào liên quan giá."""
+    issues: List[Dict[str, str]] = []
+    sec2 = content.get("2") or {}
+    drivers = sec2.get("market_drivers") or {}
+    leaks = (
+        (sec2.get("prices"), "2", "bảng giá", "2.prices"),
+        (sec2.get("chart_data"), "2", "biểu đồ EUA", "2.chart_data"),
+        ((drivers.get("bullish") or []) + (drivers.get("bearish") or []), "2", "động lực thị trường", "2.market_drivers"),
+        (sec2.get("price_timestamp"), "2", "dòng ngày chốt giá", "2.price_timestamp"),
+        (sec2.get("key_facts"), "2", "số liệu EUA", "2.key_facts"),
+        ((content.get("3") or {}).get("trading_scenarios"), "3", "kịch bản giao dịch", "3.trading_scenarios"),
+    )
+    for value, section, label, path in leaks:
+        if value:
+            issues.append(_issue(
+                "price" if section == "2" else "scenario", section, "error",
+                f"Báo cáo ngày không có phiên giao dịch nhưng vẫn có {label}.", path,
+            ))
+    return issues
+
+
 def check_prices(
     content: Dict[str, Any],
     db_prices: Dict[str, Dict[str, Any]],
     latest_price_date: Optional[str],
+    report_date: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """`db_prices`: code -> {"name", "close", "day_change_pct", "week_change_pct"} của ĐÚNG
     ngày giá báo cáo dùng (không gồm CBAM — giá chốt theo quý, không so theo phiên).
-    `latest_price_date`: ngày giá mới nhất trong DB tính tới ngày dữ liệu báo cáo."""
+    `latest_price_date`: ngày giá mới nhất trong DB tính tới ngày dữ liệu báo cáo.
+    Báo cáo Chủ Nhật/Thứ Hai (không có phiên): chỉ kiểm tra KHÔNG còn phần giá nào."""
+    if is_no_price_content(content):
+        return [it for it in check_no_price_leaks(content) if it["check"] == "price"]
     issues: List[Dict[str, str]] = []
     sec = content.get("2") or {}
     rows = sec.get("prices") or []
+    if report_date and is_no_price_report(report_date):
+        issues.append(_issue(
+            "price", "2", "warning",
+            "Báo cáo Chủ Nhật/Thứ Hai (ngày dữ liệu cuối tuần, không có phiên) nhưng vẫn có phần giá — "
+            "giá đang hiển thị là của phiên trước đó. Sinh lại báo cáo để dùng chế độ chỉ phân tích tin tức.",
+            "2.prices",
+        ))
 
     if not rows:
         return [_issue("price", "2", "error", "Bảng giá nhanh trống.", "2.prices")]
@@ -412,6 +451,9 @@ def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
     issues: List[Dict[str, str]] = []
     sec = content.get("3") or {}
     scenarios = sec.get("trading_scenarios") or []
+    no_price = is_no_price_content(content)
+    if no_price:
+        issues += [it for it in check_no_price_leaks(content) if it["check"] == "scenario"]
 
     summary = extract_eua_summary(content)
     sentiment: Optional[str] = None
@@ -443,6 +485,8 @@ def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
         if not SUMMARY_WORDS_MIN <= n_words <= SUMMARY_WORDS_MAX:
             issues.append(_issue("scenario", "3", "info", f"Dòng Tổng hợp dài {n_words} chữ (yêu cầu 40–45).", "3.analysis_blocks"))
 
+    if no_price:
+        return issues  # không có phiên giá → không có kịch bản giao dịch (đã báo lỗi nếu còn sót ở trên)
     if not scenarios:
         issues.append(_issue("scenario", "3", "error", "Không có kịch bản giao dịch nào.", "3.trading_scenarios"))
         return issues
@@ -971,7 +1015,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
     news_issues, news_stats = check_news(content, await _load_window_articles(session, target_date))
 
     issues_by_check = {
-        "price": check_prices(content, db_prices, latest_price_date),
+        "price": check_prices(content, db_prices, latest_price_date, report_date),
         "scenario": check_scenarios(content),
         "source": check_sources(content, known_urls),
         "calendar": check_calendar(content, report_date),

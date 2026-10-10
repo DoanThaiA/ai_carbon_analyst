@@ -1475,6 +1475,9 @@ export function ReportDocument({
   onDismissBizSuggestion?: (id: number) => void;
 }) {
   const priceRows = report?.content["2"]?.prices || [];
+  // Báo cáo Chủ Nhật/Thứ Hai: ngày dữ liệu cuối tuần, không có phiên giao dịch — backend
+  // (report_generator.py::is_no_price_report) chỉ phân tích tin tức; ẩn mọi phần giá.
+  const noPriceData = !!report?.content["2"]?.no_price_data;
   // Menu hamburger điều hướng section (thanh dưới banner).
   const [navOpen, setNavOpen] = useState(false);
   const keyDevelopmentItems: any[] = [
@@ -1758,6 +1761,11 @@ export function ReportDocument({
 
           <EuaDashboardWidget report={report} />
 
+          {noPriceData ? (
+            <div className="mt-5 rounded-lg border border-border bg-tint/40 px-3.5 py-3 text-[14.5px] leading-[1.5] text-body">
+              {report.content["2"]?.no_price_notice || "Không có phiên giao dịch — báo cáo hôm nay chỉ phân tích tin tức, không phân tích giá."}
+            </div>
+          ) : (
           <div className="mt-5">
             <SubHeading>Bảng giá nhanh</SubHeading>
             {report.content["2"]?.price_timestamp && (
@@ -1836,6 +1844,7 @@ export function ReportDocument({
               </table>
             </div>
           </div>
+          )}
 
           {/* Diễn biến chính — tin tức nổi bật tác động cung/cầu EUA (trực tiếp
               hoặc gián tiếp), mỗi tin có nhãn chiều tác động + nguồn bài viết.
@@ -1877,7 +1886,11 @@ export function ReportDocument({
 
         {/* PHẦN 2 — PHÂN TÍCH VÀ KHUYẾN NGHỊ GIAO DỊCH */}
         <section id="section-analysis" className="py-5">
-          <PartHeading eyebrow="Phần 2" title="Phân tích và khuyến nghị giao dịch" icon={BarChart3} />
+          <PartHeading
+            eyebrow="Phần 2"
+            title={noPriceData ? "Phân tích tác động tin tức" : "Phân tích và khuyến nghị giao dịch"}
+            icon={BarChart3}
+          />
 
           {/* KHUYẾN NGHỊ VỊ THẾ — nội dung đầu tiên của Phần 2: chiến lược trading cho
               phiên hôm đó, tái dùng kịch bản "ngắn hạn" (+ xu hướng "trung hạn") đã có ở

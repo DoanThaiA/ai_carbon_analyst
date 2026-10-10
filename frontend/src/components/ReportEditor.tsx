@@ -406,6 +406,9 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
 
   const sec2 = content["2"] || {};
   const sec3 = content["3"];
+  // Báo cáo Chủ Nhật/Thứ Hai (không có phiên giao dịch — services/report_generator.py::
+  // is_no_price_report): không có bảng giá/động lực/kịch bản giao dịch để sửa.
+  const noPriceData = !!sec2.no_price_data;
 
   return (
     <div className="space-y-4">
@@ -445,6 +448,14 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
             />
           </SectionShell>
 
+          {noPriceData ? (
+          <SectionShell number="02" title="Bảng giá nhanh">
+            <div>
+              <FieldLabel>Thông báo (ngày không có phiên giao dịch — báo cáo không có phần giá)</FieldLabel>
+              <TextArea value={sec2.no_price_notice} onChange={(v) => patchSection("2", { no_price_notice: v })} rows={2} />
+            </div>
+          </SectionShell>
+          ) : (
           <SectionShell number="02" title="Bảng giá nhanh">
             <div>
               <FieldLabel>Thời điểm chốt giá</FieldLabel>
@@ -504,6 +515,7 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
               </div>
             </div>
           </SectionShell>
+          )}
 
           {sec3 && (
             <SectionShell number="03" title={sec3.title || "Phân tích chuyên sâu"}>
@@ -548,6 +560,7 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                 </div>
               )}
 
+              {!noPriceData && (
               <div>
                 <FieldLabel>Kịch bản giao dịch</FieldLabel>
                 <CardRowsEditor
@@ -565,6 +578,7 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                   addLabel="Thêm kịch bản"
                 />
               </div>
+              )}
             </SectionShell>
           )}
 

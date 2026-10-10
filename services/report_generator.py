@@ -232,8 +232,24 @@ _EUA_FRAMEWORK_TIMEFRAME_COMPACT = (
 )
 
 
+# Báo cáo KHÔNG có phiên giá (xem is_no_price_report) — thay phần C/D (vốn bắt đầu
+# từ giá đóng cửa, đối chiếu Δ ngày/Δ tuần) bằng quy tắc chỉ dựa trên tin tức.
+_EUA_FRAMEWORK_RULES_NEWS_ONLY = (
+    "C. QUY TẮC NHẬN ĐỊNH — BÁO CÁO KHÔNG CÓ PHIÊN GIAO DỊCH (cuối tuần, KHÔNG có dữ liệu giá):\n"
+    "- CHỈ phân tích TIN TỨC: sự kiện/số liệu do bài báo nêu → tác động tới CUNG/CẦU EUA theo đúng chuỗi "
+    "nhân quả ở phần A.\n"
+    "- TUYỆT ĐỐI KHÔNG nêu giá đóng cửa, %Δ ngày/Δ tuần, biên độ phiên, khối lượng giao dịch, vùng hỗ trợ/"
+    "kháng cự, mức giá mục tiêu hay bất kỳ con số giá nào — kể cả giá phiên trước đó; KHÔNG suy đoán giá "
+    "đã/sẽ tăng giảm bao nhiêu. Các bước \"đối chiếu giá gas/dầu\" của phần A coi như CHƯA có dữ liệu xác "
+    "nhận → ghi nhận là \"rủi ro/tác động tiềm năng chờ phiên giao dịch tới xác nhận\".\n"
+    "- Kết luận chiều tác động lên EUA chỉ khi ≥2 tin cùng hướng; mâu thuẫn → \"tín hiệu hỗn hợp\" + 2 chiều.\n"
+    "- Không có tin liên quan → ghi rõ, KHÔNG bịa."
+)
+
+
 def _eua_framework(
-    topics_present: List[str], *, full: bool, overrides: Optional[Dict[str, str]] = None
+    topics_present: List[str], *, full: bool, overrides: Optional[Dict[str, str]] = None,
+    news_only: bool = False,
 ) -> str:
     """Dựng khung phân tích giá EUA CHO ĐÚNG topics_present của ngày báo cáo.
 
@@ -250,6 +266,10 @@ def _eua_framework(
     services/eua_framework_admin.py::get_overrides_map), lấy 1 lần ở đầu
     `generate_report_content()` rồi truyền xuống đây — None = dùng toàn bộ
     bản mặc định trong code.
+
+    `news_only=True`: báo cáo ngày không có phiên giá (Chủ Nhật/Thứ Hai — xem
+    is_no_price_report) — bỏ ghi chú crack spread + phần C/D dựa trên giá, thay
+    bằng _EUA_FRAMEWORK_RULES_NEWS_ONLY.
     """
     horizon = "medium" if full else "short"
     dynamic = chains.build_context(topics_present, horizon=horizon, overrides=overrides)
@@ -260,8 +280,14 @@ def _eua_framework(
         "A. CÁC MỐI LIÊN HỆ LIÊN THỊ TRƯỜNG (cross-market signals) — CHỈ áp dụng cơ chế nào có dữ "
         "liệu/tin tức thực sự hỗ trợ, KHÔNG suy diễn gượng ép:",
         dynamic,
-        _EUA_FRAMEWORK_NOTES,
     ]
+    if news_only:
+        if full:
+            parts.append(_EUA_FRAMEWORK_CATALOG)
+        parts.append(_EUA_FRAMEWORK_RULES_NEWS_ONLY)
+        parts.append("=== KẾT THÚC KHUNG PHÂN TÍCH ===")
+        return "\n\n".join(parts)
+    parts.append(_EUA_FRAMEWORK_NOTES)
     if full:
         parts.append(_EUA_FRAMEWORK_CATALOG)
         parts.append(_EUA_FRAMEWORK_RULES_FULL)
@@ -467,6 +493,21 @@ def report_data_date(report_date_str: str) -> str:
     qua hàm này để tra đúng dữ liệu của báo cáo đang xem.
     """
     return (datetime.strptime(report_date_str, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
+
+
+# report_date Chủ Nhật / Thứ Hai = ngày dữ liệu Thứ Bảy / Chủ Nhật (xem report_data_date)
+# — không có phiên giao dịch nên báo cáo CHỈ phân tích tin tức: không bảng giá, biểu đồ,
+# động lực thị trường, ghi chú giá, kịch bản giao dịch; không đưa giá vào bất kỳ prompt nào.
+NO_PRICE_REPORT_WEEKDAYS = (6, 0)  # date.weekday(): 6 = Chủ Nhật, 0 = Thứ Hai
+NO_PRICE_NOTICE = (
+    "Ngày dữ liệu {data_date} là cuối tuần, không có phiên giao dịch — báo cáo hôm nay "
+    "chỉ phân tích tin tức, không phân tích giá."
+)
+
+
+def is_no_price_report(report_date_str: str) -> bool:
+    """True nếu báo cáo `report_date_str` (ngày TẠO) rơi vào Chủ Nhật/Thứ Hai."""
+    return datetime.strptime(report_date_str, "%Y-%m-%d").weekday() in NO_PRICE_REPORT_WEEKDAYS
 
 
 async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> tuple[List[Dict], str]:
@@ -1413,6 +1454,34 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
     return system, user
 
 
+_NO_PRICE_PROMPT_RULE = (
+    "NGÀY KHÔNG CÓ PHIÊN GIAO DỊCH (cuối tuần) — KHÔNG có dữ liệu giá. TUYỆT ĐỐI KHÔNG nêu giá đóng cửa, "
+    "%Δ ngày/Δ tuần, biên độ phiên, khối lượng giao dịch, vùng hỗ trợ/kháng cự, mức giá mục tiêu hay BẤT KỲ "
+    "con số giá nào (kể cả giá phiên trước đó lấy từ tin tức); KHÔNG nhận định giá đã/sẽ tăng giảm bao nhiêu. "
+    "CHỈ phân tích tin tức."
+)
+
+
+def _prompt_section1_news_only(news_text: str, target_date: str) -> tuple[str, str]:
+    """Mục 1 cho báo cáo không có phiên giá (is_no_price_report) — chỉ dựa trên tin tức."""
+    system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}"
+    user = f"""Ngày báo cáo: {target_date}
+{_NO_PRICE_PROMPT_RULE}
+
+TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, geopolitics, eu_policy, cbam) — CHỈ trích dẫn số có thật:
+{news_text}
+
+YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH, CHỈ từ tin tức ở trên.
+- Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo mức độ tác động tới cung/cầu EUA (cao→thấp).
+- Mỗi bullet mở đầu bằng tag đậm (**Chính sách:**, **Năng lượng:**, **Địa chính trị:**...). KHÔNG có bullet giá EUA.
+- Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
+- Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm khi bullet dựa trên 1 tin cụ thể) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
+
+CHỈ TRẢ VỀ JSON HỢP LỆ:
+{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": 1}}]}}}}"""
+    return system, user
+
+
 def _prompt_section2(
     eua_key_facts: str, prices_text: str, eua_trend: str, gasoil_crack_spread: str,
     news_text: str, target_date: str, topics_present: List[str],
@@ -1457,15 +1526,16 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 def _prompt_key_developments(
     news_text: str, target_date: str, topics_present: List[str],
-    overrides: Optional[Dict[str, str]] = None,
+    overrides: Optional[Dict[str, str]] = None, news_only: bool = False,
 ) -> tuple[str, str]:
     """ "Diễn biến chính" — hiển thị ngay dưới Bảng giá nhanh: CHỈ các SỰ KIỆN TIN TỨC
     nổi bật có tác động tới giá/cung/cầu của các hợp đồng theo dõi (EUA + năng lượng,
     trực tiếp hoặc gián tiếp) — KHÔNG phải diễn
     biến giá tăng/giảm của các hợp đồng (phần đó đã có ở Bảng giá nhanh). Cố ý KHÔNG
     đưa dữ liệu giá vào prompt để LLM không viết lại biến động giá. Mỗi tin BẮT BUỘC
-    có nguồn bài viết (source_index → backend map sang tên/URL thật)."""
-    framework = _eua_framework(topics_present, full=False, overrides=overrides)
+    có nguồn bài viết (source_index → backend map sang tên/URL thật).
+    `news_only=True`: báo cáo không có phiên giá — khung phân tích bỏ quy tắc Δ ngày/Δ tuần."""
+    framework = _eua_framework(topics_present, full=False, overrides=overrides, news_only=news_only)
     system = f"Bạn là chuyên gia phân tích thị trường carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
 
@@ -1608,6 +1678,39 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
     return system, user
 
 
+def _prompt_section3_news_only(
+    news_text: str, target_date: str, topics_present: List[str],
+    overrides: Optional[Dict[str, str]] = None,
+) -> tuple[str, str]:
+    """Mục 3 cho báo cáo không có phiên giá (is_no_price_report): CHỈ "analysis_blocks"
+    dựa trên tin tức — không "instrument_notes" (cột ghi chú bảng giá) và không
+    "trading_scenarios" (vùng giá/Entry/Mục tiêu/cắt lỗ đều cần giá). Giữ đúng định dạng
+    dòng "Tên nhóm: <kết luận>" và "**Tổng hợp:** [NHÃN]" để frontend/Lucy QC đọc được."""
+    framework = _eua_framework(topics_present, full=True, overrides=overrides, news_only=True)
+    system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
+    user = f"""Ngày báo cáo: {target_date}
+{_NO_PRICE_PROMPT_RULE}
+
+TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, energy_renewable, energy_hydrogen, geopolitics, eu_policy, cbam, vcm, global_carbon_market, vietnam_carbon_policy):
+{news_text}
+
+YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH TÁC ĐỘNG CỦA TIN TỨC TỚI CUNG/CẦU EUA. Viết SÚC TÍCH, TRỰC DIỆN, không câu đệm. CHỈ gồm "analysis_blocks" (mảng "heading" + "content"); KHÔNG có "instrument_notes", KHÔNG có "trading_scenarios".
+
+1. heading="Phân tích" (BẮT BUỘC): theo đúng thứ tự NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) → NHÓM 2 (Hạn ngạch & tín chỉ carbon) → NHÓM 3 (Chính sách) của "B. DANH MỤC THEO DÕI", phân tích các SỰ KIỆN CỤ THỂ do tin tức nêu rõ sẽ tác động thế nào tới CUNG/CẦU EUA, áp dụng ĐÚNG chuỗi nhân quả ở phần A của KHUNG PHÂN TÍCH (không tự sinh chuỗi khác, không diễn giải lại từng bước cơ chế — chỉ nêu sự kiện ngắn rồi đi thẳng tới kết luận tác động).
+   - CHỈ đưa yếu tố có tác động có căn cứ, có hướng rõ lên cung/cầu EUA; tin không dẫn tới tác động nào → BỎ. Nhóm không còn yếu tố nào → bỏ cả nhóm.
+   - LOẠI TRỪ: {chains.get_block("NON_EUA_CARBON_MARKETS", overrides)}
+   - Sự kiện năng lượng/địa chính trị cần giá gas/dầu xác nhận → chỉ ghi là "rủi ro/tác động tiềm năng, chờ phiên giao dịch tới xác nhận", KHÔNG kết luận đã tác động.
+   - ĐỊNH DẠNG: dòng ĐẦU mỗi nhóm viết LIỀN "Tên nhóm: <kết luận 1 câu nhóm này hỗ trợ/gây áp lực/trung lập với EUA>" (đúng tên "Năng lượng & nhiên liệu hóa thạch:", "Hạn ngạch & tín chỉ carbon:", "Chính sách:"); các luận cứ là gạch đầu dòng "- ..." xuống dòng thật (\\n) ngay sau; bôi đậm (**...**) cụm chính đầu mỗi gạch.
+   - Dòng CUỐI CÙNG của "content": "**Tổng hợp:** [NHÃN] ..." — NHÃN là 1 trong "[TÍCH CỰC]" (tin tức nghiêng về hỗ trợ EUA), "[TRUNG LẬP]" (tín hiệu hỗn hợp/không đáng kể), "[TIÊU CỰC]" (tin tức nghiêng về gây áp lực lên EUA); nội dung sau nhãn 40–45 chữ, tổng hợp kết luận các nhóm thành 1 nhận định dứt khoát về tác động của TIN TỨC trong ngày lên EUA — KHÔNG nêu bất kỳ con số giá nào, KHÔNG nêu Δ ngày/Δ tuần.
+   - Không có tin nào tác động thực lên EUA: "content" = "Không có thông tin mới liên quan trực tiếp đến giá EUA." (bỏ dòng "**Tổng hợp:**").
+2. heading="Quan điểm thị trường" (TÙY CHỌN) — CHỈ khi tin tức THỰC SỰ nêu quan điểm/nhận định từ nguồn xác định: nêu consensus; contrarian (nếu có, kèm tên nguồn, luận điểm, điều kiện đúng); kết thúc bằng câu "**Kết luận:** ..." đối chiếu với "**Tổng hợp:**". Không có → KHÔNG thêm block này. Dự báo giá của tổ chức được nêu ở dạng định tính (không chép con số giá).
+3. heading="Cần theo dõi" (BẮT BUỘC) — các WATCHPOINT rút ra TRỰC TIẾP từ tin/phân tích ở trên, ưu tiên điều còn chưa chắc chắn (sự kiện chính sách đang chờ quyết định, rủi ro nguồn cung chờ giá phiên tới xác nhận...). Mỗi watchpoint 1 dòng đánh số "1.", "2."... (xuống dòng thật \\n giữa các dòng), gồm: (a) cần theo dõi gì (kèm ngày giờ Việt Nam CHỈ khi tin nêu rõ); (b) "Nếu [diễn biến hướng 1]..." → tác động cung/cầu EUA; (c) "Nếu [ngược lại/không xảy ra]..." → tác động khác. KHÔNG nêu mức giá/ngưỡng giá. Không bịa watchpoint cho đủ số.
+
+CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
+{{"3": {{"title": "Phân tích tác động của tin tức tới EUA (không có phiên giao dịch)", "analysis_blocks": [{{"heading": "Phân tích", "content": "..."}}, {{"heading": "Cần theo dõi", "content": "..."}}]}}}}"""
+    return system, user
+
+
 def _prompt_section4(news_text: str, target_date: str) -> tuple[str, str]:
     system = f"Bạn là chuyên gia phân tích thị trường carbon tự nguyện và CBAM.\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date}
@@ -1674,16 +1777,22 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 def _prompt_biz_recommendation(
     news_text: str, prices_text: str, eua_trend: str, target_date: str,
     tracking_text: str = "Không có.", valid_codes: str = "", dismissed_text: str = "Không có.",
+    news_only: bool = False,
 ) -> tuple[str, str]:
+    """`news_only=True`: báo cáo không có phiên giá (is_no_price_report) — bỏ khối giá
+    khỏi prompt, gợi ý chỉ dựa trên tin tức, "trigger" dạng tin tức/chính sách."""
     system = f"Bạn là chuyên gia tư vấn kinh doanh về carbon và năng lượng cho doanh nghiệp Việt Nam (SIM).\n{CONCISENESS_RULE}"
+    if news_only:
+        price_block = (
+            f"{_NO_PRICE_PROMPT_RULE}\n"
+            "Hôm nay mọi gợi ý chỉ dựa trên tin tức: \"trigger\" là điều kiện dạng tin tức/chính sách "
+            "(KHÔNG dùng ngưỡng giá) và \"trigger_rule\" LUÔN là null.\n"
+        )
+    else:
+        price_block = f"DỮ LIỆU GIÁ:\n{prices_text}\n\nXU HƯỚNG EUA 30 NGÀY:\n{eua_trend}\n"
     user = f"""Ngày báo cáo: {target_date}
 
-DỮ LIỆU GIÁ:
-{prices_text}
-
-XU HƯỚNG EUA 30 NGÀY:
-{eua_trend}
-
+{price_block}
 TIN TỨC ĐA CHIỀU:
 {news_text}
 
@@ -1769,15 +1878,19 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 async def _check_biz_contradictions_llm(
     candidates: List[Any], news_text: str, index_lookup: Dict[int, Dict], prices_text: str, target_date: str,
+    news_only: bool = False,
 ) -> Dict[int, Dict[str, Optional[str]]]:
     """Hỏi LLM: với từng gợi ý cũ CHƯA kích hoạt, diễn biến thực tế hôm nay (giá + tin
     tức) có đi NGƯỢC với giả định/kỳ vọng làm nền cho đề xuất không (vd đề xuất mua
     dự phòng vì kỳ vọng giá năng lượng tăng, nhưng giá giảm mạnh do nguồn cung phục
     hồi). Chỉ chấp nhận khi bằng chứng cụ thể: bài báo có thật (source_index → tên/URL
     backend map) HOẶC số liệu giá trong "DỮ LIỆU GIÁ" (source_index null → nguồn ghi
-    "Giá chốt phiên (Barchart)"). Lỗi LLM/không đủ căn cứ → {} (giữ nguyên trạng thái chờ)."""
-    if not candidates:
+    "Giá chốt phiên (Barchart)"). Lỗi LLM/không đủ căn cứ → {} (giữ nguyên trạng thái chờ).
+    `news_only=True` (báo cáo không có phiên giá): chỉ chấp nhận bằng chứng từ bài báo."""
+    if not candidates or (news_only and not index_lookup):
         return {}
+    if news_only:
+        prices_text = "Không có — cuối tuần, không có phiên giao dịch. CHỈ đối chiếu theo tin tức (BẮT BUỘC source_index)."
     system = f"Bạn là trợ lý theo dõi các đề xuất kinh doanh cho doanh nghiệp SIM.\n{CONCISENESS_RULE}"
     user = f"""Ngày dữ liệu: {target_date}
 
@@ -1821,7 +1934,7 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
         src_art = index_lookup.get(_first_source_index(chk.get("source_index")))
         if src_art:
             result[sid] = {"evidence": evidence, "source_name": src_art["source"], "source_url": src_art["url"]}
-        elif chk.get("source_index") is None:
+        elif chk.get("source_index") is None and not news_only:
             result[sid] = {"evidence": evidence, "source_name": "Giá chốt phiên (Barchart)", "source_url": None}
     return result
 
@@ -1840,12 +1953,19 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     y hệt logic trước đây, xem report_data_date().
     """
     target_date = report_data_date(report_date)
+    # Chủ Nhật/Thứ Hai: ngày dữ liệu là cuối tuần, không có phiên → CHỈ phân tích tin
+    # tức. Không lấy giá (kể cả CBAM) để không phiên giá cũ nào lọt vào prompt/nội dung.
+    no_price = is_no_price_report(report_date)
     # ── 1. Thu thập dữ liệu ──────────────────────────────────────────
     # 1 query duy nhất — override admin đã custom cho khung phân tích EUA (nếu
     # có), dùng cho cả Mục 2/3/5 bên dưới (xem services/eua_framework_admin.py).
     eua_framework_overrides = await get_overrides_map(session)
-    prices, max_price_date = await get_prices_for_report(session, target_date)
-    chart_data = await get_historical_ohlc_for_report(session, "EUA", target_date)
+    if no_price:
+        logger.info("[REPORT] %s: ngày dữ liệu %s không có phiên giao dịch — báo cáo chỉ phân tích tin tức.", report_date, target_date)
+        prices, max_price_date, chart_data = [], None, []
+    else:
+        prices, max_price_date = await get_prices_for_report(session, target_date)
+        chart_data = await get_historical_ohlc_for_report(session, "EUA", target_date)
     news_by_topic, sources = await get_news_for_report(session, target_date)
 
     prices_text = _summarize_prices(prices)
@@ -1978,7 +2098,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     # Gợi ý chưa kích hoạt → đối chiếu thêm: thực tế hôm nay có đi NGƯỢC giả định của đề xuất không.
     not_triggered = [s for s in active_suggestions if s.id not in triggered_suggestions]
     contradicted_suggestions = await _check_biz_contradictions_llm(
-        not_triggered, biz_news_text, biz_index_lookup, prices_text, target_date
+        not_triggered, biz_news_text, biz_index_lookup, prices_text, target_date, news_only=no_price,
     )
     still_tracking = [s for s in not_triggered if s.id not in contradicted_suggestions]
     dismissed_suggestions = await biz_memory.load_recent_dismissed(session, report_date)
@@ -1987,42 +2107,68 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     # ── 2. Gọi LLM từng mục song song (tuần tự để tránh rate limit) ──
     content: Dict[str, Any] = {}
 
-    SECTIONS = [
-        ("1", _prompt_section1(
-            section1_news_text,
-            prices_text, eua_trend, eua_session_range, target_date
-        )),
-        ("2", _prompt_section2(
-            eua_key_facts, prices_text, eua_trend, gasoil_crack_spread,
-            section2_news_text, target_date, _topics_present(news_by_topic, "2"),
-            overrides=eua_framework_overrides,
-        )),
-        ("dev", _prompt_key_developments(
-            dev_news_text, target_date, _topics_present(news_by_topic, "dev"),
-            overrides=eua_framework_overrides,
-        )),
-        ("3", _prompt_section3(
-            _filter_news_for_section(news_by_topic, "3"),
-            prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
-            _topics_present(news_by_topic, "3"),
-            overrides=eua_framework_overrides,
-        )),
-        ("4", _prompt_section4(
-            section4_news_text,
-            target_date
-        )),
-        ("8", _prompt_section8(
-            _filter_news_for_section(news_by_topic, "8"),
-            prev_events_text, target_date, recurring_events_text,
-        )),
-        ("biz", _prompt_biz_recommendation(
-            _filter_news_for_section(news_by_topic, "biz"),
-            prices_text, eua_trend, target_date,
-            tracking_text=biz_memory.describe_for_prompt(still_tracking),
-            dismissed_text=biz_memory.describe_for_prompt(dismissed_suggestions),
-            valid_codes=", ".join(sorted(valid_price_codes)),
-        )),
-    ]
+    if no_price:
+        # Không có Mục "2" (market_drivers — động lực theo trạng thái giá từng mã).
+        SECTIONS = [
+            ("1", _prompt_section1_news_only(section1_news_text, target_date)),
+            ("dev", _prompt_key_developments(
+                dev_news_text, target_date, _topics_present(news_by_topic, "dev"),
+                overrides=eua_framework_overrides, news_only=True,
+            )),
+            ("3", _prompt_section3_news_only(
+                _filter_news_for_section(news_by_topic, "3"), target_date,
+                _topics_present(news_by_topic, "3"), overrides=eua_framework_overrides,
+            )),
+            ("4", _prompt_section4(section4_news_text, target_date)),
+            ("8", _prompt_section8(
+                _filter_news_for_section(news_by_topic, "8"),
+                prev_events_text, target_date, recurring_events_text,
+            )),
+            ("biz", _prompt_biz_recommendation(
+                _filter_news_for_section(news_by_topic, "biz"),
+                prices_text, eua_trend, target_date,
+                tracking_text=biz_memory.describe_for_prompt(still_tracking),
+                dismissed_text=biz_memory.describe_for_prompt(dismissed_suggestions),
+                news_only=True,
+            )),
+        ]
+    else:
+        SECTIONS = [
+            ("1", _prompt_section1(
+                section1_news_text,
+                prices_text, eua_trend, eua_session_range, target_date
+            )),
+            ("2", _prompt_section2(
+                eua_key_facts, prices_text, eua_trend, gasoil_crack_spread,
+                section2_news_text, target_date, _topics_present(news_by_topic, "2"),
+                overrides=eua_framework_overrides,
+            )),
+            ("dev", _prompt_key_developments(
+                dev_news_text, target_date, _topics_present(news_by_topic, "dev"),
+                overrides=eua_framework_overrides,
+            )),
+            ("3", _prompt_section3(
+                _filter_news_for_section(news_by_topic, "3"),
+                prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
+                _topics_present(news_by_topic, "3"),
+                overrides=eua_framework_overrides,
+            )),
+            ("4", _prompt_section4(
+                section4_news_text,
+                target_date
+            )),
+            ("8", _prompt_section8(
+                _filter_news_for_section(news_by_topic, "8"),
+                prev_events_text, target_date, recurring_events_text,
+            )),
+            ("biz", _prompt_biz_recommendation(
+                _filter_news_for_section(news_by_topic, "biz"),
+                prices_text, eua_trend, target_date,
+                tracking_text=biz_memory.describe_for_prompt(still_tracking),
+                dismissed_text=biz_memory.describe_for_prompt(dismissed_suggestions),
+                valid_codes=", ".join(sorted(valid_price_codes)),
+            )),
+        ]
 
     FALLBACKS: Dict[str, dict] = {
         "1": {"title": "Tóm tắt điều hành", "bullets": [{"text": "Không thể sinh nội dung tự động.", "source_index": None}]},
@@ -2122,6 +2268,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                     continue
                 p["note"] = f"{p['note']} {llm_note}".strip() if p.get("note") else llm_note
             content["3"] = {k: v for k, v in section_data.items() if k != "instrument_notes"}
+            if no_price:
+                # Kịch bản giao dịch cần vùng giá/Entry/Mục tiêu — không có ở ngày không có phiên.
+                content["3"]["trading_scenarios"] = []
         else:
             content[section_key] = section_data
 
@@ -2138,18 +2287,35 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         return resolved
 
     raw_drivers = section2_data.get("market_drivers") or {"bullish": [], "bearish": []}
-    content["2"] = {
-        "title": "Bảng giá nhanh",
-        "price_timestamp": f"Giá chốt phiên {max_price_date or target_date} (nguồn: Barchart EOD)",
-        "key_facts": eua_key_facts,
-        "prices": prices,
-        "key_developments": key_developments,
-        "chart_data": chart_data,
-        "market_drivers": {
-            "bullish": _resolve_driver_items(raw_drivers.get("bullish")),
-            "bearish": _resolve_driver_items(raw_drivers.get("bearish")),
-        },
-    }
+    if no_price:
+        # Giữ đủ khoá cũ (rỗng) để frontend/Jenny/Lucy QC đọc an toàn; "no_price_data"
+        # là cờ để ẩn bảng giá, biểu đồ, thanh giá và khối KHUYẾN NGHỊ VỊ THẾ.
+        content["2"] = {
+            "title": "Diễn biến chính",
+            "no_price_data": True,
+            "no_price_notice": NO_PRICE_NOTICE.format(
+                data_date=datetime.strptime(target_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+            ),
+            "price_timestamp": "",
+            "key_facts": "",
+            "prices": [],
+            "key_developments": key_developments,
+            "chart_data": [],
+            "market_drivers": {"bullish": [], "bearish": []},
+        }
+    else:
+        content["2"] = {
+            "title": "Bảng giá nhanh",
+            "price_timestamp": f"Giá chốt phiên {max_price_date or target_date} (nguồn: Barchart EOD)",
+            "key_facts": eua_key_facts,
+            "prices": prices,
+            "key_developments": key_developments,
+            "chart_data": chart_data,
+            "market_drivers": {
+                "bullish": _resolve_driver_items(raw_drivers.get("bullish")),
+                "bearish": _resolve_driver_items(raw_drivers.get("bearish")),
+            },
+        }
 
     section6_news = _build_section6_news(news_by_topic)
     section6_international = await _summarize_section6_articles(section6_news["international"], target_date)

@@ -166,6 +166,12 @@ lỗi tạm thời được thử lại tới `SEEN_MAX_ATTEMPTS` lần. Lọc n
 `CRAWL_LOOKBACK_HOURS` (mặc định 36h) — việc chia bài vào báo cáo ngày nào dựa vào
 `crawled_at`, không dựa vào cửa sổ này.
 
+**Báo cáo Chủ Nhật/Thứ Hai = chỉ tin tức** (`report_generator.py::is_no_price_report`): ngày dữ liệu
+là Thứ Bảy/Chủ Nhật, không có phiên → KHÔNG lấy giá (kể cả CBAM), không gọi Mục "2" (market_drivers), Mục 1/3/dev/biz
+dùng prompt `news_only`, Mục 3 không có `instrument_notes`/`trading_scenarios`; `content["2"]` giữ khoá rỗng + cờ
+`no_price_data`/`no_price_notice` để frontend (`ReportDocument.tsx`/`ReportEditor.tsx`), Jenny và Lucy QC ẩn/bỏ qua phần giá.
+Lưu ý `AUTO_REPORT_DAYS` mặc định `tue-sat` — muốn tự sinh báo cáo CN/T2 phải đặt lại trong `.env`.
+
 **Hot news email digest** (`services/hot_news_email.py`): at the end of every
 `main.main()` crawl run (mỗi đợt crawl của cả 2 nhóm nguồn — nhóm quốc tế chạy ban đêm giờ VN; bỏ qua trong `HOT_NEWS_EMAIL_QUIET_HOURS`), all `is_hot_news` articles with
 `hot_news_emailed_at IS NULL` (crawled within `HOT_NEWS_EMAIL_MAX_AGE_HOURS`) are
