@@ -1,6 +1,6 @@
 import {
   FileText, Radar, Newspaper, Users, MessageSquareText, MessagesSquare, BrainCircuit, Sparkles,
-  MessageSquareWarning, ClipboardList, BarChart3,
+  MessageSquareWarning, ClipboardList, BarChart3, LineChart,
 } from "lucide-react";
 
 // Điều hướng admin — dùng chung giữa sidebar desktop (admin/layout.tsx) và menu
@@ -21,7 +21,10 @@ export const ADMIN_NAV_GROUPS: { id: string; label: string; items: AdminNavItem[
   {
     id: "stats",
     label: "2. Thống kê & Hiệu suất",
-    items: [{ href: "/admin/performance", label: "Thống kê hiệu suất", icon: BarChart3 }],
+    items: [
+      { href: "/admin/price-dashboard", label: "Dashboard giá", icon: LineChart },
+      { href: "/admin/performance", label: "Thống kê hiệu suất", icon: BarChart3 },
+    ],
   },
   {
     id: "resources",

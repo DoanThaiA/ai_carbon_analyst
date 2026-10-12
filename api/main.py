@@ -26,6 +26,7 @@ from api.routers import (
     admin_quote_chat_examples,
     admin_release_notes,
     admin_reports,
+    admin_prices,
     admin_stats,
     admin_users,
     auth_admin,
@@ -75,6 +76,7 @@ app.include_router(admin_price_sources.router)
 app.include_router(admin_news_sources.router)
 app.include_router(admin_users.router)
 app.include_router(admin_reports.router)
+app.include_router(admin_prices.router)
 app.include_router(admin_stats.router)
 app.include_router(admin_chat_reviews.router)
 app.include_router(admin_eua_framework.router)
