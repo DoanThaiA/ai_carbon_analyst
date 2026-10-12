@@ -44,6 +44,7 @@ export default function AdminReportsPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [targetDate, setTargetDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [range, setRange] = useState<DateRange>({ from: "", to: "" });
   const filtered = filterByDateRange(reports, range);
 
@@ -73,13 +74,12 @@ export default function AdminReportsPage() {
     return () => clearTimeout(timer);
   }, [reports]);
 
-  const handleGenerateToday = async () => {
+  // Báo cáo lưu theo ngày TẠO (ngày được chọn) — backend tự lấy dữ liệu của ngày liền trước
+  // (giá phiên đóng cửa + tin crawl), xem services/report_generator.py::report_data_date.
+  const handleGenerate = async () => {
+    if (!targetDate) return;
     setGenerating(true);
     setError("");
-
-    // Báo cáo lưu theo ngày TẠO (hôm nay) — backend tự lấy dữ liệu của hôm qua
-    // (giá phiên đóng cửa + tin crawl), xem services/report_generator.py::report_data_date.
-    const targetDate = format(new Date(), "yyyy-MM-dd");
 
     try {
       await api.post(`/api/admin/reports/generate?date=${targetDate}`);
@@ -99,14 +99,24 @@ export default function AdminReportsPage() {
           <p className="text-body">Tạo bản draft và duyệt để xuất bản cho user xem</p>
         </div>
 
-        <button onClick={handleGenerateToday} disabled={generating} className="btn-pill">
-          {generating ? (
-            <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-          ) : (
-            <PlusCircle size={20} />
-          )}
-          Tạo báo cáo hôm nay
-        </button>
+        <div className="flex items-center gap-3">
+          <input
+            type="date"
+            value={targetDate}
+            max={format(new Date(), "yyyy-MM-dd")}
+            onChange={e => setTargetDate(e.target.value)}
+            className="border border-border rounded-lg px-3 py-2 bg-surface text-body"
+            aria-label="Ngày báo cáo"
+          />
+          <button onClick={handleGenerate} disabled={generating || !targetDate} className="btn-pill">
+            {generating ? (
+              <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+            ) : (
+              <PlusCircle size={20} />
+            )}
+            {targetDate === format(new Date(), "yyyy-MM-dd") ? "Tạo báo cáo hôm nay" : "Tạo báo cáo"}
+          </button>
+        </div>
       </div>
 
       {error && (

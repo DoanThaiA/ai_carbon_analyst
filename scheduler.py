@@ -160,6 +160,33 @@ async def news_crawl_job(region: str | None = None, label: str = "toàn bộ ngu
 
 # ─── Job 3: Auto-generate Report (07:00) ─────────────────────────────────────
 
+async def _ensure_prices_complete(report_date: str) -> None:
+    """Trước khi sinh báo cáo: nếu có mã giá is_active thiếu dòng ở ngày dữ liệu (đợt crawl
+    06:00 lỗi từng phần, vd TTF timeout) thì crawl giá lại 1 lần rồi kiểm tra lại. Không raise —
+    vẫn sinh báo cáo, chỉ cảnh báo trong log nếu còn thiếu. Bỏ qua báo cáo CN/T2 (không dùng giá)."""
+    from api.deps import async_session_maker
+    from services.report_generator import find_missing_price_codes, is_no_price_report, report_data_date
+
+    if is_no_price_report(report_date):
+        return
+    data_date = report_data_date(report_date)
+    try:
+        async with async_session_maker() as session:
+            missing = await find_missing_price_codes(session, data_date)
+        if not missing:
+            return
+        logger.warning("━━━ [REPORT] Thiếu giá %s ngày %s — crawl giá lại trước khi sinh báo cáo", missing, data_date)
+        await asyncio.get_event_loop().run_in_executor(None, run_crawl_prices)
+        async with async_session_maker() as session:
+            missing = await find_missing_price_codes(session, data_date)
+        if missing:
+            logger.warning("━━━ [REPORT] Sau khi crawl lại vẫn thiếu giá %s — báo cáo sẽ không có các mã này", missing)
+        else:
+            logger.info("━━━ [REPORT] Đã bổ sung đủ giá sau khi crawl lại")
+    except Exception:
+        logger.exception("━━━ [REPORT] Lỗi khi kiểm tra/bổ sung giá — vẫn tiếp tục sinh báo cáo")
+
+
 async def run_auto_report_job() -> None:
     """Tự động sinh 1 báo cáo/ngày, lưu report_date = HÔM NAY (VN) — chạy sau đợt news
     crawl 06:00 (nguồn trong nước).Dữ liệu trong báo cáo vẫn là của hôm qua (giá phiên đóng cửa hôm qua,
@@ -203,6 +230,7 @@ async def run_auto_report_job() -> None:
         await session.commit()
 
     try:
+        await _ensure_prices_complete(target_date)
         await _run_report_generation_job(target_date)
         logger.info("✅ [SCHEDULER] Auto Report Job hoàn thành cho ngày %s.", target_date)
     except Exception:

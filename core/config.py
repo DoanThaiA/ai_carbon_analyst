@@ -98,6 +98,9 @@ class Settings:
     # Cửa sổ ngày đăng bài khi crawl (pipeline/crawl_pipeline.py::process_source):
     # chỉ nhận bài đăng trong N giờ gần nhất.
     crawl_lookback_hours: int = 36
+    # Gửi email PDF báo cáo cho user ngay sau khi admin duyệt (services/report_email.py).
+    # Cần APP_BASE_URL (trang frontend để Chromium render PDF) + Resend đã cấu hình.
+    report_pdf_email_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -152,5 +155,6 @@ class Settings:
             app_base_url=os.environ.get("APP_BASE_URL", "").rstrip("/"),
             auto_report_days=os.environ.get("AUTO_REPORT_DAYS", "tue-sat").strip().lower() or "tue-sat",
             hot_news_email_quiet_hours=os.environ.get("HOT_NEWS_EMAIL_QUIET_HOURS", "").strip(),
+            report_pdf_email_enabled=os.environ.get("REPORT_PDF_EMAIL_ENABLED", "true").lower() == "true",
             crawl_lookback_hours=int(os.environ.get("CRAWL_LOOKBACK_HOURS", "36")),
         )

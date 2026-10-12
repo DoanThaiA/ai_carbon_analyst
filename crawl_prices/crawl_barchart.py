@@ -66,6 +66,8 @@ HISTORICAL_API_PATH = "proxies/core-api/v1/historical/get"
 PAGE_TIMEOUT_MS    = 30_000
 MIN_VALID_PRICE    = 0.01
 MAX_RESULTS_PER_SYMBOL = 30  # chỉ upsert tối đa 30 phiên gần nhất mỗi lần chạy
+MAX_FETCH_ATTEMPTS = 3       # số lần thử fetch+parse mỗi symbol trước khi bỏ cuộc
+RETRY_BACKOFF_SECONDS = 5    # chờ attempt * giá trị này giữa các lần thử
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -309,6 +311,27 @@ async def _upsert(results: list[dict], spec: BarchartSpec, session_factory) -> N
                 await session.execute(stmt)
 
 
+async def _fetch_and_parse_with_retry(
+    context: BrowserContext, spec: BarchartSpec, target_date: date
+) -> list[dict]:
+    """Fetch + parse 1 symbol, thử lại tối đa MAX_FETCH_ATTEMPTS lần (timeout/WAF/phiên
+    chưa có...) — tránh 1 lỗi tạm thời làm mất hẳn giá của mã đó trong báo cáo sáng."""
+    for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
+        try:
+            data = await _fetch_historical_json(context, spec)
+            return _parse_historical_json(data, spec, target_date)
+        except Exception as exc:
+            if attempt == MAX_FETCH_ATTEMPTS:
+                raise
+            logger.warning(
+                "Barchart %s lỗi lần %d/%d (%s: %s) — thử lại sau %ds",
+                spec.symbol, attempt, MAX_FETCH_ATTEMPTS,
+                type(exc).__name__, exc, attempt * RETRY_BACKOFF_SECONDS,
+            )
+            await asyncio.sleep(attempt * RETRY_BACKOFF_SECONDS)
+    raise RuntimeError("unreachable")
+
+
 # ---------------------------------------------------------------------------
 # Crawler class
 # ---------------------------------------------------------------------------
@@ -360,11 +383,8 @@ class BarchartPriceCrawler(BaseCrawler):
 
                 for spec in specs:
                     try:
-                        # 1. Mở trang price-history + chặn response JSON
-                        data = await _fetch_historical_json(context, spec)
-
-                        # 2. Parse
-                        results = _parse_historical_json(data, spec, target_date)
+                        # 1+2. Mở trang price-history, chặn response JSON và parse (có retry)
+                        results = await _fetch_and_parse_with_retry(context, spec, target_date)
 
                         # 3. Lưu DB
                         await _upsert(results, spec, session_factory)

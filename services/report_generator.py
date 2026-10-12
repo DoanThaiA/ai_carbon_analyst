@@ -572,6 +572,34 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
     return prices, max_date
 
 
+async def find_missing_price_codes(session: AsyncSession, target_date_str: str) -> List[str]:
+    """Mã đang is_active trong price_crawl_sources nhưng KHÔNG có dòng giá nào ở đúng ngày
+    `max(price_date) <= target_date_str` mà báo cáo sẽ dùng (cùng ngày với
+    get_prices_for_report). Dùng để phát hiện đợt crawl giá lỗi từng phần trước khi sinh báo cáo."""
+    max_date = await session.scalar(
+        select(func.max(Price.price_date))
+        .join(Instrument, Price.instrument_id == Instrument.id)
+        .where(Price.price_date <= target_date_str, Instrument.code != CBAM_CODE)
+    )
+    if not max_date:
+        return []
+    active_codes = (
+        await session.scalars(
+            select(PriceCrawlSource.instrument_code).where(PriceCrawlSource.is_active.is_(True))
+        )
+    ).all()
+    have_codes = set(
+        (
+            await session.scalars(
+                select(Instrument.code)
+                .join(Price, Price.instrument_id == Instrument.id)
+                .where(Price.price_date == max_date)
+            )
+        ).all()
+    )
+    return sorted(c for c in active_codes if c != CBAM_CODE and c not in have_codes)
+
+
 async def get_historical_ohlc_for_report(
     session: AsyncSession, instrument_code: str, target_date_str: str, limit: int = 30
 ) -> List[Dict]:

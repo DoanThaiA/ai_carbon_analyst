@@ -317,6 +317,8 @@ class Report(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Thời điểm đã gửi email PDF báo cáo cho user (services/report_email.py) — NULL = chưa gửi.
+    pdf_emailed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self) -> str:
         return f"Report(id={self.id!r}, date={self.report_date!r}, status={self.status!r})"

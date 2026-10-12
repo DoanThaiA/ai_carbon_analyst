@@ -11,6 +11,7 @@ KHÔNG dùng được địa chỉ @gmail.com làm người gửi. Chưa có dom
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import html
 import logging
@@ -327,4 +328,93 @@ async def send_hot_news_digest_email(
 
     if sent == 0:
         raise EmailSendError(f"Không gửi được email hot news tới lô người nhận nào: {last_error}")
+    return sent
+
+
+# ─── Báo cáo ngày (PDF đính kèm) ─────────────────────────────────────────────
+
+# Resend /emails/batch KHÔNG hỗ trợ attachments → gửi từng người qua POST /emails, tuần tự,
+# nghỉ giữa các email để không chạm rate limit (mặc định 2 request/giây; _post vẫn retry 429).
+_REPORT_EMAIL_PAUSE_SECONDS = 0.6
+
+
+def build_report_email_message(report_date: str, settings: Settings) -> tuple[str, str, str]:
+    """(subject, text, html) cho email báo cáo ngày — hàm thuần, không gửi."""
+    try:
+        shown = datetime.strptime(report_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        shown = report_date
+    subject = f"Báo cáo Carbon Analyst ngày {shown}"
+    link = f"{settings.app_base_url}/reports/{report_date}" if settings.app_base_url else ""
+    text = (
+        f"Báo cáo Carbon Analyst ngày {shown} đã được duyệt. Bản PDF được đính kèm email này."
+        + (f"\n\nXem trên web: {link}" if link else "")
+        + "\n\n"
+        + _FOOTER_NOTE
+    )
+    esc = html.escape
+    link_html = (
+        f'<p style="margin:12px 0 0;font-size:14px;"><a href="{esc(link, quote=True)}" '
+        'style="color:#1d4ed8;">Xem trên web</a></p>'
+        if link
+        else ""
+    )
+    body = (
+        '<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8">'
+        f"<title>{esc(subject)}</title></head>"
+        '<body style="margin:0;padding:24px 12px;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">'
+        '<div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;'
+        'border-radius:8px;padding:20px 22px;">'
+        '<p style="margin:0;font-size:13px;font-weight:600;color:#6b7280;">Carbon Analyst</p>'
+        f'<p style="margin:6px 0 0;font-size:18px;font-weight:700;color:#111827;">{esc(subject)}</p>'
+        '<p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#374151;">'
+        "Báo cáo đã được duyệt. Bản PDF được đính kèm email này.</p>"
+        f"{link_html}"
+        f'<p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;">{esc(_FOOTER_NOTE)}</p>'
+        "</div></body></html>"
+    )
+    return subject, text, body
+
+
+async def send_report_pdf_email(
+    report_date: str, pdf_bytes: bytes, recipients: Sequence[str], settings: Settings
+) -> List[str]:
+    """Gửi PDF báo cáo `report_date` cho từng người trong `recipients` (mỗi người 1 email
+    riêng, nên không ai thấy email người khác). Trả về danh sách email gửi THÀNH CÔNG;
+    lỗi từng người chỉ log rồi gửi tiếp. Chỉ raise EmailSendError khi không gửi được ai."""
+    _require_configured(settings, "báo cáo")
+    if not recipients:
+        return []
+
+    subject, text, body = build_report_email_message(report_date, settings)
+    attachment = {
+        "filename": f"carbon-analyst-report-{report_date}.pdf",
+        "content": base64.b64encode(pdf_bytes).decode("ascii"),
+    }
+    sent: List[str] = []
+    last_error: Optional[Exception] = None
+    async with _http_client(settings) as client:
+        for i, email in enumerate(recipients):
+            if i:
+                await asyncio.sleep(_REPORT_EMAIL_PAUSE_SECONDS)
+            payload = {
+                **_sender_fields(settings),
+                "to": [email],
+                "subject": subject,
+                "text": text,
+                "html": body,
+                "attachments": [attachment],
+            }
+            try:
+                # Idempotency-Key theo (ngày, người nhận): gửi lại do timeout không tạo email trùng (24h).
+                key = "report-pdf/" + hashlib.sha256(f"{report_date}|{email}".encode()).hexdigest()
+                resp = await _post(client, "/emails", payload, key)
+                sent.append(email)
+                logger.info("[REPORT-EMAIL] Resend chấp nhận %s — id=%s", email, (resp or {}).get("id"))
+            except EmailSendError as exc:
+                last_error = exc
+                logger.exception("[REPORT-EMAIL] Gửi PDF báo cáo %s cho %s thất bại", report_date, email)
+
+    if not sent:
+        raise EmailSendError(f"Không gửi được PDF báo cáo {report_date} cho ai: {last_error}")
     return sent

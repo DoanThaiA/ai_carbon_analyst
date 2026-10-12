@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -8,9 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import defer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import async_session_maker, get_current_admin, get_db
+from api.deps import async_session_maker, get_current_admin, get_db, settings
 from db.models import Report
 from services import biz_memory
+from services.report_email import send_report_pdf_to_users
 from services.report_generator import generate_report_content
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,16 @@ async def generate_report(date: str, background_tasks: BackgroundTasks, session:
     request), tránh 504 timeout ở reverse proxy khi sinh report mất vài phút.
     Trả về ngay status='generating'; client tự poll GET /{date} để biết khi xong.
     """
+    # Cho phép sinh báo cáo cho NGÀY BẤT KỲ trong quá khứ (backfill), chỉ chặn sai định dạng
+    # và ngày tương lai (chưa có giá/tin). Ngày so theo giờ VN.
+    try:
+        parsed = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="date phải có định dạng YYYY-MM-DD")
+    today_vn = datetime.now(timezone(timedelta(hours=7))).date()
+    if parsed > today_vn:
+        raise HTTPException(status_code=422, detail="Không thể sinh báo cáo cho ngày trong tương lai")
+
     stmt = select(Report).where(Report.report_date == date)
     result = await session.execute(stmt)
     report = result.scalars().first()
@@ -129,8 +140,9 @@ async def generate_report(date: str, background_tasks: BackgroundTasks, session:
 
 
 @router.post("/{date}/publish")
-async def publish_report(date: str, session: AsyncSession = Depends(get_db)):
-    """Admin duyệt: chốt bản draft thành published để hiện lên màn hình user."""
+async def publish_report(date: str, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_db)):
+    """Admin duyệt: chốt bản draft thành published để hiện lên màn hình user, rồi gửi NỀN
+    email PDF báo cáo cho mọi user is_active (services/report_email.py)."""
     stmt = select(Report).where(Report.report_date == date)
     result = await session.execute(stmt)
     report = result.scalars().first()
@@ -147,7 +159,27 @@ async def publish_report(date: str, session: AsyncSession = Depends(get_db)):
     report.published_at = datetime.utcnow()
     await session.commit()
 
+    background_tasks.add_task(_send_report_email_job, date)
     return {"message": f"Report for {date} published successfully."}
+
+
+async def _send_report_email_job(date: str, force: bool = False) -> None:
+    await send_report_pdf_to_users(async_session_maker, settings, date, force=force)
+
+
+@router.post("/{date}/send-email", status_code=202)
+async def resend_report_email(date: str, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_db)):
+    """Gửi lại email PDF cho báo cáo ĐÃ published (vd lần gửi sau khi duyệt bị lỗi) — bỏ qua cờ
+    pdf_emailed_at, nên user sẽ nhận email lần nữa."""
+    report = (
+        await session.execute(select(Report).options(defer(Report.content)).where(Report.report_date == date))
+    ).scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.status != "published":
+        raise HTTPException(status_code=400, detail="Chỉ gửi email cho báo cáo đã duyệt (published).")
+    background_tasks.add_task(_send_report_email_job, date, True)
+    return {"message": f"Đang gửi lại email PDF báo cáo {date}."}
 
 
 @router.post("/{date}/unpublish")
@@ -157,7 +189,7 @@ async def unpublish_report(
     admin: dict = Depends(get_current_admin),
 ):
     """Admin đưa báo cáo đã xuất bản về lại draft để sửa — user không còn thấy báo cáo
-    (mọi API phía user chỉ lọc status='published') cho tới khi duyệt lại. Lúc duyệt không
+    (mọi API phía user chỉ lọc status='published') cho tới khi duyệt lại. Duyệt lại sẽ không gửi lại email PDF (đã có pdf_emailed_at) — admin gửi lại bằng POST /send-email. Lúc duyệt không
     có tác dụng phụ nào khác (email, thông báo...) nên chỉ cần đổi lại status."""
     stmt = select(Report).options(defer(Report.content)).where(Report.report_date == date)
     report = (await session.execute(stmt)).scalars().first()
