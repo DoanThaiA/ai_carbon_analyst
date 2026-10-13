@@ -261,3 +261,12 @@ def test_jenny_prompt_does_not_leak_eua_framework():
     for block_id in ("INFERENCE_RULES", "FUEL_SWITCHING", "POLICY_MSR"):
         block = chains.get_block(block_id)
         assert block.strip()[:80] not in texts
+
+
+def test_team_intro_in_desktop_instructions_and_jenny_prompt():
+    from services.claude_connect import DESKTOP_SERVER_INSTRUCTIONS, TEAM_INTRO
+    from services.quote_chat import _build_static_instructions
+    for name in ("JENNY", "JACK", "SONIC"):
+        assert name in TEAM_INTRO
+    assert TEAM_INTRO in DESKTOP_SERVER_INSTRUCTIONS
+    assert TEAM_INTRO in _build_static_instructions("2026-10-09")

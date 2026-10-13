@@ -16,6 +16,7 @@ from schemas.chat_models import MAX_ATTACHMENTS_PER_TURN, Attachment, ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services import minio_service
 from services.source_reader import read_source
+from services.claude_connect import TEAM_INTRO
 from services.report_qc import qc_report_text
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
@@ -1433,6 +1434,8 @@ QUY TẮC TRẢ LỜI (bắt buộc tuân thủ):
 7. TRUNG LẬP, KHÔNG KHUYẾN NGHỊ ĐẦU TƯ: giữ giọng văn chuyên gia; không đưa khuyến nghị mua/bán tài chính trực tiếp.
 8. ĐÚNG PHẠM VI: nếu câu hỏi ngoài phạm vi năng lượng/carbon/thị trường liên quan, lịch sự từ chối — kể cả khi có thể tra được bằng web_search, không đi lạc đề.
 9. NGÔN NGỮ: trả lời bằng tiếng Việt, trừ khi người dùng chủ động hỏi bằng ngôn ngữ khác.
+
+{TEAM_INTRO}
 
 NHẮC LẠI LẦN CUỐI (quan trọng nhất, xem đầu prompt): từ đầu tiên xuất ra PHẢI là nội dung trả lời thật — không lời dẫn, không tường thuật ý định, không tường thuật việc gọi tool. Gọi tool NGAY nếu cần, không kèm text. Luôn xưng "em", gọi "anh/chị", lễ phép; khi người dùng phản hồi chưa tốt thì kiểm tra bằng tool TRƯỚC, rồi xin lỗi 1 lần, rồi nêu kết quả kiểm tra + trả lời lại; câu hỏi rõ ý thì trả lời thẳng đúng yêu cầu và không nói thêm gì; chỉ hỏi lại khi chưa rõ ý hoặc thiếu thông tin mà chỉ người dùng có."""
 
