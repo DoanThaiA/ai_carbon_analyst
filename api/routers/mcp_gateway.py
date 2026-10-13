@@ -32,6 +32,7 @@ from schemas.claude_models import (
 from services.claude_connect import (
     DESKTOP_PROMPTS,
     DESKTOP_SERVER_INSTRUCTIONS,
+    JACK_QC_DESKTOP_TOOL,
     RateLimiter,
     adapt_tools_for_desktop,
     build_desktop_prompt,
@@ -45,12 +46,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mcp-gateway", tags=["mcp-gateway"])
 
-_TOOLS_BY_NAME = {t["name"]: t for t in CLIENT_TOOLS}
+_TOOLS_BY_NAME = {t["name"]: t for t in [*CLIENT_TOOLS, JACK_QC_DESKTOP_TOOL]}
 # Mô tả đã chỉnh cho ngữ cảnh Claude Desktop — tính 1 lần (CLIENT_TOOLS là hằng số). Client >= 0.1.1
 # gửi header X-Carbon-MCP-Client và nhận ngữ cảnh chung qua GET /instructions, nên mô tả tool không cần
 # nối lặp ghi chú ngữ cảnh; client 0.1.0 (không gửi header) vẫn nhận bản có ghi chú như cũ.
-_DESKTOP_TOOLS = adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=False)
-_DESKTOP_TOOLS_LEGACY = adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=True)
+_DESKTOP_TOOLS = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=False), JACK_QC_DESKTOP_TOOL]
+_DESKTOP_TOOLS_LEGACY = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=True), JACK_QC_DESKTOP_TOOL]
 
 # 60 tool call/phút/token — chặn vòng lặp tool lỡ tay (search_news còn tốn Cohere).
 _rate_limiter = RateLimiter(max_calls=60, window_seconds=60)
@@ -61,6 +62,7 @@ _rate_limiter = RateLimiter(max_calls=60, window_seconds=60)
 _REPORT_INDEPENDENT_TOOLS = frozenset(
     {"search_news", "get_article", "get_calendar_events", "list_reports", "fetch_user_source"}
 )
+# jack_qc neo theo ngày báo cáo (resolve về báo cáo published) nên không nằm trong tập trên.
 _VN_TZ = timezone(timedelta(hours=7))
 
 
@@ -161,6 +163,7 @@ async def call_tool(
         tool_cache={},
         chart_cache={},
         retrieval_service=retrieval_service,
+        allow_jack_qc=True,
     )
     return GatewayToolResult(
         result=result, report_date=None if name in _REPORT_INDEPENDENT_TOOLS else report_date

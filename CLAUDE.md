@@ -169,7 +169,7 @@ lỗi tạm thời được thử lại tới `SEEN_MAX_ATTEMPTS` lần. Lọc n
 **Báo cáo Chủ Nhật/Thứ Hai = chỉ tin tức** (`report_generator.py::is_no_price_report`): ngày dữ liệu
 là Thứ Bảy/Chủ Nhật, không có phiên → KHÔNG lấy giá (kể cả CBAM), không gọi Mục "2" (market_drivers), Mục 1/3/dev/biz
 dùng prompt `news_only`, Mục 3 không có `instrument_notes`/`trading_scenarios`; `content["2"]` giữ khoá rỗng + cờ
-`no_price_data`/`no_price_notice` để frontend (`ReportDocument.tsx`/`ReportEditor.tsx`), Jenny và Lucy QC ẩn/bỏ qua phần giá.
+`no_price_data`/`no_price_notice` để frontend (`ReportDocument.tsx`/`ReportEditor.tsx`), Jenny và Jack QC ẩn/bỏ qua phần giá.
 Lưu ý `AUTO_REPORT_DAYS` mặc định `tue-sat` — muốn tự sinh báo cáo CN/T2 phải đặt lại trong `.env`.
 
 **Hot news email digest** (`services/hot_news_email.py`): at the end of every
@@ -199,10 +199,12 @@ bản mới = tăng version ở `mcp_client/pyproject.toml` + `MCP_CLIENT_VERSIO
 `frontend/src/lib/claudeConnect.ts`, rồi chạy `scripts/build_mcp_client.sh`. Tên file wheel BẮT BUỘC có
 phiên bản hợp lệ (uv đọc phiên bản từ tên file) — không dùng kiểu `-latest.whl`.
 
-**Lucy QC báo cáo** (`services/report_qc.py`): tool `lucy_qc` của Jenny chat, CHỈ bật cho admin
-(`ADMIN_TOOLS` trong `services/quote_chat.py`, không nằm trong `CLIENT_TOOLS` nên MCP gateway không thấy;
-`_execute_client_tool(..., allow_admin_tools=...)` chặn thêm ở tầng thực thi). Khi gọi, UI hiện trạng thái
-"Đang giao cho Lucy QC báo cáo — Lucy đang đối chiếu dữ liệu trên hệ thống..."; người dùng gọi tên "Lucy" là Jenny gọi tool (xem mô tả tool) (`LUCY_TOOLS` → `StatusEvent`). Toàn bộ là Python
+**Jack QC báo cáo** (`services/report_qc.py`): tool `jack_qc` (tên cũ Lucy): trong Jenny chat web CHỈ bật cho admin
+(`ADMIN_TOOLS` trong `services/quote_chat.py`; `_execute_client_tool(..., allow_admin_tools=...)` chặn thêm ở tầng
+thực thi, admin QC được cả bản draft). Trên MCP/Claude Desktop, gateway thêm riêng `JACK_QC_DESKTOP_TOOL`
+(`services/claude_connect.py`, mô tả bảo Claude hoá vai Jack) cho mọi user có token và gọi với `allow_jack_qc=True` →
+chỉ QC báo cáo `published` (`qc_report_text(..., published_only=True)`). Khi gọi, UI hiện trạng thái
+"Đang giao cho Jack QC báo cáo — Jack đang đối chiếu dữ liệu trên hệ thống..."; người dùng gọi tên "Jack" là Jenny gọi tool (xem mô tả tool) (`JACK_TOOLS` → `StatusEvent`). Toàn bộ là Python
 rule-based, KHÔNG gọi LLM: giá Mục 2 ↔ bảng `prices`, kịch bản Mục 3 ↔ nhãn "**Tổng hợp:**", URL nguồn
 Mục 1/4/9 ↔ `articles`, lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurring_calendar_events`, gợi ý biz ↔
 `biz_suggestions.trigger_rule`, độ phủ tin tức ↔ bài crawl trong khung tin của báo cáo (cùng khung với

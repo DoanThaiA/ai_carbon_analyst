@@ -1,8 +1,8 @@
-"""Test phần THUẦN của Lucy QC — services/report_qc.py (không đụng DB/LLM).
+"""Test phần THUẦN của Jack QC — services/report_qc.py (không đụng DB/LLM).
 
 GOLDEN là 1 báo cáo SẠCH dựng đúng định dạng generate_report_content() xuất ra — phải
 ra 0 vấn đề (không báo sai). Các test còn lại cài từng loại lỗi vào bản sao của GOLDEN
-và kiểm Lucy bắt đúng lỗi đó (không bỏ sót).
+và kiểm Jack bắt đúng lỗi đó (không bỏ sót).
 """
 import asyncio
 import copy
@@ -340,7 +340,15 @@ def test_format_qc_report():
 
 def test_qc_tool_is_admin_only():
     from services import quote_chat
-    assert "lucy_qc" not in {t["name"] for t in quote_chat.CLIENT_TOOLS}  # MCP gateway / role user không thấy
-    assert "lucy_qc" in {t["name"] for t in quote_chat.ADMIN_TOOLS}
-    out = asyncio.run(quote_chat._execute_client_tool("lucy_qc", {}, None, REPORT_DATE, tool_cache={}, chart_cache={}))
+    assert "jack_qc" not in {t["name"] for t in quote_chat.CLIENT_TOOLS}  # MCP gateway / role user không thấy
+    assert "jack_qc" in {t["name"] for t in quote_chat.ADMIN_TOOLS}
+    out = asyncio.run(quote_chat._execute_client_tool("jack_qc", {}, None, REPORT_DATE, tool_cache={}, chart_cache={}))
     assert "chỉ dành cho quản trị viên" in out
+
+
+def test_jack_qc_exposed_on_mcp_gateway():
+    from api.routers import mcp_gateway
+    names = {t["name"] for t in mcp_gateway._DESKTOP_TOOLS}
+    assert "jack_qc" in names and "jack_qc" in mcp_gateway._TOOLS_BY_NAME
+    desc = next(t["description"] for t in mcp_gateway._DESKTOP_TOOLS if t["name"] == "jack_qc")
+    assert "HOÁ VAI JACK" in desc and "Lucy" not in desc

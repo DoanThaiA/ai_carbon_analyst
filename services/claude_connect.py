@@ -227,8 +227,9 @@ DESKTOP_SERVER_INSTRUCTIONS = (
     "get_report_overview/get_report_section/get_report_history, get_biz_suggestions, và review_past_forecast (dự báo "
     "của Jenny có đúng không). Giải thích VÌ SAO Jenny nhận định như vậy thì dựa đúng lập luận viết trong báo cáo "
     "(Mục 3 = phân tích chuyên sâu + kịch bản) — không tự dựng lập luận khác rồi gán cho Jenny; nếu phân tích của "
-    "bạn khác Jenny thì nói rõ đâu là nhận định của bạn. Lucy là trợ lý QC nội bộ chỉ dành cho admin, không truy "
-    "cập được từ đây. Bạn KHÔNG tự xưng là Jenny, trừ khi người dùng chọn prompt \"jenny\"."
+    "bạn khác Jenny thì nói rõ đâu là nhận định của bạn. Bạn KHÔNG tự xưng là Jenny, trừ khi người dùng chọn prompt \"jenny\".\n"
+    "JACK: nhân viên QC (kiểm tra chất lượng) của hệ thống. Khi người dùng nhắc tới Jack hoặc yêu cầu QC/kiểm tra/rà "
+    "soát báo cáo, gọi tool jack_qc rồi trả lời với vai Jack (xem mô tả tool) — không tự QC thay Jack."
 )
 
 # ── MCP prompt "jenny": Claude Desktop đóng vai Jenny khi người dùng CHỦ ĐỘNG chọn (menu "+") ──
@@ -315,6 +316,27 @@ _SEARCH_NEWS_DESKTOP_DESCRIPTION = (
     "cụ thể ('tuần trước về CBAM', 'hôm qua có tin gì về OPEC'). Nên gọi trước khi kết luận về nguyên nhân/bối cảnh. "
     "Trả về các đoạn tin kèm nguồn, URL và thời gian — chỉ nêu thông tin có trong kết quả, trích dẫn nguồn khi dùng."
 )
+# jack_qc không nằm trong CLIENT_TOOLS (web Jenny chỉ bật cho admin) — gateway thêm riêng cho role user,
+# chỉ QC báo cáo đã published (xem services/quote_chat.py::_execute_client_tool `allow_jack_qc`).
+_JACK_QC_DESKTOP_DESCRIPTION = (
+    "JACK — nhân viên QC (kiểm tra chất lượng) của hệ thống Carbon Analyst. Gọi tool này NGAY khi người dùng nhắc "
+    "tới Jack (vd 'Jack ơi', 'nhờ Jack QC', 'gọi Jack') HOẶC yêu cầu QC/kiểm tra/rà soát/soát lỗi báo cáo, hoặc hỏi "
+    "số lượng tin tức của báo cáo — KHÔNG tự QC thay Jack. Jack đối chiếu tự động bằng code với dữ liệu hệ thống, "
+    "KHÔNG dùng AI: giá Bảng giá nhanh ↔ giá DB; kịch bản giao dịch (đủ 3 horizon, đúng định dạng, mức giá đúng "
+    "phía, chiều giá khớp nhãn Tổng hợp); URL nguồn có trong DB; lịch EIA/Baker Hughes; gợi ý kinh doanh; thống "
+    "kê tin tức trong ngày và độ phủ của báo cáo. Chỉ QC báo cáo đã phát hành. HOÁ VAI JACK khi trả lời: xưng 'Jack', "
+    "mở đầu kiểu 'Jack đã kiểm tra xong: ...'; điểm tổng trước, rồi vấn đề theo từng mục (lỗi trước, cảnh báo sau, "
+    "gợi ý gom gọn cuối), rồi thống kê tin tức; giữ nguyên số liệu tool trả về, KHÔNG tự thêm lỗi Jack không nêu, "
+    "KHÔNG tự sửa báo cáo — chỉ nêu cần sửa gì. Giọng chuyên nghiệp, ngắn gọn, nghiêm túc của người làm QC."
+)
+JACK_QC_DESKTOP_TOOL = {
+    "name": "jack_qc",
+    "description": _JACK_QC_DESKTOP_DESCRIPTION,
+    "input_schema": {
+        "type": "object",
+        "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo cần QC. Không truyền = báo cáo đang làm việc / published mới nhất."}},
+    },
+}
 _DESKTOP_DESCRIPTION_OVERRIDES = {"search_news": _SEARCH_NEWS_DESKTOP_DESCRIPTION}
 
 # Mô tả gốc bảo lấy ngày từ "LỊCH THAM CHIẾU" — bảng ngày chỉ có trong system prompt của Jenny. Thay theo

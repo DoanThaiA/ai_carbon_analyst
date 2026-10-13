@@ -1,4 +1,4 @@
-"""Lucy — QC báo cáo ngày, chạy dưới dạng tool `lucy_qc` của Jenny chat (chỉ admin —
+"""Jack — QC báo cáo ngày, chạy dưới dạng tool `jack_qc` của Jenny chat (chỉ admin —
 xem services/quote_chat.py::ADMIN_TOOLS). Toàn bộ là check RULE-BASED bằng Python, KHÔNG gọi
 LLM: đối chiếu nội dung JSON báo cáo (`reports.content`) với dữ liệu thật trong DB / lịch cố định.
 
@@ -1034,7 +1034,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
 def format_qc_report(report_date: str, status: str, result: Dict[str, Any]) -> str:
     """Văn bản kết quả QC trả về cho Jenny (tool_result) — Jenny dựa vào đây để trình bày cho admin."""
     lines = [
-        f"KẾT QUẢ QC BÁO CÁO NGÀY {report_date} (trạng thái: {status}) — Lucy kiểm tra tự động bằng cách "
+        f"KẾT QUẢ QC BÁO CÁO NGÀY {report_date} (trạng thái: {status}) — Jack kiểm tra tự động bằng cách "
         "đối chiếu nội dung báo cáo với dữ liệu hệ thống (giá, tin tức, lịch, bộ nhớ gợi ý). Không dùng AI.",
         f"ĐIỂM TỔNG: {result['overall_score']}/100 (mỗi hạng mục 100 điểm, trừ 25/lỗi, 10/cảnh báo, 2/gợi ý).",
         "Điểm từng hạng mục: " + " | ".join(f"{CHECK_LABELS[c]} {result['scores'][c]}" for c in CHECKS),
@@ -1061,11 +1061,14 @@ def format_qc_report(report_date: str, status: str, result: Dict[str, Any]) -> s
     return "\n".join(lines)
 
 
-async def qc_report_text(session: AsyncSession, report_date: str) -> str:
-    """Entry point cho tool `lucy_qc` của Jenny chat."""
+async def qc_report_text(session: AsyncSession, report_date: str, *, published_only: bool = False) -> str:
+    """Entry point cho tool `jack_qc` của Jenny chat."""
     report = (await session.execute(select(Report).where(Report.report_date == report_date))).scalars().first()
     if not report:
         return f"Không có báo cáo nào ngày {report_date}."
+    if published_only and report.status != "published":
+        # Người dùng thường (MCP) chỉ được QC báo cáo đã phát hành — không lộ bản draft.
+        return f"Không có báo cáo đã phát hành cho ngày {report_date}."
     if report.status == "generating":
         return f"Báo cáo ngày {report_date} đang được sinh — chưa QC được, hãy thử lại sau ít phút."
     if not report.content:

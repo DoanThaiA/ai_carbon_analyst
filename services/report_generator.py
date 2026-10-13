@@ -1713,7 +1713,7 @@ def _prompt_section3_news_only(
     """Mục 3 cho báo cáo không có phiên giá (is_no_price_report): CHỈ "analysis_blocks"
     dựa trên tin tức — không "instrument_notes" (cột ghi chú bảng giá) và không
     "trading_scenarios" (vùng giá/Entry/Mục tiêu/cắt lỗ đều cần giá). Giữ đúng định dạng
-    dòng "Tên nhóm: <kết luận>" và "**Tổng hợp:** [NHÃN]" để frontend/Lucy QC đọc được."""
+    dòng "Tên nhóm: <kết luận>" và "**Tổng hợp:** [NHÃN]" để frontend/Jack QC đọc được."""
     framework = _eua_framework(topics_present, full=True, overrides=overrides, news_only=True)
     system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
     user = f"""Ngày báo cáo: {target_date}
@@ -2316,7 +2316,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
 
     raw_drivers = section2_data.get("market_drivers") or {"bullish": [], "bearish": []}
     if no_price:
-        # Giữ đủ khoá cũ (rỗng) để frontend/Jenny/Lucy QC đọc an toàn; "no_price_data"
+        # Giữ đủ khoá cũ (rỗng) để frontend/Jenny/Jack QC đọc an toàn; "no_price_data"
         # là cờ để ẩn bảng giá, biểu đồ, thanh giá và khối KHUYẾN NGHỊ VỊ THẾ.
         content["2"] = {
             "title": "Diễn biến chính",

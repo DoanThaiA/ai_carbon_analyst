@@ -1,5 +1,5 @@
 """Báo cáo Chủ Nhật/Thứ Hai (ngày dữ liệu cuối tuần, không có phiên giao dịch) — chỉ phân
-tích tin tức: không prompt nào chứa dữ liệu giá, Lucy QC không đòi bảng giá/kịch bản giao
+tích tin tức: không prompt nào chứa dữ liệu giá, Jack QC không đòi bảng giá/kịch bản giao
 dịch và bắt được phần giá còn sót."""
 import copy
 
