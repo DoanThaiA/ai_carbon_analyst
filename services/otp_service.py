@@ -9,7 +9,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
@@ -57,6 +57,14 @@ async def request_otp(session: AsyncSession, email: str, settings: Settings) -> 
     if latest is not None and (now - latest.created_at) < timedelta(seconds=RESEND_COOLDOWN_SECONDS):
         raise OtpError("Vui lòng đợi ít nhất 60 giây trước khi yêu cầu mã mới.", status_code=429)
 
+    # Vô hiệu hoá mọi mã cũ chưa dùng — mỗi email chỉ có 1 mã hiệu lực, tránh
+    # verify_otp bắt nhầm mã cũ đã hết hạn.
+    await session.execute(
+        update(OtpCode)
+        .where(OtpCode.email == email, OtpCode.consumed_at.is_(None))
+        .values(consumed_at=now)
+    )
+
     code = _generate_code()
     otp = OtpCode(
         email=email,
@@ -67,7 +75,14 @@ async def request_otp(session: AsyncSession, email: str, settings: Settings) -> 
     await session.commit()
 
     # Gửi mã qua email (Resend). Chưa cấu hình Resend → EmailSendError (API trả 502).
-    await send_otp_email(email, code, settings)
+    try:
+        await send_otp_email(email, code, settings)
+    except Exception:
+        # Gửi lỗi → mã người dùng không nhận được; huỷ để không thành mã "ma" mới nhất,
+        # và bỏ cooldown để họ thử lại ngay.
+        await session.delete(otp)
+        await session.commit()
+        raise
     return True
 
 

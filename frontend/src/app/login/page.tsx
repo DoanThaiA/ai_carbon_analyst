@@ -50,6 +50,8 @@ function UserLoginForm() {
       setInfo(res.data.message || "Mã OTP đã được gửi.");
       setStep("otp");
     } catch (err: any) {
+      // 429 = vừa gửi mã trong 60s qua → mã trước vẫn còn hiệu lực, cho nhập tiếp.
+      if (err.response?.status === 429) setStep("otp");
       setError(err.response?.data?.detail || "Không gửi được mã OTP.");
     } finally {
       setLoading(false);
