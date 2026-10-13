@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Pencil, Trash2, Save, X, AlertCircle } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 
 interface PriceSource {
@@ -27,6 +28,7 @@ const EMPTY_FORM = {
 };
 
 export default function PriceSourcesPage() {
+  const t = useTranslations("adminSrcPrice");
   const [sources, setSources] = useState<PriceSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,7 +42,7 @@ export default function PriceSourcesPage() {
       const res = await api.get("/api/admin/price-sources");
       setSources(res.data);
     } catch (err) {
-      setError("Không thể tải danh sách nguồn giá.");
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
@@ -59,7 +61,7 @@ export default function PriceSourcesPage() {
       setShowAddForm(false);
       await fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi thêm nguồn giá.");
+      setError(err.response?.data?.detail || t("createError"));
     }
   };
 
@@ -76,17 +78,17 @@ export default function PriceSourcesPage() {
       setEditingId(null);
       await fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi cập nhật nguồn giá.");
+      setError(err.response?.data?.detail || t("updateError"));
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Xoá nguồn giá này? Crawler sẽ không lấy giá cho hợp đồng này nữa.")) return;
+    if (!confirm(t("deleteConfirm"))) return;
     try {
       await api.delete(`/api/admin/price-sources/${id}`);
       await fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi xoá nguồn giá.");
+      setError(err.response?.data?.detail || t("deleteError"));
     }
   };
 
@@ -96,12 +98,12 @@ export default function PriceSourcesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Nguồn Giá</h2>
-          <p className="text-body">Cấu hình các hợp đồng để crawl giá từ Barchart</p>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+          <p className="text-body">{t("subtitle")}</p>
         </div>
         <button onClick={() => setShowAddForm(v => !v)} className="btn-pill py-2.5 shrink-0">
           <Plus size={18} />
-          Thêm nguồn giá
+          {t("add")}
         </button>
       </div>
 
@@ -114,15 +116,15 @@ export default function PriceSourcesPage() {
 
       {showAddForm && (
         <form onSubmit={handleCreate} className="bg-background border border-border rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          <input required placeholder="Symbol (vd: NG*0)" value={form.symbol} onChange={e => setForm({ ...form, symbol: e.target.value })} className={inputCls} />
-          <input required placeholder="Mã nội bộ (vd: NG)" value={form.instrument_code} onChange={e => setForm({ ...form, instrument_code: e.target.value })} className={inputCls} />
-          <input required placeholder="Tên hiển thị" value={form.instrument_name} onChange={e => setForm({ ...form, instrument_name: e.target.value })} className={inputCls} />
-          <input required placeholder="Category (vd: gas)" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className={inputCls} />
-          <input required placeholder="Đơn vị (vd: USD/MMBtu)" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} className={inputCls} />
-          <input required placeholder="Sàn (vd: NYMEX)" value={form.exchange} onChange={e => setForm({ ...form, exchange: e.target.value })} className={inputCls} />
+          <input required placeholder={t("phSymbol")} value={form.symbol} onChange={e => setForm({ ...form, symbol: e.target.value })} className={inputCls} />
+          <input required placeholder={t("phCode")} value={form.instrument_code} onChange={e => setForm({ ...form, instrument_code: e.target.value })} className={inputCls} />
+          <input required placeholder={t("phName")} value={form.instrument_name} onChange={e => setForm({ ...form, instrument_name: e.target.value })} className={inputCls} />
+          <input required placeholder={t("phCategory")} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className={inputCls} />
+          <input required placeholder={t("phUnit")} value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} className={inputCls} />
+          <input required placeholder={t("phExchange")} value={form.exchange} onChange={e => setForm({ ...form, exchange: e.target.value })} className={inputCls} />
           <div className="col-span-1 sm:col-span-2 md:col-span-3 flex items-center gap-3">
-            <button type="submit" className="btn-pill py-2 px-5">Lưu</button>
-            <button type="button" onClick={() => setShowAddForm(false)} className="text-body hover:text-primary text-sm font-semibold">Huỷ</button>
+            <button type="submit" className="btn-pill py-2 px-5">{t("save")}</button>
+            <button type="button" onClick={() => setShowAddForm(false)} className="text-body hover:text-primary text-sm font-semibold">{t("cancel")}</button>
           </div>
         </form>
       )}
@@ -137,13 +139,13 @@ export default function PriceSourcesPage() {
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
                   <th className="px-4 py-3 font-semibold">Symbol</th>
-                  <th className="px-4 py-3 font-semibold">Mã</th>
-                  <th className="px-4 py-3 font-semibold">Tên</th>
+                  <th className="px-4 py-3 font-semibold">{t("colCode")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colName")}</th>
                   <th className="px-4 py-3 font-semibold">Category</th>
-                  <th className="px-4 py-3 font-semibold">Đơn vị</th>
-                  <th className="px-4 py-3 font-semibold">Sàn</th>
-                  <th className="px-4 py-3 font-semibold">Trạng thái</th>
-                  <th className="px-4 py-3 font-semibold text-right">Hành động</th>
+                  <th className="px-4 py-3 font-semibold">{t("colUnit")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colExchange")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colStatus")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{t("colActions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -178,7 +180,7 @@ export default function PriceSourcesPage() {
                             "px-2 py-0.5 rounded-full text-xs font-semibold",
                             s.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
                           )}>
-                            {s.is_active ? "Active" : "Tắt"}
+                            {s.is_active ? t("active") : t("off")}
                           </span>
                         )}
                       </td>
@@ -213,7 +215,7 @@ export default function PriceSourcesPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       {isEditing ? (
-                        <input value={editForm.instrument_name} onChange={e => setEditForm({ ...editForm, instrument_name: e.target.value })} className={clsx(inputCls, "mb-1.5")} placeholder="Tên hiển thị" />
+                        <input value={editForm.instrument_name} onChange={e => setEditForm({ ...editForm, instrument_name: e.target.value })} className={clsx(inputCls, "mb-1.5")} placeholder={t("phName")} />
                       ) : (
                         <p className="font-semibold text-label truncate">{s.instrument_name}</p>
                       )}
@@ -244,15 +246,15 @@ export default function PriceSourcesPage() {
                       {isEditing ? <input value={editForm.category} onChange={e => setEditForm({ ...editForm, category: e.target.value })} className={inputCls} /> : <p className="text-body">{s.category}</p>}
                     </div>
                     <div>
-                      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-light mb-0.5">Đơn vị</p>
+                      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-light mb-0.5">{t("colUnit")}</p>
                       {isEditing ? <input value={editForm.unit} onChange={e => setEditForm({ ...editForm, unit: e.target.value })} className={inputCls} /> : <p className="text-body">{s.unit}</p>}
                     </div>
                     <div>
-                      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-light mb-0.5">Sàn</p>
+                      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-light mb-0.5">{t("colExchange")}</p>
                       {isEditing ? <input value={editForm.exchange} onChange={e => setEditForm({ ...editForm, exchange: e.target.value })} className={inputCls} /> : <p className="text-body">{s.exchange}</p>}
                     </div>
                     <div>
-                      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-light mb-0.5">Trạng thái</p>
+                      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-light mb-0.5">{t("colStatus")}</p>
                       {isEditing ? (
                         <label className="flex items-center gap-1.5 text-xs">
                           <input type="checkbox" checked={!!editForm.is_active} onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} />
@@ -263,7 +265,7 @@ export default function PriceSourcesPage() {
                           "inline-block px-2 py-0.5 rounded-full text-xs font-semibold",
                           s.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
                         )}>
-                          {s.is_active ? "Active" : "Tắt"}
+                          {s.is_active ? t("active") : t("off")}
                         </span>
                       )}
                     </div>

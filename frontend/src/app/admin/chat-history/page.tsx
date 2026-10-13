@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
+import { useTranslations, useLocale } from "next-intl";
+import { dateFnsLocale } from "@/i18n/dateLocale";
 import { api } from "@/lib/api";
 import type {
   AdminChatSessionDetail,
@@ -37,17 +39,17 @@ const PAGE_SIZE = 30;
 
 type RatingFilter = "all" | ChatRating | "none";
 
-const FILTER_TABS: { value: RatingFilter; label: string }[] = [
-  { value: "all", label: "Tất cả" },
-  { value: "good", label: "Tốt" },
-  { value: "bad", label: "Không tốt" },
-  { value: "none", label: "Chưa đánh giá" },
+const FILTER_TABS: { value: RatingFilter; labelKey: string }[] = [
+  { value: "all", labelKey: "filterAll" },
+  { value: "good", labelKey: "ratingGood" },
+  { value: "bad", labelKey: "ratingBad" },
+  { value: "none", labelKey: "ratingNone" },
 ];
 
-const RATING_BADGE: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
-  good: { label: "Tốt", icon: <ThumbsUp size={12} />, cls: "bg-tint text-primary-dark border border-primary/20" },
-  bad: { label: "Không tốt", icon: <ThumbsDown size={12} />, cls: "bg-red-50 text-down border border-red-200" },
-  none: { label: "Chưa đánh giá", icon: <HelpCircle size={12} />, cls: "bg-surface-alt text-muted-light border border-border" },
+const RATING_BADGE: Record<string, { labelKey: string; icon: React.ReactNode; cls: string }> = {
+  good: { labelKey: "ratingGood", icon: <ThumbsUp size={12} />, cls: "bg-tint text-primary-dark border border-primary/20" },
+  bad: { labelKey: "ratingBad", icon: <ThumbsDown size={12} />, cls: "bg-red-50 text-down border border-red-200" },
+  none: { labelKey: "ratingNone", icon: <HelpCircle size={12} />, cls: "bg-surface-alt text-muted-light border border-border" },
 };
 
 interface AllowedUser {
@@ -56,11 +58,12 @@ interface AllowedUser {
 }
 
 function RatingBadge({ rating }: { rating: ChatRating | null }) {
+  const t = useTranslations("adminUsrChatHistory");
   const badge = RATING_BADGE[rating ?? "none"];
   return (
     <span className={clsx("shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold", badge.cls)}>
       {badge.icon}
-      {badge.label}
+      {t(badge.labelKey)}
     </span>
   );
 }
@@ -76,12 +79,14 @@ export default function AdminChatHistoryPage() {
 }
 
 function ChatHistoryContent() {
+  const t = useTranslations("adminUsrChatHistory");
+  const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const userEmail = searchParams.get("user") || "";
   const ratingParam = searchParams.get("rating");
-  const filter: RatingFilter = FILTER_TABS.some((t) => t.value === ratingParam) ? (ratingParam as RatingFilter) : "all";
+  const filter: RatingFilter = FILTER_TABS.some((f) => f.value === ratingParam) ? (ratingParam as RatingFilter) : "all";
   const selectedId = Number(searchParams.get("session")) || null;
 
   const [users, setUsers] = useState<AllowedUser[]>([]);
@@ -127,7 +132,7 @@ function ChatHistoryContent() {
         if (!cancelled) setList(res.data);
       })
       .catch(() => {
-        if (!cancelled) setListError("Không thể tải danh sách phiên chat.");
+        if (!cancelled) setListError(t("listError"));
       })
       .finally(() => {
         if (!cancelled) setListLoading(false);
@@ -154,7 +159,7 @@ function ChatHistoryContent() {
       .catch((err) => {
         if (!cancelled) {
           setDetail(null);
-          setDetailError(err.response?.status === 404 ? "Không tìm thấy phiên chat này." : "Không thể tải nội dung phiên chat.");
+          setDetailError(err.response?.status === 404 ? t("notFound") : t("detailError"));
         }
       })
       .finally(() => {
@@ -170,8 +175,8 @@ function ChatHistoryContent() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Lịch Sử Giao Tiếp</h2>
-        <p className="text-body">Xem lại từng phiên hỏi đáp AI của người dùng — chọn 1 phiên bên trái để đọc toàn bộ hội thoại</p>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+        <p className="text-body">{t("subtitle")}</p>
       </div>
 
       <div className="flex flex-col md:flex-row md:items-center gap-3">
@@ -183,7 +188,7 @@ function ChatHistoryContent() {
           }}
           className="w-full md:w-72 text-sm px-3 py-2 rounded-lg border border-border-soft bg-background focus:outline-none focus:border-primary"
         >
-          <option value="">Tất cả người dùng</option>
+          <option value="">{t("allUsers")}</option>
           {/* Giữ được lựa chọn khi mở link ?user= của email không còn trong danh sách user (đã xoá). */}
           {userEmail && !users.some((u) => u.email === userEmail) && <option value={userEmail}>{userEmail}</option>}
           {users.map((u) => (
@@ -206,7 +211,7 @@ function ChatHistoryContent() {
                 filter === tab.value ? "bg-primary text-white" : "bg-surface text-body hover:bg-surface-alt"
               )}
             >
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           ))}
         </div>
@@ -225,7 +230,7 @@ function ChatHistoryContent() {
           ) : list.items.length === 0 ? (
             <div className="text-center py-14 px-4">
               <MessagesSquare size={32} className="mx-auto text-muted mb-2" />
-              <p className="text-sm text-body">Không có phiên chat nào khớp bộ lọc.</p>
+              <p className="text-sm text-body">{t("noMatch")}</p>
             </div>
           ) : (
             <>
@@ -243,9 +248,9 @@ function ChatHistoryContent() {
                         <p className="text-[13px] font-semibold text-label truncate min-w-0">{s.user_email}</p>
                         <RatingBadge rating={s.rating} />
                       </div>
-                      <p className="text-[12.5px] leading-snug text-body italic line-clamp-2 break-words">{s.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"}</p>
+                      <p className="text-[12.5px] leading-snug text-body italic line-clamp-2 break-words">{s.quote || t("directChat")}</p>
                       <p className="text-[11px] text-muted-light">
-                        Báo cáo {s.report_date} · {s.message_count} tin nhắn · {format(new Date(s.updated_at), "HH:mm dd/MM/yyyy")}
+                        {t("sessionMeta", { date: s.report_date, count: s.message_count, time: format(new Date(s.updated_at), t("dateTimeFmt"), { locale: dateFnsLocale(locale) }) })}
                       </p>
                     </button>
                   </li>
@@ -253,14 +258,14 @@ function ChatHistoryContent() {
               </ul>
               <div className="flex items-center justify-between px-4 py-2.5 border-t border-border text-[12px] text-body">
                 <span>
-                  Trang {page + 1}/{totalPages} — {list.total} phiên
+                  {t("pageInfo", { page: page + 1, pages: totalPages, total: list.total })}
                 </span>
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => setPage((p) => Math.max(0, p - 1))}
                     disabled={page === 0}
                     className="p-1 rounded-lg border border-border disabled:opacity-40 hover:bg-surface transition-colors"
-                    aria-label="Trang trước"
+                    aria-label={t("prevPage")}
                   >
                     <ChevronLeft size={15} />
                   </button>
@@ -268,7 +273,7 @@ function ChatHistoryContent() {
                     onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                     disabled={page >= totalPages - 1}
                     className="p-1 rounded-lg border border-border disabled:opacity-40 hover:bg-surface transition-colors"
-                    aria-label="Trang sau"
+                    aria-label={t("nextPage")}
                   >
                     <ChevronRight size={15} />
                   </button>
@@ -286,14 +291,14 @@ function ChatHistoryContent() {
               className="md:hidden mb-4 inline-flex items-center gap-2 text-sm font-semibold text-body hover:text-primary-dark transition-colors"
             >
               <ArrowLeft size={16} />
-              Danh sách phiên
+              {t("sessionList")}
             </button>
           )}
 
           {!selectedId ? (
             <div className="h-56 flex flex-col items-center justify-center text-center gap-2">
               <MessagesSquare size={32} className="text-muted" />
-              <p className="text-sm text-muted-light">Chọn 1 phiên bên trái để xem toàn bộ hội thoại.</p>
+              <p className="text-sm text-muted-light">{t("pickSession")}</p>
             </div>
           ) : detailLoading ? (
             <div className="h-56 flex items-center justify-center text-muted-light">
@@ -314,32 +319,32 @@ function ChatHistoryContent() {
                   </span>
                   <span className="inline-flex items-center gap-1.5 text-body">
                     <Calendar size={14} className="text-primary shrink-0" />
-                    Báo cáo {detail.report_date}
+                    {t("reportDate", { date: detail.report_date })}
                   </span>
-                  <span className="text-muted-light">Bắt đầu {format(new Date(detail.created_at), "HH:mm dd/MM/yyyy")}</span>
+                  <span className="text-muted-light">{t("startedAt", { time: format(new Date(detail.created_at), t("dateTimeFmt"), { locale: dateFnsLocale(locale) }) })}</span>
                 </div>
                 <RatingBadge rating={detail.rating} />
               </div>
 
               <div className="rounded-xl bg-tint/40 border border-border-soft px-4 py-3 flex gap-2 items-start">
                 <QuoteIcon size={14} className="text-primary shrink-0 mt-0.5" />
-                <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{detail.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"}</p>
+                <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{detail.quote || t("directChat")}</p>
               </div>
 
               {detail.rating === "bad" && detail.rating_reason && (
                 <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3">
-                  <p className="text-xs font-semibold text-down mb-1">Lý do đánh giá không tốt</p>
+                  <p className="text-xs font-semibold text-down mb-1">{t("badReason")}</p>
                   <p className="text-[13.5px] leading-relaxed text-body whitespace-pre-wrap break-words">{detail.rating_reason}</p>
                 </div>
               )}
 
               <div className="space-y-3 pt-2 border-t border-border">
                 {detail.messages.length === 0 ? (
-                  <p className="text-sm text-muted-light pt-2">Phiên này chưa có tin nhắn nào.</p>
+                  <p className="text-sm text-muted-light pt-2">{t("noMessages")}</p>
                 ) : (
                   detail.messages.map((m) => (
                     <div key={m.id} className={clsx("flex flex-col pt-1", m.role === "user" ? "items-end" : "items-start")}>
-                      <span className="text-[11px] text-muted-light mb-1 px-1">{m.role === "user" ? "Người dùng" : "AI"}</span>
+                      <span className="text-[11px] text-muted-light mb-1 px-1">{m.role === "user" ? t("roleUser") : t("roleAi")}</span>
                       <div
                         className={clsx(
                           "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words",

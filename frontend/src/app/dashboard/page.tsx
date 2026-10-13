@@ -5,13 +5,16 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, CheckCircle2, ChevronRight, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
-import { reportTitle } from "@/lib/reportDate";
+import { useReportTitle } from "@/lib/reportDate";
 import { ReportDateFilter, filterByDateRange, type DateRange } from "@/components/ReportDateFilter";
 import type { ReportSummary } from "@/lib/types";
 
 export default function Dashboard() {
+  const reportTitle = useReportTitle();
   const router = useRouter();
+  const t = useTranslations("userDashboard");
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,20 +32,20 @@ export default function Dashboard() {
           return;
         }
         console.error(err);
-        setError("Không thể tải danh sách báo cáo. Backend đã chạy chưa?");
+        setError(t("loadError"));
       } finally {
         setLoading(false);
       }
     };
 
     fetchReports();
-  }, [router]);
+  }, [router, t]);
 
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">Báo Cáo Hàng Ngày</h2>
-        <p className="text-body">Danh sách các báo cáo Daily Carbon Intelligence đã được duyệt</p>
+        <h2 className="text-3xl font-bold tracking-tight text-heading mb-2">{t("title")}</h2>
+        <p className="text-body">{t("subtitle")}</p>
       </div>
 
       {error && (
@@ -61,14 +64,14 @@ export default function Dashboard() {
       ) : reports.length === 0 ? (
         <div className="text-center py-20 bg-background border border-border-soft border-dashed rounded-2xl">
           <FileText size={48} className="mx-auto text-muted mb-4" />
-          <p className="text-body text-lg">Chưa có báo cáo nào được duyệt.</p>
+          <p className="text-body text-lg">{t("empty")}</p>
         </div>
       ) : (
         <>
         <ReportDateFilter value={range} onChange={setRange} shown={filtered.length} total={reports.length} />
         {filtered.length === 0 ? (
           <div className="text-center py-16 bg-background border border-border-soft border-dashed rounded-2xl">
-            <p className="text-body text-lg">Không có báo cáo nào trong khoảng ngày đã chọn.</p>
+            <p className="text-body text-lg">{t("emptyRange")}</p>
           </div>
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -88,14 +91,14 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="px-2.5 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5 bg-tint text-primary-dark border border-primary/20">
-                  <CheckCircle2 size={14} /> Published
+                  <CheckCircle2 size={14} /> {t("published")}
                 </div>
               </div>
 
               <div className="flex justify-between items-center text-sm text-body mt-6 pt-4 border-t border-border">
-                <span>Duyệt lúc: {report.published_at ? format(new Date(report.published_at), "HH:mm dd/MM/yyyy") : "-"}</span>
+                <span>{t("approvedAt", { time: report.published_at ? format(new Date(report.published_at), "HH:mm dd/MM/yyyy") : "-" })}</span>
                 <span className="flex items-center text-primary opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 duration-500 ease-in-out">
-                  Xem chi tiết <ChevronRight size={16} className="ml-1" />
+                  {t("viewDetails")} <ChevronRight size={16} className="ml-1" />
                 </span>
               </div>
             </Link>

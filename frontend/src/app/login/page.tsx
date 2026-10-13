@@ -5,16 +5,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, User, Lock } from "lucide-react";
 import clsx from "clsx";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import { api, setAuthRole } from "@/lib/api";
 
 type Mode = "user" | "admin";
 
 function ModeSwitch({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  const t = useTranslations("userLogin");
   return (
     <div className="flex p-1 bg-surface rounded-full mb-6">
       {([
-        { key: "user" as const, label: "Người dùng" },
-        { key: "admin" as const, label: "Admin" },
+        { key: "user" as const, label: t("modeUser") },
+        { key: "admin" as const, label: t("modeAdmin") },
       ]).map(({ key, label }) => (
         <button
           key={key}
@@ -33,6 +35,7 @@ function ModeSwitch({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 }
 
 function UserLoginForm() {
+  const t = useTranslations("userLogin");
   const router = useRouter();
   const [step, setStep] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
@@ -47,12 +50,12 @@ function UserLoginForm() {
     setError("");
     try {
       const res = await api.post("/api/auth/otp/request", { email });
-      setInfo(res.data.message || "Mã OTP đã được gửi.");
+      setInfo(res.data.message || t("otpSent"));
       setStep("otp");
     } catch (err: any) {
       // 429 = vừa gửi mã trong 60s qua → mã trước vẫn còn hiệu lực, cho nhập tiếp.
       if (err.response?.status === 429) setStep("otp");
-      setError(err.response?.data?.detail || "Không gửi được mã OTP.");
+      setError(err.response?.data?.detail || t("otpSendFailed"));
     } finally {
       setLoading(false);
     }
@@ -67,7 +70,7 @@ function UserLoginForm() {
       setAuthRole("user");
       router.push("/dashboard");
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Mã OTP không đúng.");
+      setError(err.response?.data?.detail || t("otpInvalid"));
     } finally {
       setLoading(false);
     }
@@ -85,7 +88,7 @@ function UserLoginForm() {
       {step === "email" ? (
         <form onSubmit={handleRequestOtp} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-label mb-1.5">Email công việc</label>
+            <label className="block text-sm font-semibold text-label mb-1.5">{t("workEmail")}</label>
             <div className="relative">
               <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-light" />
               <input
@@ -93,13 +96,13 @@ function UserLoginForm() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="ban@congty.com"
+                placeholder={t("emailPlaceholder")}
                 className="w-full pl-9 pr-3 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
               />
             </div>
           </div>
           <button type="submit" disabled={loading} className="btn-pill w-full justify-center py-2.5">
-            {loading ? "Đang gửi..." : "Gửi mã đăng nhập"}
+            {loading ? t("sending") : t("sendCode")}
           </button>
         </form>
       ) : (
@@ -107,11 +110,11 @@ function UserLoginForm() {
           {info && (
             <p className="text-sm text-body">
               {info}
-              <> Kiểm tra hộp thư <b className="text-label">{email}</b>.</>
+              <> {t.rich("checkInbox", { email, b: (c) => <b className="text-label">{c}</b> })}</>
             </p>
           )}
           <div>
-            <label className="block text-sm font-semibold text-label mb-1.5">Mã xác nhận (6 số)</label>
+            <label className="block text-sm font-semibold text-label mb-1.5">{t("codeLabel")}</label>
             <div className="relative">
               <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-light" />
               <input
@@ -127,14 +130,14 @@ function UserLoginForm() {
             </div>
           </div>
           <button type="submit" disabled={loading} className="btn-pill w-full justify-center py-2.5">
-            {loading ? "Đang xác nhận..." : "Xác nhận đăng nhập"}
+            {loading ? t("verifying") : t("verify")}
           </button>
           <button
             type="button"
             onClick={() => { setStep("email"); setCode(""); setError(""); }}
             className="w-full text-sm text-body hover:text-primary transition-colors"
           >
-            &larr; Dùng email khác
+            &larr; {t("useOtherEmail")}
           </button>
         </form>
       )}
@@ -143,6 +146,7 @@ function UserLoginForm() {
 }
 
 function AdminLoginForm() {
+  const t = useTranslations("userLogin");
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -158,7 +162,7 @@ function AdminLoginForm() {
       setAuthRole("admin");
       router.push("/admin/reports");
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Đăng nhập thất bại.");
+      setError(err.response?.data?.detail || t("loginFailed"));
     } finally {
       setLoading(false);
     }
@@ -175,7 +179,7 @@ function AdminLoginForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-semibold text-label mb-1.5">Tài khoản</label>
+          <label className="block text-sm font-semibold text-label mb-1.5">{t("username")}</label>
           <div className="relative">
             <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-light" />
             <input
@@ -188,7 +192,7 @@ function AdminLoginForm() {
           </div>
         </div>
         <div>
-          <label className="block text-sm font-semibold text-label mb-1.5">Mật khẩu</label>
+          <label className="block text-sm font-semibold text-label mb-1.5">{t("password")}</label>
           <div className="relative">
             <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-light" />
             <input
@@ -201,7 +205,7 @@ function AdminLoginForm() {
           </div>
         </div>
         <button type="submit" disabled={loading} className="btn-pill w-full justify-center py-2.5">
-          {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+          {loading ? t("loggingIn") : t("login")}
         </button>
       </form>
     </>

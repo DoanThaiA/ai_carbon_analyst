@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { History, MessageSquareWarning, MessageCircleMore, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 
 // Nút nổi của QuoteChat: CHỈ 1 avatar Jenny ở mọi kích thước màn hình. Bấm vào mở
 // menu 3 lựa chọn: Chat (hỏi đáp tự do, không cần bôi đen), Lịch sử hỏi đáp, Phản ánh.
@@ -42,6 +43,7 @@ function JennyHintBubble({
   onClose: () => void;
   onHoverChange: (hovering: boolean) => void;
 }) {
+  const t = useTranslations("chatFloating");
   return (
     <div
       role="status"
@@ -58,16 +60,16 @@ function JennyHintBubble({
     >
       <button
         onClick={onClose}
-        aria-label="Đóng gợi ý"
+        aria-label={t("closeHint")}
         className="absolute top-1.5 right-1.5 p-1 rounded-full text-muted-light hover:text-body hover:bg-surface"
       >
         <X size={13} />
       </button>
       <p className="pr-4 text-[13.5px] leading-[1.4] font-semibold text-label">
-        Nếu có gì thắc mắc hãy hỏi tôi nhé!
+        {t("hintTitle")}
       </p>
       <p className="mt-1 text-[12px] leading-[1.4] text-muted-light">
-        Bấm vào tôi để chat, hoặc bôi đen đoạn bất kỳ trong báo cáo rồi bấm <b className="text-primary-dark">Hỏi AI</b>.
+        {t.rich("hintBody", { b: (chunks) => <b className="text-primary-dark">{chunks}</b> })}
       </p>
       {/* Mũi nhọn bong bóng */}
       <span
@@ -92,6 +94,7 @@ export function FloatingChatActions({
   // Tuỳ chọn: chỉ truyền khi user được phép "Hỏi Claude" (xem QuoteChat) — không có thì ẩn mục menu.
   onClaude?: () => void;
 }) {
+  const t = useTranslations("chatFloating");
   // undefined = chưa đo xong (chưa render nút, tránh desktop nháy chế độ fab);
   // null = không đủ chỗ → fab; number = toạ độ left của nút trong khoảng trống.
   const [gutterLeft, setGutterLeft] = useState<number | null | undefined>(undefined);
@@ -199,21 +202,21 @@ export function FloatingChatActions({
             <div className="absolute bottom-full right-0 mb-3 flex flex-col items-end gap-2">
               <button onClick={() => pick(onChat)} className={menuItemCls}>
                 <MessageCircleMore size={17} className="text-primary" />
-                Chat với Jenny
+                {t("chat")}
               </button>
               {onClaude && (
                 <button onClick={() => pick(onClaude)} className={menuItemCls}>
                   <Sparkles size={17} className="text-primary" />
-                  Hỏi Claude Desktop
+                  {t("askClaudeDesktop")}
                 </button>
               )}
               <button onClick={() => pick(onHistory)} className={menuItemCls}>
                 <History size={17} className="text-primary" />
-                Lịch sử hỏi đáp
+                {t("history")}
               </button>
               <button onClick={() => pick(onFeedback)} className={menuItemCls}>
                 <MessageSquareWarning size={17} className="text-primary" />
-                Phản ánh
+                {t("feedback")}
               </button>
             </div>
           )}
@@ -224,7 +227,7 @@ export function FloatingChatActions({
               setMenuOpen((v) => !v);
               setHintOpen(false);
             }}
-            aria-label={menuOpen ? "Đóng menu" : "Mở menu Jenny: Chat, Lịch sử hỏi đáp, Phản ánh"}
+            aria-label={menuOpen ? t("closeMenu") : t("openMenu")}
             aria-expanded={menuOpen}
             title="Jenny"
             className="relative block w-14 h-14 rounded-full shadow-[var(--shadow-medium)] ring-2 ring-primary ring-offset-2 ring-offset-background hover:ring-primary-dark transition-shadow"

@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { formatDistanceToNow, format } from "date-fns";
-import { vi } from "date-fns/locale";
+import { useLocale, useTranslations } from "next-intl";
+import { dateFnsLocale } from "@/i18n/dateLocale";
 import { api } from "@/lib/api";
 import type { Attachment, ChatRating, ChatSessionSummary, ChatSource, ChatTurn } from "@/lib/types";
 import { streamQuoteChat } from "@/lib/quoteChatStream";
@@ -82,6 +83,9 @@ function renderInlineMarkdown(text: string): React.ReactNode {
  * và trả lời streaming (SSE) từ backend.
  */
 export function QuoteChat({ reportDate, children }: { reportDate: string; children: React.ReactNode }) {
+  const t = useTranslations("chatQuote");
+  const tLib = useTranslations("chatLib");
+  const locale = useLocale();
   const containerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -212,13 +216,13 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
 
     setAttachmentError("");
     if (pendingAttachments.length + files.length > MAX_ATTACHMENTS_PER_TURN) {
-      setAttachmentError(`Chỉ được đính kèm tối đa ${MAX_ATTACHMENTS_PER_TURN} file cho mỗi lượt hỏi.`);
+      setAttachmentError(t("maxAttachments", { max: MAX_ATTACHMENTS_PER_TURN }));
       return;
     }
 
     const accepted: File[] = [];
     for (const file of files) {
-      const error = validateFile(file);
+      const error = validateFile(file, tLib);
       if (error) {
         setAttachmentError(error);
         continue;
@@ -236,7 +240,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     setPendingAttachments((prev) => [...prev, ...newPending]);
 
     newPending.forEach((pending) => {
-      uploadFileToMinIO(pending.file)
+      uploadFileToMinIO(pending.file, tLib)
         .then((attachment) => {
           setPendingAttachments((prev) =>
             prev.map((p) => (p.id === pending.id ? { ...p, status: "done", attachment } : p))
@@ -446,6 +450,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
       quote: sessionId ? undefined : activeQuote || undefined,
       attachments: readyAttachments.map((p) => p.attachment),
       signal: controller.signal,
+      t: tLib,
       onMeta: (meta) => {
         setSessionId(meta.sessionId);
         if (meta.sources.length > 0) {
@@ -489,7 +494,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       const message = Array.isArray(detail) ? detail[0]?.msg : detail;
-      setRatingError(message || "Lỗi khi gửi đánh giá, vui lòng thử lại.");
+      setRatingError(message || t("ratingFailed"));
     } finally {
       setRatingSubmitting(false);
     }
@@ -509,7 +514,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
             className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-3 py-2 rounded-full shadow-[var(--shadow-medium)] hover:bg-primary-dark transition-colors"
           >
             <MessageCircleQuestion size={14} />
-            Hỏi AI
+            {t("askAi")}
           </button>
           {canAskClaude && (
             <button
@@ -517,7 +522,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               className="flex items-center gap-1.5 bg-background text-primary-dark border border-primary/40 text-xs font-semibold px-3 py-2 rounded-full shadow-[var(--shadow-medium)] hover:border-primary hover:bg-tint transition-colors"
             >
               <Sparkles size={14} />
-              Hỏi Claude
+              {t("askClaude")}
             </button>
           )}
         </div>
@@ -557,13 +562,13 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 <button
                   onClick={() => setHistoryOpen(false)}
                   className="text-muted-light hover:text-foreground transition-colors sm:hidden"
-                  aria-label="Quay lại khung chat"
+                  aria-label={t("backToChat")}
                 >
                   <ArrowLeft size={18} />
                 </button>
                 <div className="flex items-center gap-2 text-label font-semibold text-sm">
                   <History size={16} className="text-primary" />
-                  Lịch sử hỏi đáp
+                  {t("history")}
                 </div>
               </div>
 
@@ -576,7 +581,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                   <div className="px-4 py-8 text-center">
                     <MessagesSquare size={28} className="mx-auto text-muted-light mb-2" />
                     <p className="text-[12.5px] text-muted-light leading-relaxed">
-                      Chưa có lịch sử. Bôi đen một đoạn trong báo cáo hoặc chat trực tiếp với Jenny để bắt đầu hỏi đáp.
+                      {t("noHistory")}
                     </p>
                   </div>
                 ) : (
@@ -593,10 +598,10 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                           )}
                         >
                           <p className="text-[12.5px] leading-snug text-body italic line-clamp-2">
-                            {s.quote || <span className="not-italic font-semibold text-primary-dark">Chat trực tiếp với Jenny</span>}
+                            {s.quote || <span className="not-italic font-semibold text-primary-dark">{t("directChat")}</span>}
                           </p>
                           <p className="text-[11px] text-muted-light mt-1">
-                            {formatDistanceToNow(new Date(s.updated_at), { addSuffix: true, locale: vi })}
+                            {formatDistanceToNow(new Date(s.updated_at), { addSuffix: true, locale: dateFnsLocale(locale) })}
                           </p>
                         </button>
                       </li>
@@ -615,7 +620,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               <div className="flex items-center justify-between px-4 py-3.5 border-b border-border shrink-0">
                 <div className="flex items-center gap-2 text-label font-semibold text-sm">
                   <MessageCircleQuestion size={16} className="text-primary" />
-                  {activeQuote ? "Hỏi đáp về đoạn trích" : "Chat với Jenny"}
+                  {activeQuote ? t("titleQuote") : t("titleChat")}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -624,8 +629,8 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                       "transition-colors",
                       historyOpen ? "text-primary" : "text-muted-light hover:text-foreground"
                     )}
-                    aria-label="Lịch sử hỏi đáp"
-                    title="Lịch sử hỏi đáp"
+                    aria-label={t("history")}
+                    title={t("history")}
                   >
                     <History size={17} />
                   </button>
@@ -652,22 +657,22 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-6">
                   <MessagesSquare size={28} className="text-muted-light" />
                   <p className="text-[13px] text-muted-light leading-relaxed">
-                    Chọn 1 phiên trong lịch sử, bôi đen một đoạn trong báo cáo, hoặc chat trực tiếp với Jenny.
+                    {t("emptyState")}
                   </p>
                   <button
                     type="button"
                     onClick={openFreeChat}
                     className="text-[12.5px] font-semibold px-3.5 py-1.5 rounded-full bg-primary text-white hover:bg-primary-dark transition-colors"
                   >
-                    Chat với Jenny
+                    {t("titleChat")}
                   </button>
                 </div>
               ) : (
                 messages.length === 0 && (
                   <p className="text-[13px] text-muted-light">
                     {activeQuote
-                      ? "Đặt câu hỏi về đoạn trích trên, hoặc chọn gợi ý bên dưới."
-                      : "Hỏi Jenny bất cứ điều gì về báo cáo và thị trường hôm nay, hoặc chọn gợi ý bên dưới."}
+                      ? t("promptQuote")
+                      : t("promptFree")}
                   </p>
                 )
               )}
@@ -710,7 +715,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                     <div className="mt-1.5 max-w-[85%] w-full rounded-xl border border-border-soft bg-tint/30 px-3 py-2.5">
                       <p className="flex items-center gap-1.5 text-[11px] font-semibold text-label mb-1.5">
                         <Newspaper size={12} className="text-primary" />
-                        Danh sách tin tức tham khảo
+                        {t("sourcesTitle")}
                       </p>
                       <ul className="space-y-1.5">
                         {m.sources.map((s, si) => (
@@ -750,14 +755,14 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                     )}
                   >
                     {rating === "good" ? <ThumbsUp size={13} /> : <ThumbsDown size={13} />}
-                    Bạn đã đánh giá phiên này là {rating === "good" ? "Tốt" : "Không tốt"}
+                    {t("ratedAs", { rating: rating === "good" ? t("good") : t("bad") })}
                   </div>
                 ) : showReasonBox ? (
                   <div className="space-y-2">
                     <textarea
                       value={reasonDraft}
                       onChange={(e) => setReasonDraft(e.target.value)}
-                      placeholder="Vì sao câu trả lời chưa tốt? (bắt buộc)"
+                      placeholder={t("reasonPlaceholder")}
                       rows={2}
                       className="w-full text-[12.5px] px-3 py-2 rounded-lg border border-border-soft bg-surface focus:outline-none focus:border-primary resize-none"
                     />
@@ -767,7 +772,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                         disabled={ratingSubmitting || !reasonDraft.trim()}
                         className="text-[12px] font-semibold px-3 py-1.5 rounded-full bg-down text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
                       >
-                        {ratingSubmitting ? "Đang gửi..." : "Gửi đánh giá"}
+                        {ratingSubmitting ? t("sending") : t("submitRating")}
                       </button>
                       <button
                         onClick={() => {
@@ -777,26 +782,26 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                         disabled={ratingSubmitting}
                         className="text-[12px] font-semibold px-3 py-1.5 rounded-full text-muted-light hover:bg-surface transition-colors"
                       >
-                        Huỷ
+                        {t("cancel")}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="text-[12px] text-muted-light">Phiên hỏi đáp này thế nào?</span>
+                    <span className="text-[12px] text-muted-light">{t("howWasIt")}</span>
                     <button
                       onClick={() => submitRating("good")}
                       disabled={ratingSubmitting}
                       className="flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-full border border-border-soft text-body hover:border-primary hover:text-primary-dark disabled:opacity-40 transition-colors"
                     >
-                      <ThumbsUp size={13} /> Tốt
+                      <ThumbsUp size={13} /> {t("good")}
                     </button>
                     <button
                       onClick={() => setShowReasonBox(true)}
                       disabled={ratingSubmitting}
                       className="flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-full border border-border-soft text-body hover:border-down hover:text-down disabled:opacity-40 transition-colors"
                     >
-                      <ThumbsDown size={13} /> Không tốt
+                      <ThumbsDown size={13} /> {t("bad")}
                     </button>
                   </div>
                 )}
@@ -808,7 +813,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
               <div className="px-4 pb-3 flex flex-wrap gap-2 shrink-0">
                 {suggestionsLoading ? (
                   <span className="text-[12px] text-muted-light flex items-center gap-1.5">
-                    <Loader2 size={12} className="animate-spin" /> Đang gợi ý câu hỏi...
+                    <Loader2 size={12} className="animate-spin" /> {t("suggesting")}
                   </span>
                 ) : (
                   suggestions.map((q, i) => (
@@ -850,7 +855,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                       type="button"
                       onClick={() => removePendingAttachment(p.id)}
                       className="text-muted-light hover:text-foreground shrink-0"
-                      aria-label="Xoá file đính kèm"
+                      aria-label={t("removeAttachment")}
                     >
                       <X size={12} />
                     </button>
@@ -879,7 +884,7 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 type="button"
                 onClick={handleAttachClick}
                 disabled={sending || !chatReady || pendingAttachments.length >= MAX_ATTACHMENTS_PER_TURN}
-                title="Đính kèm ảnh/PDF/Word"
+                title={t("attachTitle")}
                 className="w-9 h-9 flex items-center justify-center rounded-full border border-border-soft text-muted-light hover:text-primary hover:border-primary disabled:opacity-40 transition-colors shrink-0"
               >
                 <Paperclip size={16} />
@@ -899,10 +904,10 @@ export function QuoteChat({ reportDate, children }: { reportDate: string; childr
                 rows={1}
                 placeholder={
                   activeQuote
-                    ? "Hỏi thêm về đoạn trích..."
+                    ? t("placeholderQuote")
                     : chatReady
-                      ? "Nhập câu hỏi cho Jenny..."
-                      : "Chọn 1 phiên hoặc bôi đen đoạn trích để hỏi..."
+                      ? t("placeholderFree")
+                      : t("placeholderNone")
                 }
                 disabled={sending || !chatReady}
                 className="flex-1 min-w-0 resize-none overflow-y-auto max-h-40 text-[13.5px] leading-[1.4] px-3.5 py-2 rounded-2xl border border-border-soft bg-surface whitespace-pre-wrap break-words focus:outline-none focus:border-primary disabled:opacity-60"

@@ -1,10 +1,12 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { api, setAuthRole } from "@/lib/api";
 
 export function LogoutButton() {
+  const t = useTranslations("shellHeader");
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -23,10 +25,10 @@ export function LogoutButton() {
     <button
       onClick={handleLogout}
       className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
-      title="Đăng xuất"
+      title={t("logout")}
     >
       <LogOut size={14} />
-      <span className="hidden sm:inline">Đăng xuất</span>
+      <span className="hidden sm:inline">{t("logout")}</span>
     </button>
   );
 }

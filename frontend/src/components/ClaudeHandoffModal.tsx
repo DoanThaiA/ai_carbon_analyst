@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { X, Send, Loader2, CheckCircle2, AlertCircle, Copy, Check, Quote as QuoteIcon } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { MAX_QUOTE_CHARS, TASK_TYPES, apiErrorMessage, copyText, isTokenActive } from "@/lib/claudeConnect";
 import type { ApiTokenSummary, ClaudeTaskType, HandoffCreated } from "@/lib/types";
@@ -22,6 +23,7 @@ export function ClaudeHandoffModal({
   reportDate: string;
   quote: string;
 }) {
+  const t = useTranslations("userHandoff");
   const [taskType, setTaskType] = useState<ClaudeTaskType>("other");
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,7 +55,7 @@ export function ClaudeHandoffModal({
 
   if (!open) return null;
 
-  const placeholder = TASK_TYPES.find((t) => t.value === taskType)?.placeholder ?? "";
+  const placeholder = t(`task_${taskType}_ph`);
   // Backend giới hạn quote 4000 ký tự — cắt ở FE kèm thông báo thay vì để user nhận lỗi 422.
   const quoteTruncated = quote.length > MAX_QUOTE_CHARS;
   const quoteToSend = quoteTruncated ? quote.slice(0, MAX_QUOTE_CHARS) : quote;
@@ -94,7 +96,7 @@ export function ClaudeHandoffModal({
       await handleCopy(res.data.prompt);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      setError(apiErrorMessage(err, "Không tạo được yêu cầu cho Claude, vui lòng thử lại."));
+      setError(apiErrorMessage(err, t("createFailed")));
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
@@ -107,26 +109,27 @@ export function ClaudeHandoffModal({
         <button
           onClick={handleClose}
           className="absolute top-4 right-4 text-muted-light hover:text-heading transition-colors"
-          aria-label="Đóng"
+          aria-label={t("close")}
         >
           <X size={18} />
         </button>
 
-        <h3 className="text-lg font-bold text-heading pr-6">Hỏi Claude Desktop</h3>
+        <h3 className="text-lg font-bold text-heading pr-6">{t("title")}</h3>
         <p className="text-sm text-body mt-1">
-          Dành cho tác vụ khó: sinh file PDF/Excel, lập chiến lược... Claude Desktop sẽ tự lấy đoạn trích và số liệu
-          của báo cáo này qua kết nối đã cài.
+          {t("intro")}
         </p>
 
         {hasToken === false && !result && (
           <div className="mt-4 bg-warn-tint border border-warn/30 text-warn px-4 py-3 rounded-lg flex items-start gap-3 text-sm">
             <AlertCircle size={18} className="shrink-0 mt-0.5" />
             <p>
-              Bạn chưa kết nối Claude Desktop.{" "}
-              <Link href="/connect-claude" className="font-semibold underline">
-                Cài đặt kết nối (một lần)
-              </Link>{" "}
-              trước khi gửi yêu cầu.
+              {t.rich("notConnected", {
+                link: (c) => (
+                  <Link href="/connect-claude" className="font-semibold underline">
+                    {c}
+                  </Link>
+                ),
+              })}
             </p>
           </div>
         )}
@@ -136,16 +139,14 @@ export function ClaudeHandoffModal({
             <div className="bg-tint border border-primary/20 text-primary-dark px-4 py-3 rounded-lg flex items-start gap-3 text-sm">
               <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
               <p>
-                {copied
-                  ? "Đã sao chép prompt. Mở Claude Desktop, dán vào ô chat và gửi."
-                  : "Đã tạo yêu cầu. Sao chép prompt bên dưới rồi dán vào Claude Desktop."}
+                {copied ? t("copiedNotice") : t("createdNotice")}
               </p>
             </div>
             <div className="bg-surface border border-border rounded-lg p-3 text-sm text-body whitespace-pre-wrap break-words">
               {result.prompt}
             </div>
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-light">Yêu cầu có hiệu lực trong 24 giờ.</p>
+              <p className="text-xs text-muted-light">{t("validity")}</p>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -153,14 +154,14 @@ export function ClaudeHandoffModal({
                   className="flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-full border border-border hover:border-primary hover:text-primary-dark transition-colors"
                 >
                   {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? "Đã chép" : "Sao chép"}
+                  {copied ? t("copied") : t("copy")}
                 </button>
                 <button
                   type="button"
                   onClick={handleClose}
                   className="text-sm font-semibold px-3.5 py-2 rounded-full bg-primary text-white hover:bg-primary-dark transition-colors"
                 >
-                  Xong
+                  {t("done")}
                 </button>
               </div>
             </div>
@@ -175,26 +176,26 @@ export function ClaudeHandoffModal({
             )}
             {quoteTruncated && (
               <p className="text-xs text-warn -mt-2">
-                Đoạn bôi đen dài hơn {MAX_QUOTE_CHARS} ký tự — chỉ {MAX_QUOTE_CHARS} ký tự đầu được gửi sang Claude.
+                {t("truncated", { max: MAX_QUOTE_CHARS })}
               </p>
             )}
 
             <div>
-              <label className="block text-sm font-semibold text-label mb-2">Loại tác vụ</label>
+              <label className="block text-sm font-semibold text-label mb-2">{t("taskType")}</label>
               <div className="flex flex-wrap gap-2">
-                {TASK_TYPES.map((t) => (
+                {TASK_TYPES.map((tt) => (
                   <button
-                    key={t.value}
+                    key={tt.value}
                     type="button"
-                    onClick={() => setTaskType(t.value)}
+                    onClick={() => setTaskType(tt.value)}
                     className={clsx(
                       "text-sm font-semibold px-3.5 py-1.5 rounded-full border transition-colors",
-                      taskType === t.value
+                      taskType === tt.value
                         ? "bg-primary text-white border-primary"
                         : "bg-background text-body border-border hover:border-primary hover:text-primary-dark"
                     )}
                   >
-                    {t.label}
+                    {t(`task_${tt.value}`)}
                   </button>
                 ))}
               </div>
@@ -202,7 +203,7 @@ export function ClaudeHandoffModal({
 
             <div>
               <label htmlFor="claude-question" className="block text-sm font-semibold text-label mb-2">
-                Yêu cầu của bạn
+                {t("yourRequest")}
               </label>
               <textarea
                 id="claude-question"
@@ -230,7 +231,7 @@ export function ClaudeHandoffModal({
                 className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-full bg-primary text-white hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                Tạo yêu cầu &amp; sao chép prompt
+                {t("submit")}
               </button>
             </div>
           </form>

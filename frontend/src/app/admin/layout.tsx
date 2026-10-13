@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -9,6 +10,8 @@ import { api, setAuthRole } from "@/lib/api";
 import { ADMIN_NAV_GROUPS } from "@/lib/adminNav";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("shellHeader");
+  const tNav = useTranslations("shellNav");
   const pathname = usePathname();
   const router = useRouter();
   const [checked, setChecked] = useState(false);
@@ -41,14 +44,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div key={group.id}>
                 {gi > 0 && <div className="my-1.5 mx-2 h-px bg-border" aria-hidden="true" />}
                 <div className="px-3 pt-1 pb-0.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-light whitespace-nowrap opacity-0 h-0 group-hover:opacity-100 group-hover:h-auto group-focus-within:opacity-100 group-focus-within:h-auto transition-opacity">
-                  {group.label}
+                  {tNav(group.labelKey)}
                 </div>
                 <ul className="space-y-0.5">
-                  {group.items.map(({ href, label, icon: Icon }) => (
+                  {group.items.map(({ href, labelKey, icon: Icon }) => (
                     <li key={href}>
                       <Link
                         href={href}
-                        title={label}
+                        title={tNav(labelKey)}
                         className={clsx(
                           "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors duration-300 ease-in-out",
                           pathname.startsWith(href)
@@ -57,7 +60,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         )}
                       >
                         <Icon size={16} className="shrink-0" />
-                        <span className="hidden group-hover:inline group-focus-within:inline">{label}</span>
+                        <span className="hidden group-hover:inline group-focus-within:inline">{tNav(labelKey)}</span>
                       </Link>
                     </li>
                   ))}
@@ -65,11 +68,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     <li>
                       <button
                         onClick={handleLogout}
-                        title="Đăng xuất"
+                        title={t("logout")}
                         className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap text-body hover:bg-surface transition-colors duration-300 ease-in-out"
                       >
                         <LogOut size={16} className="shrink-0" />
-                        <span className="hidden group-hover:inline group-focus-within:inline">Đăng xuất</span>
+                        <span className="hidden group-hover:inline group-focus-within:inline">{t("logout")}</span>
                       </button>
                     </li>
                   )}

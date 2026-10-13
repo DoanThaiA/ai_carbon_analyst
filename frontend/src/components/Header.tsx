@@ -3,15 +3,19 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { LogoutButton } from "@/components/LogoutButton";
 import { HotNewsBell } from "@/components/HotNewsBell";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Settings, Menu, X, LogOut, Plug } from "lucide-react";
 import { api, setAuthRole } from "@/lib/api";
 import { ADMIN_NAV_GROUPS, ADMIN_NAV_ITEMS } from "@/lib/adminNav";
 
 export function Header() {
+  const t = useTranslations("shellHeader");
+  const tNav = useTranslations("shellNav");
   const pathname = usePathname();
   const router = useRouter();
   const isAdmin = pathname?.startsWith("/admin");
@@ -41,7 +45,7 @@ export function Header() {
   // Breadcrumb "Admin/<Tên trang>" — hiện ở thanh riêng NGAY DƯỚI header (không
   // còn thay chỗ tiêu đề "Jenny AI" nữa), cùng nguồn ADMIN_NAV_ITEMS với
   // sidebar/menu mobile bên dưới nên luôn khớp nhãn.
-  const adminPageLabel = ADMIN_NAV_ITEMS.find(({ href }) => pathname?.startsWith(href))?.label;
+  const adminPageLabel = ADMIN_NAV_ITEMS.find(({ href }) => pathname?.startsWith(href))?.labelKey;
 
   const handleAdminLogout = async () => {
     await api.post("/api/admin/auth/logout").catch(() => {});
@@ -59,26 +63,28 @@ export function Header() {
             Jenny AI
           </h1>
         </Link>
-        {isAuthenticated && (
-          <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          <LanguageSwitcher />
+          {isAuthenticated && (
+            <>
             {role === "admin" && !isAdmin && (
               <Link
                 href="/admin/reports"
                 className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
-                title="Trang Quản Trị"
+                title={t("adminTitle")}
               >
                 <Settings size={14} />
-                <span className="hidden sm:inline">Quản Trị</span>
+                <span className="hidden sm:inline">{t("admin")}</span>
               </Link>
             )}
             {role === "user" && (
               <Link
                 href="/connect-claude"
                 className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
-                title="Kết nối Claude Desktop"
+                title={t("connectClaudeTitle")}
               >
                 <Plug size={14} />
-                <span className="hidden md:inline">Kết nối Claude</span>
+                <span className="hidden md:inline">{t("connectClaude")}</span>
               </Link>
             )}
             <HotNewsBell />
@@ -86,15 +92,16 @@ export function Header() {
               <button
                 onClick={() => setMobileNavOpen(v => !v)}
                 className="md:hidden text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
-                aria-label="Menu"
+                aria-label={t("menu")}
               >
                 {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
             ) : (
               <LogoutButton />
             )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
 
         {/* Menu mobile admin — điều hướng + đăng xuất, thay cho sidebar (chỉ
             hiện từ md trở lên, xem admin/layout.tsx). */}
@@ -109,7 +116,7 @@ export function Header() {
                   <div key={group.id}>
                     {gi > 0 && <div className="my-2 mx-3 h-px bg-white/15" aria-hidden="true" />}
                     <ul className="space-y-1">
-                      {group.items.map(({ href, label, icon: Icon }) => (
+                      {group.items.map(({ href, labelKey, icon: Icon }) => (
                         <li key={href}>
                           <Link
                             href={href}
@@ -119,7 +126,7 @@ export function Header() {
                             )}
                           >
                             <Icon size={16} />
-                            {label}
+                            {tNav(labelKey)}
                           </Link>
                         </li>
                       ))}
@@ -130,7 +137,7 @@ export function Header() {
                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
                           >
                             <LogOut size={16} />
-                            Đăng xuất
+                            {t("logout")}
                           </button>
                         </li>
                       )}
@@ -150,7 +157,7 @@ export function Header() {
       {isAdmin && (
         <div className="px-6 pt-2.5 print:hidden">
           <p className="text-muted-light text-xs sm:text-sm font-semibold tracking-wide truncate">
-            Admin/{adminPageLabel ?? ""}
+            Admin/{adminPageLabel ? tNav(adminPageLabel) : ""}
           </p>
         </div>
       )}

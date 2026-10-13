@@ -1,0 +1,142 @@
+{
+  "chatLib": {
+    "vi": {
+      "docNotSupported": "\"{name}\": chưa hỗ trợ file .doc — vui lòng lưu lại dưới dạng .docx.",
+      "formatNotSupported": "\"{name}\": định dạng không được hỗ trợ (chỉ nhận Ảnh JPEG/PNG/WEBP, PDF, hoặc Word .docx).",
+      "tooLarge": "\"{name}\": vượt quá dung lượng cho phép ({limit}MB).",
+      "presignFailed": "Không xin được quyền upload cho \"{name}\".",
+      "uploadFailed": "Upload \"{name}\" thất bại (HTTP {status}).",
+      "connectFailed": "Không thể kết nối đến server.",
+      "sessionExpired": "Phiên đăng nhập đã hết hạn.",
+      "genericError": "Đã xảy ra lỗi, vui lòng thử lại."
+    },
+    "en": {
+      "docNotSupported": "\"{name}\": .doc files are not supported — please re-save as .docx.",
+      "formatNotSupported": "\"{name}\": unsupported format (only JPEG/PNG/WEBP images, PDF, or Word .docx are accepted).",
+      "tooLarge": "\"{name}\": exceeds the allowed size ({limit}MB).",
+      "presignFailed": "Could not get upload permission for \"{name}\".",
+      "uploadFailed": "Upload of \"{name}\" failed (HTTP {status}).",
+      "connectFailed": "Unable to connect to the server.",
+      "sessionExpired": "Your session has expired.",
+      "genericError": "Something went wrong, please try again."
+    }
+  },
+  "chatAttach": {
+    "vi": { "close": "Đóng" },
+    "en": { "close": "Close" }
+  },
+  "chatFeedback": {
+    "vi": {
+      "sendFailed": "Không gửi được phản ánh, vui lòng thử lại.",
+      "close": "Đóng",
+      "title": "Phản ánh thái độ của Jenny",
+      "thanks": "Cảm ơn bạn đã phản ánh. Nội dung đã được gửi tới Sếp của Jenny.",
+      "intro": "Nếu Jenny có thái độ không tốt, phục vụ không nhiệt tình, hiệu quả hợp tác không cao .v.v. hãy phản ánh trực tiếp lên Sếp của Jenny (em). Phản ánh sẽ được gắn với tài khoản email bạn đang đăng nhập.",
+      "displayName": "Tên hiển thị",
+      "optional": "(không bắt buộc)",
+      "contentLabel": "Nội dung phản ánh",
+      "contentPlaceholder": "Mô tả cụ thể vấn đề bạn gặp phải...",
+      "sending": "Đang gửi...",
+      "send": "Gửi"
+    },
+    "en": {
+      "sendFailed": "Could not send your feedback, please try again.",
+      "close": "Close",
+      "title": "Report Jenny's behavior",
+      "thanks": "Thank you for your feedback. It has been sent to Jenny's boss.",
+      "intro": "If Jenny has been unhelpful, unenthusiastic, or hard to work with, etc., report it directly to Jenny's boss. Your feedback will be linked to the email account you are signed in with.",
+      "displayName": "Display name",
+      "optional": "(optional)",
+      "contentLabel": "Feedback",
+      "contentPlaceholder": "Describe the issue you ran into...",
+      "sending": "Sending...",
+      "send": "Send"
+    }
+  },
+  "chatFloating": {
+    "vi": {
+      "closeHint": "Đóng gợi ý",
+      "hintTitle": "Nếu có gì thắc mắc hãy hỏi tôi nhé!",
+      "hintBody": "Bấm vào tôi để chat, hoặc bôi đen đoạn bất kỳ trong báo cáo rồi bấm <b>Hỏi AI</b>.",
+      "chat": "Chat với Jenny",
+      "askClaudeDesktop": "Hỏi Claude Desktop",
+      "history": "Lịch sử hỏi đáp",
+      "feedback": "Phản ánh",
+      "closeMenu": "Đóng menu",
+      "openMenu": "Mở menu Jenny: Chat, Lịch sử hỏi đáp, Phản ánh"
+    },
+    "en": {
+      "closeHint": "Close hint",
+      "hintTitle": "Got a question? Ask me!",
+      "hintBody": "Click me to chat, or highlight any passage in the report and click <b>Ask AI</b>.",
+      "chat": "Chat with Jenny",
+      "askClaudeDesktop": "Ask Claude Desktop",
+      "history": "Q&A history",
+      "feedback": "Feedback",
+      "closeMenu": "Close menu",
+      "openMenu": "Open Jenny menu: Chat, Q&A history, Feedback"
+    }
+  },
+  "chatQuote": {
+    "vi": {
+      "maxAttachments": "Chỉ được đính kèm tối đa {max} file cho mỗi lượt hỏi.",
+      "ratingFailed": "Lỗi khi gửi đánh giá, vui lòng thử lại.",
+      "askAi": "Hỏi AI",
+      "askClaude": "Hỏi Claude",
+      "backToChat": "Quay lại khung chat",
+      "history": "Lịch sử hỏi đáp",
+      "noHistory": "Chưa có lịch sử. Bôi đen một đoạn trong báo cáo hoặc chat trực tiếp với Jenny để bắt đầu hỏi đáp.",
+      "directChat": "Chat trực tiếp với Jenny",
+      "titleQuote": "Hỏi đáp về đoạn trích",
+      "titleChat": "Chat với Jenny",
+      "emptyState": "Chọn 1 phiên trong lịch sử, bôi đen một đoạn trong báo cáo, hoặc chat trực tiếp với Jenny.",
+      "promptQuote": "Đặt câu hỏi về đoạn trích trên, hoặc chọn gợi ý bên dưới.",
+      "promptFree": "Hỏi Jenny bất cứ điều gì về báo cáo và thị trường hôm nay, hoặc chọn gợi ý bên dưới.",
+      "sourcesTitle": "Danh sách tin tức tham khảo",
+      "ratedAs": "Bạn đã đánh giá phiên này là {rating}",
+      "good": "Tốt",
+      "bad": "Không tốt",
+      "reasonPlaceholder": "Vì sao câu trả lời chưa tốt? (bắt buộc)",
+      "sending": "Đang gửi...",
+      "submitRating": "Gửi đánh giá",
+      "cancel": "Huỷ",
+      "howWasIt": "Phiên hỏi đáp này thế nào?",
+      "suggesting": "Đang gợi ý câu hỏi...",
+      "removeAttachment": "Xoá file đính kèm",
+      "attachTitle": "Đính kèm ảnh/PDF/Word",
+      "placeholderQuote": "Hỏi thêm về đoạn trích...",
+      "placeholderFree": "Nhập câu hỏi cho Jenny...",
+      "placeholderNone": "Chọn 1 phiên hoặc bôi đen đoạn trích để hỏi..."
+    },
+    "en": {
+      "maxAttachments": "You can attach at most {max} files per question.",
+      "ratingFailed": "Failed to submit your rating, please try again.",
+      "askAi": "Ask AI",
+      "askClaude": "Ask Claude",
+      "backToChat": "Back to chat",
+      "history": "Q&A history",
+      "noHistory": "No history yet. Highlight a passage in the report or chat directly with Jenny to start.",
+      "directChat": "Direct chat with Jenny",
+      "titleQuote": "Q&A on selected passage",
+      "titleChat": "Chat with Jenny",
+      "emptyState": "Pick a session from history, highlight a passage in the report, or chat directly with Jenny.",
+      "promptQuote": "Ask a question about the passage above, or pick a suggestion below.",
+      "promptFree": "Ask Jenny anything about today's report and the market, or pick a suggestion below.",
+      "sourcesTitle": "Referenced news",
+      "ratedAs": "You rated this session as {rating}",
+      "good": "Good",
+      "bad": "Not good",
+      "reasonPlaceholder": "Why wasn't the answer good? (required)",
+      "sending": "Sending...",
+      "submitRating": "Submit rating",
+      "cancel": "Cancel",
+      "howWasIt": "How was this Q&A session?",
+      "suggesting": "Suggesting questions...",
+      "removeAttachment": "Remove attachment",
+      "attachTitle": "Attach image/PDF/Word",
+      "placeholderQuote": "Ask more about the passage...",
+      "placeholderFree": "Type a question for Jenny...",
+      "placeholderNone": "Pick a session or highlight a passage to ask..."
+    }
+  }
+}

@@ -10,11 +10,12 @@ export const MCP_CLIENT_VERSION = "0.1.1";
 // Khớp HandoffCreateRequest.quote (max_length=4000) ở backend schemas/claude_models.py.
 export const MAX_QUOTE_CHARS = 4000;
 
-export const TASK_TYPES: { value: ClaudeTaskType; label: string; placeholder: string }[] = [
-  { value: "other", label: "Phân tích / hỏi đáp", placeholder: "VD: Phân tích sâu hơn nhận định này và các rủi ro chính." },
-  { value: "pdf", label: "Sinh file PDF", placeholder: "VD: Soạn memo PDF 2 trang tóm tắt luận điểm này cho lãnh đạo." },
-  { value: "excel", label: "Sinh file Excel", placeholder: "VD: Lập bảng Excel kịch bản giá EUA 3 tháng tới theo các giả định." },
-  { value: "strategy", label: "Lập chiến lược", placeholder: "VD: Đề xuất chiến lược giao dịch kèm điều kiện vào/ra lệnh và quản trị rủi ro." },
+// Nhãn/placeholder dịch theo key `userHandoff.task_<value>` và `userHandoff.task_<value>_ph`.
+export const TASK_TYPES: { value: ClaudeTaskType }[] = [
+  { value: "other" },
+  { value: "pdf" },
+  { value: "excel" },
+  { value: "strategy" },
 ];
 
 export function wheelUrl(): string {
@@ -34,7 +35,8 @@ export const OS_INFO: Record<
     label: "macOS",
     configPath: "~/Library/Application Support/Claude/claude_desktop_config.json",
     // App desktop trên macOS không thừa hưởng PATH của shell nên phải dùng đường dẫn tuyệt đối.
-    defaultUvxPath: "/Users/<tên-máy-của-bạn>/.local/bin/uvx",
+    // Phần "<...>" là placeholder hiển thị — dịch qua uvxPathFor().
+    defaultUvxPath: "/Users/<your-username>/.local/bin/uvx",
     installCmd: "curl -LsSf https://astral.sh/uv/install.sh | sh",
     whereCmd: "which uvx",
   },
@@ -52,9 +54,12 @@ export function detectOs(): DesktopOs {
   return "mac";
 }
 
-export const TOKEN_PLACEHOLDER = "cat_DÁN_TOKEN_CỦA_BẠN_VÀO_ĐÂY";
+// Đường dẫn uvx mặc định theo OS, với placeholder tên người dùng đã dịch (macOS).
+export function uvxPathFor(os: DesktopOs, userPlaceholder: string): string {
+  return os === "mac" ? `/Users/<${userPlaceholder}>/.local/bin/uvx` : OS_INFO[os].defaultUvxPath;
+}
 
-export function buildClaudeConfig(opts: { uvxPath: string; token?: string }): string {
+export function buildClaudeConfig(opts: { uvxPath: string; token?: string; tokenPlaceholder: string }): string {
   return JSON.stringify(
     {
       mcpServers: {
@@ -63,7 +68,7 @@ export function buildClaudeConfig(opts: { uvxPath: string; token?: string }): st
           args: ["--from", wheelUrl(), "carbon-analyst-mcp"],
           env: {
             CARBON_API_URL: API_BASE_URL,
-            CARBON_API_TOKEN: opts.token || TOKEN_PLACEHOLDER,
+            CARBON_API_TOKEN: opts.token || opts.tokenPlaceholder,
           },
         },
       },

@@ -1,5 +1,6 @@
 import { API_BASE_URL, refreshSession } from "@/lib/api";
 import type { Attachment, ChatSource } from "@/lib/types";
+import type { TranslateFn } from "@/lib/minioUpload";
 
 interface QuoteChatStreamArgs {
   reportDate: string;
@@ -19,6 +20,8 @@ interface QuoteChatStreamArgs {
   onDone: () => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
+  // Hàm dịch namespace "chatLib" (lib thuần không dùng được hook).
+  t: TranslateFn;
 }
 
 // EventSource gốc không hỗ trợ POST body, mà quote có thể khá dài —
@@ -35,6 +38,7 @@ export async function streamQuoteChat({
   onDone,
   onError,
   signal,
+  t,
 }: QuoteChatStreamArgs): Promise<void> {
   const doFetch = () =>
     fetch(`${API_BASE_URL}/api/reports/${reportDate}/quote-chat`, {
@@ -60,13 +64,13 @@ export async function streamQuoteChat({
       if (refreshed) res = await doFetch();
     }
   } catch {
-    onError("Không thể kết nối đến server.");
+    onError(t("connectFailed"));
     return;
   }
 
   if (!res.ok || !res.body) {
     if (res.status === 401) {
-      onError("Phiên đăng nhập đã hết hạn.");
+      onError(t("sessionExpired"));
       return;
     }
     // 429 (hết quota/ngày) và các lỗi validate khác trả JSON { detail } — ưu
@@ -78,7 +82,7 @@ export async function streamQuoteChat({
     } catch {
       // không phải JSON hoặc body rỗng — bỏ qua, dùng fallback bên dưới
     }
-    onError(detail || "Đã xảy ra lỗi, vui lòng thử lại.");
+    onError(detail || t("genericError"));
     return;
   }
 
@@ -121,7 +125,7 @@ export async function streamQuoteChat({
         const message = (payload as { message?: string })?.message;
         if (message) onStatus?.(message);
       } else if (eventName === "error") {
-        const message = (payload as { message?: string })?.message || "Đã xảy ra lỗi, vui lòng thử lại.";
+        const message = (payload as { message?: string })?.message || t("genericError");
         onError(message);
         return;
       } else if (eventName === "done") {

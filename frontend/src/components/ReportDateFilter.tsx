@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { ArrowRight, CalendarDays, X } from "lucide-react";
 import clsx from "clsx";
 
@@ -27,11 +28,10 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const toIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 // Lối tắt chọn nhanh — tính theo ngày hiện tại của máy người dùng.
-const PRESETS: { key: string; label: string; range: () => DateRange }[] = [
-  { key: "all", label: "Tất cả", range: () => ({ from: "", to: "" }) },
+const PRESETS: { key: string; range: () => DateRange }[] = [
+  { key: "all", range: () => ({ from: "", to: "" }) },
   {
     key: "7d",
-    label: "7 ngày qua",
     range: () => {
       const t = new Date();
       const f = new Date(t);
@@ -41,7 +41,6 @@ const PRESETS: { key: string; label: string; range: () => DateRange }[] = [
   },
   {
     key: "30d",
-    label: "30 ngày qua",
     range: () => {
       const t = new Date();
       const f = new Date(t);
@@ -52,14 +51,14 @@ const PRESETS: { key: string; label: string; range: () => DateRange }[] = [
 ];
 
 // Thứ hiển thị từ Thứ 2 → Chủ nhật (giá trị = Date.getDay()).
-const WEEKDAYS: { day: number; label: string; full: string }[] = [
-  { day: 1, label: "T2", full: "Thứ Hai" },
-  { day: 2, label: "T3", full: "Thứ Ba" },
-  { day: 3, label: "T4", full: "Thứ Tư" },
-  { day: 4, label: "T5", full: "Thứ Năm" },
-  { day: 5, label: "T6", full: "Thứ Sáu" },
-  { day: 6, label: "T7", full: "Thứ Bảy" },
-  { day: 0, label: "CN", full: "Chủ nhật" },
+const WEEKDAYS: { day: number; key: string }[] = [
+  { day: 1, key: "mon" },
+  { day: 2, key: "tue" },
+  { day: 3, key: "wed" },
+  { day: 4, key: "thu" },
+  { day: 5, key: "fri" },
+  { day: 6, key: "sat" },
+  { day: 0, key: "sun" },
 ];
 
 const dateInputCls =
@@ -76,6 +75,7 @@ export function ReportDateFilter({
   shown: number;
   total: number;
 }) {
+  const t = useTranslations("shellDateFilter");
   const weekdays = value.weekdays ?? [];
   const active = Boolean(value.from || value.to || weekdays.length);
   const toggleWeekday = (day: number) =>
@@ -95,14 +95,14 @@ export function ReportDateFilter({
           <span className="p-1.5 rounded-lg bg-primary/10 text-primary-dark">
             <CalendarDays size={16} aria-hidden="true" />
           </span>
-          Lọc theo ngày
+          {t("filterByDate")}
         </div>
 
         {/* Khoảng ngày: 1 khung liền có viền, focus-within đổi màu viền cả khung */}
         <div className="flex items-center rounded-xl border border-primary/20 bg-background/70 px-2 focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/10 transition-shadow lg:w-[340px]">
           <input
             type="date"
-            aria-label="Từ ngày"
+            aria-label={t("fromDate")}
             value={value.from}
             max={value.to || undefined}
             onChange={(e) => onChange({ ...value, from: e.target.value })}
@@ -111,7 +111,7 @@ export function ReportDateFilter({
           <ArrowRight size={15} className="shrink-0 text-muted-light" aria-hidden="true" />
           <input
             type="date"
-            aria-label="Đến ngày"
+            aria-label={t("toDate")}
             value={value.to}
             min={value.from || undefined}
             onChange={(e) => onChange({ ...value, to: e.target.value })}
@@ -133,15 +133,15 @@ export function ReportDateFilter({
                   : "bg-transparent text-body border-primary/20 hover:bg-primary/10 hover:text-primary-dark"
               )}
             >
-              {p.label}
+              {t(`preset_${p.key}`)}
             </button>
           ))}
         </div>
 
         <div className="flex items-center gap-2 lg:ml-auto">
           <span className="text-[13px] text-muted-light whitespace-nowrap">
-            Hiển thị <b className="text-label">{shown}</b>
-            {active && <> / {total}</>} báo cáo
+            {t("showing")} <b className="text-label">{shown}</b>
+            {active && <> / {total}</>} {t("reportsUnit")}
           </span>
           {active && (
             <button
@@ -149,7 +149,7 @@ export function ReportDateFilter({
               onClick={() => onChange({ from: "", to: "", weekdays: [] })}
               className="h-8 inline-flex items-center gap-1 rounded-full px-2.5 text-[13px] font-semibold text-down hover:bg-down/10 transition-colors"
             >
-              <X size={14} aria-hidden="true" /> Xoá lọc
+              <X size={14} aria-hidden="true" /> {t("clear")}
             </button>
           )}
         </div>
@@ -157,9 +157,11 @@ export function ReportDateFilter({
 
       {/* Lọc theo thứ: chọn nhiều thứ cùng lúc; không chọn = tất cả các thứ */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-bold text-label shrink-0">Lọc theo thứ</span>
+        <span className="text-sm font-bold text-label shrink-0">{t("filterByWeekday")}</span>
         <div className="flex flex-wrap items-center gap-1.5">
-          {WEEKDAYS.map(({ day, label, full }) => {
+          {WEEKDAYS.map(({ day, key }) => {
+            const label = t(`wdShort_${key}`);
+            const full = t(`wdFull_${key}`);
             const on = weekdays.includes(day);
             return (
               <button

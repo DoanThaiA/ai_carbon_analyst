@@ -6,6 +6,7 @@ import {
   Loader2, CheckCircle2, XCircle, ExternalLink, BookOpen, ChevronDown,
 } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 
 type Tier = "A" | "B" | "C";
@@ -133,18 +134,18 @@ function buildPayload(f: SourceForm) {
 // Validate tối thiểu ở FE khớp với model_validator phía BE
 // (api/routers/admin_news_sources.py::NewsSourceCrawlConfig) — tránh round-trip
 // lỗi 422 cho các trường hợp rõ ràng thiếu field bắt buộc theo loại nguồn.
-function validateForm(f: SourceForm): string | null {
+function validateForm(f: SourceForm, t: (key: string) => string): string | null {
   if (!f.domain.trim() || !f.name.trim() || !f.category.trim()) {
-    return "Vui lòng điền đủ Tên, Domain, Chuyên mục.";
+    return t("valRequired");
   }
   if (f.source_type === "html" && !f.listing_url.trim()) {
-    return "Loại nguồn 'html' bắt buộc phải có Listing URL.";
+    return t("valHtml");
   }
   if (f.source_type === "rss" && !f.rss_url.trim()) {
-    return "Loại nguồn 'rss' bắt buộc phải có RSS URL.";
+    return t("valRss");
   }
   if (f.source_type === "bloomberg_rss" && !f.bloomberg_feeds_text.trim()) {
-    return "Loại nguồn 'bloomberg_rss' bắt buộc phải có ít nhất 1 Bloomberg feed URL.";
+    return t("valBloomberg");
   }
   return null;
 }
@@ -172,6 +173,7 @@ function SourceFormPanel({
   onSave: () => void;
   saving: boolean;
 }) {
+  const t = useTranslations("adminSrcNews");
   const [testOpen, setTestOpen] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
   const [testError, setTestError] = useState("");
@@ -182,7 +184,7 @@ function SourceFormPanel({
     setForm({ ...form, [key]: value });
 
   const handleTestCrawl = async () => {
-    const err = validateForm(form);
+    const err = validateForm(form, t);
     if (err) {
       setFormError(err);
       return;
@@ -202,7 +204,7 @@ function SourceFormPanel({
           ? detail
           : Array.isArray(detail)
             ? detail.map((d: any) => d.msg).join("; ")
-            : "Test crawl thất bại — không rõ nguyên nhân."
+            : t("testFailed")
       );
     } finally {
       setTestLoading(false);
@@ -210,7 +212,7 @@ function SourceFormPanel({
   };
 
   const handleSaveClick = () => {
-    const err = validateForm(form);
+    const err = validateForm(form, t);
     if (err) {
       setFormError(err);
       return;
@@ -230,43 +232,43 @@ function SourceFormPanel({
 
       {/* Nhóm 1: Thông tin cơ bản */}
       <div>
-        <p className={sectionTitleCls}>Thông tin cơ bản</p>
+        <p className={sectionTitleCls}>{t("secBasic")}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           <div>
-            <label className={labelCls}>Tên nguồn *</label>
-            <input required value={form.name} onChange={(e) => set("name", e.target.value)} className={inputCls} placeholder="vd: EIA – Today in Energy" />
+            <label className={labelCls}>{t("lblName")}</label>
+            <input required value={form.name} onChange={(e) => set("name", e.target.value)} className={inputCls} placeholder={t("phName")} />
           </div>
           <div>
-            <label className={labelCls}>Domain *</label>
-            <input required value={form.domain} onChange={(e) => set("domain", e.target.value)} className={inputCls} placeholder="vd: eia.gov" />
+            <label className={labelCls}>{t("lblDomain")}</label>
+            <input required value={form.domain} onChange={(e) => set("domain", e.target.value)} className={inputCls} placeholder={t("phDomain")} />
           </div>
           <div>
-            <label className={labelCls}>Chuyên mục (category) *</label>
-            <input required value={form.category} onChange={(e) => set("category", e.target.value)} className={inputCls} placeholder="vd: energy_official" />
+            <label className={labelCls}>{t("lblCategory")}</label>
+            <input required value={form.category} onChange={(e) => set("category", e.target.value)} className={inputCls} placeholder={t("phCategory")} />
           </div>
           <div>
-            <label className={labelCls}>Tier *</label>
+            <label className={labelCls}>{t("lblTier")}</label>
             <select value={form.tier} onChange={(e) => set("tier", e.target.value as Tier)} className={inputCls}>
-              <option value="A">A — Tin cậy cao</option>
-              <option value="B">B — Trung bình</option>
-              <option value="C">C — Thấp</option>
+              <option value="A">{t("tierA")}</option>
+              <option value="B">{t("tierB")}</option>
+              <option value="C">{t("tierC")}</option>
             </select>
           </div>
           <div>
-            <label className={labelCls}>Vùng</label>
+            <label className={labelCls}>{t("lblRegion")}</label>
             <select value={form.region} onChange={(e) => set("region", e.target.value as Region)} className={inputCls}>
-              <option value="international">Quốc tế</option>
-              <option value="vietnam">Việt Nam</option>
+              <option value="international">{t("regionIntl")}</option>
+              <option value="vietnam">{t("regionVn")}</option>
             </select>
           </div>
           <div className="flex items-end gap-4 pb-1">
             <label className="flex items-center gap-1.5 text-sm">
               <input type="checkbox" checked={form.is_active} onChange={(e) => set("is_active", e.target.checked)} />
-              Đang hoạt động
+              {t("lblActive")}
             </label>
             <label className="flex items-center gap-1.5 text-sm">
               <input type="checkbox" checked={form.is_noon_crawl} onChange={(e) => set("is_noon_crawl", e.target.checked)} />
-              Chạy lúc 12h
+              {t("lblNoon")}
             </label>
           </div>
         </div>
@@ -274,24 +276,24 @@ function SourceFormPanel({
 
       {/* Nhóm 2: Cấu hình Crawl */}
       <div className="pt-5 border-t border-border">
-        <p className={sectionTitleCls}>Cấu hình Crawl</p>
+        <p className={sectionTitleCls}>{t("secCrawl")}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           <div>
-            <label className={labelCls}>Loại nguồn *</label>
+            <label className={labelCls}>{t("lblSourceType")}</label>
             <select value={form.source_type} onChange={(e) => set("source_type", e.target.value as SourceType)} className={inputCls}>
-              <option value="html">html (trang danh sách)</option>
+              <option value="html">{t("typeHtml")}</option>
               <option value="rss">rss</option>
               <option value="bloomberg_rss">bloomberg_rss</option>
             </select>
           </div>
           <div>
-            <label className={labelCls}>Số bài tối đa / lần crawl</label>
-            <input type="number" min={1} value={form.max_articles} onChange={(e) => set("max_articles", e.target.value)} className={inputCls} placeholder="mặc định 25" />
+            <label className={labelCls}>{t("lblMaxArticles")}</label>
+            <input type="number" min={1} value={form.max_articles} onChange={(e) => set("max_articles", e.target.value)} className={inputCls} placeholder={t("phMaxArticles")} />
           </div>
           <div className="flex items-end pb-1">
             <label className="flex items-center gap-1.5 text-sm">
               <input type="checkbox" checked={form.use_playwright} onChange={(e) => set("use_playwright", e.target.checked)} />
-              Dùng Playwright
+              {t("lblPlaywright")}
             </label>
           </div>
 
@@ -319,7 +321,7 @@ function SourceFormPanel({
 
           {form.source_type === "bloomberg_rss" && (
             <div className="sm:col-span-2 md:col-span-3">
-              <label className={labelCls}>Bloomberg Feeds * <span className="font-normal text-muted-light">(1 URL / dòng)</span></label>
+              <label className={labelCls}>Bloomberg Feeds * <span className="font-normal text-muted-light">{t("hintOneUrlPerLine")}</span></label>
               <textarea
                 required
                 rows={3}
@@ -332,21 +334,21 @@ function SourceFormPanel({
           )}
 
           <p className="sm:col-span-2 md:col-span-3 text-xs text-muted-light -mt-1">
-            Playwright: khuyên dùng cho HTML SPA/Next.js render bằng JS. Sẽ bị bỏ qua nếu nguồn là RSS thuần.
+            {t("playwrightHint")}
           </p>
         </div>
       </div>
 
       {/* Nhóm 3: Bộ lọc */}
       <div className="pt-5 border-t border-border">
-        <p className={sectionTitleCls}>Bộ lọc</p>
+        <p className={sectionTitleCls}>{t("secFilter")}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>Regex Link bài viết <span className="font-normal text-muted-light">(để trống = dùng heuristic mặc định)</span></label>
-            <input value={form.link_pattern} onChange={(e) => set("link_pattern", e.target.value)} className={clsx(inputCls, "font-mono text-xs")} placeholder="vd: /todayinenergy/detail\.php" />
+            <label className={labelCls}>{t("lblLinkPattern")} <span className="font-normal text-muted-light">{t("hintLinkPattern")}</span></label>
+            <input value={form.link_pattern} onChange={(e) => set("link_pattern", e.target.value)} className={clsx(inputCls, "font-mono text-xs")} placeholder={t("phLinkPattern")} />
           </div>
           <div>
-            <label className={labelCls}>Loại trừ path <span className="font-normal text-muted-light">(1 path / dòng, để trống = mặc định)</span></label>
+            <label className={labelCls}>{t("lblExclude")} <span className="font-normal text-muted-light">{t("hintExclude")}</span></label>
             <textarea
               rows={2}
               value={form.exclude_path_patterns_text}
@@ -363,11 +365,11 @@ function SourceFormPanel({
         <p className={sectionTitleCls}>Metadata</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           <div>
-            <label className={labelCls}>Nhóm (group) <span className="font-normal text-muted-light">(vd: 1, 2)</span></label>
+            <label className={labelCls}>{t("lblGroup")} <span className="font-normal text-muted-light">{t("hintGroup")}</span></label>
             <input value={form.group_text} onChange={(e) => set("group_text", e.target.value)} className={inputCls} placeholder="1, 3" />
           </div>
           <div>
-            <label className={labelCls}>Độ tin cậy</label>
+            <label className={labelCls}>{t("lblConfidence")}</label>
             <select value={form.confidence} onChange={(e) => set("confidence", e.target.value)} className={inputCls}>
               <option value="">—</option>
               <option value="high">high</option>
@@ -376,7 +378,7 @@ function SourceFormPanel({
             </select>
           </div>
           <div className="sm:col-span-2 md:col-span-3">
-            <label className={labelCls}>Ghi chú nội bộ</label>
+            <label className={labelCls}>{t("lblNote")}</label>
             <textarea rows={2} value={form.note} onChange={(e) => set("note", e.target.value)} className={clsx(inputCls, "resize-none")} />
           </div>
         </div>
@@ -385,7 +387,7 @@ function SourceFormPanel({
       <div className="flex flex-wrap items-center gap-3 pt-2">
         <button type="button" onClick={handleSaveClick} disabled={saving} className="btn-pill py-2 px-5">
           <Save size={16} />
-          {saving ? "Đang lưu..." : "Lưu"}
+          {saving ? t("saving") : t("save")}
         </button>
         <button
           type="button"
@@ -394,9 +396,9 @@ function SourceFormPanel({
           className="flex items-center gap-2 py-2 px-5 rounded-full border border-border text-sm font-semibold text-body hover:bg-surface transition-colors"
         >
           {testLoading ? <Loader2 size={16} className="animate-spin" /> : <FlaskConical size={16} />}
-          {testLoading ? "Đang kiểm tra..." : "Kiểm tra cấu hình"}
+          {testLoading ? t("testing") : t("testBtn")}
         </button>
-        <button type="button" onClick={onCancel} className="text-body hover:text-primary text-sm font-semibold">Huỷ</button>
+        <button type="button" onClick={onCancel} className="text-body hover:text-primary text-sm font-semibold">{t("cancel")}</button>
       </div>
 
       {testOpen && (
@@ -406,12 +408,12 @@ function SourceFormPanel({
             <button onClick={() => setTestOpen(false)} className="absolute top-4 right-4 text-muted-light hover:text-label transition-colors">
               <X size={18} />
             </button>
-            <h3 className="text-lg font-bold text-heading mb-4">Kết quả kiểm tra cấu hình</h3>
+            <h3 className="text-lg font-bold text-heading mb-4">{t("testResultTitle")}</h3>
 
             {testLoading && (
               <div className="flex items-center gap-2 text-body text-sm py-6 justify-center">
                 <Loader2 size={18} className="animate-spin" />
-                Đang crawl thử (có thể mất 5–15 giây)...
+                {t("testCrawling")}
               </div>
             )}
 
@@ -426,17 +428,17 @@ function SourceFormPanel({
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-primary-dark text-sm font-semibold">
                   <CheckCircle2 size={18} />
-                  Tìm được {testArticles.length} bài viết
+                  {t("testFound", { count: testArticles.length })}
                 </div>
                 <ul className="space-y-2">
                   {testArticles.map((a, i) => (
                     <li key={i} className="border border-border rounded-lg p-3 text-sm">
-                      <p className="font-semibold text-label">{a.title || <span className="italic text-muted-light">(không có tiêu đề)</span>}</p>
+                      <p className="font-semibold text-label">{a.title || <span className="italic text-muted-light">{t("noTitle")}</span>}</p>
                       <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline text-xs mt-1 break-all">
                         <ExternalLink size={12} className="shrink-0" />
                         {a.url}
                       </a>
-                      <p className="text-muted-light text-xs mt-1">HTML length: {a.html_length.toLocaleString()}</p>
+                      <p className="text-muted-light text-xs mt-1">{t("htmlLength", { n: a.html_length.toLocaleString() })}</p>
                     </li>
                   ))}
                 </ul>
@@ -452,91 +454,24 @@ function SourceFormPanel({
 // Nội dung hướng dẫn thêm nguồn — mở dạng modal từ nút "Hướng dẫn thêm nguồn"
 // trên trang, giúp admin (không nhất thiết là dev) tự điền form đúng mà không
 // cần hỏi lại. Cập nhật nội dung này song song mỗi khi field/validation của
-// SourceFormPanel thay đổi.
-const GUIDE_SECTIONS: { title: string; body: React.ReactNode }[] = [
-  {
-    title: "Quy trình chuẩn khi thêm 1 nguồn mới",
-    body: (
-      <ol className="list-decimal list-inside space-y-1.5">
-        <li>Điền nhóm <strong>Thông tin cơ bản</strong> (Tên, Domain, Tier, Vùng, Chuyên mục).</li>
-        <li>Chọn đúng <strong>Loại nguồn</strong> ở nhóm Cấu hình Crawl rồi điền URL tương ứng.</li>
-        <li>Bấm <strong>&quot;Kiểm tra cấu hình&quot;</strong> — bắt buộc làm bước này trước khi Lưu.</li>
-        <li>Nếu kết quả test ra link rác/thiếu bài → quay lại chỉnh nhóm <strong>Bộ lọc</strong>, test lại.</li>
-        <li>Khi danh sách bài trả về hợp lý → điền thêm <strong>Metadata</strong> (không bắt buộc) rồi bấm <strong>Lưu</strong>.</li>
-      </ol>
-    ),
-  },
-  {
-    title: "Nhóm 1 — Thông tin cơ bản",
-    body: (
-      <ul className="space-y-2">
-        <li><strong>Tên nguồn:</strong> đặt rõ ràng, phân biệt được với các mục khác cùng domain — vd &quot;EIA – Today in Energy&quot; chứ không chỉ &quot;EIA&quot; (1 domain có thể có nhiều dòng, mỗi dòng 1 trang/chuyên mục riêng). Tên phải duy nhất trong toàn hệ thống.</li>
-        <li><strong>Domain:</strong> chỉ phần domain gốc, KHÔNG kèm <code>https://</code> hay <code>www.</code> — vd <code>eia.gov</code>, không phải <code>https://www.eia.gov</code>. Dùng để giới hạn crawl không lạc sang site khác và để giới hạn tốc độ request theo domain.</li>
-        <li><strong>Chuyên mục (category):</strong> nhãn nội bộ để phân loại NGUỒN (khác với chủ đề của từng bài viết) — có thể đặt tên tự do, cố gắng tái dùng nhãn đã có (vd <code>energy_official</code>, <code>financial_press</code>, <code>vn_press</code>) để dễ lọc/thống kê sau này.</li>
-        <li><strong>Tier:</strong> <strong>A</strong> = cơ quan chính thức/sàn giao dịch (EIA, OPEC, ICE...); <strong>B</strong> = báo chí/tổ chức uy tín; <strong>C</strong> = nguồn tổng hợp, độ tin cậy thấp hơn.</li>
-        <li><strong>Vùng:</strong> Quốc tế hay Việt Nam — quyết định bài viết từ nguồn này rơi vào nhóm nào khi lên báo cáo.</li>
-        <li><strong>Đang hoạt động:</strong> tắt để tạm dừng crawl nguồn này mà không cần xoá hẳn (giữ lại cấu hình để bật lại sau).</li>
-        <li><strong>Chạy lúc 12h:</strong> chỉ bật cho nguồn Tier A thực sự quan trọng cần cập nhật thêm 1 lần vào buổi trưa — đa số nguồn nên để tắt, bật tràn lan sẽ làm đợt crawl 12h chạy lâu không cần thiết.</li>
-      </ul>
-    ),
-  },
-  {
-    title: "Nhóm 2 — Cấu hình Crawl (chọn đúng Loại nguồn)",
-    body: (
-      <ul className="space-y-2">
-        <li><strong>html:</strong> trang có danh sách bài viết (listing page) nhưng KHÔNG có RSS feed. Bắt buộc điền <strong>Listing URL</strong> — dán đúng URL trang danh sách (không phải trang chủ chung chung nếu có mục tin tức riêng).</li>
-        <li><strong>rss:</strong> trang có sẵn RSS/Atom feed. Bắt buộc điền <strong>RSS URL</strong>. Ưu tiên chọn loại này khi nguồn có feed vì ổn định hơn và ít bị chặn hơn scraping HTML.</li>
-        <li><strong>bloomberg_rss:</strong> chỉ dùng riêng cho Bloomberg (xử lý nhiều feed + resolve link Google News đặc thù) — bắt buộc điền danh sách <strong>Bloomberg Feeds</strong>, mỗi URL 1 dòng.</li>
-        <li><strong>Số bài tối đa/lần crawl:</strong> để trống dùng mặc định (25). Đặt thấp hơn cho site ra bài rất nhiều để đỡ tốn request mỗi lần crawl.</li>
-        <li><strong>Dùng Playwright:</strong> chỉ bật khi trang là SPA/React/Next.js cần chạy JS mới hiện nội dung, hoặc khi &quot;Kiểm tra cấu hình&quot; trả về 0 bài dù URL chắc chắn đúng. Không bật mặc định — tốn tài nguyên và chậm hơn nhiều so với fetch thường. Không có tác dụng với nguồn loại RSS.</li>
-      </ul>
-    ),
-  },
-  {
-    title: "Nhóm 3 — Bộ lọc (chỉ cần khi kết quả test chưa sạch)",
-    body: (
-      <ul className="space-y-2">
-        <li><strong>Regex Link bài viết:</strong> dùng khi bộ lọc mặc định (yêu cầu URL có từ 3 cấp path trở lên) bắt nhầm link không phải bài viết, hoặc bỏ sót bài thật. Viết theo đúng cấu trúc URL bài viết thật của trang — vd <code>/todayinenergy/detail\.php</code> hoặc <code>/pr-detail/</code>. Luôn Kiểm tra cấu hình lại sau khi sửa regex này.</li>
-        <li><strong>Loại trừ path:</strong> liệt kê thêm các đoạn path chắc chắn KHÔNG phải bài viết (trang tag/category/author/login/search...) nếu bộ mặc định của hệ thống chưa đủ với trang này. Để trống nếu không có nhu cầu đặc biệt.</li>
-      </ul>
-    ),
-  },
-  {
-    title: "Nhóm 4 — Metadata (không bắt buộc nhưng nên điền)",
-    body: (
-      <ul className="space-y-2">
-        <li><strong>Nhóm (group):</strong> số nhóm chủ đề nội bộ, dùng để lọc/thống kê sau này — nhập dạng &quot;1, 3&quot;.</li>
-        <li><strong>Độ tin cậy:</strong> đánh giá chủ quan mức ổn định của URL — nguồn đánh dấu &quot;low&quot; nên theo dõi log crawl thường xuyên hơn vì khả năng cao site sẽ đổi cấu trúc.</li>
-        <li><strong>Ghi chú nội bộ:</strong> ghi lại lý do chọn URL này, các lần từng sửa URL trước đó, hoặc lưu ý đặc biệt — giúp người sau (kể cả chính bạn sau vài tháng) không phải đoán lại từ đầu.</li>
-      </ul>
-    ),
-  },
-  {
-    title: "Cách đọc kết quả \"Kiểm tra cấu hình\" (Test Crawl)",
-    body: (
-      <ul className="space-y-2">
-        <li>Luôn bấm nút này TRƯỚC khi Lưu — hệ thống sẽ thử crawl thật với cấu hình đang điền (KHÔNG lưu vào DB, không gọi Claude nên không tốn chi phí), trả về tối đa 5 bài tìm được.</li>
-        <li>Thấy danh sách bài có tiêu đề/link hợp lý, trỏ đúng vào bài viết → cấu hình đúng, có thể bấm Lưu.</li>
-        <li>Báo <strong>&quot;Không crawl được bài nào&quot;</strong>: mở thử Listing URL/RSS URL trực tiếp trên trình duyệt xem có đúng link không; nếu đúng mà vẫn không ra bài, thử bật <strong>Dùng Playwright</strong> (khả năng trang cần JS hoặc chặn bot).</li>
-        <li>Test ra bài nhưng link không phải bài viết (link chuyên mục, trang tag...) → quay lại nhóm Bộ lọc, thêm Regex Link bài viết hoặc Loại trừ path rồi test lại.</li>
-      </ul>
-    ),
-  },
-  {
-    title: "Lỗi thường gặp",
-    body: (
-      <ul className="space-y-2">
-        <li>Chọn Loại nguồn không khớp với URL đang có — vd trang có sẵn RSS nhưng vẫn để loại <code>html</code> và dán RSS URL vào ô Listing URL.</li>
-        <li>Đặt Tên nguồn trùng với nguồn đã có — hệ thống yêu cầu Tên là duy nhất, sẽ báo lỗi 409 khi Lưu.</li>
-        <li>Nhập Domain kèm <code>https://</code>/<code>www.</code> — chỉ nhập domain gốc.</li>
-        <li>Bật &quot;Chạy lúc 12h&quot; cho quá nhiều nguồn không thực sự cần thiết, khiến đợt crawl buổi trưa chạy lâu hơn mức cần.</li>
-        <li>Bỏ qua bước &quot;Kiểm tra cấu hình&quot; rồi Lưu luôn — dễ tạo ra nguồn không bao giờ crawl được bài nào mà không hay biết cho tới lần crawl thật.</li>
-      </ul>
-    ),
-  },
+// SourceFormPanel thay đổi. Chữ nằm trong messages (adminSrcNews: guide_<key>_title / guide_<key>_i<k>).
+const GUIDE_SECTIONS: { key: string; ordered?: boolean; items: number }[] = [
+  { key: "s1", ordered: true, items: 5 },
+  { key: "s2", items: 7 },
+  { key: "s3", items: 5 },
+  { key: "s4", items: 2 },
+  { key: "s5", items: 3 },
+  { key: "s6", items: 4 },
+  { key: "s7", items: 5 },
 ];
 
+const GUIDE_RICH = {
+  b: (c: React.ReactNode) => <strong>{c}</strong>,
+  code: (c: React.ReactNode) => <code>{c}</code>,
+};
+
 function NewsSourceGuideModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useTranslations("adminSrcNews");
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   if (!open) return null;
@@ -545,16 +480,16 @@ function NewsSourceGuideModal({ open, onClose }: { open: boolean; onClose: () =>
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto bg-background border border-border rounded-2xl shadow-[var(--shadow-medium)] p-6">
-        <button onClick={onClose} className="absolute top-4 right-4 text-muted-light hover:text-label transition-colors" title="Đóng">
+        <button onClick={onClose} className="absolute top-4 right-4 text-muted-light hover:text-label transition-colors" title={t("close")}>
           <X size={18} />
         </button>
 
         <div className="flex items-center gap-2 mb-1">
           <BookOpen size={20} className="text-primary" />
-          <h2 className="text-lg font-bold text-heading">Hướng dẫn thêm nguồn tin</h2>
+          <h2 className="text-lg font-bold text-heading">{t("guideTitle")}</h2>
         </div>
         <p className="text-sm text-body mb-5">
-          Đọc qua trước khi thêm nguồn mới, để cấu hình đúng ngay từ lần đầu và tránh phải sửa lại nhiều lần.
+          {t("guideIntro")}
         </p>
 
         <div className="space-y-2">
@@ -567,11 +502,18 @@ function NewsSourceGuideModal({ open, onClose }: { open: boolean; onClose: () =>
                   onClick={() => setOpenIndex(isOpen ? null : i)}
                   className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-surface hover:bg-surface-alt transition-colors"
                 >
-                  <span className="font-semibold text-sm text-label">{section.title}</span>
+                  <span className="font-semibold text-sm text-label">{t(`guide_${section.key}_title`)}</span>
                   <ChevronDown size={16} className={clsx("shrink-0 transition-transform", isOpen && "rotate-180")} />
                 </button>
                 {isOpen && (
-                  <div className="px-4 py-3 text-sm text-body bg-background">{section.body}</div>
+                  <div className="px-4 py-3 text-sm text-body bg-background">{(() => {
+                      const items = Array.from({ length: section.items }, (_, k) => (
+                        <li key={k}>{t.rich(`guide_${section.key}_i${k + 1}`, GUIDE_RICH)}</li>
+                      ));
+                      return section.ordered
+                        ? <ol className="list-decimal list-inside space-y-1.5">{items}</ol>
+                        : <ul className="space-y-2">{items}</ul>;
+                    })()}</div>
                 )}
               </div>
             );
@@ -583,6 +525,7 @@ function NewsSourceGuideModal({ open, onClose }: { open: boolean; onClose: () =>
 }
 
 export default function NewsSourcesPage() {
+  const t = useTranslations("adminSrcNews");
   const [sources, setSources] = useState<NewsSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -597,7 +540,7 @@ export default function NewsSourcesPage() {
       const res = await api.get("/api/admin/news-sources");
       setSources(res.data);
     } catch {
-      setError("Không thể tải danh sách nguồn tin.");
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
@@ -632,20 +575,20 @@ export default function NewsSourcesPage() {
       setMode("none");
       await fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi lưu nguồn tin.");
+      setError(err.response?.data?.detail || t("saveError"));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Xoá nguồn tin này? Crawler sẽ không lấy bài từ nguồn này nữa.")) return;
+    if (!confirm(t("deleteConfirm"))) return;
     setError("");
     try {
       await api.delete(`/api/admin/news-sources/${id}`);
       await fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi xoá nguồn tin.");
+      setError(err.response?.data?.detail || t("deleteError"));
     }
   };
 
@@ -653,8 +596,8 @@ export default function NewsSourcesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Nguồn Tin Tức</h2>
-          <p className="text-body">Cấu hình các nguồn để crawl tin tức (thay cho sources.yaml)</p>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+          <p className="text-body">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
@@ -662,12 +605,12 @@ export default function NewsSourcesPage() {
             className="flex items-center gap-2 py-2.5 px-5 rounded-full border border-border text-sm font-semibold text-body hover:bg-surface transition-colors"
           >
             <BookOpen size={16} />
-            Hướng dẫn thêm nguồn
+            {t("guideBtn")}
           </button>
           {mode === "none" && (
             <button onClick={openAdd} className="btn-pill py-2.5">
               <Plus size={18} />
-              Thêm nguồn
+              {t("add")}
             </button>
           )}
         </div>
@@ -695,14 +638,14 @@ export default function NewsSourcesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold">Tên</th>
+                  <th className="px-4 py-3 font-semibold">{t("colName")}</th>
                   <th className="px-4 py-3 font-semibold">Domain</th>
                   <th className="px-4 py-3 font-semibold">Tier</th>
-                  <th className="px-4 py-3 font-semibold">Loại</th>
-                  <th className="px-4 py-3 font-semibold">Vùng</th>
-                  <th className="px-4 py-3 font-semibold">Trạng thái</th>
-                  <th className="px-4 py-3 font-semibold">12h</th>
-                  <th className="px-4 py-3 font-semibold text-right">Hành động</th>
+                  <th className="px-4 py-3 font-semibold">{t("colType")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("lblRegion")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colStatus")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("col12h")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{t("colActions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -712,13 +655,13 @@ export default function NewsSourcesPage() {
                     <td className="px-4 py-2.5 font-mono text-muted-light">{s.domain}</td>
                     <td className="px-4 py-2.5">{s.tier}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{s.source_type}</td>
-                    <td className="px-4 py-2.5">{s.region === "vietnam" ? "VN" : "Quốc tế"}</td>
+                    <td className="px-4 py-2.5">{s.region === "vietnam" ? t("regionVnShort") : t("regionIntl")}</td>
                     <td className="px-4 py-2.5">
                       <span className={clsx(
                         "px-2 py-0.5 rounded-full text-xs font-semibold",
                         s.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
                       )}>
-                        {s.is_active ? "Active" : "Tắt"}
+                        {s.is_active ? t("active") : t("off")}
                       </span>
                     </td>
                     <td className="px-4 py-2.5">{s.is_noon_crawl ? "✓" : ""}</td>
@@ -741,7 +684,7 @@ export default function NewsSourcesPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold text-label truncate">{s.name}</p>
-                    <p className="font-mono text-xs text-muted-light">{s.domain} · Tier {s.tier} · {s.source_type}</p>
+                    <p className="font-mono text-xs text-muted-light">{s.domain} · {t("tierShort", { tier: s.tier })} · {s.source_type}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button onClick={() => openEdit(s)} className="p-1.5 rounded hover:bg-surface text-body"><Pencil size={16} /></button>
@@ -753,12 +696,12 @@ export default function NewsSourcesPage() {
                     "px-2 py-0.5 rounded-full text-xs font-semibold",
                     s.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
                   )}>
-                    {s.is_active ? "Active" : "Tắt"}
+                    {s.is_active ? t("active") : t("off")}
                   </span>
                   {s.is_noon_crawl && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-tint text-primary-dark">Chạy 12h</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-tint text-primary-dark">{t("noonShort")}</span>
                   )}
-                  <span className="text-xs text-muted-light">{s.region === "vietnam" ? "Việt Nam" : "Quốc tế"}</span>
+                  <span className="text-xs text-muted-light">{s.region === "vietnam" ? t("regionVn") : t("regionIntl")}</span>
                 </div>
               </div>
             ))}

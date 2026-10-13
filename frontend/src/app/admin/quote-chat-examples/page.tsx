@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Sparkles, Trash2, AlertCircle, Quote as QuoteIcon } from "lucide-react";
 import { format } from "date-fns";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import type { QuoteChatExample } from "@/lib/types";
 
 export default function AdminQuoteChatExamplesPage() {
+  const t = useTranslations("adminMiscExamples");
   const [examples, setExamples] = useState<QuoteChatExample[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -18,7 +20,7 @@ export default function AdminQuoteChatExamplesPage() {
       const res = await api.get("/api/admin/quote-chat-examples");
       setExamples(res.data);
     } catch {
-      setError("Không thể tải danh sách đoạn chat tham khảo.");
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
@@ -29,13 +31,13 @@ export default function AdminQuoteChatExamplesPage() {
   }, []);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Xoá đoạn chat tham khảo này? Quote Chat sẽ không tham khảo nó nữa.")) return;
+    if (!confirm(t("confirmDelete"))) return;
     setDeletingId(id);
     try {
       await api.delete(`/api/admin/quote-chat-examples/${id}`);
       setExamples((prev) => prev.filter((e) => e.id !== id));
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi xoá đoạn chat tham khảo.");
+      alert(err.response?.data?.detail || t("deleteError"));
     } finally {
       setDeletingId(null);
     }
@@ -44,14 +46,13 @@ export default function AdminQuoteChatExamplesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Đoạn Chat Tham Khảo</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
         <p className="text-body">
-          Các cặp hỏi-đáp admin chọn từ mục{" "}
-          <Link href="/admin/chat-reviews" className="text-primary-dark hover:underline font-semibold">
-            Đánh giá chat
-          </Link>{" "}
-          — được tiêm vào system prompt của mọi phiên Quote Chat sau đó làm chuẩn tham khảo về cách suy luận/văn
-          phong (không dùng để lấy lại số liệu cụ thể).
+          {t.rich("subtitle", { link: (chunks) => (
+            <Link href="/admin/chat-reviews" className="text-primary-dark hover:underline font-semibold">
+              {chunks}
+            </Link>
+          ) })}
         </p>
       </div>
 
@@ -72,11 +73,11 @@ export default function AdminQuoteChatExamplesPage() {
         <div className="text-center py-16 bg-surface border border-border-soft border-dashed rounded-2xl">
           <Sparkles size={40} className="mx-auto text-muted mb-3" />
           <p className="text-body">
-            Chưa có đoạn chat tham khảo nào. Vào{" "}
-            <Link href="/admin/chat-reviews" className="text-primary-dark hover:underline font-semibold">
-              Đánh giá chat
-            </Link>
-            , mở 1 phiên và bấm &quot;Để tham khảo&quot; ở câu trả lời phù hợp.
+            {t.rich("empty", { link: (chunks) => (
+              <Link href="/admin/chat-reviews" className="text-primary-dark hover:underline font-semibold">
+                {chunks}
+              </Link>
+            ) })}
           </p>
         </div>
       ) : (
@@ -85,15 +86,15 @@ export default function AdminQuoteChatExamplesPage() {
             <div key={ex.id} className="bg-background border border-border rounded-2xl p-5 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted-light">
-                  {ex.source_report_date && <span>Báo cáo ngày {ex.source_report_date}</span>}
-                  {ex.created_by && <span>Thêm bởi {ex.created_by}</span>}
+                  {ex.source_report_date && <span>{t("reportDate", { date: ex.source_report_date })}</span>}
+                  {ex.created_by && <span>{t("addedBy", { user: ex.created_by })}</span>}
                   <span>{format(new Date(ex.created_at), "HH:mm dd/MM/yyyy")}</span>
                 </div>
                 <button
                   onClick={() => handleDelete(ex.id)}
                   disabled={deletingId === ex.id}
                   className="p-1.5 rounded hover:bg-red-50 text-down disabled:opacity-40 shrink-0"
-                  title="Xoá đoạn chat tham khảo"
+                  title={t("deleteTitle")}
                 >
                   <Trash2 size={16} />
                 </button>
@@ -107,11 +108,11 @@ export default function AdminQuoteChatExamplesPage() {
               )}
 
               <div>
-                <p className="text-[11px] font-semibold text-muted-light uppercase tracking-wide mb-1">Câu hỏi</p>
+                <p className="text-[11px] font-semibold text-muted-light uppercase tracking-wide mb-1">{t("question")}</p>
                 <p className="text-[13.5px] leading-relaxed text-label">{ex.question}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-muted-light uppercase tracking-wide mb-1">Câu trả lời mẫu</p>
+                <p className="text-[11px] font-semibold text-muted-light uppercase tracking-wide mb-1">{t("sampleAnswer")}</p>
                 <p className="text-[13.5px] leading-relaxed text-body whitespace-pre-wrap">{ex.answer}</p>
               </div>
             </div>

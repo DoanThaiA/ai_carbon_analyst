@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, BarChart3 } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 
 // Thống kê hiệu suất Jenny — theo từng báo cáo ngày đã phát hành: lượt xem và
@@ -68,6 +69,7 @@ function BarChart({
   valueOf: (it: PerfItem) => number;
   detailOf: (it: PerfItem) => string;
 }) {
+  const t = useTranslations("adminUsrPerformance");
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   const [hover, setHover] = useState<number | null>(null);
@@ -100,7 +102,7 @@ function BarChart({
       <h3 className="text-[15px] font-bold text-heading">{title}</h3>
       <div ref={wrapRef} className="relative mt-3">
         {n === 0 ? (
-          <div className="h-[220px] flex items-center justify-center text-sm text-muted-light">Chưa có báo cáo nào trong kỳ.</div>
+          <div className="h-[220px] flex items-center justify-center text-sm text-muted-light">{t("noReportsInRange")}</div>
         ) : (
           <>
             <svg width={width} height={H} role="img" aria-label={title} onMouseLeave={() => setHover(null)}>
@@ -157,7 +159,7 @@ function BarChart({
                   transform: "translateX(-50%)",
                 }}
               >
-                <div className="font-semibold text-label">Báo cáo {fmtFull(items[hover].report_date)}</div>
+                <div className="font-semibold text-label">{t("tooltipReport", { date: fmtFull(items[hover].report_date) })}</div>
                 <div className="flex items-center gap-1.5 text-body">
                   <span className="inline-block w-2 h-2 rounded-sm" style={{ background: color }} aria-hidden="true" />
                   <span className="tabular-nums font-semibold">{valueOf(items[hover])}</span> {unit}
@@ -173,6 +175,7 @@ function BarChart({
 }
 
 export default function AdminPerformancePage() {
+  const tr = useTranslations("adminUsrPerformance");
   const [days, setDays] = useState(30);
   const [data, setData] = useState<PerfResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -188,7 +191,7 @@ export default function AdminPerformancePage() {
         if (!cancelled) setData(res.data);
       })
       .catch(() => {
-        if (!cancelled) setError("Không thể tải số liệu thống kê.");
+        if (!cancelled) setError(tr("loadError"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -206,11 +209,11 @@ export default function AdminPerformancePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Thống Kê Hiệu Suất</h2>
-          <p className="text-body">Mức độ đồng nghiệp đọc báo cáo và hỏi đáp với Jenny trên từng báo cáo ngày</p>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{tr("title")}</h2>
+          <p className="text-body">{tr("subtitle")}</p>
         </div>
         {/* Bộ lọc khoảng thời gian — 1 hàng phía trên biểu đồ */}
-        <div className="inline-flex rounded-lg border border-border bg-background p-0.5" role="group" aria-label="Khoảng thời gian">
+        <div className="inline-flex rounded-lg border border-border bg-background p-0.5" role="group" aria-label={tr("rangeAria")}>
           {RANGES.map((r) => (
             <button
               key={r}
@@ -222,7 +225,7 @@ export default function AdminPerformancePage() {
                 days === r ? "bg-tint text-primary-dark" : "text-body hover:bg-surface"
               )}
             >
-              {r} ngày
+              {tr("days", { n: r })}
             </button>
           ))}
         </div>
@@ -240,28 +243,28 @@ export default function AdminPerformancePage() {
       ) : t ? (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile label="Báo cáo đã phát hành" value={t.reports} hint={`Trong ${days} ngày gần nhất`} />
-            <StatTile label="Lượt xem" value={t.views} hint={`${t.unique_viewers} đồng nghiệp đã xem`} />
-            <StatTile label="Lượt hỏi đáp" value={t.questions} hint={`${t.sessions} phiên hỏi đáp`} />
-            <StatTile label="Hỏi đáp / báo cáo" value={avgQuestions} hint="Trung bình mỗi báo cáo" />
+            <StatTile label={tr("publishedReports")} value={t.reports} hint={tr("inLastDays", { n: days })} />
+            <StatTile label={tr("views")} value={t.views} hint={tr("colleaguesViewed", { n: t.unique_viewers })} />
+            <StatTile label={tr("questions")} value={t.questions} hint={tr("qaSessionsCount", { n: t.sessions })} />
+            <StatTile label={tr("qaPerReport")} value={avgQuestions} hint={tr("avgPerReport")} />
           </div>
 
           <div className={clsx("grid grid-cols-1 xl:grid-cols-2 gap-4 transition-opacity", loading && "opacity-60")}>
             <BarChart
-              title="Lượt xem theo báo cáo"
-              unit="lượt xem"
+              title={tr("viewsByReport")}
+              unit={tr("viewsUnit")}
               color={COLOR_VIEWS}
               items={items}
               valueOf={(it) => it.views}
-              detailOf={(it) => `${it.unique_viewers} người xem`}
+              detailOf={(it) => tr("viewersCount", { n: it.unique_viewers })}
             />
             <BarChart
-              title="Lượt hỏi đáp theo báo cáo"
-              unit="câu hỏi"
+              title={tr("questionsByReport")}
+              unit={tr("questionsUnit")}
               color={COLOR_QUESTIONS}
               items={items}
               valueOf={(it) => it.questions}
-              detailOf={(it) => `${it.sessions} phiên hỏi đáp`}
+              detailOf={(it) => tr("qaSessionsCount", { n: it.sessions })}
             />
           </div>
 
@@ -270,11 +273,11 @@ export default function AdminPerformancePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold">Báo cáo ngày</th>
-                  <th className="px-4 py-3 font-semibold text-right">Lượt xem</th>
-                  <th className="px-4 py-3 font-semibold text-right">Người xem</th>
-                  <th className="px-4 py-3 font-semibold text-right">Lượt hỏi đáp</th>
-                  <th className="px-4 py-3 font-semibold text-right">Phiên hỏi đáp</th>
+                  <th className="px-4 py-3 font-semibold">{tr("colReportDate")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{tr("views")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{tr("colViewers")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{tr("questions")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{tr("colSessions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -282,7 +285,7 @@ export default function AdminPerformancePage() {
                   <tr>
                     <td colSpan={5} className="px-4 py-10 text-center text-muted-light">
                       <BarChart3 size={32} className="mx-auto mb-2 text-muted" />
-                      Chưa có báo cáo nào được phát hành trong kỳ này.
+                      {tr("noPublished")}
                     </td>
                   </tr>
                 ) : (
@@ -301,8 +304,7 @@ export default function AdminPerformancePage() {
           </div>
 
           <p className="text-[12px] text-muted-light">
-            Lượt xem chỉ tính đồng nghiệp (không tính admin); cùng 1 người mở lại cùng báo cáo trong 30 phút chỉ tính 1 lượt.
-            Số liệu lượt xem bắt đầu được ghi nhận từ khi cập nhật tính năng này.
+            {tr("footnote")}
           </p>
         </>
       ) : null}

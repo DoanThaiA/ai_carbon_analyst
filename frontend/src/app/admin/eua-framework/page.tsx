@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, ChevronDown, ChevronUp, RotateCcw, Save, AlertCircle, Search, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import type { EuaFrameworkBlock } from "@/lib/types";
 
 export default function AdminEuaFrameworkPage() {
+  const t = useTranslations("adminMiscEua");
   const [blocks, setBlocks] = useState<EuaFrameworkBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -23,7 +25,7 @@ export default function AdminEuaFrameworkPage() {
       const res = await api.get("/api/admin/eua-framework/blocks");
       setBlocks(res.data);
     } catch {
-      setError("Không thể tải khung phân tích EUA.");
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
@@ -69,7 +71,7 @@ export default function AdminEuaFrameworkPage() {
       setBlocks((prev) => prev.map((x) => (x.block_id === updated.block_id ? updated : x)));
       setDrafts((d) => ({ ...d, [b.block_id]: updated.custom_content ?? updated.default_content }));
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi lưu nội dung.");
+      setError(err.response?.data?.detail || t("saveError"));
     } finally {
       setSaving((s) => {
         const next = new Set(s);
@@ -81,7 +83,7 @@ export default function AdminEuaFrameworkPage() {
 
   async function handleReset(b: EuaFrameworkBlock) {
     if (!b.is_customized) return;
-    if (!confirm(`Khôi phục "${b.title}" về nội dung mặc định trong code? Nội dung custom hiện tại sẽ mất.`)) return;
+    if (!confirm(t("confirmReset", { title: b.title }))) return;
     setResetting((s) => new Set(s).add(b.block_id));
     setError("");
     try {
@@ -90,7 +92,7 @@ export default function AdminEuaFrameworkPage() {
       setBlocks((prev) => prev.map((x) => (x.block_id === updated.block_id ? updated : x)));
       setDrafts((d) => ({ ...d, [b.block_id]: updated.default_content }));
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi khôi phục mặc định.");
+      setError(err.response?.data?.detail || t("resetError"));
     } finally {
       setResetting((s) => {
         const next = new Set(s);
@@ -103,10 +105,9 @@ export default function AdminEuaFrameworkPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Khung Phân Tích EUA</h2>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
         <p className="text-body">
-          Custom nội dung diễn giải từng khối tri thức nhân quả dùng để sinh báo cáo & chat AI — không đổi
-          được cơ chế nào áp dụng cho topic tin tức nào, chỉ đổi được NỘI DUNG diễn giải của từng khối.
+          {t("subtitle")}
         </p>
       </div>
 
@@ -115,7 +116,7 @@ export default function AdminEuaFrameworkPage() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Tìm theo tên khối..."
+          placeholder={t("searchPlaceholder")}
           className="w-full pl-9 pr-3 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
         />
       </div>
@@ -136,7 +137,7 @@ export default function AdminEuaFrameworkPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 bg-surface border border-border-soft border-dashed rounded-2xl">
           <BrainCircuit size={40} className="mx-auto text-muted mb-3" />
-          <p className="text-body">Không tìm thấy khối nào khớp.</p>
+          <p className="text-body">{t("noMatch")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -165,7 +166,7 @@ export default function AdminEuaFrameworkPage() {
                   <div className="flex items-center gap-3 shrink-0">
                     {b.is_customized && (
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-tint text-primary-dark border border-primary/20">
-                        Đã custom
+                        {t("customized")}
                       </span>
                     )}
                     {isOpen ? <ChevronUp size={18} className="text-muted-light" /> : <ChevronDown size={18} className="text-muted-light" />}
@@ -176,8 +177,9 @@ export default function AdminEuaFrameworkPage() {
                   <div className="px-5 pb-5 space-y-3 border-t border-border-soft pt-4">
                     {b.is_customized && b.updated_at && (
                       <p className="text-[12px] text-muted-light">
-                        Cập nhật lần cuối {format(new Date(b.updated_at), "HH:mm dd/MM/yyyy")}
-                        {b.updated_by ? ` bởi ${b.updated_by}` : ""}
+                        {b.updated_by
+                          ? t("updatedByAt", { time: format(new Date(b.updated_at), "HH:mm dd/MM/yyyy"), user: b.updated_by })
+                          : t("updatedAt", { time: format(new Date(b.updated_at), "HH:mm dd/MM/yyyy") })}
                       </p>
                     )}
                     <textarea
@@ -197,14 +199,14 @@ export default function AdminEuaFrameworkPage() {
                         ) : (
                           <Save size={15} />
                         )}
-                        Lưu thay đổi
+                        {t("saveChanges")}
                       </button>
                       {isDirty && (
                         <button
                           onClick={() => setDrafts((d) => ({ ...d, [b.block_id]: effectiveContent(b) }))}
                           className="text-sm font-semibold text-muted-light hover:text-body px-2 py-1.5"
                         >
-                          Huỷ chỉnh sửa
+                          {t("cancelEdit")}
                         </button>
                       )}
                       {b.is_customized && (
@@ -218,7 +220,7 @@ export default function AdminEuaFrameworkPage() {
                           ) : (
                             <RotateCcw size={14} />
                           )}
-                          Khôi phục mặc định
+                          {t("resetDefault")}
                         </button>
                       )}
                     </div>

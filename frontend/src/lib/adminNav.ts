@@ -7,55 +7,55 @@ import {
 // mobile + breadcrumb "Admin/<trang>" trong Header.tsx, để 2 nơi luôn khớp nhãn/
 // route. Phân nhóm như đang quản lý 1 nhân viên thực thụ (Jenny); giữa các nhóm là
 // 1 vạch kẻ mờ. Nút "Đăng xuất" luôn nằm cuối nhóm 3 (render riêng ở 2 nơi trên).
-export type AdminNavItem = { href: string; label: string; icon: typeof FileText };
+export type AdminNavItem = { href: string; labelKey: string; icon: typeof FileText };
 
 // Thứ tự theo cấu trúc quản lý Jenny như 1 nhân viên: 1 Báo cáo ngày → 2 Thống kê &
 // hiệu suất → 3 Nguồn lực → 4 Năng lực → 5 Đồng nghiệp → 6 Phản ánh về Jenny.
-// `label` của nhóm hiện làm tiêu đề nhỏ khi sidebar mở rộng (hover).
-export const ADMIN_NAV_GROUPS: { id: string; label: string; items: AdminNavItem[] }[] = [
+// `labelKey` (khoá dịch trong namespace shellNav) của nhóm hiện làm tiêu đề nhỏ khi sidebar mở rộng (hover).
+export const ADMIN_NAV_GROUPS: { id: string; labelKey: string; items: AdminNavItem[] }[] = [
   {
     id: "daily",
-    label: "1. Báo cáo ngày",
-    items: [{ href: "/admin/reports", label: "Báo cáo ngày", icon: FileText }],
+    labelKey: "group_daily",
+    items: [{ href: "/admin/reports", labelKey: "reports", icon: FileText }],
   },
   {
     id: "stats",
-    label: "2. Thống kê & Hiệu suất",
+    labelKey: "group_stats",
     items: [
-      { href: "/admin/price-dashboard", label: "Dashboard giá", icon: LineChart },
-      { href: "/admin/performance", label: "Thống kê hiệu suất", icon: BarChart3 },
+      { href: "/admin/price-dashboard", labelKey: "priceDashboard", icon: LineChart },
+      { href: "/admin/performance", labelKey: "performance", icon: BarChart3 },
     ],
   },
   {
     id: "resources",
-    label: "3. Nguồn lực của Jenny",
+    labelKey: "group_resources",
     items: [
-      { href: "/admin/price-sources", label: "Nguồn giá", icon: Radar },
-      { href: "/admin/news-sources", label: "Nguồn tin tức", icon: Newspaper },
-      { href: "/admin/eua-framework", label: "Khung phân tích EUA", icon: BrainCircuit },
+      { href: "/admin/price-sources", labelKey: "priceSources", icon: Radar },
+      { href: "/admin/news-sources", labelKey: "newsSources", icon: Newspaper },
+      { href: "/admin/eua-framework", labelKey: "euaFramework", icon: BrainCircuit },
     ],
   },
   {
     id: "capability",
-    label: "4. Năng lực của Jenny",
+    labelKey: "group_capability",
     items: [
-      { href: "/admin/quote-chat-examples", label: "Đoạn chat tham khảo", icon: Sparkles },
-      { href: "/admin/chat-reviews", label: "Đánh giá chat", icon: MessageSquareText },
-      { href: "/admin/chat-history", label: "Lịch sử giao tiếp", icon: MessagesSquare },
+      { href: "/admin/quote-chat-examples", labelKey: "chatExamples", icon: Sparkles },
+      { href: "/admin/chat-reviews", labelKey: "chatReviews", icon: MessageSquareText },
+      { href: "/admin/chat-history", labelKey: "chatHistory", icon: MessagesSquare },
     ],
   },
   {
     id: "colleagues",
-    label: "5. Đồng nghiệp",
-    items: [{ href: "/admin/users", label: "Đồng nghiệp", icon: Users }],
+    labelKey: "group_colleagues",
+    items: [{ href: "/admin/users", labelKey: "users", icon: Users }],
   },
   {
     // Nhóm cuối (+ Đăng xuất ở cuối)
     id: "feedback",
-    label: "6. Phản ánh về Jenny",
+    labelKey: "group_feedback",
     items: [
-      { href: "/admin/feedback", label: "Phản ánh về Jenny", icon: MessageSquareWarning },
-      { href: "/admin/release-notes", label: "Release Note", icon: ClipboardList },
+      { href: "/admin/feedback", labelKey: "feedback", icon: MessageSquareWarning },
+      { href: "/admin/release-notes", labelKey: "releaseNotes", icon: ClipboardList },
     ],
   },
 ];

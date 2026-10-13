@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2, AlertCircle, Mail, Pencil, Check, X } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 
 type RelationType = "superior" | "peer";
@@ -18,24 +19,18 @@ interface AllowedUser {
   created_at: string;
 }
 
-// Phân quyền + phạm vi tương tác suy ra từ mối quan hệ với Jenny.
-const RELATION_META: Record<RelationType, { label: string; access: string; scope: string }> = {
-  superior: {
-    label: "Cấp trên",
-    access: "Admin",
-    scope: "Quyền admin: xem, chat, hỏi tư vấn, chỉnh sửa nội dung và đánh giá",
-  },
-  peer: {
-    label: "Đồng cấp",
-    access: "Người dùng",
-    scope: "Xem, chat, hỏi tư vấn, đánh giá — không được chỉnh sửa",
-  },
-};
+// Phân quyền + phạm vi tương tác suy ra từ mối quan hệ với Jenny (dịch lúc render).
 
 const inputCls =
   "w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary";
 
 export default function AdminUsersPage() {
+  const t = useTranslations("adminUsrUsers");
+  const relMeta = (r: RelationType) => ({
+    label: t(`rel.${r}.label`),
+    access: t(`rel.${r}.access`),
+    scope: t(`rel.${r}.scope`),
+  });
   const [users, setUsers] = useState<AllowedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -49,7 +44,7 @@ export default function AdminUsersPage() {
       const res = await api.get("/api/admin/users");
       setUsers(res.data);
     } catch (err) {
-      setError("Không thể tải danh sách người dùng.");
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
@@ -67,7 +62,7 @@ export default function AdminUsersPage() {
       setForm({ email: "", full_name: "", job_title: "", relation_type: "peer" });
       await fetchUsers();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi thêm người dùng.");
+      setError(err.response?.data?.detail || t("addError"));
     }
   };
 
@@ -83,7 +78,7 @@ export default function AdminUsersPage() {
       setEditId(null);
       await fetchUsers();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi cập nhật.");
+      setError(err.response?.data?.detail || t("updateError"));
     }
   };
 
@@ -92,25 +87,25 @@ export default function AdminUsersPage() {
       await api.put(`/api/admin/users/${u.id}`, { is_active: !u.is_active });
       await fetchUsers();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi cập nhật.");
+      setError(err.response?.data?.detail || t("updateError"));
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Xoá email này khỏi danh sách được phép truy cập?")) return;
+    if (!confirm(t("deleteConfirm"))) return;
     try {
       await api.delete(`/api/admin/users/${id}`);
       await fetchUsers();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi xoá.");
+      setError(err.response?.data?.detail || t("deleteError"));
     }
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Đồng Nghiệp</h2>
-        <p className="text-body">Đồng nghiệp của Jenny: cấp trên và đồng cấp được phép đăng nhập hệ thống</p>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+        <p className="text-body">{t("subtitle")}</p>
       </div>
 
       {error && (
@@ -123,14 +118,14 @@ export default function AdminUsersPage() {
       <form onSubmit={handleAdd} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end">
         <input
           type="text"
-          placeholder="Họ tên"
+          placeholder={t("fullName")}
           value={form.full_name}
           onChange={(e) => setForm({ ...form, full_name: e.target.value })}
           className={inputCls}
         />
         <input
           type="text"
-          placeholder="Chức danh"
+          placeholder={t("jobTitle")}
           value={form.job_title}
           onChange={(e) => setForm({ ...form, job_title: e.target.value })}
           className={inputCls}
@@ -140,7 +135,7 @@ export default function AdminUsersPage() {
           <input
             type="email"
             required
-            placeholder="email@congty.com"
+            placeholder={t("emailPlaceholder")}
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             className={clsx(inputCls, "pl-9")}
@@ -150,18 +145,18 @@ export default function AdminUsersPage() {
           value={form.relation_type}
           onChange={(e) => setForm({ ...form, relation_type: e.target.value as RelationType })}
           className={inputCls}
-          aria-label="Mối quan hệ với Jenny"
+          aria-label={t("relationAria")}
         >
-          <option value="peer">Đồng cấp</option>
-          <option value="superior">Cấp trên</option>
+          <option value="peer">{t("rel.peer.label")}</option>
+          <option value="superior">{t("rel.superior.label")}</option>
         </select>
         <button type="submit" className="btn-pill py-2.5 justify-center">
           <Plus size={18} />
-          Thêm
+          {t("add")}
         </button>
       </form>
       <p className="text-xs text-muted-light -mt-3">
-        Cấp trên: quyền admin, được chỉnh sửa và đánh giá. Đồng cấp: xem, chat, hỏi tư vấn, đánh giá — không được chỉnh sửa.
+        {t("legend")}
       </p>
 
       {loading ? (
@@ -169,7 +164,7 @@ export default function AdminUsersPage() {
       ) : users.length === 0 ? (
         <div className="text-center py-16 bg-surface border border-border-soft border-dashed rounded-2xl">
           <Mail size={40} className="mx-auto text-muted mb-3" />
-          <p className="text-body">Chưa có user nào được cấp quyền.</p>
+          <p className="text-body">{t("empty")}</p>
         </div>
       ) : (
         <>
@@ -178,20 +173,20 @@ export default function AdminUsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold">Họ tên</th>
-                  <th className="px-4 py-3 font-semibold">Chức danh</th>
-                  <th className="px-4 py-3 font-semibold">Email</th>
-                  <th className="px-4 py-3 font-semibold">Phân quyền</th>
-                  <th className="px-4 py-3 font-semibold">Quan hệ với Jenny</th>
-                  <th className="px-4 py-3 font-semibold">Phạm vi tương tác</th>
-                  <th className="px-4 py-3 font-semibold">Trạng thái</th>
-                  <th className="px-4 py-3 font-semibold text-right">Hành động</th>
+                  <th className="px-4 py-3 font-semibold">{t("fullName")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("jobTitle")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("email")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("access")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("relation")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("scope")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("status")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{t("actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {users.map(u => {
                   const editing = editId === u.id;
-                  const meta = RELATION_META[editing ? draft.relation_type : u.relation_type];
+                  const meta = relMeta(editing ? draft.relation_type : u.relation_type);
                   return (
                     <tr key={u.id} className="align-top">
                       <td className="px-4 py-2.5 font-semibold text-label">
@@ -208,7 +203,7 @@ export default function AdminUsersPage() {
                       <td className="px-4 py-2.5">
                         <span className={clsx(
                           "px-2 py-0.5 rounded-full text-xs font-semibold",
-                          meta.access === "Admin" ? "bg-primary-dark text-white" : "bg-surface-alt text-label"
+                          (editing ? draft.relation_type : u.relation_type) === "superior" ? "bg-primary-dark text-white" : "bg-surface-alt text-label"
                         )}>{meta.access}</span>
                       </td>
                       <td className="px-4 py-2.5 text-body">
@@ -218,8 +213,8 @@ export default function AdminUsersPage() {
                             value={draft.relation_type}
                             onChange={(e) => setDraft({ ...draft, relation_type: e.target.value as RelationType })}
                           >
-                            <option value="peer">Đồng cấp</option>
-                            <option value="superior">Cấp trên</option>
+                            <option value="peer">{t("rel.peer.label")}</option>
+                            <option value="superior">{t("rel.superior.label")}</option>
                           </select>
                         ) : meta.label}
                       </td>
@@ -232,19 +227,19 @@ export default function AdminUsersPage() {
                             u.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
                           )}
                         >
-                          {u.is_active ? "Active" : "Tắt"}
+                          {u.is_active ? t("active") : t("off")}
                         </button>
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         {editing ? (
                           <>
-                            <button onClick={() => saveEdit(u.id)} className="p-1.5 rounded hover:bg-tint text-primary-dark" aria-label="Lưu"><Check size={16} /></button>
-                            <button onClick={() => setEditId(null)} className="p-1.5 rounded hover:bg-surface text-body" aria-label="Huỷ"><X size={16} /></button>
+                            <button onClick={() => saveEdit(u.id)} className="p-1.5 rounded hover:bg-tint text-primary-dark" aria-label={t("save")}><Check size={16} /></button>
+                            <button onClick={() => setEditId(null)} className="p-1.5 rounded hover:bg-surface text-body" aria-label={t("cancel")}><X size={16} /></button>
                           </>
                         ) : (
-                          <button onClick={() => startEdit(u)} className="p-1.5 rounded hover:bg-surface text-body" aria-label="Sửa"><Pencil size={16} /></button>
+                          <button onClick={() => startEdit(u)} className="p-1.5 rounded hover:bg-surface text-body" aria-label={t("edit")}><Pencil size={16} /></button>
                         )}
-                        <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down" aria-label="Xoá">
+                        <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down" aria-label={t("delete")}>
                           <Trash2 size={16} />
                         </button>
                       </td>
@@ -258,7 +253,7 @@ export default function AdminUsersPage() {
           {/* Dạng card — chỉ hiện dưới md. */}
           <div className="md:hidden space-y-3">
             {users.map(u => {
-              const meta = RELATION_META[u.relation_type];
+              const meta = relMeta(u.relation_type);
               return (
                 <div key={u.id} className="bg-background border border-border rounded-2xl p-4 space-y-2">
                   <div className="flex items-start justify-between gap-3">
@@ -275,9 +270,9 @@ export default function AdminUsersPage() {
                           u.is_active ? "bg-tint text-primary-dark" : "bg-surface-alt text-muted-light"
                         )}
                       >
-                        {u.is_active ? "Active" : "Tắt"}
+                        {u.is_active ? t("active") : t("off")}
                       </button>
-                      <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down" aria-label="Xoá">
+                      <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-50 text-down" aria-label={t("delete")}>
                         <Trash2 size={16} />
                       </button>
                     </div>

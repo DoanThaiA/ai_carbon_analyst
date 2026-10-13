@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import {
   Sparkles,
   FileText,
@@ -17,20 +18,21 @@ import {
 import { api } from "@/lib/api";
 
 const USER_FEATURES = [
-  { icon: FileText, text: "Xem báo cáo Daily Carbon Intelligence đã được duyệt" },
-  { icon: Bell, text: "Nhận thông báo Hot News ngay khi có tin ảnh hưởng thị trường" },
-  { icon: MessageCircleQuestion, text: "Bôi đen 1 đoạn trong báo cáo và hỏi đáp trực tiếp với AI" },
+  { icon: FileText, key: "userFeature1" },
+  { icon: Bell, key: "userFeature2" },
+  { icon: MessageCircleQuestion, key: "userFeature3" },
 ];
 
 const ADMIN_FEATURES = [
-  { icon: ShieldCheck, text: "Duyệt/publish báo cáo trước khi hiển thị cho người dùng" },
-  { icon: Users, text: "Quản lý danh sách người dùng được phép đăng nhập" },
-  { icon: BarChart3, text: "Quản lý nguồn giá & khung phân tích nhân quả EUA" },
-  { icon: BookOpen, text: "Duyệt và chọn ví dụ mẫu (few-shot) cho AI hỏi đáp" },
+  { icon: ShieldCheck, key: "adminFeature1" },
+  { icon: Users, key: "adminFeature2" },
+  { icon: BarChart3, key: "adminFeature3" },
+  { icon: BookOpen, key: "adminFeature4" },
 ];
 
 export default function LandingPage() {
   const router = useRouter();
+  const t = useTranslations("userLanding");
 
   useEffect(() => {
     // Người đã đăng nhập vào thẳng "/" thì đưa luôn về màn hình làm việc của
@@ -52,13 +54,11 @@ export default function LandingPage() {
             AI Carbon Analyst
           </div>
           <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-heading leading-[1.2]">
-            Xin chào, tôi là <span className="whitespace-nowrap">Jenny AI,</span><br className="hidden lg:block" />
-            <span className="inline-block mt-2">nhân viên của <span className="whitespace-nowrap">Stavian Industrial Metal.</span></span>
+            {t("greeting")} <span className="whitespace-nowrap">Jenny AI,</span><br className="hidden lg:block" />
+            <span className="inline-block mt-2">{t("employeeOf")} <span className="whitespace-nowrap">Stavian Industrial Metal.</span></span>
           </h1>
           <p className="text-body text-lg max-w-xl mx-auto md:mx-0 leading-relaxed">
-            Tôi theo dõi tin tức và giá thị trường carbon/năng lượng mỗi ngày, tổng hợp thành báo cáo 
-            Daily Carbon Intelligence, và trả lời câu hỏi của bạn về bất kỳ nội dung nào liên quan.
-            Cho Jenny biết bạn là ai để chúng ta bắt đầu nhé!
+            {t("intro")}
           </p>
         </div>
         <div className="flex-1 w-full flex justify-center md:justify-end">
@@ -81,19 +81,19 @@ export default function LandingPage() {
             <div className="p-2.5 rounded-xl bg-tint text-primary-dark">
               <Users size={24} />
             </div>
-            <h2 className="text-xl font-bold text-label">Dành cho User</h2>
+            <h2 className="text-xl font-bold text-label">{t("forUser")}</h2>
           </div>
           <ul className="space-y-4 flex-1">
-            {USER_FEATURES.map(({ icon: Icon, text }, i) => (
+            {USER_FEATURES.map(({ icon: Icon, key }, i) => (
               <li key={i} className="flex items-start gap-3 text-[15px] text-body">
                 <Icon size={18} className="shrink-0 mt-0.5 text-primary-dark" />
-                <span>{text}</span>
+                <span>{t(key)}</span>
               </li>
             ))}
           </ul>
           <a href="/login" className="btn-pill w-full justify-center py-3 mt-8 gap-2 text-[15px]">
             <LogIn size={18} />
-            Đăng nhập (User)
+            {t("loginUser")}
           </a>
         </div>
 
@@ -102,19 +102,19 @@ export default function LandingPage() {
             <div className="p-2.5 rounded-xl bg-tint text-primary-dark">
               <ShieldCheck size={24} />
             </div>
-            <h2 className="text-xl font-bold text-label">Dành cho Admin</h2>
+            <h2 className="text-xl font-bold text-label">{t("forAdmin")}</h2>
           </div>
           <ul className="space-y-4 flex-1">
-            {ADMIN_FEATURES.map(({ icon: Icon, text }, i) => (
+            {ADMIN_FEATURES.map(({ icon: Icon, key }, i) => (
               <li key={i} className="flex items-start gap-3 text-[15px] text-body">
                 <Icon size={18} className="shrink-0 mt-0.5 text-primary-dark" />
-                <span>{text}</span>
+                <span>{t(key)}</span>
               </li>
             ))}
           </ul>
           <a href="/login?as=admin" className="btn-pill w-full justify-center py-3 mt-8 gap-2 text-[15px]">
             <LogIn size={18} />
-            Đăng nhập (Admin)
+            {t("loginAdmin")}
           </a>
         </div>
       </section>

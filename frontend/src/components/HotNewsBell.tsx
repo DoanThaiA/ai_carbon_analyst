@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { Bell, Flame, ExternalLink } from "lucide-react";
 import { api, API_BASE_URL } from "@/lib/api";
@@ -8,14 +9,16 @@ import type { HotNewsItem } from "@/lib/types";
 const LAST_SEEN_KEY = "hotNewsLastSeenAt";
 const MAX_ITEMS = 20;
 
-function timeAgo(iso: string): string {
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+function timeAgo(iso: string, t: Translate): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "vừa xong";
-  if (minutes < 60) return `${minutes} phút trước`;
+  if (minutes < 1) return t("justNow");
+  if (minutes < 60) return t("minutesAgo", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  return `${Math.floor(hours / 24)} ngày trước`;
+  if (hours < 24) return t("hoursAgo", { count: hours });
+  return t("daysAgo", { count: Math.floor(hours / 24) });
 }
 
 /**
@@ -26,6 +29,7 @@ function timeAgo(iso: string): string {
  * Trạng thái đã đọc lưu ở localStorage (per-browser).
  */
 export function HotNewsBell() {
+  const t = useTranslations("shellHotNews");
   const [items, setItems] = useState<HotNewsItem[]>([]);
   const [open, setOpen] = useState(false);
   const [lastSeenAt, setLastSeenAt] = useState(0);
@@ -133,7 +137,7 @@ export function HotNewsBell() {
       <button
         onClick={toggleOpen}
         className="relative text-white/80 hover:text-white flex items-center justify-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-        title="Hot News"
+        title={t("title")}
       >
         <Bell size={16} />
         {unreadCount > 0 && (
@@ -150,11 +154,11 @@ export function HotNewsBell() {
         >
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border sticky top-0 bg-background">
             <Flame size={15} className="text-down" />
-            <span className="font-semibold text-sm text-label">Hot News</span>
+            <span className="font-semibold text-sm text-label">{t("title")}</span>
           </div>
 
           {items.length === 0 ? (
-            <p className="px-4 py-6 text-[13px] text-muted-light text-center">Chưa có tin hot news nào.</p>
+            <p className="px-4 py-6 text-[13px] text-muted-light text-center">{t("empty")}</p>
           ) : (
             <ul className="divide-y divide-border">
               {items.map((item) => (
@@ -173,7 +177,7 @@ export function HotNewsBell() {
                     <div className="flex items-center gap-2 text-[11px] text-muted-light font-mono">
                       <span>{item.source}</span>
                       <span>·</span>
-                      <span>{timeAgo(item.crawled_at)}</span>
+                      <span>{timeAgo(item.crawled_at, t)}</span>
                     </div>
                   </button>
                 </li>

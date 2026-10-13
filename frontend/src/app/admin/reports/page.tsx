@@ -4,35 +4,36 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, Clock, CheckCircle2, ChevronRight, PlusCircle, AlertCircle, Loader2, XCircle } from "lucide-react";
 import { format } from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
 import clsx from "clsx";
 import { api } from "@/lib/api";
-import { reportTitle } from "@/lib/reportDate";
+import { useReportTitle } from "@/lib/reportDate";
 import { ReportDateFilter, filterByDateRange, type DateRange } from "@/components/ReportDateFilter";
 import type { ReportSummary } from "@/lib/types";
 
 const POLL_INTERVAL_MS = 5000;
 
-const STATUS_STYLES: Record<ReportSummary["status"], { label: string; icon: React.ReactNode; badge: string; iconWrap: string }> = {
+const STATUS_STYLES: Record<ReportSummary["status"], { labelKey: string; icon: React.ReactNode; badge: string; iconWrap: string }> = {
   published: {
-    label: "Published",
+    labelKey: "statusPublished",
     icon: <CheckCircle2 size={14} />,
     badge: "bg-tint text-primary-dark border border-primary/20",
     iconWrap: "bg-tint text-primary-dark",
   },
   draft: {
-    label: "Draft",
+    labelKey: "statusDraft",
     icon: <Clock size={14} />,
     badge: "bg-warn-tint text-warn border border-warn/20",
     iconWrap: "bg-warn-tint text-warn",
   },
   generating: {
-    label: "Đang sinh...",
+    labelKey: "statusGenerating",
     icon: <Loader2 size={14} className="animate-spin" />,
     badge: "bg-surface-alt text-muted-light border border-border",
     iconWrap: "bg-surface-alt text-muted-light",
   },
   failed: {
-    label: "Lỗi",
+    labelKey: "statusFailed",
     icon: <XCircle size={14} />,
     badge: "bg-red-50 text-down border border-red-200",
     iconWrap: "bg-red-50 text-down",
@@ -40,6 +41,9 @@ const STATUS_STYLES: Record<ReportSummary["status"], { label: string; icon: Reac
 };
 
 export default function AdminReportsPage() {
+  const reportTitle = useReportTitle();
+  const t = useTranslations("adminMiscReports");
+  const locale = useLocale();
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -55,7 +59,7 @@ export default function AdminReportsPage() {
       return res.data;
     } catch (err) {
       console.error(err);
-      setError("Không thể tải danh sách báo cáo.");
+      setError(t("loadError"));
       return [];
     } finally {
       setLoading(false);
@@ -85,7 +89,7 @@ export default function AdminReportsPage() {
       await api.post(`/api/admin/reports/generate?date=${targetDate}`);
       await fetchReports();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi tạo báo cáo mới");
+      setError(err.response?.data?.detail || t("generateError"));
     } finally {
       setGenerating(false);
     }
@@ -95,8 +99,8 @@ export default function AdminReportsPage() {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Duyệt Báo Cáo</h2>
-          <p className="text-body">Tạo bản draft và duyệt để xuất bản cho user xem</p>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+          <p className="text-body">{t("subtitle")}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -106,7 +110,7 @@ export default function AdminReportsPage() {
             max={format(new Date(), "yyyy-MM-dd")}
             onChange={e => setTargetDate(e.target.value)}
             className="border border-border rounded-lg px-3 py-2 bg-surface text-body"
-            aria-label="Ngày báo cáo"
+            aria-label={t("dateAria")}
           />
           <button onClick={handleGenerate} disabled={generating || !targetDate} className="btn-pill">
             {generating ? (
@@ -114,7 +118,7 @@ export default function AdminReportsPage() {
             ) : (
               <PlusCircle size={20} />
             )}
-            {targetDate === format(new Date(), "yyyy-MM-dd") ? "Tạo báo cáo hôm nay" : "Tạo báo cáo"}
+            {targetDate === format(new Date(), "yyyy-MM-dd") ? t("generateToday") : t("generate")}
           </button>
         </div>
       </div>
@@ -135,14 +139,14 @@ export default function AdminReportsPage() {
       ) : reports.length === 0 ? (
         <div className="text-center py-20 bg-surface border border-border-soft border-dashed rounded-2xl">
           <FileText size={48} className="mx-auto text-muted mb-4" />
-          <p className="text-body text-lg">Chưa có báo cáo nào trong hệ thống.</p>
+          <p className="text-body text-lg">{t("empty")}</p>
         </div>
       ) : (
         <>
         <ReportDateFilter value={range} onChange={setRange} shown={filtered.length} total={reports.length} />
         {filtered.length === 0 ? (
           <div className="text-center py-16 bg-background border border-border-soft border-dashed rounded-2xl">
-            <p className="text-body text-lg">Không có báo cáo nào trong khoảng ngày đã chọn.</p>
+            <p className="text-body text-lg">{t("emptyRange")}</p>
           </div>
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -164,7 +168,7 @@ export default function AdminReportsPage() {
                   STATUS_STYLES[report.status].badge
                 )}>
                   {STATUS_STYLES[report.status].icon}
-                  {STATUS_STYLES[report.status].label}
+                  {t(STATUS_STYLES[report.status].labelKey)}
                 </div>
               </div>
 
@@ -175,9 +179,9 @@ export default function AdminReportsPage() {
               )}
 
               <div className="flex justify-between items-center text-sm text-body mt-6 pt-4 border-t border-border">
-                <span>Tạo lúc: {format(new Date(report.created_at), "HH:mm dd/MM/yyyy")}</span>
+                <span>{t("createdAt", { time: format(new Date(report.created_at), "HH:mm dd/MM/yyyy") })}</span>
                 <span className="flex items-center text-primary opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 duration-500 ease-in-out">
-                  {report.status === 'draft' ? 'Xem & Duyệt' : 'Xem chi tiết'} <ChevronRight size={16} className="ml-1" />
+                  {report.status === 'draft' ? t("viewReview") : t("viewDetail")} <ChevronRight size={16} className="ml-1" />
                 </span>
               </div>
             </Link>

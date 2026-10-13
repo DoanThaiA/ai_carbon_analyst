@@ -1,6 +1,9 @@
 import { api } from "@/lib/api";
 import type { Attachment, AttachmentMediaType } from "@/lib/types";
 
+// Hàm dịch (next-intl, namespace "chatLib") do component truyền vào — file lib thuần không dùng được hook.
+export type TranslateFn = (key: string, values?: Record<string, string | number>) => string;
+
 // Khớp NGUYÊN VĂN với services/minio_service.py — sửa 1 nơi mà không sửa nơi
 // kia sẽ khiến FE cho chọn file mà backend từ chối (hoặc ngược lại).
 export const MAX_ATTACHMENTS_PER_TURN = 3;
@@ -26,23 +29,23 @@ function maxBytesFor(mediaType: string): number {
 /** Kiểm tra 1 file trước khi upload — trả về thông báo lỗi (string) nếu không
  * hợp lệ, null nếu OK. Chỉ là lớp UX (báo lỗi sớm) — backend luôn kiểm tra lại
  * (xem services/minio_service.py), vì FE có thể bị bypass. */
-export function validateFile(file: File): string | null {
+export function validateFile(file: File, t: TranslateFn): string | null {
   if (file.type === "application/msword") {
-    return `"${file.name}": chưa hỗ trợ file .doc — vui lòng lưu lại dưới dạng .docx.`;
+    return t("docNotSupported", { name: file.name });
   }
   if (!ALLOWED_MEDIA_TYPES.has(file.type)) {
-    return `"${file.name}": định dạng không được hỗ trợ (chỉ nhận Ảnh JPEG/PNG/WEBP, PDF, hoặc Word .docx).`;
+    return t("formatNotSupported", { name: file.name });
   }
   const limit = maxBytesFor(file.type);
   if (file.size > limit) {
-    return `"${file.name}": vượt quá dung lượng cho phép (${limit / (1024 * 1024)}MB).`;
+    return t("tooLarge", { name: file.name, limit: limit / (1024 * 1024) });
   }
   return null;
 }
 
 /** Xin presigned URL rồi PUT thẳng file lên MinIO — trả về Attachment để gửi
  * kèm payload /quote-chat. Ném lỗi (string message) nếu 1 trong 2 bước fail. */
-export async function uploadFileToMinIO(file: File): Promise<Attachment> {
+export async function uploadFileToMinIO(file: File, t: TranslateFn): Promise<Attachment> {
   let uploadUrl: string;
   let fileKey: string;
   try {
@@ -55,7 +58,7 @@ export async function uploadFileToMinIO(file: File): Promise<Attachment> {
     fileKey = presignRes.data.file_key;
   } catch (err: any) {
     const detail = err?.response?.data?.detail;
-    throw new Error(typeof detail === "string" ? detail : `Không xin được quyền upload cho "${file.name}".`);
+    throw new Error(typeof detail === "string" ? detail : t("presignFailed", { name: file.name }));
   }
 
   const putRes = await fetch(uploadUrl, {
@@ -64,7 +67,7 @@ export async function uploadFileToMinIO(file: File): Promise<Attachment> {
     headers: { "Content-Type": file.type },
   });
   if (!putRes.ok) {
-    throw new Error(`Upload "${file.name}" thất bại (HTTP ${putRes.status}).`);
+    throw new Error(t("uploadFailed", { name: file.name, status: putRes.status }));
   }
 
   return { file_name: file.name, file_key: fileKey, media_type: file.type as AttachmentMediaType };

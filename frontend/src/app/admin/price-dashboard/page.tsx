@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Minus, LineChart as LineChartIcon, Clock } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 
 // Dashboard giá — trực quan hóa bảng `prices` (GET /api/admin/prices/dashboard,
@@ -33,9 +34,8 @@ const FALLBACK_COLOR = "#707070";
 const UP = "var(--color-up)";
 const DOWN = "var(--color-down)";
 
-const CATEGORY_LABEL: Record<string, string> = {
-  carbon: "Carbon", gas: "Khí đốt", oil: "Dầu", coal: "Than", power: "Điện", other: "Khác",
-};
+// Nhóm instrument đã biết → khoá dịch `cat_<nhóm>`; nhóm lạ hiển thị nguyên giá trị.
+const KNOWN_CATEGORIES = ["carbon", "gas", "oil", "coal", "power", "other"];
 
 function fmtDay(iso: string) {
   const [, m, d] = iso.split("-");
@@ -105,6 +105,7 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
 function KpiCard({ inst, color, active, stale, onClick }: {
   inst: Instrument; color: string; active: boolean; stale: boolean; onClick: () => void;
 }) {
+  const t = useTranslations("adminSrcDash");
   const closes = inst.series.map((p) => p.close);
   return (
     <button
@@ -122,7 +123,7 @@ function KpiCard({ inst, color, active, stale, onClick }: {
         </div>
         {stale && (
           <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-warn bg-warn-tint rounded-full px-2 py-0.5 shrink-0">
-            <Clock size={11} aria-hidden="true" /> Chưa cập nhật
+            <Clock size={11} aria-hidden="true" /> {t("stale")}
           </span>
         )}
       </div>
@@ -132,11 +133,11 @@ function KpiCard({ inst, color, active, stale, onClick }: {
         <span className="text-[11px] text-muted-light">{inst.unit}</span>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
-        <ChangeBadge pct={inst.latest.day_change_pct} label="Ngày" />
-        <ChangeBadge pct={inst.latest.week_change_pct} label="Tuần" />
+        <ChangeBadge pct={inst.latest.day_change_pct} label={t("day")} />
+        <ChangeBadge pct={inst.latest.week_change_pct} label={t("week")} />
       </div>
       <div className="mt-2.5"><Sparkline points={closes} color={color} /></div>
-      <div className="mt-1 text-[11px] text-muted-light">Phiên {fmtFull(inst.latest.date)}</div>
+      <div className="mt-1 text-[11px] text-muted-light">{t("session", { date: fmtFull(inst.latest.date) })}</div>
     </button>
   );
 }
@@ -149,6 +150,7 @@ function LineChart({ dates, series, area, formatY, formatTip }: {
   dates: string[]; series: LineSeries[]; area?: boolean;
   formatY: (v: number) => string; formatTip: (v: number, s: LineSeries) => string;
 }) {
+  const t = useTranslations("adminSrcDash");
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(720);
   const [hover, setHover] = useState<number | null>(null);
@@ -166,7 +168,7 @@ function LineChart({ dates, series, area, formatY, formatTip }: {
   const iw = Math.max(100, width - ML - MR), ih = H - MT - MB;
   const all = series.flatMap((s) => s.points.filter((v): v is number => v !== null));
   if (dates.length < 2 || all.length === 0) {
-    return <div className="h-[300px] flex items-center justify-center text-sm text-muted-light">Chưa đủ dữ liệu để vẽ biểu đồ.</div>;
+    return <div className="h-[300px] flex items-center justify-center text-sm text-muted-light">{t("notEnoughData")}</div>;
   }
   const sc = niceScale(Math.min(...all), Math.max(...all));
   const x = (i: number) => ML + (i / (dates.length - 1)) * iw;
@@ -185,7 +187,7 @@ function LineChart({ dates, series, area, formatY, formatTip }: {
 
   return (
     <div ref={wrapRef} className="relative w-full">
-      <svg width={width} height={H} role="img" aria-label="Biểu đồ giá">
+      <svg width={width} height={H} role="img" aria-label={t("chartAria")}>
         {sc.ticks.map((t) => (
           <g key={t}>
             <line x1={ML} x2={width - MR} y1={y(t)} y2={y(t)} stroke="var(--color-border)" strokeWidth={1} />
@@ -276,6 +278,8 @@ function Card({ title, subtitle, right, children }: { title: string; subtitle?: 
 }
 
 export default function PriceDashboardPage() {
+  const t = useTranslations("adminSrcDash");
+  const catLabel = (c: string) => (KNOWN_CATEGORIES.includes(c) ? t(`cat_${c}`) : c);
   const [days, setDays] = useState(90);
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState("");
@@ -297,7 +301,7 @@ export default function PriceDashboardPage() {
           return kept.length ? kept : codes.filter((c) => c !== "CBAM").slice(0, 3);
         });
       })
-      .catch(() => !cancelled && setError("Không thể tải dữ liệu giá."));
+      .catch(() => !cancelled && setError(t("loadError")));
     return () => { cancelled = true; };
   }, [days]);
 
@@ -335,13 +339,13 @@ export default function PriceDashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Dashboard giá</h2>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
           <p className="text-body">
-            Diễn biến giá đóng cửa các hợp đồng hệ thống theo dõi
-            {data?.latest_date && <> · Phiên mới nhất <span className="font-semibold">{fmtFull(data.latest_date)}</span></>}
+            {t("subtitle")}
+            {data?.latest_date && <> · {t("latestSession")} <span className="font-semibold">{fmtFull(data.latest_date)}</span></>}
           </p>
         </div>
-        <div className="inline-flex rounded-full border border-border-soft p-0.5 bg-background self-start md:self-auto" role="group" aria-label="Khoảng thời gian">
+        <div className="inline-flex rounded-full border border-border-soft p-0.5 bg-background self-start md:self-auto" role="group" aria-label={t("rangeAria")}>
           {RANGES.map((r) => (
             <button
               key={r}
@@ -352,7 +356,7 @@ export default function PriceDashboardPage() {
                 days === r ? "bg-primary text-white" : "text-body hover:bg-surface"
               )}
             >
-              {r} ngày
+              {t("days", { n: r })}
             </button>
           ))}
         </div>
@@ -372,7 +376,7 @@ export default function PriceDashboardPage() {
       ) : data && data.instruments.length === 0 ? (
         <div className="text-center py-20 bg-surface border border-border-soft border-dashed rounded-2xl">
           <LineChartIcon size={48} className="mx-auto text-muted mb-4" />
-          <p className="text-body text-lg">Chưa có dữ liệu giá nào trong hệ thống.</p>
+          <p className="text-body text-lg">{t("empty")}</p>
         </div>
       ) : data && (
         <>
@@ -392,11 +396,11 @@ export default function PriceDashboardPage() {
           {sel && (
             <Card
               title={`${sel.name} (${sel.code})`}
-              subtitle={`Giá đóng cửa${sel.unit ? ` · ${sel.unit}` : ""}${sel.exchange ? ` · ${sel.exchange}` : ""} · ${CATEGORY_LABEL[sel.category] ?? sel.category}`}
+              subtitle={`${t("closePrice")}${sel.unit ? ` · ${sel.unit}` : ""}${sel.exchange ? ` · ${sel.exchange}` : ""} · ${catLabel(sel.category)}`}
             >
               <LineChart
                 dates={sel.series.map((p) => p.date)}
-                series={[{ key: sel.code, label: "Đóng cửa", color: colorOf[sel.code], points: sel.series.map((p) => p.close) }]}
+                series={[{ key: sel.code, label: t("close"), color: colorOf[sel.code], points: sel.series.map((p) => p.close) }]}
                 area
                 formatY={(v) => fmtNum(v, v % 1 === 0 ? 0 : 2)}
                 formatTip={(v) => fmtNum(v)}
@@ -405,10 +409,10 @@ export default function PriceDashboardPage() {
           )}
 
           <Card
-            title="So sánh hiệu suất"
-            subtitle={`Quy về chỉ số 100 tại đầu kỳ — so sánh các mã khác đơn vị trên cùng 1 trục (chọn tối đa ${MAX_COMPARE})`}
+            title={t("compareTitle")}
+            subtitle={t("compareSubtitle", { max: MAX_COMPARE })}
             right={
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Chọn mã so sánh">
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("compareAria")}>
                 {data.instruments.filter((i) => i.code !== "CBAM").map((i) => {
                   const on = compare.includes(i.code);
                   const disabled = !on && compare.length >= MAX_COMPARE;
@@ -440,22 +444,22 @@ export default function PriceDashboardPage() {
                 formatTip={(v) => `${v.toFixed(1)} (${v >= 100 ? "+" : ""}${(v - 100).toFixed(1)}%)`}
               />
             ) : (
-              <div className="h-[200px] flex items-center justify-center text-sm text-muted-light">Chọn ít nhất 1 mã có đủ dữ liệu để so sánh.</div>
+              <div className="h-[200px] flex items-center justify-center text-sm text-muted-light">{t("compareEmpty")}</div>
             )}
           </Card>
 
-          <Card title="Bảng số liệu" subtitle="Phiên mới nhất của từng hợp đồng">
+          <Card title={t("tableTitle")} subtitle={t("tableSubtitle")}>
             <div className="overflow-x-auto -mx-1">
               <table className="w-full text-[13px] tabular-nums">
                 <thead>
                   <tr className="text-left text-[11.5px] uppercase tracking-wider text-muted-light border-b border-border">
-                    <th className="py-2 px-1 font-semibold">Hợp đồng</th>
-                    <th className="py-2 px-1 font-semibold">Nhóm</th>
-                    <th className="py-2 px-1 font-semibold text-right">Giá đóng cửa</th>
-                    <th className="py-2 px-1 font-semibold text-right">Δ Ngày</th>
-                    <th className="py-2 px-1 font-semibold text-right">Δ Tuần</th>
-                    <th className="py-2 px-1 font-semibold text-right">Khối lượng</th>
-                    <th className="py-2 px-1 font-semibold text-right">Phiên</th>
+                    <th className="py-2 px-1 font-semibold">{t("colContract")}</th>
+                    <th className="py-2 px-1 font-semibold">{t("colGroup")}</th>
+                    <th className="py-2 px-1 font-semibold text-right">{t("colClose")}</th>
+                    <th className="py-2 px-1 font-semibold text-right">{t("colDayChg")}</th>
+                    <th className="py-2 px-1 font-semibold text-right">{t("colWeekChg")}</th>
+                    <th className="py-2 px-1 font-semibold text-right">{t("colVolume")}</th>
+                    <th className="py-2 px-1 font-semibold text-right">{t("colSession")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -468,7 +472,7 @@ export default function PriceDashboardPage() {
                           <span className="text-muted-light hidden md:inline">{i.name}</span>
                         </span>
                       </td>
-                      <td className="py-2.5 px-1 text-body">{CATEGORY_LABEL[i.category] ?? i.category}</td>
+                      <td className="py-2.5 px-1 text-body">{catLabel(i.category)}</td>
                       <td className="py-2.5 px-1 text-right text-heading font-semibold">{fmtNum(i.latest.close)} <span className="text-muted-light font-normal text-[11px]">{i.unit}</span></td>
                       <td className="py-2.5 px-1 text-right" style={{ color: (i.latest.day_change_pct ?? 0) > 0 ? UP : (i.latest.day_change_pct ?? 0) < 0 ? DOWN : undefined }}>{fmtPct(i.latest.day_change_pct)}</td>
                       <td className="py-2.5 px-1 text-right" style={{ color: (i.latest.week_change_pct ?? 0) > 0 ? UP : (i.latest.week_change_pct ?? 0) < 0 ? DOWN : undefined }}>{fmtPct(i.latest.week_change_pct)}</td>

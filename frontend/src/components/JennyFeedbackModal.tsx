@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { X, Send, CheckCircle2, AlertCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 
 // Chỉ dùng trong màn hình đã đăng nhập (xem QuoteChat.tsx) — API yêu cầu
 // cookie session hợp lệ, backend tự lấy email + role từ JWT (payload["sub"]),
 // không nhận role/email từ client để tránh giả mạo.
 export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useTranslations("chatFeedback");
   const [reporterName, setReporterName] = useState("");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,7 +39,7 @@ export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: 
       });
       setSent(true);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Không gửi được phản ánh, vui lòng thử lại.");
+      setError(err.response?.data?.detail || t("sendFailed"));
     } finally {
       setLoading(false);
     }
@@ -50,27 +52,25 @@ export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: 
         <button
           onClick={handleClose}
           className="absolute top-4 right-4 text-muted-light hover:text-label transition-colors"
-          title="Đóng"
+          title={t("close")}
         >
           <X size={18} />
         </button>
 
-        <h2 className="text-lg font-bold text-heading mb-2">Phản ánh thái độ của Jenny</h2>
+        <h2 className="text-lg font-bold text-heading mb-2">{t("title")}</h2>
 
         {sent ? (
           <div className="py-6 text-center">
             <CheckCircle2 size={40} className="mx-auto text-primary mb-3" />
-            <p className="text-body">Cảm ơn bạn đã phản ánh. Nội dung đã được gửi tới Sếp của Jenny.</p>
+            <p className="text-body">{t("thanks")}</p>
             <button onClick={handleClose} className="btn-pill mt-5 justify-center py-2 px-5">
-              Đóng
+              {t("close")}
             </button>
           </div>
         ) : (
           <>
             <p className="text-sm text-body mb-5">
-              Nếu Jenny có thái độ không tốt, phục vụ không nhiệt tình, hiệu quả hợp tác không cao
-              .v.v. hãy phản ánh trực tiếp lên Sếp của Jenny (em). Phản ánh sẽ được gắn với tài khoản
-              email bạn đang đăng nhập.
+              {t("intro")}
             </p>
 
             {error && (
@@ -83,7 +83,7 @@ export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-label mb-1.5">
-                  Tên hiển thị <span className="text-muted-light font-normal">(không bắt buộc)</span>
+                  {t("displayName")} <span className="text-muted-light font-normal">{t("optional")}</span>
                 </label>
                 <input
                   type="text"
@@ -95,14 +95,14 @@ export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: 
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-label mb-1.5">Nội dung phản ánh</label>
+                <label className="block text-sm font-semibold text-label mb-1.5">{t("contentLabel")}</label>
                 <textarea
                   required
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   maxLength={4000}
                   rows={4}
-                  placeholder="Mô tả cụ thể vấn đề bạn gặp phải..."
+                  placeholder={t("contentPlaceholder")}
                   className="w-full px-3 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
                 />
               </div>
@@ -113,7 +113,7 @@ export function JennyFeedbackModal({ open, onClose }: { open: boolean; onClose: 
                 className="btn-pill w-full justify-center py-2.5 gap-2"
               >
                 <Send size={15} />
-                {loading ? "Đang gửi..." : "Gửi"}
+                {loading ? t("sending") : t("send")}
               </button>
             </form>
           </>

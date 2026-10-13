@@ -18,16 +18,20 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
+import { useTranslations, useLocale } from "next-intl";
+import { dateFnsLocale } from "@/i18n/dateLocale";
 import { api } from "@/lib/api";
 import type { AdminChatMessage, AdminChatSessionDetail } from "@/lib/types";
 
-const RATING_BADGE: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
-  good: { label: "Tốt", icon: <ThumbsUp size={13} />, cls: "bg-tint text-primary-dark border border-primary/20" },
-  bad: { label: "Không tốt", icon: <ThumbsDown size={13} />, cls: "bg-red-50 text-down border border-red-200" },
-  none: { label: "Chưa đánh giá", icon: <HelpCircle size={13} />, cls: "bg-surface-alt text-muted-light border border-border" },
+const RATING_BADGE: Record<string, { labelKey: string; icon: React.ReactNode; cls: string }> = {
+  good: { labelKey: "ratingGood", icon: <ThumbsUp size={13} />, cls: "bg-tint text-primary-dark border border-primary/20" },
+  bad: { labelKey: "ratingBad", icon: <ThumbsDown size={13} />, cls: "bg-red-50 text-down border border-red-200" },
+  none: { labelKey: "ratingNone", icon: <HelpCircle size={13} />, cls: "bg-surface-alt text-muted-light border border-border" },
 };
 
 export default function AdminChatReviewDetailPage() {
+  const t = useTranslations("adminUsrChatReviewDetail");
+  const locale = useLocale();
   const params = useParams();
   const router = useRouter();
   const sessionId = params.id as string;
@@ -42,7 +46,7 @@ export default function AdminChatReviewDetailPage() {
       const res = await api.get(`/api/admin/chat-sessions/${sessionId}`);
       setSession(res.data);
     } catch (err: any) {
-      setError(err.response?.status === 404 ? "Không tìm thấy phiên chat này." : "Lỗi kết nối đến server.");
+      setError(err.response?.status === 404 ? t("notFound") : t("connError"));
     } finally {
       setLoading(false);
     }
@@ -73,7 +77,7 @@ export default function AdminChatReviewDetailPage() {
         );
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi cập nhật đoạn chat tham khảo.");
+      alert(err.response?.data?.detail || t("exampleError"));
     } finally {
       setBusyMessageId(null);
     }
@@ -95,7 +99,7 @@ export default function AdminChatReviewDetailPage() {
         className="inline-flex items-center gap-2 text-sm font-semibold text-body hover:text-primary-dark transition-colors"
       >
         <ArrowLeft size={16} />
-        Quay lại danh sách
+        {t("back")}
       </Link>
 
       {error && (
@@ -118,16 +122,16 @@ export default function AdminChatReviewDetailPage() {
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Calendar size={14} className="text-muted-light" />
-                  Báo cáo ngày {session.report_date}
+                  {t("reportDate", { date: session.report_date })}
                 </span>
-                <span className="text-muted-light">Cập nhật {format(new Date(session.updated_at), "HH:mm dd/MM/yyyy")}</span>
+                <span className="text-muted-light">{t("updatedAt", { time: format(new Date(session.updated_at), t("dateTimeFmt"), { locale: dateFnsLocale(locale) }) })}</span>
               </div>
               {(() => {
                 const badge = RATING_BADGE[session.rating ?? "none"];
                 return (
                   <span className={clsx("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold", badge.cls)}>
                     {badge.icon}
-                    {badge.label}
+                    {t(badge.labelKey)}
                   </span>
                 );
               })()}
@@ -135,26 +139,26 @@ export default function AdminChatReviewDetailPage() {
 
             <div className="rounded-xl bg-tint/40 border border-border-soft px-4 py-3 flex gap-2 items-start">
               <QuoteIcon size={14} className="text-primary shrink-0 mt-0.5" />
-              <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{session.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"}</p>
+              <p className="text-[13.5px] leading-relaxed text-body italic whitespace-pre-wrap break-words min-w-0">{session.quote || t("directChat")}</p>
             </div>
 
             {session.rating === "bad" && session.rating_reason && (
               <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3">
-                <p className="text-xs font-semibold text-down mb-1">Lý do đánh giá không tốt</p>
+                <p className="text-xs font-semibold text-down mb-1">{t("badReason")}</p>
                 <p className="text-[13.5px] leading-relaxed text-body whitespace-pre-wrap break-words">{session.rating_reason}</p>
               </div>
             )}
           </div>
 
           <div className="bg-background border border-border rounded-2xl p-5">
-            <h3 className="text-sm font-semibold text-label mb-4">Nội dung hội thoại</h3>
+            <h3 className="text-sm font-semibold text-label mb-4">{t("conversation")}</h3>
             <div className="space-y-3">
               {session.messages.length === 0 ? (
-                <p className="text-sm text-muted-light">Phiên này chưa có tin nhắn nào.</p>
+                <p className="text-sm text-muted-light">{t("noMessages")}</p>
               ) : (
                 session.messages.map((m) => (
                   <div key={m.id} className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
-                    <span className="text-[11px] text-muted-light mb-1 px-1">{m.role === "user" ? "Người dùng" : "AI"}</span>
+                    <span className="text-[11px] text-muted-light mb-1 px-1">{m.role === "user" ? t("roleUser") : t("roleAi")}</span>
                     <div
                       className={clsx(
                         "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words",
@@ -172,8 +176,8 @@ export default function AdminChatReviewDetailPage() {
                         disabled={busyMessageId === m.id}
                         title={
                           m.example_id
-                            ? "Đang dùng làm đoạn chat tham khảo cho Quote Chat — bấm để bỏ"
-                            : "Dùng câu trả lời này làm đoạn chat tham khảo (few-shot) cho Quote Chat"
+                            ? t("exampleOnTitle")
+                            : t("exampleOffTitle")
                         }
                         className={clsx(
                           "mt-1.5 flex items-center gap-1.5 text-[11.5px] font-semibold px-2 py-1 rounded-full transition-colors disabled:opacity-50",
@@ -189,7 +193,7 @@ export default function AdminChatReviewDetailPage() {
                         ) : (
                           <BookmarkPlus size={12} />
                         )}
-                        {m.example_id ? "Đã thêm để tham khảo" : "Để tham khảo"}
+                        {m.example_id ? t("exampleAdded") : t("exampleAdd")}
                       </button>
                     )}
                   </div>

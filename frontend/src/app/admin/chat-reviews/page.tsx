@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { MessageSquareText, ThumbsUp, ThumbsDown, HelpCircle, AlertCircle, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
+import { useTranslations, useLocale } from "next-intl";
+import { dateFnsLocale } from "@/i18n/dateLocale";
 import { api } from "@/lib/api";
 import type { AdminChatSessionListResponse, AdminChatSessionSummary, ChatRating } from "@/lib/types";
 
@@ -13,23 +15,24 @@ const PAGE_SIZE = 20;
 
 type RatingFilter = "all" | ChatRating | "none";
 
-const FILTER_TABS: { value: RatingFilter; label: string }[] = [
-  { value: "all", label: "Tất cả" },
-  { value: "good", label: "Tốt" },
-  { value: "bad", label: "Không tốt" },
-  { value: "none", label: "Chưa đánh giá" },
+const FILTER_TABS: { value: RatingFilter; labelKey: string }[] = [
+  { value: "all", labelKey: "filterAll" },
+  { value: "good", labelKey: "ratingGood" },
+  { value: "bad", labelKey: "ratingBad" },
+  { value: "none", labelKey: "ratingNone" },
 ];
 
-const RATING_BADGE: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
-  good: { label: "Tốt", icon: <ThumbsUp size={12} />, cls: "bg-tint text-primary-dark border border-primary/20" },
-  bad: { label: "Không tốt", icon: <ThumbsDown size={12} />, cls: "bg-red-50 text-down border border-red-200" },
-  none: { label: "Chưa đánh giá", icon: <HelpCircle size={12} />, cls: "bg-surface-alt text-muted-light border border-border" },
+const RATING_BADGE: Record<string, { labelKey: string; icon: React.ReactNode; cls: string }> = {
+  good: { labelKey: "ratingGood", icon: <ThumbsUp size={12} />, cls: "bg-tint text-primary-dark border border-primary/20" },
+  bad: { labelKey: "ratingBad", icon: <ThumbsDown size={12} />, cls: "bg-red-50 text-down border border-red-200" },
+  none: { labelKey: "ratingNone", icon: <HelpCircle size={12} />, cls: "bg-surface-alt text-muted-light border border-border" },
 };
 
 // Đoạn text dài (đoạn trích, lý do đánh giá) mặc định cắt còn vài dòng cho bảng
 // gọn — nút "Xem chi tiết" chỉ hiện khi text thật sự bị cắt, bấm để mở hết
 // nội dung ngay tại chỗ (không phải vào trang chi tiết phiên).
 function ExpandableText({ text, className, clampClass = "line-clamp-2" }: { text: string; className?: string; clampClass?: string }) {
+  const t = useTranslations("adminUsrChatReviews");
   const ref = useRef<HTMLParagraphElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
@@ -60,7 +63,7 @@ function ExpandableText({ text, className, clampClass = "line-clamp-2" }: { text
           }}
           className="mt-1 text-[12px] font-semibold not-italic text-primary hover:text-primary-dark hover:underline"
         >
-          {expanded ? "Thu gọn" : "Xem chi tiết"}
+          {expanded ? t("collapse") : t("expand")}
         </button>
       )}
     </div>
@@ -78,6 +81,8 @@ export default function AdminChatReviewsPage() {
 }
 
 function ChatReviewsContent() {
+  const t = useTranslations("adminUsrChatReviews");
+  const locale = useLocale();
   // ?user=<email> — "Lịch sử chat" của 1 người dùng (mở từ trang Người dùng):
   // cùng danh sách/bộ lọc đánh giá như trên, chỉ giới hạn phiên của user đó.
   const userEmail = useSearchParams().get("user") || "";
@@ -101,7 +106,7 @@ function ChatReviewsContent() {
         if (!cancelled) setData(res.data);
       })
       .catch(() => {
-        if (!cancelled) setError("Không thể tải danh sách phiên chat.");
+        if (!cancelled) setError(t("listError"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -120,17 +125,17 @@ function ChatReviewsContent() {
         <div>
           <Link href="/admin/users" className="inline-flex items-center gap-2 text-sm font-semibold text-body hover:text-primary-dark transition-colors mb-3">
             <ArrowLeft size={16} />
-            Quay lại Người dùng
+            {t("backToUsers")}
           </Link>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Lịch Sử Chat</h2>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("historyTitle")}</h2>
           <p className="text-body break-words">
-            Các phiên hỏi đáp AI của <span className="font-semibold text-label">{userEmail}</span>
+            {t.rich("historyOf", { email: userEmail, b: (c) => <span className="font-semibold text-label">{c}</span> })}
           </p>
         </div>
       ) : (
         <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Đánh Giá Chat</h2>
-          <p className="text-body">Lịch sử các phiên hỏi đáp AI của người dùng và đánh giá tốt/không tốt kèm lý do</p>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+          <p className="text-body">{t("subtitle")}</p>
         </div>
       )}
 
@@ -147,7 +152,7 @@ function ChatReviewsContent() {
               filter === tab.value ? "bg-primary text-white" : "bg-surface text-body hover:bg-surface-alt"
             )}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
@@ -164,7 +169,7 @@ function ChatReviewsContent() {
       ) : data.items.length === 0 ? (
         <div className="text-center py-16 bg-surface border border-border-soft border-dashed rounded-2xl">
           <MessageSquareText size={40} className="mx-auto text-muted mb-3" />
-          <p className="text-body">{userEmail ? "Người dùng này chưa có phiên chat nào khớp bộ lọc." : "Không có phiên chat nào khớp bộ lọc."}</p>
+          <p className="text-body">{userEmail ? t("noMatchUser") : t("noMatch")}</p>
         </div>
       ) : (
         <>
@@ -173,12 +178,12 @@ function ChatReviewsContent() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold">Người dùng</th>
-                  <th className="px-4 py-3 font-semibold">Báo cáo</th>
-                  <th className="px-4 py-3 font-semibold">Đoạn trích</th>
-                  <th className="px-4 py-3 font-semibold">Đánh giá</th>
-                  <th className="px-4 py-3 font-semibold text-right">Số tin nhắn</th>
-                  <th className="px-4 py-3 font-semibold">Cập nhật</th>
+                  <th className="px-4 py-3 font-semibold">{t("colUser")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colReport")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colQuote")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colRating")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{t("colMessages")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colUpdated")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -193,12 +198,12 @@ function ChatReviewsContent() {
                       </td>
                       <td className="px-4 py-2.5 text-body whitespace-nowrap">{s.report_date}</td>
                       <td className="px-4 py-2.5 text-body max-w-xs">
-                        <ExpandableText text={s.quote || "Chat trực tiếp với Jenny (không có đoạn trích)"} className="italic" />
+                        <ExpandableText text={s.quote || t("directChat")} className="italic" />
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={clsx("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold", badge.cls)}>
                           {badge.icon}
-                          {badge.label}
+                          {t(badge.labelKey)}
                         </span>
                         {s.rating === "bad" && s.rating_reason && (
                           <div className="mt-1 max-w-xs">
@@ -207,7 +212,7 @@ function ChatReviewsContent() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-body">{s.message_count}</td>
-                      <td className="px-4 py-2.5 text-body whitespace-nowrap">{format(new Date(s.updated_at), "HH:mm dd/MM/yyyy")}</td>
+                      <td className="px-4 py-2.5 text-body whitespace-nowrap">{format(new Date(s.updated_at), t("dateTimeFmt"), { locale: dateFnsLocale(locale) })}</td>
                     </tr>
                   );
                 })}
@@ -228,18 +233,18 @@ function ChatReviewsContent() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-semibold text-label truncate">{s.user_email}</p>
-                      <p className="text-xs text-muted-light">Báo cáo {s.report_date} · {format(new Date(s.updated_at), "HH:mm dd/MM/yyyy")}</p>
+                      <p className="text-xs text-muted-light">{t("reportMeta", { date: s.report_date, time: format(new Date(s.updated_at), t("dateTimeFmt"), { locale: dateFnsLocale(locale) }) })}</p>
                     </div>
                     <span className={clsx("shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold", badge.cls)}>
                       {badge.icon}
-                      {badge.label}
+                      {t(badge.labelKey)}
                     </span>
                   </div>
                   {s.quote && <ExpandableText text={s.quote} className="text-sm text-body italic" />}
                   {s.rating === "bad" && s.rating_reason && (
                     <ExpandableText text={s.rating_reason} className="text-[12px] text-muted-light" />
                   )}
-                  <p className="text-xs text-muted-light">{s.message_count} tin nhắn</p>
+                  <p className="text-xs text-muted-light">{t("messageCount", { count: s.message_count })}</p>
                 </Link>
               );
             })}
@@ -247,11 +252,12 @@ function ChatReviewsContent() {
 
           <div className="flex items-center justify-between text-sm text-body">
             <span>
-              Trang {page + 1}/{totalPages} — {data.total} phiên
+              {t("pageInfo", { page: page + 1, pages: totalPages, total: data.total })}
             </span>
             <div className="flex gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
+                aria-label={t("prevPage")}
                 disabled={page === 0}
                 className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-surface transition-colors"
               >
@@ -259,6 +265,7 @@ function ChatReviewsContent() {
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                aria-label={t("nextPage")}
                 disabled={page >= totalPages - 1}
                 className="p-1.5 rounded-lg border border-border disabled:opacity-40 hover:bg-surface transition-colors"
               >

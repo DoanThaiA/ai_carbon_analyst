@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download, Undo2 } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
@@ -14,6 +15,7 @@ import { QuoteChat } from "@/components/QuoteChat";
 const POLL_INTERVAL_MS = 5000;
 
 export default function AdminReportReview() {
+  const t = useTranslations("adminMiscReportDetail");
   const params = useParams();
   const router = useRouter();
   const date = params.date as string;
@@ -35,7 +37,7 @@ export default function AdminReportReview() {
       const res = await api.get(`/api/admin/reports/${date}`);
       setReport(res.data);
     } catch (err: any) {
-      setError(err.response?.status === 404 ? "Không tìm thấy báo cáo cho ngày này." : "Lỗi kết nối đến server.");
+      setError(err.response?.status === 404 ? t("notFound") : t("connectionError"));
     } finally {
       setLoading(false);
     }
@@ -59,14 +61,14 @@ export default function AdminReportReview() {
       await api.post(`/api/admin/reports/generate?date=${date}`);
       await fetchReport();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi thử sinh lại báo cáo");
+      alert(err.response?.data?.detail || t("retryError"));
     } finally {
       setRetrying(false);
     }
   };
 
   const handlePublish = async () => {
-    if (!confirm("Sau khi duyệt, báo cáo sẽ hiện ra cho user xem và không thể chỉnh sửa lại. Bạn có chắc chắn?")) return;
+    if (!confirm(t("confirmPublish"))) return;
 
     setPublishing(true);
     try {
@@ -74,34 +76,34 @@ export default function AdminReportReview() {
       setReport(prev => prev ? { ...prev, status: "published" } : null);
       setIsEditing(false);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi duyệt báo cáo");
+      alert(err.response?.data?.detail || t("publishError"));
     } finally {
       setPublishing(false);
     }
   };
 
   const handleUnpublish = async () => {
-    if (!confirm("Đưa báo cáo về DRAFT? User sẽ không xem được báo cáo này cho tới khi bạn duyệt & xuất bản lại.")) return;
+    if (!confirm(t("confirmUnpublish"))) return;
 
     setUnpublishing(true);
     try {
       await api.post(`/api/admin/reports/${date}/unpublish`);
       setReport(prev => prev ? { ...prev, status: "draft", published_at: null } : null);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi đưa báo cáo về draft");
+      alert(err.response?.data?.detail || t("unpublishError"));
     } finally {
       setUnpublishing(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!confirm("Bạn có chắc chắn muốn xóa báo cáo này vĩnh viễn không?")) return;
+    if (!confirm(t("confirmDelete"))) return;
     setDeleting(true);
     try {
       await api.delete(`/api/admin/reports/${date}`);
       router.push("/admin/reports");
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi xóa báo cáo");
+      alert(err.response?.data?.detail || t("deleteError"));
       setDeleting(false);
     }
   };
@@ -109,10 +111,7 @@ export default function AdminReportReview() {
   // Gỡ 1 gợi ý kinh doanh khỏi báo cáo (đề xuất phi thực tế...) — Jenny cũng thôi
   // theo dõi/nhắc lại gợi ý đó ở các báo cáo sau (services/biz_memory.py).
   const handleDismissBizSuggestion = async (id: number) => {
-    const reason = window.prompt(
-      "Gỡ gợi ý này khỏi báo cáo? Jenny sẽ không theo dõi hay đề xuất lại ý này nữa.\nLý do (không bắt buộc):",
-      ""
-    );
+    const reason = window.prompt(t("dismissPrompt"), "");
     if (reason === null) return; // bấm Huỷ
     try {
       const res = await api.post(`/api/admin/reports/${date}/biz-suggestions/${id}/dismiss`, {
@@ -120,7 +119,7 @@ export default function AdminReportReview() {
       });
       setReport((prev) => (prev ? { ...prev, content: { ...prev.content, biz: res.data.biz } } : prev));
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi gỡ gợi ý");
+      alert(err.response?.data?.detail || t("dismissError"));
     }
   };
 
@@ -138,7 +137,7 @@ export default function AdminReportReview() {
       setReport(prev => prev ? { ...prev, content: editContent } : null);
       setIsEditing(false);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi khi lưu báo cáo");
+      alert(err.response?.data?.detail || t("saveError"));
     } finally {
       setSaving(false);
     }
@@ -160,7 +159,7 @@ export default function AdminReportReview() {
         <h2 className="text-xl font-bold text-heading mb-2">Oops!</h2>
         <p className="text-red-600 mb-6">{error}</p>
         <Link href="/admin/reports" className="text-primary hover:text-primary-dark font-semibold">
-          &larr; Quay lại danh sách
+          &larr; {t("backToList")}
         </Link>
       </div>
     );
@@ -171,7 +170,7 @@ export default function AdminReportReview() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 print:hidden">
         <Link href="/admin/reports" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />
-          Quay lại danh sách
+          {t("backToList")}
         </Link>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {!isEditing && report.status !== 'generating' && report.status !== 'failed' && (
@@ -180,7 +179,7 @@ export default function AdminReportReview() {
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border border-border-soft text-body hover:border-primary hover:text-primary-dark transition-colors"
             >
               <Download size={14} />
-              Tải PDF
+              {t("downloadPdf")}
             </button>
           )}
 
@@ -205,7 +204,7 @@ export default function AdminReportReview() {
               className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-3 py-1.5 rounded-md font-medium text-sm transition-colors disabled:opacity-50"
             >
               <RefreshCw size={14} className={retrying ? "animate-spin" : ""} />
-              {retrying ? "Đang thử lại..." : "Thử sinh lại"}
+              {retrying ? t("retrying") : t("retry")}
             </button>
           )}
 
@@ -215,7 +214,7 @@ export default function AdminReportReview() {
             className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-md font-medium text-sm transition-colors border border-red-200"
           >
             <Trash2 size={16} />
-            {deleting ? "Đang xóa..." : "Xóa"}
+            {deleting ? t("deleting") : t("delete")}
           </button>
 
           {report.status === 'published' && (
@@ -225,7 +224,7 @@ export default function AdminReportReview() {
               className="flex items-center gap-1.5 bg-surface hover:bg-surface-alt border border-border text-foreground px-4 py-1.5 rounded-full font-semibold text-sm transition-colors duration-500 ease-in-out disabled:opacity-50"
             >
               <Undo2 size={14} />
-              {unpublishing ? "Đang xử lý..." : "Quay về Draft"}
+              {unpublishing ? t("processing") : t("backToDraft")}
             </button>
           )}
 
@@ -235,7 +234,7 @@ export default function AdminReportReview() {
               className="flex items-center gap-1.5 bg-surface hover:bg-surface-alt border border-border text-foreground px-4 py-1.5 rounded-full font-semibold text-sm transition-colors duration-500 ease-in-out"
             >
               <Edit2 size={14} />
-              Chỉnh sửa nội dung
+              {t("editContent")}
             </button>
           )}
 
@@ -246,7 +245,7 @@ export default function AdminReportReview() {
               className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-1.5 rounded-full font-semibold text-sm transition-colors duration-500 ease-in-out disabled:opacity-50"
             >
               <Send size={14} />
-              {publishing ? "Đang xử lý..." : "Duyệt & Xuất bản"}
+              {publishing ? t("processing") : t("publish")}
             </button>
           )}
         </div>
@@ -255,14 +254,14 @@ export default function AdminReportReview() {
       {isEditing ? (
         <div className="bg-background rounded-2xl border border-border shadow-[var(--shadow-soft)] p-6 mb-10">
           <div className="flex flex-wrap justify-between items-center gap-3 mb-4 sticky top-0 z-10 bg-background pb-2">
-            <h3 className="font-bold text-heading">Chỉnh sửa báo cáo</h3>
+            <h3 className="font-bold text-heading">{t("editTitle")}</h3>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setIsEditing(false)}
                 className="flex items-center gap-1.5 text-muted-light hover:text-foreground px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
               >
                 <X size={16} />
-                Hủy
+                {t("cancel")}
               </button>
               <button
                 onClick={handleSaveEdit}
@@ -270,7 +269,7 @@ export default function AdminReportReview() {
                 className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors disabled:opacity-50"
               >
                 <Save size={16} />
-                {saving ? "Đang lưu..." : "Lưu thay đổi"}
+                {saving ? t("saving") : t("saveChanges")}
               </button>
             </div>
           </div>
@@ -279,21 +278,21 @@ export default function AdminReportReview() {
       ) : report.status === 'generating' ? (
         <div className="text-center py-20 bg-background border border-border rounded-2xl shadow-[var(--shadow-soft)]">
           <Loader2 size={40} className="mx-auto text-primary animate-spin mb-4" />
-          <h2 className="text-lg font-bold text-heading mb-2">Đang sinh báo cáo...</h2>
-          <p className="text-body">Quá trình này có thể mất vài phút. Trang sẽ tự cập nhật khi xong, không cần tải lại.</p>
+          <h2 className="text-lg font-bold text-heading mb-2">{t("generatingTitle")}</h2>
+          <p className="text-body">{t("generatingDesc")}</p>
         </div>
       ) : report.status === 'failed' ? (
         <div className="text-center py-20 bg-background border border-red-200 rounded-2xl shadow-[var(--shadow-soft)]">
           <AlertCircle size={40} className="mx-auto text-red-500 mb-4" />
-          <h2 className="text-lg font-bold text-heading mb-2">Sinh báo cáo thất bại</h2>
-          <p className="text-red-600 mb-6 max-w-xl mx-auto">{report.error_message || "Không rõ nguyên nhân."}</p>
+          <h2 className="text-lg font-bold text-heading mb-2">{t("failedTitle")}</h2>
+          <p className="text-red-600 mb-6 max-w-xl mx-auto">{report.error_message || t("unknownCause")}</p>
           <button
             onClick={handleRetry}
             disabled={retrying}
             className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-full font-semibold text-sm transition-colors disabled:opacity-50"
           >
             <RefreshCw size={14} className={retrying ? "animate-spin" : ""} />
-            {retrying ? "Đang thử lại..." : "Thử sinh lại"}
+            {retrying ? t("retrying") : t("retry")}
           </button>
         </div>
       ) : (

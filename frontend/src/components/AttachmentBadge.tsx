@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FileText, Image as ImageIcon, Loader2, X } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import type { Attachment } from "@/lib/types";
 import { fetchAttachmentViewUrl } from "@/lib/minioUpload";
 
@@ -20,6 +21,7 @@ export interface DisplayAttachment extends Attachment {
  * bằng nút X hoặc bấm ra ngoài ảnh/nhấn Esc). PDF/Word vẫn mở tab mới (không
  * xem trực tiếp trong trang được) — hiện icon + tên.*/
 export function AttachmentBadge({ attachment }: { attachment: DisplayAttachment }) {
+  const t = useTranslations("chatAttach");
   const [viewUrl, setViewUrl] = useState<string | null>(attachment.previewUrl || null);
   const [opening, setOpening] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -104,7 +106,7 @@ export function AttachmentBadge({ attachment }: { attachment: DisplayAttachment 
             <button
               type="button"
               onClick={() => setLightboxOpen(false)}
-              aria-label="Đóng"
+              aria-label={t("close")}
               className="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
             >
               <X size={24} />

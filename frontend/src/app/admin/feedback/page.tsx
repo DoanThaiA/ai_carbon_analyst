@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { MessageSquareWarning, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import type { FeedbackListResponse } from "@/lib/types";
 
@@ -20,6 +21,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function AdminFeedbackPage() {
+  const t = useTranslations("adminMiscFeedback");
   const [page, setPage] = useState(0);
   const [data, setData] = useState<FeedbackListResponse>({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export default function AdminFeedbackPage() {
         if (!cancelled) setData(res.data);
       })
       .catch(() => {
-        if (!cancelled) setError("Không thể tải danh sách phản ánh.");
+        if (!cancelled) setError(t("loadError"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -52,8 +54,8 @@ export default function AdminFeedbackPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Phản Ánh Về Jenny</h2>
-        <p className="text-body">Phản ánh của người dùng về thái độ/hiệu quả phục vụ của AI assistant</p>
+        <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+        <p className="text-body">{t("subtitle")}</p>
       </div>
 
       {error && (
@@ -68,7 +70,7 @@ export default function AdminFeedbackPage() {
       ) : data.items.length === 0 ? (
         <div className="text-center py-16 bg-surface border border-border-soft border-dashed rounded-2xl">
           <MessageSquareWarning size={40} className="mx-auto text-muted mb-3" />
-          <p className="text-body">Chưa có phản ánh nào.</p>
+          <p className="text-body">{t("empty")}</p>
         </div>
       ) : (
         <>
@@ -78,9 +80,9 @@ export default function AdminFeedbackPage() {
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
                   <th className="px-4 py-3 font-semibold">Email</th>
-                  <th className="px-4 py-3 font-semibold">Chức danh</th>
-                  <th className="px-4 py-3 font-semibold">Nội dung</th>
-                  <th className="px-4 py-3 font-semibold">Thời gian</th>
+                  <th className="px-4 py-3 font-semibold">{t("colRole")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colContent")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("colTime")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -126,7 +128,7 @@ export default function AdminFeedbackPage() {
 
           <div className="flex items-center justify-between text-sm text-body">
             <span>
-              Trang {page + 1}/{totalPages} — {data.total} phản ánh
+              {t("pageInfo", { page: page + 1, totalPages, total: data.total })}
             </span>
             <div className="flex gap-2">
               <button

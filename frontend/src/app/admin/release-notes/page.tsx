@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { Plus, Pencil, Trash2, Save, X, AlertCircle, CheckCircle2, XCircle, ImagePlus, Loader2 } from "lucide-react";
 import clsx from "clsx";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import type { Attachment } from "@/lib/types";
 import { uploadFileToMinIO, validateFile } from "@/lib/minioUpload";
 import { AttachmentBadge } from "@/components/AttachmentBadge";
 
 const MAX_EVIDENCE_IMAGES = 3;
+
+type TFn = (key: string, values?: Record<string, string | number>) => string;
 
 interface ReleaseNote {
   id: number;
@@ -46,10 +49,12 @@ async function uploadEvidenceImages(
   onChange: (next: Attachment[]) => void,
   onError: (msg: string) => void,
   onUploadingChange: (uploading: boolean) => void,
+  t: TFn,
+  tLib: TFn,
 ) {
   const selected = Array.from(files);
   if (existing.length + selected.length > MAX_EVIDENCE_IMAGES) {
-    onError(`Chỉ được đính kèm tối đa ${MAX_EVIDENCE_IMAGES} ảnh minh chứng cho 1 mục.`);
+    onError(t("maxImages", { max: MAX_EVIDENCE_IMAGES }));
     return;
   }
   onError("");
@@ -57,18 +62,18 @@ async function uploadEvidenceImages(
   const next = [...existing];
   for (const file of selected) {
     if (!file.type.startsWith("image/")) {
-      onError(`"${file.name}": chỉ nhận file ảnh (JPEG/PNG/WEBP).`);
+      onError(t("imageOnly", { name: file.name }));
       continue;
     }
-    const invalid = validateFile(file);
+    const invalid = validateFile(file, tLib);
     if (invalid) {
       onError(invalid);
       continue;
     }
     try {
-      next.push(await uploadFileToMinIO(file));
+      next.push(await uploadFileToMinIO(file, tLib));
     } catch (err: any) {
-      onError(err?.message || `Upload "${file.name}" thất bại.`);
+      onError(err?.message || t("uploadFailed", { name: file.name }));
     }
   }
   onChange(next);
@@ -94,6 +99,8 @@ function EvidenceImagesField({
   onError?: (msg: string) => void;
   onUploadingChange?: (uploading: boolean) => void;
 }) {
+  const t = useTranslations("adminMiscReleaseNotes");
+  const tLib = useTranslations("chatLib");
   if (!editable && images.length === 0) return null;
 
   return (
@@ -107,7 +114,7 @@ function EvidenceImagesField({
                 type="button"
                 onClick={() => onChange?.(images.filter((_, j) => j !== i))}
                 className="absolute -top-1.5 -right-1.5 bg-background border border-border rounded-full p-0.5 text-muted-light hover:text-down"
-                aria-label="Xoá ảnh"
+                aria-label={t("removeImage")}
               >
                 <X size={10} />
               </button>
@@ -117,7 +124,7 @@ function EvidenceImagesField({
         {editable && images.length < MAX_EVIDENCE_IMAGES && (
           <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-border-soft text-xs text-muted-light cursor-pointer hover:border-primary hover:text-primary-dark transition-colors">
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
-            Đính kèm ảnh minh chứng
+            {t("attachEvidence")}
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -126,7 +133,7 @@ function EvidenceImagesField({
               disabled={uploading}
               onChange={async (e) => {
                 if (!e.target.files?.length || !onChange || !onError || !onUploadingChange) return;
-                await uploadEvidenceImages(e.target.files, images, onChange, onError, onUploadingChange);
+                await uploadEvidenceImages(e.target.files, images, onChange, onError, onUploadingChange, t, tLib);
                 e.target.value = "";
               }}
             />
@@ -139,6 +146,7 @@ function EvidenceImagesField({
 }
 
 export default function ReleaseNotesPage() {
+  const t = useTranslations("adminMiscReleaseNotes");
   const [notes, setNotes] = useState<ReleaseNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -156,7 +164,7 @@ export default function ReleaseNotesPage() {
       const res = await api.get("/api/admin/release-notes");
       setNotes(res.data);
     } catch (err) {
-      setError("Không thể tải danh sách release note.");
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
@@ -176,7 +184,7 @@ export default function ReleaseNotesPage() {
       setShowAddForm(false);
       await fetchNotes();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi thêm release note.");
+      setError(err.response?.data?.detail || t("createError"));
     }
   };
 
@@ -201,17 +209,17 @@ export default function ReleaseNotesPage() {
       setEditingId(null);
       await fetchNotes();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi cập nhật release note.");
+      setError(err.response?.data?.detail || t("updateError"));
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Xoá mục release note này?")) return;
+    if (!confirm(t("confirmDelete"))) return;
     try {
       await api.delete(`/api/admin/release-notes/${id}`);
       await fetchNotes();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Lỗi khi xoá release note.");
+      setError(err.response?.data?.detail || t("deleteError"));
     }
   };
 
@@ -222,12 +230,12 @@ export default function ReleaseNotesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">Release Note</h2>
-          <p className="text-body">Theo dõi yêu cầu khách hàng và kết quả kiểm tra thực tế trên báo cáo</p>
+          <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
+          <p className="text-body">{t("subtitle")}</p>
         </div>
         <button onClick={() => setShowAddForm(v => !v)} className="btn-pill py-2.5 shrink-0">
           <Plus size={18} />
-          Thêm mục
+          {t("addItem")}
         </button>
       </div>
 
@@ -241,9 +249,9 @@ export default function ReleaseNotesPage() {
       {showAddForm && (
         <form onSubmit={handleCreate} className="bg-background border border-border rounded-2xl p-5 space-y-3">
           <input required type="date" value={form.note_date} onChange={e => setForm({ ...form, note_date: e.target.value })} className={inputCls + " w-48"} />
-          <textarea required placeholder="Yêu cầu khách hàng" value={form.customer_request} onChange={e => setForm({ ...form, customer_request: e.target.value })} className={textareaCls} />
-          <textarea required placeholder="Nội dung đã chỉnh sửa" value={form.change_description} onChange={e => setForm({ ...form, change_description: e.target.value })} className={textareaCls} />
-          <textarea placeholder="Kết quả kiểm tra thực tế trên báo cáo" value={form.test_result} onChange={e => setForm({ ...form, test_result: e.target.value })} className={textareaCls} />
+          <textarea required placeholder={t("customerRequest")} value={form.customer_request} onChange={e => setForm({ ...form, customer_request: e.target.value })} className={textareaCls} />
+          <textarea required placeholder={t("changeDescription")} value={form.change_description} onChange={e => setForm({ ...form, change_description: e.target.value })} className={textareaCls} />
+          <textarea placeholder={t("testResultPlaceholder")} value={form.test_result} onChange={e => setForm({ ...form, test_result: e.target.value })} className={textareaCls} />
           <EvidenceImagesField
             images={form.evidence_images}
             editable
@@ -254,12 +262,12 @@ export default function ReleaseNotesPage() {
             onUploadingChange={setFormImageUploading}
           />
           <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value as "dat" | "chua_dat" })} className={inputCls + " w-48"}>
-            <option value="dat">✔ ĐẠT</option>
-            <option value="chua_dat">✘ CHƯA ĐẠT</option>
+            <option value="dat">✔ {t("pass")}</option>
+            <option value="chua_dat">✘ {t("fail")}</option>
           </select>
           <div className="flex items-center gap-3">
-            <button type="submit" className="btn-pill py-2 px-5">Lưu</button>
-            <button type="button" onClick={() => setShowAddForm(false)} className="text-body hover:text-primary text-sm font-semibold">Huỷ</button>
+            <button type="submit" className="btn-pill py-2 px-5">{t("save")}</button>
+            <button type="button" onClick={() => setShowAddForm(false)} className="text-body hover:text-primary text-sm font-semibold">{t("cancel")}</button>
           </div>
         </form>
       )}
@@ -275,12 +283,12 @@ export default function ReleaseNotesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold w-28">Ngày</th>
-                  <th className="px-4 py-3 font-semibold">Yêu cầu khách hàng</th>
-                  <th className="px-4 py-3 font-semibold">Nội dung đã chỉnh sửa</th>
-                  <th className="px-4 py-3 font-semibold">Kết quả kiểm tra thực tế</th>
-                  <th className="px-4 py-3 font-semibold">Kết luận</th>
-                  <th className="px-4 py-3 font-semibold text-right">Hành động</th>
+                  <th className="px-4 py-3 font-semibold w-28">{t("colDate")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("customerRequest")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("changeDescription")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("testResult")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("conclusion")}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{t("colActions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -316,16 +324,16 @@ export default function ReleaseNotesPage() {
                       <td className="px-4 py-2.5">
                         {isEditing ? (
                           <select value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value as "dat" | "chua_dat" })} className={inputCls}>
-                            <option value="dat">✔ ĐẠT</option>
-                            <option value="chua_dat">✘ CHƯA ĐẠT</option>
+                            <option value="dat">✔ {t("pass")}</option>
+                            <option value="chua_dat">✘ {t("fail")}</option>
                           </select>
                         ) : n.status === "dat" ? (
                           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-tint text-primary-dark">
-                            <CheckCircle2 size={14} /> ĐẠT
+                            <CheckCircle2 size={14} /> {t("pass")}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-down">
-                            <XCircle size={14} /> CHƯA ĐẠT
+                            <XCircle size={14} /> {t("fail")}
                           </span>
                         )}
                       </td>
@@ -380,7 +388,7 @@ export default function ReleaseNotesPage() {
                   </div>
 
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">Yêu cầu khách hàng</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">{t("customerRequest")}</p>
                     {isEditing ? (
                       <textarea value={editForm.customer_request} onChange={e => setEditForm({ ...editForm, customer_request: e.target.value })} className={textareaCls} />
                     ) : (
@@ -389,7 +397,7 @@ export default function ReleaseNotesPage() {
                   </div>
 
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">Nội dung đã chỉnh sửa</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">{t("changeDescription")}</p>
                     {isEditing ? (
                       <textarea value={editForm.change_description} onChange={e => setEditForm({ ...editForm, change_description: e.target.value })} className={textareaCls} />
                     ) : (
@@ -398,7 +406,7 @@ export default function ReleaseNotesPage() {
                   </div>
 
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">Kết quả kiểm tra thực tế</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">{t("testResult")}</p>
                     {isEditing ? (
                       <textarea value={editForm.test_result ?? ""} onChange={e => setEditForm({ ...editForm, test_result: e.target.value })} className={textareaCls} />
                     ) : (
@@ -416,19 +424,19 @@ export default function ReleaseNotesPage() {
                   </div>
 
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">Kết luận</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-light mb-1">{t("conclusion")}</p>
                     {isEditing ? (
                       <select value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value as "dat" | "chua_dat" })} className={inputCls}>
-                        <option value="dat">✔ ĐẠT</option>
-                        <option value="chua_dat">✘ CHƯA ĐẠT</option>
+                        <option value="dat">✔ {t("pass")}</option>
+                        <option value="chua_dat">✘ {t("fail")}</option>
                       </select>
                     ) : n.status === "dat" ? (
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-tint text-primary-dark">
-                        <CheckCircle2 size={14} /> ĐẠT
+                        <CheckCircle2 size={14} /> {t("pass")}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-down">
-                        <XCircle size={14} /> CHƯA ĐẠT
+                        <XCircle size={14} /> {t("fail")}
                       </span>
                     )}
                   </div>

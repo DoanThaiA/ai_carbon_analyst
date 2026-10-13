@@ -1,0 +1,158 @@
+{
+ "shellHeader": {
+  "vi": {
+   "admin": "Quản Trị",
+   "adminTitle": "Trang Quản Trị",
+   "connectClaude": "Kết nối Claude",
+   "connectClaudeTitle": "Kết nối Claude Desktop",
+   "menu": "Menu",
+   "logout": "Đăng xuất"
+  },
+  "en": {
+   "admin": "Admin",
+   "adminTitle": "Admin Console",
+   "connectClaude": "Connect Claude",
+   "connectClaudeTitle": "Connect Claude Desktop",
+   "menu": "Menu",
+   "logout": "Log out"
+  }
+ },
+ "shellNav": {
+  "vi": {
+   "group_daily": "1. Báo cáo ngày",
+   "group_stats": "2. Thống kê & Hiệu suất",
+   "group_resources": "3. Nguồn lực của Jenny",
+   "group_capability": "4. Năng lực của Jenny",
+   "group_colleagues": "5. Đồng nghiệp",
+   "group_feedback": "6. Phản ánh về Jenny",
+   "reports": "Báo cáo ngày",
+   "priceDashboard": "Dashboard giá",
+   "performance": "Thống kê hiệu suất",
+   "priceSources": "Nguồn giá",
+   "newsSources": "Nguồn tin tức",
+   "euaFramework": "Khung phân tích EUA",
+   "chatExamples": "Đoạn chat tham khảo",
+   "chatReviews": "Đánh giá chat",
+   "chatHistory": "Lịch sử giao tiếp",
+   "users": "Đồng nghiệp",
+   "feedback": "Phản ánh về Jenny",
+   "releaseNotes": "Release Note"
+  },
+  "en": {
+   "group_daily": "1. Daily Reports",
+   "group_stats": "2. Statistics & Performance",
+   "group_resources": "3. Jenny's Resources",
+   "group_capability": "4. Jenny's Capabilities",
+   "group_colleagues": "5. Colleagues",
+   "group_feedback": "6. Feedback on Jenny",
+   "reports": "Daily reports",
+   "priceDashboard": "Price dashboard",
+   "performance": "Performance stats",
+   "priceSources": "Price sources",
+   "newsSources": "News sources",
+   "euaFramework": "EUA analysis framework",
+   "chatExamples": "Reference chats",
+   "chatReviews": "Chat reviews",
+   "chatHistory": "Conversation history",
+   "users": "Colleagues",
+   "feedback": "Feedback on Jenny",
+   "releaseNotes": "Release notes"
+  }
+ },
+ "shellHotNews": {
+  "vi": {
+   "title": "Hot News",
+   "empty": "Chưa có tin hot news nào.",
+   "justNow": "vừa xong",
+   "minutesAgo": "{count} phút trước",
+   "hoursAgo": "{count} giờ trước",
+   "daysAgo": "{count} ngày trước"
+  },
+  "en": {
+   "title": "Hot News",
+   "empty": "No hot news yet.",
+   "justNow": "just now",
+   "minutesAgo": "{count, plural, one {# minute ago} other {# minutes ago}}",
+   "hoursAgo": "{count, plural, one {# hour ago} other {# hours ago}}",
+   "daysAgo": "{count, plural, one {# day ago} other {# days ago}}"
+  }
+ },
+ "shellReportDate": {
+  "vi": {
+   "title": "Báo cáo ngày {date}",
+   "titleWithWeekday": "Báo cáo {weekday} ngày {date}",
+   "weekday0": "Chủ Nhật",
+   "weekday1": "Thứ Hai",
+   "weekday2": "Thứ Ba",
+   "weekday3": "Thứ Tư",
+   "weekday4": "Thứ Năm",
+   "weekday5": "Thứ Sáu",
+   "weekday6": "Thứ Bảy"
+  },
+  "en": {
+   "title": "Report for {date}",
+   "titleWithWeekday": "{weekday} report, {date}",
+   "weekday0": "Sunday",
+   "weekday1": "Monday",
+   "weekday2": "Tuesday",
+   "weekday3": "Wednesday",
+   "weekday4": "Thursday",
+   "weekday5": "Friday",
+   "weekday6": "Saturday"
+  }
+ },
+ "shellDateFilter": {
+  "vi": {
+   "filterByDate": "Lọc theo ngày",
+   "fromDate": "Từ ngày",
+   "toDate": "Đến ngày",
+   "preset_all": "Tất cả",
+   "preset_7d": "7 ngày qua",
+   "preset_30d": "30 ngày qua",
+   "showing": "Hiển thị",
+   "reportsUnit": "báo cáo",
+   "clear": "Xoá lọc",
+   "filterByWeekday": "Lọc theo thứ",
+   "wdShort_mon": "T2",
+   "wdShort_tue": "T3",
+   "wdShort_wed": "T4",
+   "wdShort_thu": "T5",
+   "wdShort_fri": "T6",
+   "wdShort_sat": "T7",
+   "wdShort_sun": "CN",
+   "wdFull_mon": "Thứ Hai",
+   "wdFull_tue": "Thứ Ba",
+   "wdFull_wed": "Thứ Tư",
+   "wdFull_thu": "Thứ Năm",
+   "wdFull_fri": "Thứ Sáu",
+   "wdFull_sat": "Thứ Bảy",
+   "wdFull_sun": "Chủ nhật"
+  },
+  "en": {
+   "filterByDate": "Filter by date",
+   "fromDate": "From date",
+   "toDate": "To date",
+   "preset_all": "All",
+   "preset_7d": "Last 7 days",
+   "preset_30d": "Last 30 days",
+   "showing": "Showing",
+   "reportsUnit": "reports",
+   "clear": "Clear filters",
+   "filterByWeekday": "Filter by weekday",
+   "wdShort_mon": "Mon",
+   "wdShort_tue": "Tue",
+   "wdShort_wed": "Wed",
+   "wdShort_thu": "Thu",
+   "wdShort_fri": "Fri",
+   "wdShort_sat": "Sat",
+   "wdShort_sun": "Sun",
+   "wdFull_mon": "Monday",
+   "wdFull_tue": "Tuesday",
+   "wdFull_wed": "Wednesday",
+   "wdFull_thu": "Thursday",
+   "wdFull_fri": "Friday",
+   "wdFull_sat": "Saturday",
+   "wdFull_sun": "Sunday"
+  }
+ }
+}
