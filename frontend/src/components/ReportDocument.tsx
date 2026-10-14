@@ -1356,8 +1356,15 @@ function EuaDashboardWidget({ report }: { report: Report }) {
   const monthChangePct = firstClose ? (monthChange / firstClose) * 100 : 0;
 
   const vol = chartData[chartData.length - 1].volume || 0;
-  const avgVol = report.content["2"]?.avg_volume_20 || 0;
-  const volChangePct = avgVol ? ((vol - avgVol) / avgVol) * 100 : 0;
+  // TB khối lượng 20 phiên LIỀN TRƯỚC phiên mới nhất, bỏ phiên volume <= 0 (dữ liệu lỗi) — cùng công thức
+  // với `_eua_volume_summary` (services/report_generator.py). Backend không lưu sẵn trường nào cho số này.
+  const priorVols = chartData
+    .slice(0, -1)
+    .map((c: any) => c.volume)
+    .filter((v: any) => typeof v === "number" && v > 0)
+    .slice(-20);
+  const avgVol = priorVols.length ? priorVols.reduce((a: number, b: number) => a + b, 0) / priorVols.length : 0;
+  const volChangePct = avgVol && vol > 0 ? ((vol - avgVol) / avgVol) * 100 : 0;
 
   return (
     // Khung nền xám chỉ dùng trên màn hình >= sm. Mobile bỏ khung để các thẻ dùng hết
@@ -1440,7 +1447,7 @@ function EuaDashboardWidget({ report }: { report: Report }) {
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={volChangePct >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">Khối lượng:</strong> {vol.toLocaleString("en-US")} hợp đồng phiên {formatFullDate(lastDate)}, {volChangePct >= 0 ? "cao hơn" : "thấp hơn"} TB 20 phiên ({avgVol.toLocaleString("en-US")}) {volChangePct > 0 ? "+" : ""}{volChangePct.toFixed(1)}%.</div>
+            <div className="leading-snug"><strong className="text-label font-bold">Khối lượng:</strong> {vol.toLocaleString("en-US")} hợp đồng phiên {formatFullDate(lastDate)}{avgVol > 0 ? <>, {volChangePct >= 0 ? "cao hơn" : "thấp hơn"} TB {priorVols.length} phiên ({Math.round(avgVol).toLocaleString("en-US")}) {volChangePct > 0 ? "+" : ""}{volChangePct.toFixed(1)}%.</> : "."}</div>
           </div>
         </div>
       </div>
