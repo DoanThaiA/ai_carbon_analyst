@@ -35,7 +35,21 @@ REPORT_MODEL_HAIKU = "claude-haiku-4-5"
 CONCISENESS_RULE = (
     "QUY TẮC VIẾT BẮT BUỘC: Mỗi ý tối đa 1–2 câu ngắn. Không câu dẫn dắt/đệm/chuyển tiếp thừa. "
     "Không lặp số liệu đã nêu ở trường/mục khác. Ưu tiên SỐ LIỆU → KẾT LUẬN, bỏ diễn giải thừa. "
-    "Cấm bịa số liệu/sự kiện/source không có trong dữ liệu đã cung cấp."
+    "Cấm bịa số liệu/sự kiện/source không có trong dữ liệu đã cung cấp.\n"
+    "QUY TẮC CHÍNH XÁC BẮT BUỘC: "
+    "(1) Tuyên bố/con số do MỘT BÊN nêu (quan chức, chính phủ, công ty, nhà phân tích) phải ghi rõ chủ thể "
+    "phát ngôn đúng chức danh như bài viết ('theo ...', '... cho biết') — KHÔNG trình bày như sự thật đã xác nhận, "
+    "và KHÔNG gắn tag FACT cho tuyên bố của một bên. "
+    "(2) Cùng 1 con số/sự kiện (vd mức nâng dự báo nhu cầu của OPEC, vốn cam kết của một tổ chức) PHẢI giống nhau "
+    "ở mọi mục; nếu các bài nêu số khác nhau thì chỉ dùng số của bài được trích dẫn ở chính bullet đó, "
+    "nêu rõ 'theo [nguồn]', không tự chọn số khác ở mục khác. "
+    "(3) KHÔNG đưa vào phân tích/tóm tắt tin mà chính bạn nhận định là 'không liên quan trực tiếp' tới carbon/năng lượng EU "
+    "— loại hẳn thay vì giữ lại kèm lời rào đón. "
+    "(4) Tương quan ngắn hạn KHÔNG phải nhân quả: không viết 'X kéo Y' chỉ vì cùng chiều trong vài phiên; "
+    "khi thiếu số liệu định lượng (spark/dark spread, giá chuyển đổi nhiên liệu, vị thế quỹ, đấu giá EEX, MSR) "
+    "phải nêu rõ là chưa kiểm chứng được và hạ mức tự tin tương ứng. "
+    "(5) Không lặp một tin ở nhiều mục/bullet cho cùng 1 ý. "
+    "(6) Viết đúng chính tả tiếng Việt, đọc lại để tránh lỗi gõ (vd 'tiêu tụ', 'khuyến hướng', 'hôm tháng 9')."
 )
 
 _anthropic_client: anthropic.AsyncAnthropic | None = None
@@ -843,9 +857,13 @@ YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT, ĐÚNG 2 C
 - Câu 2: nêu ngắn gọn tin này tác động thế nào tới thị trường carbon/năng lượng châu Âu hoặc giá EUA — chỉ viết câu này nếu có cơ sở hợp lý từ nội dung bài; nếu bài không liên quan thì thay bằng 1 câu tóm tắt thêm fact khác của bài (vẫn giữ đúng 2 câu).
 - Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác: dịch ý sang tiếng Việt tự nhiên, không dịch máy móc từng từ.
 - Văn phong khách quan. Mỗi câu ngắn, đi thẳng vào trọng tâm. KHÔNG dùng markdown (không **, không gạch đầu dòng).
+- Tuyên bố/số liệu do 1 bên nêu (quan chức, công ty, nhà phân tích) PHẢI ghi rõ chủ thể phát ngôn đúng như bài ("theo Phó Thủ tướng...", "đặc phái viên...") — KHÔNG viết như sự thật đã xác nhận. Giữ nguyên chức danh đúng như bài, không tự đổi.
+- KHÔNG chép giá/%Δ của Brent, WTI, khí, EUA... nêu trong bài (giá trong bài là giá tại 1 thời điểm khác, sẽ lệch với Bảng giá nhanh của báo cáo) — chỉ nêu giá nếu đó là nội dung chính của sự kiện (vd mức trần giá, giá đấu giá).
+- Viết đúng chính tả tiếng Việt.
+- "relevant": false CHỈ KHI bài hoàn toàn không liên quan tới năng lượng, carbon, chính sách khí hậu/năng lượng hay thị trường liên quan (vd tin chính trị/địa phương thuần túy không có liên hệ nào tới giá năng lượng/carbon). Khi đó vẫn viết "summary" như bình thường. Bài có liên hệ gián tiếp nhưng có cơ chế rõ → true.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"summary": "..."}}"""
+{{"relevant": true, "summary": "..."}}"""
 
 
 SECTION6_SUMMARY_CONCURRENCY = 4
@@ -873,7 +891,7 @@ async def _summarize_section6_articles(
 
     sem = asyncio.Semaphore(concurrency)
 
-    async def _summarize_one(art: Dict) -> Dict:
+    async def _summarize_one(art: Dict) -> Optional[Dict]:
         async with sem:
             await asyncio.sleep(1)  # giãn nhịp nhẹ trong mỗi slot, tránh dồn request tức thời
             raw = await _call_llm(
@@ -884,13 +902,18 @@ async def _summarize_section6_articles(
             parsed = _extract_json(raw) if raw else None
             summary = (parsed.get("summary") or "").strip() if parsed else ""
 
+            if parsed and parsed.get("relevant") is False and summary:
+                logger.info("[REPORT] Mục 6: loại bài không liên quan: %s", art["url"])
+                return None
+
             if not summary:
                 logger.warning("[REPORT] Mục 6: tóm tắt LLM thất bại cho bài %s, dùng fallback.", art["url"])
                 summary = art["summary"]
 
             return {**art, "summary": summary}
 
-    return list(await asyncio.gather(*[_summarize_one(art) for art in articles]))
+    summarized = await asyncio.gather(*[_summarize_one(art) for art in articles])
+    return [a for a in summarized if a is not None]
 
 
 def _summarize_prices(prices: List[Dict]) -> str:
@@ -966,8 +989,14 @@ def _eua_technical_levels_summary(chart_data: List[Dict]) -> str:
     support = min(c["low"] for c in chart_data)
     last_close = chart_data[-1]["close"]
     breakout_target = resistance + (resistance - support)
+    # ATR đơn giản = biên độ cao-thấp TB 14 phiên gần nhất — làm đệm tối thiểu cho
+    # mức cắt lỗ (0,5 × ATR) ở Mục 3, tránh cắt lỗ sát hỗ trợ đến mức nhiễu phiên cũng quét.
+    recent = chart_data[-14:]
+    atr = sum(c["high"] - c["low"] for c in recent) / len(recent)
 
     return (
+        f"Biên độ TB phiên (ATR 14 phiên): ~{atr:.2f} EUR/tCO2 → đệm cắt lỗ tối thiểu ngoài hỗ trợ/kháng cự "
+        f"~{0.5 * atr:.2f}. "
         f"Kháng cự/điểm chốt lời kỹ thuật (đỉnh 30 phiên gần nhất): ~{resistance:.2f} EUR/tCO2 — "
         f"nếu giá phá vỡ mốc này, mục tiêu kỹ thuật tham khảo (đo biên độ dao động 30 phiên) "
         f"~{breakout_target:.2f} EUR/tCO2. "
@@ -986,10 +1015,21 @@ EUA_VOLUME_SPIKE_PCT = 20.0
 EUA_VOLUME_DROP_PCT = -20.0
 
 
+def _has_valid_volume(c: Dict) -> bool:
+    """Phiên có khối lượng hợp lệ: volume 0/âm là dữ liệu lỗi hoặc phiên chưa chốt
+    (Barchart trả 0 khi chưa có số) — nếu đưa vào sẽ kéo TB về 0 và sinh ra câu
+    "cao hơn TB (0) 0.0%" vô nghĩa."""
+    v = c.get("volume")
+    return v is not None and v > 0
+
+
 def _eua_volume_summary(chart_data: List[Dict]) -> str:
-    with_volume = [c for c in chart_data if c.get("volume") is not None]
+    with_volume = [c for c in chart_data if _has_valid_volume(c)]
     if not with_volume:
-        return "Không có dữ liệu khối lượng giao dịch EUA cho phiên này."
+        return (
+            "Không có dữ liệu khối lượng giao dịch EUA hợp lệ cho phiên này — KHÔNG nêu bất kỳ nhận định "
+            "nào về khối lượng (không suy ra lực mua/bán/chốt lời từ khối lượng)."
+        )
 
     latest = with_volume[-1]
     latest_volume = latest["volume"]
@@ -1006,7 +1046,7 @@ def _eua_volume_summary(chart_data: List[Dict]) -> str:
         )
 
     avg_volume = sum(c["volume"] for c in prior) / len(prior)
-    pct_diff = ((latest_volume - avg_volume) / avg_volume * 100) if avg_volume else 0
+    pct_diff = (latest_volume - avg_volume) / avg_volume * 100  # avg > 0: prior đã lọc volume <= 0
 
     if pct_diff >= EUA_VOLUME_SPIKE_PCT:
         level = "tăng đột biến"
@@ -1196,6 +1236,7 @@ def _finalize_section8_events(
 _EIA_API_TZ = ZoneInfo("America/New_York")
 _BAKER_HUGHES_TZ = ZoneInfo("America/Chicago")
 _VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+_VN_WEEKDAYS = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
 
 
 def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
@@ -1220,6 +1261,10 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
     def _add_us_release(anchor_date: date, anchor_time: dtime, tz: ZoneInfo, label: str, impact: str) -> None:
         vn_dt = datetime.combine(anchor_date, anchor_time, tzinfo=tz).astimezone(_VN_TZ)
         if target <= vn_dt.date() <= window_end:
+            if vn_dt.date() != anchor_date:
+                # Giờ VN lệch sang ngày hôm sau (vd Baker Hughes thứ Sáu 12:00 CT = 00:00 thứ Bảy VN) —
+                # ghi rõ ngày công bố theo giờ Mỹ để người đọc không tưởng nhầm ngày.
+                label = f"{label} — công bố {_VN_WEEKDAYS[anchor_date.weekday()]} {anchor_date.strftime('%d/%m')} giờ Mỹ"
             events.append({
                 "date": vn_dt.date().isoformat(),
                 "datetime_vn": vn_dt.strftime("%d/%m"),
@@ -1471,7 +1516,7 @@ TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coa
 {news_text}
 
 YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
-- Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo tác động EUA (cao→thấp).
+- Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo tác động EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
 - Bullet đầu: giá đóng cửa EUA + biên độ phiên (dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên; nếu "Không có dữ liệu" → bỏ qua biên độ) + xu hướng 30 ngày.
 - Mỗi bullet mở đầu bằng tag đậm (**EUA:**, **Chính sách:**...). Nêu tin chính sách/địa chính trị ảnh hưởng EUA.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
@@ -1542,6 +1587,8 @@ Cấu trúc: {{"bullish": [...], "bearish": [...]}}. Mỗi phần tử gồm "ta
 - "text": ĐÚNG 1 câu TÓM TẮT NGẮN GỌN, ĐỊNH TÍNH về trạng thái/động lực của yếu tố này — TUYỆT ĐỐI KHÔNG nhắc lại giá đóng cửa hay %Δ ngày/Δ tuần bằng SỐ (các số này đã hiển thị sẵn ở "Bảng giá nhanh" của báo cáo — lặp lại là thừa, không thêm thông tin). Thay vào đó mô tả ĐỊNH TÍNH vị thế/xu hướng — vd đang giữ vùng cao/thấp (so với biên độ 30 ngày), phá vỡ/chưa phá vỡ ngưỡng hỗ trợ-kháng cự, đi ngang tích lũy, biến động mạnh bất thường, thanh khoản tăng/giảm rõ rệt... — rồi nêu NGẮN GỌN nguyên nhân/sự kiện phía sau nếu có (vd "EUA đang giữ ở vùng cao, thanh khoản duy trì ổn định." hoặc "TTF suy yếu về vùng thấp nhiều tuần do nguồn cung LNG dồi dào."). Áp dụng ĐÚNG cách viết định tính này cho MỌI instrument trong mục này (EUA, TTF, than, dầu, điện Đức...), KHÔNG riêng EUA — KHÔNG giải thích/suy luận tác động lên EUA ở đây, KHÔNG viết chuỗi nhân quả hay kết luận hướng ảnh hưởng tới EUA (phần đó thuộc Mục 3).
 - "source_index": số [N] có thật trong danh sách, hoặc null.
 Xếp bullish/bearish theo ĐÚNG chuỗi nhân quả tới EUA (không theo chiều tăng/giảm bề ngoài của instrument) — chuỗi nhân quả CHỈ dùng để QUYẾT ĐỊNH xếp vào bullish hay bearish, KHÔNG viết ra trong "text". CHỈ đưa yếu tố có dữ liệu/tin hỗ trợ, không bịa thêm.
+- NHẤT QUÁN VỚI MỤC 3 (fuel switching là giá TƯƠNG ĐỐI): than tụt lại/rẻ hơn tương đối so với khí (khí tăng mạnh hơn than, hoặc than giảm trong khi khí tăng) → than cạnh tranh hơn → cầu EUA tăng → xếp BULLISH; than tăng nhanh hơn khí hoặc khí rẻ đi tương đối → xếp BEARISH. TUYỆT ĐỐI KHÔNG xếp "than tụt lại so với khí" vào bearish. Mỗi yếu tố chỉ xuất hiện ở MỘT phía (không có cùng 1 yếu tố ở cả bullish lẫn bearish) và phải cùng chiều với kết luận ở Mục 3.
+- Khi "SỐ LIỆU EUA" ghi dữ liệu khối lượng không hợp lệ/không đủ để so sánh → KHÔNG thêm mục khối lượng và KHÔNG viết 'khối lượng tăng đột biến', 'lực chốt lời' hay bất kỳ suy luận nào dựa trên khối lượng ở bất kỳ phần nào.
 - KHỐI LƯỢNG GIAO DỊCH EUA: dựa vào khối lượng phiên liền trước so với TB các phiên gần nhất đã nêu trong "SỐ LIỆU EUA" ở trên (KHÔNG tự bịa số) để BẮT BUỘC thêm 1 mục "FACT" riêng mô tả ĐỊNH TÍNH tín hiệu khối lượng vào bullish/bearish (KHÔNG nêu số khối lượng cụ thể trong "text"), theo đúng logic "khối lượng xác nhận xu hướng giá":
   + Khối lượng tăng đột biến CÙNG chiều với giá tăng/giảm phiên đó → tín hiệu xác nhận lực mua/bán mạnh, xếp cùng chiều bullish/bearish tương ứng (vd "Khối lượng giao dịch tăng vọt, xác nhận lực mua mạnh.").
   + Khối lượng giảm mạnh trong khi giá vẫn biến động mạnh, hoặc khối lượng tăng đột biến nhưng giá gần như đi ngang → tín hiệu YẾU/thiếu xác nhận, ghi rõ là "OPINION" và nêu rủi ro đảo chiều/thiếu động lực thay vì kết luận dứt khoát.
@@ -1619,7 +1666,7 @@ def _resolve_key_developments(items: Optional[List[Any]], index_lookup: Dict[int
 def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
     gasoil_crack_spread: str, target_date: str, topics_present: List[str],
-    overrides: Optional[Dict[str, str]] = None,
+    overrides: Optional[Dict[str, str]] = None, eua_technical_levels: str = "",
 ) -> tuple[str, str]:
     framework = _eua_framework(topics_present, full=True, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
@@ -1636,6 +1683,9 @@ GASOIL CRACK SPREAD (số liệu đã tính sẵn — PHẢI dùng đúng con s�
 
 XU HƯỚNG EUA 30 NGÀY:
 {eua_trend}
+
+MỐC KỸ THUẬT EUA (tính sẵn từ OHLC thật — nguồn DUY NHẤT cho mức giá ở "trading_scenarios"):
+{eua_technical_levels or "Không có đủ dữ liệu mốc kỹ thuật — KHÔNG đưa mức giá cụ thể, direction = đi ngang."}
 
 TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, energy_renewable, energy_hydrogen, geopolitics, eu_policy, cbam, vcm, global_carbon_market, vietnam_carbon_policy):
 {news_text}
@@ -1665,7 +1715,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu của "QUY TẮC ĐỘ DÀI CHUNG" ở trên (mỗi gạch có thể dài hơn 2 câu nếu cần đủ Δ ngày/Δ tuần + kết luận), NHƯNG PHẢI súc tích, trực diện theo đúng "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên — không câu mở đầu/đệm/chuyển tiếp thừa, không lặp lại nguyên văn nội dung đã nêu ở "instrument_notes" (chỉ nhắc lại khi trực tiếp làm căn cứ cho kết luận trong chính câu đó), và KHÔNG diễn giải lại từng bước cơ chế/logic suy luận.
       QUY TẮC SUY LUẬN NỘI BỘ CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã có ghi chú ở "instrument_notes" nhóm này để XÁC ĐỊNH đúng chiều/mức độ tác động (đây là cơ sở suy luận NỘI BỘ, không phải văn mẫu để chép lại nguyên văn vào "content" — xem "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên). LƯU Ý: tên chuỗi/nhánh viết HOA bên dưới (FUEL_SWITCHING, POWER_EUA_TWO_WAY, OIL_GASOIL, GEOPOLITICS_SUPPLY_CHAIN, "nhánh (a)"...) CHỈ để bạn xác định ĐÚNG cơ chế cần áp dụng — TUYỆT ĐỐI KHÔNG chép các tên này, và TUYỆT ĐỐI KHÔNG diễn giải lại các bước (i)-(v) này bằng lời trong "content"; "content" chỉ chứa SỐ LIỆU + KẾT LUẬN đã áp dụng đúng các bước này, không mô tả quá trình suy luận:
         (i) ĐỐI CHIẾU KHUNG THỜI GIAN: so Δ ngày VÀ Δ tuần của chính mã đó. ĐỒNG THUẬN (cùng chiều) → xác nhận xu hướng bền vững, đủ cơ sở kết luận dứt khoát chiều tác động EUA. MÂU THUẪN (trái chiều) → nêu rõ đây là tín hiệu ngắn hạn/chưa đủ mạnh, cần thêm phiên xác nhận, KHÔNG được chốt chiều tác động EUA dứt khoát.
-        (ii) GAS/THAN → áp dụng FUEL_SWITCHING: đây là cơ chế GIÁ TƯƠNG ĐỐI, không phải giá tuyệt đối của riêng 1 nhiên liệu — Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than.
+        (ii) GAS/THAN → áp dụng FUEL_SWITCHING: đây là cơ chế GIÁ TƯƠNG ĐỐI, không phải giá tuyệt đối của riêng 1 nhiên liệu — Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than. GIỚI HẠN BẮT BUỘC: hệ thống KHÔNG có spark/dark spread hay giá chuyển đổi nhiên liệu → khi TTF đã ở mức rất cao (than có thể thắng sẵn, đã chạy gần hết công suất khả dụng) thì tác động BIÊN của gas tăng thêm lên cầu EUA yếu và còn có kênh ngược (công nghiệp cắt sản lượng vì chi phí năng lượng → cầu EUA giảm) — phải nêu rõ điều này là chưa định lượng được, KHÔNG viết "TTF kéo EUA" như quan hệ nhân quả đã chứng minh và KHÔNG chốt hướng dứt khoát chỉ từ tương quan 1 tuần.
         (iii) ĐIỆN ĐỨC (DEBY1) → áp dụng ĐÚNG nhánh (a) của POWER_EUA_TWO_WAY: nếu DEBY1 biến động đồng pha với gas/than → kết luận điện tăng do chi phí nhiên liệu cao hơn, utility hedge thêm EUA tương ứng sản lượng đã bán — kênh hedge/chi phí này TÁCH BIỆT với việc thực tế đốt nhiên liệu nào, KHÔNG gộp chung "than+điện cùng tăng" thành kết luận "đốt than nhiều hơn". CHỈ được quy nguyên nhân "RES thấp" khi có dữ liệu/tin tức THỰC SỰ xác nhận RES thấp trong ngày — nếu KHÔNG có dữ liệu RES, PHẢI nêu rõ "không có dữ liệu RES trong ngày để xác nhận nhánh này" thay vì mặc định suy diễn.
         (iv) DẦU/GASOIL → áp dụng OIL_GASOIL: đối chiếu Δ ngày/Δ tuần của Brent/WTI theo đúng bước (i) trước khi kết luận fuel switching qua kênh dầu-khí (mâu thuẫn giữa 2 khung thời gian → tín hiệu ngắn hạn chưa đủ mạnh, cần thêm phiên xác nhận, chưa kết luận). Gasoil crack spread thu hẹp/mở rộng → nêu tác động lên cầu diesel/công nghiệp nặng và cầu EUA từ kênh công nghiệp đó, tách riêng khỏi kết luận fuel switching qua gas.
         (v) ĐỊA CHÍNH TRỊ — có 2 kênh TÁCH BIỆT trong GEOPOLITICS_SUPPLY_CHAIN, phải xác định đúng kênh trước khi suy luận:
@@ -1675,7 +1725,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
       QUY TẮC NHÓM: CHỈ phân tích nhóm nào ĐÃ có ghi chú ở "instrument_notes" (nhóm không có ghi chú thì cũng không có gì để phân tích ở đây — bỏ qua tương ứng). SAU KHI áp BỘ LỌC BẮT BUỘC ở trên, nếu 1 nhóm không còn yếu tố nào có tác động thực → BỎ QUA HOÀN TOÀN nhóm đó ở "Phân tích" (không viết dòng "Tên nhóm:" cho nhóm đó), kể cả khi nhóm đó có ghi chú ở "instrument_notes".
       THỨ TỰ CỐ ĐỊNH: PHẢI theo ĐÚNG thứ tự NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) → NHÓM 2 (Hạn ngạch & tín chỉ carbon) → NHÓM 3 (Chính sách) — TUYỆT ĐỐI KHÔNG đảo thứ tự theo mức độ quan trọng hay ưu tiên nhóm nào lên trước.
       MỖI NHÓM PHẢI MỞ ĐẦU BẰNG KẾT LUẬN NGAY TRÊN DÒNG TIÊU ĐỀ (KHÔNG còn chốt kết luận ở cuối nhóm như trước): dòng ĐẦU TIÊN của 1 nhóm viết LIỀN 1 dòng theo cú pháp "Tên nhóm: <kết luận>" — vd "Năng lượng & nhiên liệu hóa thạch: Tạo áp lực tăng rõ rệt lên EUA." — <kết luận> là ĐÚNG 1 câu ngắn nêu rõ nhóm này đẩy EUA tăng/giảm/trung lập, viết tiếp thẳng vào vị ngữ ngay sau dấu ":" (TUYỆT ĐỐI KHÔNG dùng cụm dẫn "Nhóm này..."/tag "**Kết luận:**" — vị trí đầu dòng đã tự nói lên đây là kết luận), chỉ chốt chiều, KHÔNG lặp lại số liệu hay diễn giải lại cơ chế đã dùng để suy ra kết luận đó. "Trung lập" CHỈ dùng khi nhóm có ≥2 yếu tố THỰC SỰ có tác động (đã qua BỘ LỌC BẮT BUỘC) nhưng triệt tiêu lẫn nhau về chiều. Các gạch đầu dòng SỐ LIỆU/LUẬN CỨ chi tiết (theo đúng các quy tắc suy luận ở trên) viết NGAY SAU dòng tiêu đề-kết luận này, xuống dòng thật ("- ..."); kết luận của nhóm CHỈ xuất hiện ĐÚNG 1 LẦN DUY NHẤT, ngay trên dòng tiêu đề đầu nhóm — TUYỆT ĐỐI KHÔNG lặp lại kết luận đó thêm 1 lần nữa ở cuối nhóm.
-      KẾT LUẬN CHUNG CHO CẢ MỤC "PHÂN TÍCH": sau khi trình bày xong các nhóm áp dụng được ở trên, LUÔN kết thúc "content" bằng 1 ĐOẠN RIÊNG cuối cùng, BẮT ĐẦU bằng tag in đậm "**Tổng hợp:**" và NGAY SAU tag là ĐÚNG 1 nhãn xu hướng giá EUA trong ngoặc vuông, chọn 1 trong 3: "[TÍCH CỰC]" (giá EUA tăng/áp lực tăng chiếm ưu thế), "[TRUNG LẬP]" (đi ngang, biến động không đáng kể, hoặc tín hiệu hỗn hợp), "[TIÊU CỰC]" (giá EUA giảm/áp lực giảm chiếm ưu thế) — vd "**Tổng hợp:** [TIÊU CỰC] EUA giảm ...". Nhãn này quyết định màu khung "Nhận định" ở đầu báo cáo (xanh/vàng/đỏ) nên PHẢI khớp đúng chiều của kết luận, viết đúng chính tả, không thêm ký tự khác trong ngoặc. Phần nội dung sau nhãn DÀI ĐÚNG 40–45 CHỮ (đếm theo số từ/tiếng cách nhau bởi khoảng trắng, KHÔNG tính nhãn) — đây là nhận định CÔ ĐỌNG, TỔNG HỢP NHẤT về giá EUA, đặt ở vị trí nổi bật nhất đầu báo cáo: đối chiếu ngắn Δ ngày/Δ tuần của chính EUA (từ "SỐ LIỆU THẬT VỀ EUA"/"XU HƯỚNG EUA 30 NGÀY" ở trên) — cùng chiều → xu hướng nhất quán, độ tin cậy cao; trái chiều → tín hiệu ngắn hạn/nhiễu, cần thận trọng — rồi TỔNG HỢP các kết luận đã nêu ở dòng tiêu đề của từng nhóm ở trên thành 1 kết luận DỨT KHOÁT duy nhất về hướng đi EUA, KHÔNG lặp lại chi tiết/số liệu đã nêu ở các nhóm. Áp dụng quy tắc: kết luận chiều giá chỉ khi ≥2 yếu tố/nhóm cùng hướng; nếu mâu thuẫn → nhãn "[TRUNG LẬP]", ghi "tín hiệu hỗn hợp" + nêu ngắn 2 chiều + điều kiện kích hoạt mỗi chiều (vẫn gói gọn trong 40–45 chữ). Đây là câu quan trọng nhất Mục 3 — PHẢI dứt khoát, không mơ hồ.
+      KẾT LUẬN CHUNG CHO CẢ MỤC "PHÂN TÍCH": sau khi trình bày xong các nhóm áp dụng được ở trên, LUÔN kết thúc "content" bằng 1 ĐOẠN RIÊNG cuối cùng, BẮT ĐẦU bằng tag in đậm "**Tổng hợp:**" và NGAY SAU tag là ĐÚNG 1 nhãn xu hướng giá EUA trong ngoặc vuông, chọn 1 trong 3: "[TÍCH CỰC]" (giá EUA tăng/áp lực tăng chiếm ưu thế), "[TRUNG LẬP]" (đi ngang, biến động không đáng kể, hoặc tín hiệu hỗn hợp), "[TIÊU CỰC]" (giá EUA giảm/áp lực giảm chiếm ưu thế) — vd "**Tổng hợp:** [TIÊU CỰC] EUA giảm ...". Nhãn này quyết định màu khung "Nhận định" ở đầu báo cáo (xanh/vàng/đỏ) nên PHẢI khớp đúng chiều của kết luận, viết đúng chính tả, không thêm ký tự khác trong ngoặc. Phần nội dung sau nhãn DÀI ĐÚNG 40–45 CHỮ (đếm theo số từ/tiếng cách nhau bởi khoảng trắng, KHÔNG tính nhãn) — đây là nhận định CÔ ĐỌNG, TỔNG HỢP NHẤT về giá EUA, đặt ở vị trí nổi bật nhất đầu báo cáo: đối chiếu ngắn Δ ngày/Δ tuần của chính EUA (từ "SỐ LIỆU THẬT VỀ EUA"/"XU HƯỚNG EUA 30 NGÀY" ở trên) — cùng chiều → xu hướng nhất quán (chỉ nói "độ tin cậy cao" nếu đồng thời KHÔNG ghi "thiếu xác nhận" ở bất kỳ chỗ nào và khối lượng/yếu tố khác xác nhận; nếu không → "độ tin cậy trung bình/thiếu xác nhận"); trái chiều → tín hiệu ngắn hạn, cần thận trọng (KHÔNG gọi là "nhiễu" khi chưa có căn cứ — chỉ nói chưa đủ xác nhận) — rồi TỔNG HỢP các kết luận đã nêu ở dòng tiêu đề của từng nhóm ở trên thành 1 kết luận DỨT KHOÁT duy nhất về hướng đi EUA, KHÔNG lặp lại chi tiết/số liệu đã nêu ở các nhóm. Áp dụng quy tắc: kết luận chiều giá chỉ khi ≥2 yếu tố/nhóm cùng hướng; nếu mâu thuẫn → nhãn "[TRUNG LẬP]", ghi "tín hiệu hỗn hợp" + nêu ngắn 2 chiều + điều kiện kích hoạt mỗi chiều (vẫn gói gọn trong 40–45 chữ). Đây là câu quan trọng nhất Mục 3 — PHẢI dứt khoát, không mơ hồ.
       ĐỊNH DẠNG: "content" là 1 chuỗi string. Dòng ĐẦU TIÊN của mỗi nhóm PHẢI là dòng tiêu đề-kết luận gộp, viết LIỀN trên CÙNG 1 dòng theo cú pháp "Tên nhóm: <kết luận>" (dùng đúng tên "Năng lượng & nhiên liệu hóa thạch:", "Hạn ngạch & tín chỉ carbon:", "Chính sách:" — TUYỆT ĐỐI KHÔNG tách tên nhóm thành 1 dòng trơ trọi rồi để kết luận ở dòng/vị trí khác). NẾU 1 nhóm có nhiều yếu tố/chuỗi tác động → tách mỗi yếu tố thành 1 gạch đầu dòng xuống dòng thật (\\n"- ...") NGAY SAU dòng tiêu đề-kết luận đó để dễ nhìn; TUYỆT ĐỐI KHÔNG để lại các dấu "-" trống thừa thãi giữa các ý; giữa các NHÓM luôn xuống dòng thật (\\n); dòng "**Tổng hợp:**" luôn là dòng CUỐI CÙNG của "content" — TUYỆT ĐỐI KHÔNG viết liền thành 1 đoạn văn dài.
       Nếu "instrument_notes" rỗng, HOẶC có ghi chú nhưng SAU KHI áp BỘ LỌC BẮT BUỘC không nhóm nào còn yếu tố có tác động thực: "content" = "Không có thông tin mới liên quan trực tiếp đến giá EUA." (bỏ qua dòng "**Tổng hợp:**" trong trường hợp này).
    2. heading="Quan điểm thị trường" (TÙY CHỌN) — CHỈ đưa object này vào mảng "analysis_blocks" khi TIN TỨC ở trên THỰC SỰ có nêu quan điểm/nhận định cụ thể từ nguồn xác định (nhà phân tích, tổ chức, báo cáo). Khi có, "content" PHẢI nêu đủ: (1) quan điểm consensus — đa số thị trường/nhà phân tích đang nghĩ gì; (2) quan điểm contrarian khác biệt ra sao (nếu có), kèm tên nguồn cụ thể; (3) luận điểm/bằng chứng cụ thể mà nguồn đưa ra để bảo vệ quan điểm trái chiều đó; (4) điều kiện/kịch bản nào sẽ khiến quan điểm contrarian này đúng thay vì consensus. Nếu chỉ có consensus view (không có contrarian nào trong tin tức), bỏ qua (2)-(4) và chỉ nêu (1). "Đủ ý" nghĩa là đủ các nội dung áp dụng được ở trên, KHÔNG phải đủ số câu — vẫn theo đúng QUY TẮC ĐỘ DÀI CHUNG (tối đa 1–2 câu/ý). NẾU KHÔNG CÓ tin nào nêu quan điểm thị trường cụ thể: KHÔNG thêm object heading="Quan điểm thị trường" vào mảng — bỏ qua hoàn toàn (không viết "Không có quan điểm thị trường cụ thể." nữa).
@@ -1690,7 +1740,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
 
 C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn". Đây là phần người đọc xem để RA QUYẾT ĐỊNH nên phải NGẮN, TRỰC DIỆN, đi thẳng vào giá trị: chỉ nêu điều kiện, mức giá và hành động — KHÔNG giải thích cơ chế, KHÔNG lặp lại mục B, KHÔNG câu đệm/mở đầu/sáo rỗng. Mỗi trường là 1 mệnh đề cô đọng, ưu tiên số liệu cụ thể hơn lời văn. Mỗi kịch bản gồm:
    - "horizon": "ngắn hạn" (1–2 tuần) / "trung hạn" (1–3 tháng) / "dài hạn" (>3 tháng)
-   - "probability": xác suất kịch bản này xảy ra — CHỈ 1 trong 3 giá trị "Cao" / "Trung bình" / "Thấp", dựa trên driver ở mục B đã được dữ liệu/tin tức xác nhận rõ (probability cao hơn) hay mới chỉ là suy đoán/tin đồn (probability thấp hơn).
+   - "probability": xác suất kịch bản này xảy ra — CHỈ 1 trong 3 giá trị "Cao" / "Trung bình" / "Thấp", dựa trên driver ở mục B đã được dữ liệu/tin tức xác nhận rõ (probability cao hơn) hay mới chỉ là suy đoán/tin đồn (probability thấp hơn). CHỈ chọn "Cao" khi ≥2 yếu tố độc lập cùng chiều VÀ không có chỗ nào trong báo cáo ghi "thiếu xác nhận"/"tín hiệu hỗn hợp"/Δ ngày–Δ tuần trái chiều; luận điểm dựa trên tương quan ngắn hạn mà chưa định lượng được (không có spread, vị thế quỹ, đấu giá EEX, MSR) → tối đa "Trung bình". Kịch bản trung/dài hạn tối đa "Trung bình" trừ khi có sự kiện chính sách đã xác nhận.
    - "direction": ĐÚNG 1 trong 3 giá trị "tăng" / "giảm" / "đi ngang" — chiều giá EUA của RIÊNG kịch bản này, phải khớp ĐÚNG chiều với "trading_strategy" bên dưới (dùng để hiển thị mũi tên trên giao diện).
    - "condition" (1 câu, tối đa ~20 từ): "Nếu [X]..." — chỉ nêu trigger cụ thể (số liệu/ngưỡng/ngày) gắn với 1 driver ở mục B, không diễn giải thêm.
    - "price_zone" (tối đa ~15 từ, chỉ số liệu): vùng hỗ trợ/kháng cự EUA bằng EUR/tCO2, neo đúng 30-ngày-cao/thấp, giá đóng cửa, biên độ phiên đã cung cấp — TUYỆT ĐỐI KHÔNG bịa số.
@@ -1700,6 +1750,12 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      + "**Mục tiêu:**" mức giá chốt lời kế tiếp, risk/reward hợp lý so với Entry.
      + "**Quản trị rủi ro:**" mức giá cắt lỗ khi kịch bản bị vô hiệu, gắn với "key_risk".
      Chỉ dùng mức giá có căn cứ từ dữ liệu đã cho (giao diện đã có lưu ý tham khảo đi kèm) — không thêm giải thích sau mỗi dòng.
+   QUY TẮC SỐ HỌC CHO MỨC GIÁ (BẮT BUỘC, kiểm tra lại phép tính trước khi viết):
+     • Mọi mức giá (Entry/Mục tiêu/cắt lỗ/price_zone) CHỈ được lấy từ "MỐC KỸ THUẬT EUA" bên trên (đỉnh/đáy 30 phiên, mục tiêu đo biên độ, ATR) hoặc từ giá đóng cửa/biên độ phiên đã cho; KHÔNG tự đặt số tròn (vd 92,0 hay 95,0) không có phép tính nào dẫn tới. Kịch bản trung/dài hạn không có mốc từ dữ liệu → nêu mức theo % so với giá đóng cửa kèm phép tính ngắn (vd "+5% ≈ x.xx"), hoặc dùng vùng đo biên độ.
+     • R:R (|Mục tiêu − Entry| / |Entry − cắt lỗ|) PHẢI ≥ 1:1,5; nếu mốc dữ liệu không cho R:R đạt mức này → đổi hướng "đi ngang"/chờ xác nhận, KHÔNG ép số.
+     • Cắt lỗ đặt NGOÀI vùng hỗ trợ/kháng cự ít nhất 0,5 × ATR (khoảng cách tới hỗ trợ không được nhỏ hơn mức đó) — hỗ trợ chỉ là đáy 1 phiên thì coi là yếu, ưu tiên mốc 30 phiên.
+     • Mục tiêu trùng đúng đỉnh/đáy 30 phiên (kháng cự mạnh) → chốt 1 phần/thận trọng, ghi rõ là vùng cản, không coi là đích chắc chắn.
+     • Không dùng cụm "không phải khuyến nghị giao dịch" trong nội dung — giao diện đã có lưu ý riêng.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 {{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "instrument_notes": {{"EUA": "..."}}, "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "key_risk": "...", "trading_strategy": "..."}}]}}}}"""
@@ -1842,6 +1898,7 @@ B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân 
    - "solution": giải pháp/hướng đi đề xuất cho SIM để tận dụng cơ hội đó.
    - "expectation": kỳ vọng/kết quả nếu triển khai giải pháp này.
 
+QUY TẮC NỘI DUNG: gợi ý dài hạn phải có 1 bước thí điểm cụ thể (quy mô/đối tượng/thời gian) hoặc chỉ tiêu tài chính gắn với dữ kiện trong tin tức — KHÔNG chỉ nêu khái niệm chung (BII, NBS, điện hóa nhiệt...). Số tiền/cam kết của 1 tổ chức phải khớp với bài được trích, không tự đổi số.
 QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng. TỐI ĐA 3 gợi ý MỖI bảng (short_term và long_term riêng biệt) — nếu có nhiều hơn 3 gợi ý đủ căn cứ, CHỈ giữ lại ĐÚNG 3 gợi ý TRỌNG TÂM/có căn cứ mạnh nhất, bỏ phần còn lại (KHÔNG cố nhồi hết vào 1 bảng, sẽ làm output quá dài và bị cắt).
 Lưu ý: KHÔNG dùng câu lệnh mua/bán tài chính trực tiếp.
 
@@ -2000,6 +2057,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     eua_trend = _eua_trend_summary(chart_data)
     eua_session_range = _eua_session_range_summary(chart_data)
     eua_volume = _eua_volume_summary(chart_data)
+    eua_technical_levels = _eua_technical_levels_summary(chart_data)
     gasoil_crack_spread = _gasoil_crack_spread_summary(prices) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
@@ -2180,6 +2238,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
                 _topics_present(news_by_topic, "3"),
                 overrides=eua_framework_overrides,
+                eua_technical_levels=eua_technical_levels,
             )),
             ("4", _prompt_section4(
                 section4_news_text,

@@ -352,3 +352,34 @@ def test_jack_qc_exposed_on_mcp_gateway():
     assert "jack_qc" in names and "jack_qc" in mcp_gateway._TOOLS_BY_NAME
     desc = next(t["description"] for t in mcp_gateway._DESKTOP_TOOLS if t["name"] == "jack_qc")
     assert "HOÁ VAI JACK" in desc and "Lucy" not in desc
+
+
+# ── Khối lượng EUA: phiên volume 0 không được kéo TB về 0 ──────────────
+
+
+def _chart(volumes):
+    return [
+        {"date": f"2026-10-{i + 1:02d}", "open": 88.0, "high": 89.0, "low": 87.0, "close": 88.5, "volume": v}
+        for i, v in enumerate(volumes)
+    ]
+
+
+def test_eua_volume_summary_ignores_zero_volume():
+    from services.report_generator import _eua_volume_summary
+
+    text = _eua_volume_summary(_chart([1000, 0, 1000, 1200]))
+    assert "TB 2 phiên" in text and "(0)" not in text
+
+
+def test_eua_volume_summary_all_zero_has_no_signal():
+    from services.report_generator import _eua_volume_summary
+
+    assert "KHÔNG nêu" in _eua_volume_summary(_chart([0, 0, 0]))
+
+
+def test_baker_hughes_label_notes_us_date():
+    from services.report_generator import _compute_recurring_calendar_events
+
+    evs = _compute_recurring_calendar_events("2026-10-14")
+    bh = [e for e in evs if "Baker Hughes" in e["event"]]
+    assert bh and bh[0]["date"] == "2026-10-17" and "Thứ Sáu 16/10 giờ Mỹ" in bh[0]["event"]

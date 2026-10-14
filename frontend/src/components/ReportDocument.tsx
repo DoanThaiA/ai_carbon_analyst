@@ -2192,7 +2192,7 @@ export function ReportDocument({
                   <p className="text-[14.5px] leading-[1.5] text-body">
                     <b className="text-label">Lưu ý:</b> Đây là các chiến lược dựa trên phân tích của Jenny, chỉ mang tính chất tham khảo.
                     Người đọc cần xem xét kỹ, đối chiếu với bối cảnh thực tế và khẩu vị rủi ro của mình trước khi ra quyết định —
-                    không phải khuyến nghị đầu tư/giao dịch trực tiếp.
+                    đây không phải lời khuyên đầu tư cá nhân hóa.
                   </p>
                 </div>
               </div>

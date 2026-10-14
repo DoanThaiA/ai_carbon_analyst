@@ -27,6 +27,7 @@ from services.report_generator import (
     _summarize_prices,
     get_historical_ohlc_for_report,
     _eua_volume_summary,
+    _has_valid_volume,
     _eua_technical_levels_summary,
     _eua_session_range_summary,
     EUA_VOLUME_SESSIONS_FOR_AVG,
@@ -218,7 +219,7 @@ def _eua_volume_history_text(chart_data_buffered: List[Any]) -> str:
     hiển thị sẽ thiếu dữ liệu phiên trước để tính đủ TB 20 phiên, cho kết quả
     TB thấp hơn thực tế (chỉ tính được trên ít phiên hơn).
     """
-    with_volume = [c for c in chart_data_buffered if c.get("volume") is not None]
+    with_volume = [c for c in chart_data_buffered if _has_valid_volume(c)]
     if not with_volume:
         return "Không có dữ liệu khối lượng giao dịch EUA theo từng phiên."
 
@@ -232,7 +233,7 @@ def _eua_volume_history_text(chart_data_buffered: List[Any]) -> str:
             lines.append(f"  - {day['date']}: {day['volume']:,.0f} hợp đồng (chưa đủ dữ liệu phiên trước để so TB)")
             continue
         avg_volume = sum(p["volume"] for p in prior) / len(prior)
-        pct_diff = ((day["volume"] - avg_volume) / avg_volume * 100) if avg_volume else 0
+        pct_diff = (day["volume"] - avg_volume) / avg_volume * 100
         if pct_diff >= EUA_VOLUME_SPIKE_PCT:
             level = "tăng đột biến"
         elif pct_diff <= EUA_VOLUME_DROP_PCT:
