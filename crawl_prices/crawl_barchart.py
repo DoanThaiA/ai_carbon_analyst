@@ -145,7 +145,10 @@ async def _fetch_historical_json(context: BrowserContext, spec: BarchartSpec) ->
             lambda r: HISTORICAL_API_PATH in r.url,
             timeout=PAGE_TIMEOUT_MS,
         ) as response_info:
-            await page.goto(url, timeout=PAGE_TIMEOUT_MS)
+            # Chỉ chờ domcontentloaded: sự kiện "load" mặc định hay treo >30s vì
+            # script quảng cáo/tracker của Barchart (Page.goto timeout) dù API JSON
+            # đã trả về xong — dữ liệu ta cần đến từ expect_response, không phải load.
+            await page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
         response = await response_info.value
 
         if response.status != 200:
