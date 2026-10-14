@@ -191,6 +191,11 @@ cá nhân (`api_tokens`, bearer `cat_...`, chỉ lưu SHA-256). Gateway chỉ đ
 không phải admin. Kết quả Claude sinh ra KHÔNG lưu ngược về hệ thống. `mcp_client` ghim `mcp<2`
 (API decorator của `mcp` 1.x bị bỏ ở 2.x). Test: `python -m pytest tests` (pytest trần không thấy
 package top-level vì repo chưa cấu hình pythonpath).
+**MCP qua HTTP cho mobile** (`api/mcp_http.py`, mount tại `/mcp/{token}` trong `api/main.py`): MCP Streamable HTTP
+stateless (`json_response=True`) cho app Claude mobile/claude.ai (Connectors — không đặt được header nên token `cat_...` nằm
+trong URL, coi như mật khẩu; log truy cập của uvicorn/proxy sẽ chứa nó). Tái dùng `mcp_gateway.execute_gateway_tool` (cùng tool,
+rate limit, quyền published-only) và `DESKTOP_SERVER_INSTRUCTIONS`. Stateless nên KHÔNG nhớ `report_date` của handoff như client
+stdio — kết quả `get_handoff` dặn Claude tự truyền `report_date`. Lifespan phải chạy `session_manager().run()`. Test: `tests/test_mcp_http.py`.
 Frontend: trang `/connect-claude` (`frontend/src/app/connect-claude/`, tạo/thu hồi token + sinh sẵn
 config Claude Desktop), modal `ClaudeHandoffModal` mở từ nút "Hỏi Claude" cạnh "Hỏi AI" khi bôi đen
 và từ menu avatar Jenny (`QuoteChat.tsx`; chỉ hiện với role `user`). File cài MCP client được web phục

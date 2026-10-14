@@ -42,6 +42,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from db.models import Report, ReportView
+from api.mcp_http import McpHttpApp, session_manager as mcp_session_manager
 from services.hot_news_broadcast import start_listening, stop_listening
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,9 @@ async def lifespan(_app: FastAPI):
     # do crawl pipeline bắn ra khi lưu bài hot news, fan-out cho các client SSE
     # đang mở (xem services/hot_news_broadcast.py).
     await start_listening(settings.database_url)
-    yield
+    # MCP qua HTTP (api/mcp_http.py) cần session manager chạy suốt vòng đời app.
+    async with mcp_session_manager().run():
+        yield
     await stop_listening()
 
 
@@ -84,6 +87,7 @@ app.include_router(admin_quote_chat_examples.router)
 app.include_router(quote_chat.router)
 app.include_router(claude_connect.router)
 app.include_router(mcp_gateway.router)
+app.mount("/mcp", McpHttpApp())  # MCP Streamable HTTP cho mobile: /mcp/{token}
 app.include_router(upload.router)
 app.include_router(hot_news.router)
 app.include_router(feedback.router)

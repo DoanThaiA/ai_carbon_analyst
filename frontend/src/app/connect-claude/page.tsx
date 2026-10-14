@@ -7,6 +7,7 @@ import {
   Check,
   Copy,
   KeyRound,
+  Smartphone,
   Loader2,
   Plug,
   Trash2,
@@ -20,6 +21,7 @@ import {
   apiErrorMessage,
   apiErrorStatus,
   buildClaudeConfig,
+  buildMobileConnectorUrl,
   copyText,
   detectOs,
   isTokenActive,
@@ -348,6 +350,27 @@ export default function ConnectClaudePage() {
               </li>
             </ol>
           </Step>
+
+          <section className="bg-background border border-border rounded-2xl p-5 md:p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="h-7 w-7 rounded-full bg-primary text-white flex items-center justify-center shrink-0">
+                <Smartphone size={15} />
+              </span>
+              <h3 className="text-lg font-bold text-heading">{t("mobileTitle")}</h3>
+            </div>
+            <div className="space-y-3 text-sm text-body">
+              <p>{t.rich("mobileDesc", { b: (c) => <strong>{c}</strong> })}</p>
+              {newToken ? (
+                <>
+                  <CodeBlock text={buildMobileConnectorUrl(newToken.token)} />
+                  <p className="text-xs text-warn">{t("mobileWarn")}</p>
+                </>
+              ) : (
+                <p className="text-xs text-warn">{t("mobileNeedToken")}</p>
+              )}
+              <p className="text-xs text-muted-light">{t("mobileNote")}</p>
+            </div>
+          </section>
         </>
       )}
     </div>

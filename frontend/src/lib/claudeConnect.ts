@@ -78,6 +78,11 @@ export function buildClaudeConfig(opts: { uvxPath: string; token?: string; token
   );
 }
 
+// URL MCP qua HTTP cho Claude mobile/claude.ai (backend api/mcp_http.py) — token nằm trong đường dẫn.
+export function buildMobileConnectorUrl(token: string): string {
+  return `${API_BASE_URL.replace(/\/$/, "")}/mcp/${token}`;
+}
+
 export function isTokenActive(t: ApiTokenSummary): boolean {
   return t.revoked_at === null && new Date(t.expires_at).getTime() > Date.now();
 }

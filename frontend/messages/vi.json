@@ -670,7 +670,12 @@
     "step4Title": "Khởi động lại và dùng thử",
     "step4a": "Thoát hẳn Claude Desktop (không chỉ đóng cửa sổ) rồi mở lại.",
     "step4b": "Trong ô chat sẽ có biểu tượng công cụ, mở ra thấy <code>carbon-analyst</code> là đã kết nối.",
-    "step4c": "Vào một báo cáo, bôi đen đoạn cần hỏi, bấm <b>Hỏi Claude</b>, chọn loại tác vụ, gửi yêu cầu rồi dán prompt vào Claude Desktop. Lần đầu Claude sẽ hỏi quyền dùng công cụ — chọn cho phép."
+    "step4c": "Vào một báo cáo, bôi đen đoạn cần hỏi, bấm <b>Hỏi Claude</b>, chọn loại tác vụ, gửi yêu cầu rồi dán prompt vào Claude Desktop. Lần đầu Claude sẽ hỏi quyền dùng công cụ — chọn cho phép.",
+    "mobileTitle": "Dùng trên điện thoại (Claude mobile / claude.ai)",
+    "mobileDesc": "Không cần cài gì trên máy. Tạo token ở bước 2, rồi thêm URL dưới đây làm <b>Connector tuỳ chỉnh</b>: claude.ai → Settings → Connectors → Add custom connector (Connector đã thêm trên web sẽ tự có trong app điện thoại).",
+    "mobileNeedToken": "URL chỉ hiện ngay sau khi tạo token ở bước 2 (token gốc không lưu lại được). Hãy tạo token mới để lấy URL.",
+    "mobileWarn": "URL này chứa token — coi như mật khẩu, đừng chia sẻ. Nếu lộ, thu hồi token ở bước 2 là URL vô hiệu ngay.",
+    "mobileNote": "Kết nối trên điện thoại không nhớ báo cáo của handoff giữa các lần hỏi; Claude sẽ tự truyền ngày báo cáo khi gọi công cụ."
   },
   "userHandoff": {
     "createFailed": "Không tạo được yêu cầu cho Claude, vui lòng thử lại.",

@@ -132,19 +132,16 @@ async def list_tools(
     ]
 
 
-@router.post("/tools/{name}", response_model=GatewayToolResult)
-async def call_tool(
-    name: str,
-    body: GatewayToolCall,
-    session: AsyncSession = Depends(get_db),
-    token: ApiToken = Depends(get_api_token),
-):
+async def execute_gateway_tool(
+    session: AsyncSession, token: ApiToken, name: str, tool_input: dict, report_date_arg: Optional[str]
+) -> GatewayToolResult:
+    """Chạy 1 tool cho token — dùng chung cho gateway REST (client stdio) và MCP HTTP (api/mcp_http.py)."""
     if name not in _TOOLS_BY_NAME:
         raise HTTPException(status_code=404, detail=f"Tool không tồn tại: {name}")
     if not _rate_limiter.allow(token.id):
         raise HTTPException(status_code=429, detail="Gọi tool quá nhanh — thử lại sau ít giây.")
 
-    requested_date = _validate_report_date(body.report_date)
+    requested_date = _validate_report_date(report_date_arg)
     if name in _REPORT_INDEPENDENT_TOOLS:
         # Các tool này không đọc report_date (chỉ dùng trong ghi chú lỗi) — không chặn vì báo cáo.
         report_date = requested_date or datetime.now(_VN_TZ).date().isoformat()
@@ -157,7 +154,7 @@ async def call_tool(
     logger.info("[MCP-GATEWAY] user=%s tool=%s report_date=%s", token.user_email, name, report_date)
     result = await _execute_client_tool(
         name,
-        body.input,
+        tool_input,
         session,
         report_date,
         tool_cache={},
@@ -168,6 +165,16 @@ async def call_tool(
     return GatewayToolResult(
         result=result, report_date=None if name in _REPORT_INDEPENDENT_TOOLS else report_date
     )
+
+
+@router.post("/tools/{name}", response_model=GatewayToolResult)
+async def call_tool(
+    name: str,
+    body: GatewayToolCall,
+    session: AsyncSession = Depends(get_db),
+    token: ApiToken = Depends(get_api_token),
+):
+    return await execute_gateway_tool(session, token, name, body.input, body.report_date)
 
 
 @router.get("/handoffs/{handoff_id}", response_model=HandoffPayload)

@@ -157,7 +157,12 @@
    "step4Title": "Khởi động lại và dùng thử",
    "step4a": "Thoát hẳn Claude Desktop (không chỉ đóng cửa sổ) rồi mở lại.",
    "step4b": "Trong ô chat sẽ có biểu tượng công cụ, mở ra thấy <code>carbon-analyst</code> là đã kết nối.",
-   "step4c": "Vào một báo cáo, bôi đen đoạn cần hỏi, bấm <b>Hỏi Claude</b>, chọn loại tác vụ, gửi yêu cầu rồi dán prompt vào Claude Desktop. Lần đầu Claude sẽ hỏi quyền dùng công cụ — chọn cho phép."
+   "step4c": "Vào một báo cáo, bôi đen đoạn cần hỏi, bấm <b>Hỏi Claude</b>, chọn loại tác vụ, gửi yêu cầu rồi dán prompt vào Claude Desktop. Lần đầu Claude sẽ hỏi quyền dùng công cụ — chọn cho phép.",
+   "mobileTitle": "Dùng trên điện thoại (Claude mobile / claude.ai)",
+   "mobileDesc": "Không cần cài gì trên máy. Tạo token ở bước 2, rồi thêm URL dưới đây làm <b>Connector tuỳ chỉnh</b>: claude.ai → Settings → Connectors → Add custom connector (Connector đã thêm trên web sẽ tự có trong app điện thoại).",
+   "mobileNeedToken": "URL chỉ hiện ngay sau khi tạo token ở bước 2 (token gốc không lưu lại được). Hãy tạo token mới để lấy URL.",
+   "mobileWarn": "URL này chứa token — coi như mật khẩu, đừng chia sẻ. Nếu lộ, thu hồi token ở bước 2 là URL vô hiệu ngay.",
+   "mobileNote": "Kết nối trên điện thoại không nhớ báo cáo của handoff giữa các lần hỏi; Claude sẽ tự truyền ngày báo cáo khi gọi công cụ."
   },
   "en": {
    "copy": "Copy",
@@ -200,7 +205,12 @@
    "step4Title": "Restart and try it out",
    "step4a": "Fully quit Claude Desktop (not just close the window) and reopen it.",
    "step4b": "A tools icon will appear in the chat box; open it and if you see <code>carbon-analyst</code>, you are connected.",
-   "step4c": "Open a report, highlight the passage you want to ask about, click <b>Ask Claude</b>, choose a task type, submit the request, then paste the prompt into Claude Desktop. The first time, Claude will ask permission to use the tool — choose allow."
+   "step4c": "Open a report, highlight the passage you want to ask about, click <b>Ask Claude</b>, choose a task type, submit the request, then paste the prompt into Claude Desktop. The first time, Claude will ask permission to use the tool — choose allow.",
+   "mobileTitle": "Use on your phone (Claude mobile / claude.ai)",
+   "mobileDesc": "Nothing to install. Create a token in step 2, then add the URL below as a <b>custom connector</b>: claude.ai → Settings → Connectors → Add custom connector (connectors added on the web also appear in the mobile app).",
+   "mobileNeedToken": "The URL is only shown right after you create a token in step 2 (the raw token cannot be retrieved later). Create a new token to get it.",
+   "mobileWarn": "This URL contains your token — treat it like a password and don't share it. If it leaks, revoke the token in step 2 and the URL stops working immediately.",
+   "mobileNote": "The phone connection doesn't remember a handoff's report between questions; Claude passes the report date itself when calling tools."
   }
  },
  "userHandoff": {
