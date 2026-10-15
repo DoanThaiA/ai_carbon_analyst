@@ -234,7 +234,23 @@ def test_server_instructions_explain_jenny_without_framework():
     from services.claude_connect import DESKTOP_SERVER_INSTRUCTIONS
 
     assert "JENNY" in DESKTOP_SERVER_INSTRUCTIONS and "review_past_forecast" in DESKTOP_SERVER_INSTRUCTIONS
-    assert "KHÔNG tự xưng là Jenny" in DESKTOP_SERVER_INSTRUCTIONS
+
+
+def test_server_instructions_assign_role_by_task():
+    """Desktop/mobile trả lời dưới danh nghĩa Sonic/Jenny/Jack theo loại tác vụ, kể cả không gọi tool."""
+    from services.claude_connect import DESKTOP_ROLE_RULES, DESKTOP_SERVER_INSTRUCTIONS, TEAM_INTRO
+
+    assert DESKTOP_ROLE_RULES in DESKTOP_SERVER_INSTRUCTIONS
+    for name in ("SONIC", "JENNY", "JACK"):
+        assert f"- {name} — tác vụ" in DESKTOP_ROLE_RULES
+    assert "KỂ CẢ KHI KHÔNG GỌI TOOL" in DESKTOP_ROLE_RULES
+    # Jenny chat web luôn là Jenny — khối đổi vai không được lọt vào phần dùng chung.
+    assert "VAI NHÂN VIÊN" not in TEAM_INTRO
+
+
+def test_handoff_result_reminds_role():
+    text = build_handoff_instructions(_handoff())
+    assert "Sonic" in text and "Jenny" in text and "Jack" in text
 
 
 def test_jenny_prompt_with_and_without_handoff():
