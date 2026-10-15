@@ -485,7 +485,7 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                 <FieldLabel>Động lực tăng (bullish)</FieldLabel>
                 <CardRowsEditor
                   columns={[
-                    { key: "tag", label: "Tag", type: "select", options: ["FACT", "ANALYSIS"] },
+                    { key: "tag", label: "Tag", type: "select", options: ["FACT", "OPINION", "CLAIM", "ANALYSIS"] },
                     { key: "text", label: "Nội dung", type: "textarea" },
                     { key: "source_name", label: "Tên nguồn" },
                     { key: "source_url", label: "URL nguồn" },
@@ -501,7 +501,7 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                 <FieldLabel>Động lực giảm (bearish)</FieldLabel>
                 <CardRowsEditor
                   columns={[
-                    { key: "tag", label: "Tag", type: "select", options: ["FACT", "ANALYSIS"] },
+                    { key: "tag", label: "Tag", type: "select", options: ["FACT", "OPINION", "CLAIM", "ANALYSIS"] },
                     { key: "text", label: "Nội dung", type: "textarea" },
                     { key: "source_name", label: "Tên nguồn" },
                     { key: "source_url", label: "URL nguồn" },

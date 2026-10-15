@@ -49,7 +49,13 @@ CONCISENESS_RULE = (
     "khi thiếu số liệu định lượng (spark/dark spread, giá chuyển đổi nhiên liệu, vị thế quỹ, đấu giá EEX, MSR) "
     "phải nêu rõ là chưa kiểm chứng được và hạ mức tự tin tương ứng. "
     "(5) Không lặp một tin ở nhiều mục/bullet cho cùng 1 ý. "
-    "(6) Viết đúng chính tả tiếng Việt, đọc lại để tránh lỗi gõ (vd 'tiêu tụ', 'khuyến hướng', 'hôm tháng 9')."
+    "(6) Viết đúng chính tả tiếng Việt, đọc lại để tránh lỗi gõ (vd 'tiêu tụ', 'khuyến hướng', 'hôm tháng 9'). "
+    "(7) CHỈ dùng tiếng Việt và ký tự Latin — TUYỆT ĐỐI KHÔNG chèn chữ Hán/Nhật/Hàn. Thuật ngữ chuẩn: EUA = hạn ngạch phát thải EU "
+    "(EU Allowance); open interest = lượng vị thế mở; carbon allowances = hạn ngạch carbon; không dịch word-by-word. "
+    "(8) Cùng 1 sự kiện có cả nguồn gốc (Bloomberg, Reuters, Argus, cơ quan chính thức) và nguồn thứ cấp/tổng hợp (vd cafef.vn) → "
+    "ưu tiên trích nguồn gốc. "
+    "(9) Liên hệ tới EUA CHỈ khi bài/dữ liệu nêu cơ chế rõ; KHÔNG viết lại tin 'không liên quan' thành 'có liên quan' và "
+    "KHÔNG đưa dự báo EUA dài hạn không có căn cứ."
 )
 
 _anthropic_client: anthropic.AsyncAnthropic | None = None
@@ -837,7 +843,7 @@ def _build_section6_news(news_by_topic: Dict[str, List[Dict]], limit_per_region:
     """Gom toàn bộ tin tức đã crawl trong ngày, dedup theo url, tách theo
     region ('vietnam' / 'international') cho Mục 6 — mỗi tin giữ title/summary/
     source/url để hiển thị dạng danh sách có thể bấm link tới bài gốc."""
-    articles = _collect_cited_articles(news_by_topic, limit=1000)
+    articles = _dedupe_similar_articles(_collect_cited_articles(news_by_topic, limit=1000))
     international = [a for a in articles if a.get("region") != "vietnam"][:limit_per_region]
     vietnam = [a for a in articles if a.get("region") == "vietnam"][:limit_per_region]
     return {"international": international, "vietnam": vietnam}
@@ -854,13 +860,14 @@ Nội dung (trích): {article.get('content_excerpt') or article['summary']}
 
 YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT, ĐÚNG 2 CÂU (không hơn) CHO RIÊNG bài viết này, ngắn gọn tối đa, không dài dòng:
 - Câu 1: mô tả ngắn gọn sự kiện/nội dung chính của bài (fact, số liệu nếu bài có nêu) — TUYỆT ĐỐI KHÔNG bịa thêm thông tin ngoài nội dung đã cho, KHÔNG trộn với thông tin của bài viết khác.
-- Câu 2: nêu ngắn gọn tin này tác động thế nào tới thị trường carbon/năng lượng châu Âu hoặc giá EUA — chỉ viết câu này nếu có cơ sở hợp lý từ nội dung bài; nếu bài không liên quan thì thay bằng 1 câu tóm tắt thêm fact khác của bài (vẫn giữ đúng 2 câu).
+- Câu 2: CHỈ nêu tác động tới thị trường carbon/năng lượng châu Âu hoặc giá EUA khi CHÍNH BÀI nêu tác động đó. KHÔNG tự suy diễn/gán liên hệ với EUA (cấm kiểu "giảm áp lực cạnh tranh... đối với carbon allowances", "EUA sẽ tăng trong các năm tới" nếu bài không nói). Bài không nêu tác động → Câu 2 là 1 fact khác của bài (vẫn đúng 2 câu).
+- Thuật ngữ chuẩn: EUA = hạn ngạch phát thải EU (EU Allowance); open interest = lượng vị thế mở; carbon allowances = hạn ngạch carbon; spread giữ nguyên "spread". CHỈ dùng tiếng Việt và ký tự Latin — TUYỆT ĐỐI KHÔNG chèn chữ Hán/Nhật/Hàn.
 - Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác: dịch ý sang tiếng Việt tự nhiên, không dịch máy móc từng từ.
 - Văn phong khách quan. Mỗi câu ngắn, đi thẳng vào trọng tâm. KHÔNG dùng markdown (không **, không gạch đầu dòng).
 - Tuyên bố/số liệu do 1 bên nêu (quan chức, công ty, nhà phân tích) PHẢI ghi rõ chủ thể phát ngôn đúng như bài ("theo Phó Thủ tướng...", "đặc phái viên...") — KHÔNG viết như sự thật đã xác nhận. Giữ nguyên chức danh đúng như bài, không tự đổi.
 - KHÔNG chép giá/%Δ của Brent, WTI, khí, EUA... nêu trong bài (giá trong bài là giá tại 1 thời điểm khác, sẽ lệch với Bảng giá nhanh của báo cáo) — chỉ nêu giá nếu đó là nội dung chính của sự kiện (vd mức trần giá, giá đấu giá).
 - Viết đúng chính tả tiếng Việt.
-- "relevant": false CHỈ KHI bài hoàn toàn không liên quan tới năng lượng, carbon, chính sách khí hậu/năng lượng hay thị trường liên quan (vd tin chính trị/địa phương thuần túy không có liên hệ nào tới giá năng lượng/carbon). Khi đó vẫn viết "summary" như bình thường. Bài có liên hệ gián tiếp nhưng có cơ chế rõ → true.
+- "relevant": true CHỈ KHI bài liên quan TRỰC TIẾP tới thị trường carbon (EU ETS/EUA, CBAM, VCM, chính sách carbon) hoặc năng lượng (gas, điện, than, dầu, tái tạo, hydrogen) VÀ nêu rõ tác động tới cung/cầu/giá/chính sách. Tác động không rõ ràng, phải suy đoán, hoặc chỉ là bối cảnh chính trị/kinh tế chung → false (vẫn viết "summary" như bình thường).
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 {{"relevant": true, "summary": "..."}}"""
@@ -900,6 +907,16 @@ async def _summarize_section6_articles(
                 max_tokens=512,
             )
             parsed = _extract_json(raw) if raw else None
+            if parsed and _has_cjk(parsed.get("summary") or ""):
+                logger.warning("[REPORT] Mục 6: tóm tắt lẫn ký tự CJK, gọi lại: %s", art["url"])
+                raw = await _call_llm(
+                    _prompt_section6_summary(art, target_date),
+                    model=REPORT_MODEL_HAIKU,
+                    max_tokens=512,
+                )
+                parsed = _extract_json(raw) if raw else None
+                if parsed and _has_cjk(parsed.get("summary") or ""):
+                    parsed = None  # vẫn lỗi → rơi xuống fallback
             summary = (parsed.get("summary") or "").strip() if parsed else ""
 
             if parsed and parsed.get("relevant") is False and summary:
@@ -1060,6 +1077,102 @@ def _eua_volume_summary(chart_data: List[Dict]) -> str:
         f"so với TB {len(prior)} phiên gần nhất ({avg_volume:,.0f} hợp đồng) — {level} ({pct_diff:+.1f}%). "
         f"Giá phiên đó {price_direction} so với giá mở cửa cùng phiên."
     )
+
+
+# ── Ước tính spread chuyển đổi nhiên liệu than ↔ khí (tính sẵn bằng Python) ──
+# Giả định CHUẨN NGÀNH, ghi rõ trong output là ƯỚC TÍNH THÔ (không phải spread thị trường).
+FUEL_COAL_EFF = 0.38          # hiệu suất nhà máy than
+FUEL_GAS_EFF = 0.55           # hiệu suất CCGT
+FUEL_COAL_EF = 0.34           # tCO2/MWh nhiệt của than
+FUEL_GAS_EF = 0.202           # tCO2/MWh nhiệt của khí
+FUEL_COAL_MWH_PER_TONNE = 6.978  # than 6.000 kcal/kg ≈ 25,1 GJ/t
+FUEL_EURUSD = 1.15            # giả định tỷ giá EUR→USD (hệ thống không có giá EURUSD)
+
+
+def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
+    """Chi phí phát điện biên (EUR/MWh điện) của than và khí gồm cả chi phí EUA, và giá EUA
+    hòa vốn chuyển đổi (switching price) — tính từ TTF, API2/API4, EUA có trong bảng giá.
+    Mục đích: Mục 2/3 dùng số này để biết than đã thắng khí chưa (chuyển đổi nhiên liệu có chạm
+    trần chưa), thay vì lập luận chỉ dựa trên chiều giá."""
+    by_code = {p["code"]: p.get("close") for p in prices}
+    ttf, eua = by_code.get("TTF"), by_code.get("EUA")
+    if not ttf or not eua:
+        return "Thiếu giá TTF hoặc EUA — không ước tính được spread than–khí; KHÔNG tự suy ra."
+    coal_codes = [c for c in ("API2", "API4") if by_code.get(c)]
+    if not coal_codes:
+        return "Thiếu giá than (API2/API4) — không ước tính được spread than–khí; KHÔNG tự suy ra."
+
+    gas_fuel_pw = ttf / FUEL_GAS_EFF
+    gas_carbon_pw = FUEL_GAS_EF / FUEL_GAS_EFF  # tCO2/MWh điện
+    gas_cost = gas_fuel_pw + eua * gas_carbon_pw
+    lines = [
+        f"Ước tính THÔ chi phí phát điện biên (EUR/MWh điện, gồm chi phí EUA {eua:.2f} EUR/t): "
+        f"chạy khí (TTF {ttf:.2f}, hiệu suất {FUEL_GAS_EFF:.0%}) ≈ {gas_cost:.0f}."
+    ]
+    for code in coal_codes:
+        coal_fuel_pw = by_code[code] / FUEL_EURUSD / FUEL_COAL_MWH_PER_TONNE / FUEL_COAL_EFF
+        coal_carbon_pw = FUEL_COAL_EF / FUEL_COAL_EFF
+        coal_cost = coal_fuel_pw + eua * coal_carbon_pw
+        spread = gas_cost - coal_cost
+        verdict = (
+            "than RẺ HƠN khí → chuyển đổi nhiên liệu có thể đã chạm trần; TTF tăng thêm chủ yếu tác động qua "
+            "chi phí/hedge và kênh công nghiệp cắt sản lượng, KHÔNG thêm huy động than"
+            if spread > 0 else
+            "khí rẻ hơn than → dispatch nghiêng về khí; than tăng cạnh tranh khi TTF tăng thêm"
+        )
+        denom = coal_carbon_pw - gas_carbon_pw
+        switch = (gas_fuel_pw - coal_fuel_pw) / denom if denom else None
+        switch_txt = (
+            f"; giá EUA hòa vốn chuyển đổi ≈ {switch:.0f} EUR/t" if switch is not None and switch > 0
+            else "; than rẻ hơn khí ở MỌI mức giá EUA hợp lý (không có điểm hòa vốn dương)"
+        )
+        lines.append(
+            f"  - Chạy than ({code} {by_code[code]:.1f} USD/t): ≈ {coal_cost:.0f}; chênh khí − than ≈ {spread:+.0f} "
+            f"EUR/MWh → {verdict}{switch_txt}."
+        )
+    lines.append(
+        f"Giả định: hiệu suất than {FUEL_COAL_EFF:.0%}/CCGT {FUEL_GAS_EFF:.0%}, than 6.000 kcal/kg, "
+        f"1 EUR = {FUEL_EURUSD} USD (tỷ giá không lấy từ hệ thống), TTF coi như giá nhiệt. Khi dùng PHẢI ghi là "
+        f"ước tính thô, chưa kiểm chứng; KHÔNG tự tính lại."
+    )
+    return "\n".join(lines)
+
+
+_CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
+
+
+def _has_cjk(text: Any) -> bool:
+    """True nếu chuỗi (hoặc JSON dump của dict/list) chứa ký tự Hán/Nhật/Hàn — LLM đôi khi
+    'lẫn' ký tự này vào văn bản tiếng Việt (vd 'chiến l略c'); báo cáo chỉ gồm tiếng Việt/Latin."""
+    if not isinstance(text, str):
+        text = json.dumps(text, ensure_ascii=False)
+    return bool(_CJK_RE.search(text))
+
+
+def _title_tokens(title: str) -> set:
+    return {w for w in re.findall(r"\w+", (title or "").lower()) if len(w) > 2}
+
+
+def _dedupe_similar_articles(articles: List[Dict]) -> List[Dict]:
+    """Gộp các bài cùng 1 sự kiện (tiêu đề gần giống nhau) cho Mục 6 — giữ bài đầu tiên.
+    Ngưỡng: Jaccard ≥ 0,5 hoặc phủ ≥ 0,75 bộ từ của tiêu đề ngắn hơn (tối thiểu 4 từ)."""
+    kept: List[Dict] = []
+    kept_tokens: List[set] = []
+    for art in articles:
+        tokens = _title_tokens(art.get("title", ""))
+        duplicate = False
+        for other in kept_tokens:
+            inter = len(tokens & other)
+            if not inter:
+                continue
+            smaller = min(len(tokens), len(other))
+            if inter / len(tokens | other) >= 0.5 or (smaller >= 4 and inter / smaller >= 0.75):
+                duplicate = True
+                break
+        if not duplicate:
+            kept.append(art)
+            kept_tokens.append(tokens)
+    return kept
 
 
 # Hệ số quy đổi ICE Gasoil (niêm yết USD/tấn) sang USD/thùng để so được cùng đơn
@@ -1558,7 +1671,7 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 def _prompt_section2(
     eua_key_facts: str, prices_text: str, eua_trend: str, gasoil_crack_spread: str,
     news_text: str, target_date: str, topics_present: List[str],
-    overrides: Optional[Dict[str, str]] = None,
+    overrides: Optional[Dict[str, str]] = None, fuel_spread: str = "",
 ) -> tuple[str, str]:
     framework = _eua_framework(topics_present, full=False, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
@@ -1576,12 +1689,15 @@ XU HƯỚNG EUA 30 NGÀY:
 GASOIL CRACK SPREAD (dùng đúng, KHÔNG tự tính lại):
 {gasoil_crack_spread}
 
+SPREAD THAN–KHÍ (ước tính thô tính sẵn — dùng đúng để xếp bullish/bearish cho TTF/than, KHÔNG tự tính lại):
+{fuel_spread}
+
 TIN TỨC đã đánh số [N] (CHỈ trích dẫn số có thật):
 {news_text}
 
 YÊU CẦU: Viết "market_drivers" — BẢNG ĐỘNG LỰC THỊ TRƯỜNG.
 Cấu trúc: {{"bullish": [...], "bearish": [...]}}. Mỗi phần tử gồm "tag", "text", "source_index":
-- "tag": "FACT" hoặc "OPINION" — phân biệt theo ĐỘ CHẮC CHẮN:
+- "tag": "FACT", "OPINION" hoặc "CLAIM" — phân biệt theo ĐỘ CHẮC CHẮN: "CLAIM" = tuyên bố/con số do MỘT BÊN nêu (quan chức, chính phủ, công ty) chưa được xác nhận độc lập — text PHẢI mở đầu bằng chủ thể ("Theo Phó Thủ tướng...") và NÊN kèm source_index; KHÔNG dùng "OPINION" hay "FACT" cho loại này.
   + "FACT" = thông tin ĐÃ XÁC NHẬN: (a) từ DỮ LIỆU GIÁ hệ thống, dựa trên Δ ngày + Δ tuần của instrument (source_index=null) hoặc (b) từ TIN TỨC đánh số nêu sự kiện/số liệu đã xảy ra (BẮT BUỘC kèm source_index).
   + "OPINION" = nhận định/suy luận/dự báo từ tin tức hoặc phân tích của bạn (NÊN kèm source_index nếu gắn bài cụ thể, null nếu suy luận chung).
 - "text": ĐÚNG 1 câu TÓM TẮT NGẮN GỌN, ĐỊNH TÍNH về trạng thái/động lực của yếu tố này — TUYỆT ĐỐI KHÔNG nhắc lại giá đóng cửa hay %Δ ngày/Δ tuần bằng SỐ (các số này đã hiển thị sẵn ở "Bảng giá nhanh" của báo cáo — lặp lại là thừa, không thêm thông tin). Thay vào đó mô tả ĐỊNH TÍNH vị thế/xu hướng — vd đang giữ vùng cao/thấp (so với biên độ 30 ngày), phá vỡ/chưa phá vỡ ngưỡng hỗ trợ-kháng cự, đi ngang tích lũy, biến động mạnh bất thường, thanh khoản tăng/giảm rõ rệt... — rồi nêu NGẮN GỌN nguyên nhân/sự kiện phía sau nếu có (vd "EUA đang giữ ở vùng cao, thanh khoản duy trì ổn định." hoặc "TTF suy yếu về vùng thấp nhiều tuần do nguồn cung LNG dồi dào."). Áp dụng ĐÚNG cách viết định tính này cho MỌI instrument trong mục này (EUA, TTF, than, dầu, điện Đức...), KHÔNG riêng EUA — KHÔNG giải thích/suy luận tác động lên EUA ở đây, KHÔNG viết chuỗi nhân quả hay kết luận hướng ảnh hưởng tới EUA (phần đó thuộc Mục 3).
@@ -1595,7 +1711,7 @@ Xếp bullish/bearish theo ĐÚNG chuỗi nhân quả tới EUA (không theo chi
   + Khối lượng ở mức bình thường → KHÔNG cần thêm mục riêng cho khối lượng (chỉ dùng khi có bất thường thực sự).
 
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"2": {{"market_drivers": {{"bullish": [{{"tag": "FACT", "text": "...", "source_index": null}}], "bearish": [{{"tag": "FACT", "text": "...", "source_index": null}}]}}}}}}"""
+{{"2": {{"market_drivers": {{"bullish": [{{"tag": "FACT|OPINION|CLAIM", "text": "...", "source_index": null}}], "bearish": [{{"tag": "FACT|OPINION|CLAIM", "text": "...", "source_index": null}}]}}}}}}"""
     return system, user
 
 
@@ -1666,7 +1782,7 @@ def _resolve_key_developments(items: Optional[List[Any]], index_lookup: Dict[int
 def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
     gasoil_crack_spread: str, target_date: str, topics_present: List[str],
-    overrides: Optional[Dict[str, str]] = None, eua_technical_levels: str = "",
+    overrides: Optional[Dict[str, str]] = None, eua_technical_levels: str = "", fuel_spread: str = "",
 ) -> tuple[str, str]:
     framework = _eua_framework(topics_present, full=True, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
@@ -1680,6 +1796,9 @@ BIÊN ĐỘ PHIÊN LIỀN TRƯỚC CỦA EUA:
 
 GASOIL CRACK SPREAD (số liệu đã tính sẵn — PHẢI dùng đúng con số này nếu nhắc đến crack spread, KHÔNG tự tính lại từ giá Gasoil/Brent thô vì khác đơn vị):
 {gasoil_crack_spread}
+
+SPREAD THAN–KHÍ (ước tính thô tính sẵn từ TTF/API2/API4/EUA — PHẢI dùng đúng khi phân tích fuel switching, KHÔNG tự tính lại; nêu rõ là ước tính chưa kiểm chứng):
+{fuel_spread or "Không có."}
 
 XU HƯỚNG EUA 30 NGÀY:
 {eua_trend}
@@ -1715,7 +1834,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu của "QUY TẮC ĐỘ DÀI CHUNG" ở trên (mỗi gạch có thể dài hơn 2 câu nếu cần đủ Δ ngày/Δ tuần + kết luận), NHƯNG PHẢI súc tích, trực diện theo đúng "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên — không câu mở đầu/đệm/chuyển tiếp thừa, không lặp lại nguyên văn nội dung đã nêu ở "instrument_notes" (chỉ nhắc lại khi trực tiếp làm căn cứ cho kết luận trong chính câu đó), và KHÔNG diễn giải lại từng bước cơ chế/logic suy luận.
       QUY TẮC SUY LUẬN NỘI BỘ CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã có ghi chú ở "instrument_notes" nhóm này để XÁC ĐỊNH đúng chiều/mức độ tác động (đây là cơ sở suy luận NỘI BỘ, không phải văn mẫu để chép lại nguyên văn vào "content" — xem "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên). LƯU Ý: tên chuỗi/nhánh viết HOA bên dưới (FUEL_SWITCHING, POWER_EUA_TWO_WAY, OIL_GASOIL, GEOPOLITICS_SUPPLY_CHAIN, "nhánh (a)"...) CHỈ để bạn xác định ĐÚNG cơ chế cần áp dụng — TUYỆT ĐỐI KHÔNG chép các tên này, và TUYỆT ĐỐI KHÔNG diễn giải lại các bước (i)-(v) này bằng lời trong "content"; "content" chỉ chứa SỐ LIỆU + KẾT LUẬN đã áp dụng đúng các bước này, không mô tả quá trình suy luận:
         (i) ĐỐI CHIẾU KHUNG THỜI GIAN: so Δ ngày VÀ Δ tuần của chính mã đó. ĐỒNG THUẬN (cùng chiều) → xác nhận xu hướng bền vững, đủ cơ sở kết luận dứt khoát chiều tác động EUA. MÂU THUẪN (trái chiều) → nêu rõ đây là tín hiệu ngắn hạn/chưa đủ mạnh, cần thêm phiên xác nhận, KHÔNG được chốt chiều tác động EUA dứt khoát.
-        (ii) GAS/THAN → áp dụng FUEL_SWITCHING: đây là cơ chế GIÁ TƯƠNG ĐỐI, không phải giá tuyệt đối của riêng 1 nhiên liệu — Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than. GIỚI HẠN BẮT BUỘC: hệ thống KHÔNG có spark/dark spread hay giá chuyển đổi nhiên liệu → khi TTF đã ở mức rất cao (than có thể thắng sẵn, đã chạy gần hết công suất khả dụng) thì tác động BIÊN của gas tăng thêm lên cầu EUA yếu và còn có kênh ngược (công nghiệp cắt sản lượng vì chi phí năng lượng → cầu EUA giảm) — phải nêu rõ điều này là chưa định lượng được, KHÔNG viết "TTF kéo EUA" như quan hệ nhân quả đã chứng minh và KHÔNG chốt hướng dứt khoát chỉ từ tương quan 1 tuần.
+        (ii) GAS/THAN → áp dụng FUEL_SWITCHING: đây là cơ chế GIÁ TƯƠNG ĐỐI, không phải giá tuyệt đối của riêng 1 nhiên liệu — Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than. BẮT BUỘC dựa vào khối "SPREAD THAN–KHÍ" đã tính sẵn: nếu than đã rẻ hơn khí rõ rệt (chênh dương lớn, không có điểm hòa vốn) thì chuyển đổi nhiên liệu có thể đã chạm trần → tác động BIÊN của TTF tăng thêm lên cầu EUA yếu (chỉ qua chi phí/hedge) và còn có kênh ngược (công nghiệp cắt sản lượng → cầu EUA giảm); khi đó KHÔNG xếp "TTF tăng" là động lực tăng chính. Con số là ƯỚC TÍNH THÔ (giả định ghi trong khối) — nêu rõ điều đó; vẫn chưa có vị thế quỹ/đấu giá EEX/MSR nên KHÔNG chốt hướng dứt khoát chỉ từ tương quan 1 tuần.
         (iii) ĐIỆN ĐỨC (DEBY1) → áp dụng ĐÚNG nhánh (a) của POWER_EUA_TWO_WAY: nếu DEBY1 biến động đồng pha với gas/than → kết luận điện tăng do chi phí nhiên liệu cao hơn, utility hedge thêm EUA tương ứng sản lượng đã bán — kênh hedge/chi phí này TÁCH BIỆT với việc thực tế đốt nhiên liệu nào, KHÔNG gộp chung "than+điện cùng tăng" thành kết luận "đốt than nhiều hơn". CHỈ được quy nguyên nhân "RES thấp" khi có dữ liệu/tin tức THỰC SỰ xác nhận RES thấp trong ngày — nếu KHÔNG có dữ liệu RES, PHẢI nêu rõ "không có dữ liệu RES trong ngày để xác nhận nhánh này" thay vì mặc định suy diễn.
         (iv) DẦU/GASOIL → áp dụng OIL_GASOIL: đối chiếu Δ ngày/Δ tuần của Brent/WTI theo đúng bước (i) trước khi kết luận fuel switching qua kênh dầu-khí (mâu thuẫn giữa 2 khung thời gian → tín hiệu ngắn hạn chưa đủ mạnh, cần thêm phiên xác nhận, chưa kết luận). Gasoil crack spread thu hẹp/mở rộng → nêu tác động lên cầu diesel/công nghiệp nặng và cầu EUA từ kênh công nghiệp đó, tách riêng khỏi kết luận fuel switching qua gas.
         (v) ĐỊA CHÍNH TRỊ — có 2 kênh TÁCH BIỆT trong GEOPOLITICS_SUPPLY_CHAIN, phải xác định đúng kênh trước khi suy luận:
@@ -1755,6 +1874,10 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      • R:R (|Mục tiêu − Entry| / |Entry − cắt lỗ|) PHẢI ≥ 1:1,5; nếu mốc dữ liệu không cho R:R đạt mức này → đổi hướng "đi ngang"/chờ xác nhận, KHÔNG ép số.
      • Cắt lỗ đặt NGOÀI vùng hỗ trợ/kháng cự ít nhất 0,5 × ATR (khoảng cách tới hỗ trợ không được nhỏ hơn mức đó) — hỗ trợ chỉ là đáy 1 phiên thì coi là yếu, ưu tiên mốc 30 phiên.
      • Mục tiêu trùng đúng đỉnh/đáy 30 phiên (kháng cự mạnh) → chốt 1 phần/thận trọng, ghi rõ là vùng cản, không coi là đích chắc chắn.
+     • Nhất quán giá vào lệnh: nếu Entry khác giá đóng cửa hiện tại thì phải ghi điều kiện kích hoạt (vd "mua khi đóng cửa trên X"), và R:R PHẢI tính từ đúng giá vào lệnh đó (X), không dùng giá hiện tại. Entry không được "ngược" với điều kiện (vd mua khi giá đang dưới Entry mà không ghi chờ vượt).
+     • Mức vô hiệu của kịch bản (trong "key_risk"/Phân tích) PHẢI trùng đúng mức cắt lỗ ở "Quản trị rủi ro" — không để 2 con số khác nhau (vd 87,01 và 87,15).
+     • "price_zone" hỗ trợ/kháng cự KHÔNG được chứa giá đóng cửa hiện tại (vùng hỗ trợ phải nằm dưới giá, kháng cự nằm trên).
+     • Mỗi "Mục tiêu" ghi kèm cơ sở trong ngoặc ngắn (vd "(kháng cự 30 phiên)", "(đo biên độ)", "(+4% so với đóng cửa)"); mục tiêu không nêu được cơ sở → bỏ.
      • Không dùng cụm "không phải khuyến nghị giao dịch" trong nội dung — giao diện đã có lưu ý riêng.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
@@ -1898,6 +2021,7 @@ B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân 
    - "solution": giải pháp/hướng đi đề xuất cho SIM để tận dụng cơ hội đó.
    - "expectation": kỳ vọng/kết quả nếu triển khai giải pháp này.
 
+CBAM: SIM có khách hàng nhôm/thép xuất khẩu sang EU nên nếu tin tức/dữ liệu có CBAM (giá CBAM, chính sách, nhôm/thép) thì BẮT BUỘC có ít nhất 1 gợi ý về CBAM, kèm phép tính chi phí theo tấn sản phẩm: chi phí CBAM/tấn ≈ (phát thải nhúng tCO2/tấn − phần phân bổ miễn phí) × giá CBAM (EUR/tCO2) — dùng giá CBAM từ dữ liệu giá nếu có; phát thải nhúng/tấn KHÔNG có trong dữ liệu → đưa ví dụ minh họa gắn nhãn "giả định" hoặc để khách tự điền, KHÔNG bịa như số thật.
 QUY TẮC NỘI DUNG: gợi ý dài hạn phải có 1 bước thí điểm cụ thể (quy mô/đối tượng/thời gian) hoặc chỉ tiêu tài chính gắn với dữ kiện trong tin tức — KHÔNG chỉ nêu khái niệm chung (BII, NBS, điện hóa nhiệt...). Số tiền/cam kết của 1 tổ chức phải khớp với bài được trích, không tự đổi số.
 QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng. TỐI ĐA 3 gợi ý MỖI bảng (short_term và long_term riêng biệt) — nếu có nhiều hơn 3 gợi ý đủ căn cứ, CHỈ giữ lại ĐÚNG 3 gợi ý TRỌNG TÂM/có căn cứ mạnh nhất, bỏ phần còn lại (KHÔNG cố nhồi hết vào 1 bảng, sẽ làm output quá dài và bị cắt).
 Lưu ý: KHÔNG dùng câu lệnh mua/bán tài chính trực tiếp.
@@ -2058,6 +2182,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     eua_session_range = _eua_session_range_summary(chart_data)
     eua_volume = _eua_volume_summary(chart_data)
     eua_technical_levels = _eua_technical_levels_summary(chart_data)
+    fuel_spread = _fuel_switching_spread_summary(prices)
     gasoil_crack_spread = _gasoil_crack_spread_summary(prices) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
@@ -2227,7 +2352,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             ("2", _prompt_section2(
                 eua_key_facts, prices_text, eua_trend, gasoil_crack_spread,
                 section2_news_text, target_date, _topics_present(news_by_topic, "2"),
-                overrides=eua_framework_overrides,
+                overrides=eua_framework_overrides, fuel_spread=fuel_spread,
             )),
             ("dev", _prompt_key_developments(
                 dev_news_text, target_date, _topics_present(news_by_topic, "dev"),
@@ -2239,6 +2364,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 _topics_present(news_by_topic, "3"),
                 overrides=eua_framework_overrides,
                 eua_technical_levels=eua_technical_levels,
+                fuel_spread=fuel_spread,
             )),
             ("4", _prompt_section4(
                 section4_news_text,
@@ -2284,6 +2410,11 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                     max_tokens=SECTION_MAX_TOKENS.get(sec_key, 8192),
                 )
                 parsed = _extract_json(raw) if raw else None
+                if parsed and _has_cjk(parsed):
+                    logger.warning(f"[REPORT] Mục {sec_key} lẫn ký tự CJK (lần {attempt + 1}), gọi lại LLM...")
+                    if attempt == SECTION_PARSE_RETRIES - 1:
+                        break  # hết lượt thử: giữ bản cuối (đã cảnh báo ở log)
+                    continue
                 if parsed:
                     break
                 logger.warning(
@@ -2414,9 +2545,31 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     }
 
     cited_articles = _collect_cited_articles(news_by_topic)
+    # Chỉ liệt kê nguồn THỰC SỰ được trích trong nội dung Mục 1–5 (source_url của bullet/driver/diễn biến);
+    # trước đây liệt kê cả bài chỉ đưa vào prompt mà không được trích → "nguồn mồ côi".
+    used_urls: set = set()
+
+    def _walk_urls(node: Any) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "source_url" and isinstance(v, str):
+                    used_urls.add(v)
+                else:
+                    _walk_urls(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk_urls(v)
+
+    for _k, _v in content.items():
+        if _k not in ("6", "9"):
+            _walk_urls(_v)
+    used_articles = [a for a in cited_articles if a["url"] in used_urls]
     content["9"] = {
         "title": "Nguồn tham khảo",
-        "items": [{"source": a["source"], "title": a["title"], "url": a["url"]} for a in cited_articles],
+        "items": [
+            {"source": a["source"], "title": a["title"], "url": a["url"]}
+            for a in (used_articles or cited_articles)
+        ],
     }
 
     # ── Bộ nhớ gợi ý kinh doanh: chuẩn hoá gợi ý mới + ghi DB (BƯỚC CUỐI) ──

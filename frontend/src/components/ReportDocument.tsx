@@ -1930,7 +1930,7 @@ export function ReportDocument({
                           <p className="text-[14.5px] leading-[1.5] text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
+                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : d.tag === "CLAIM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
                             )}>{d.tag}</span>
                             <RichText text={d.text} />
                           </p>
@@ -1962,7 +1962,7 @@ export function ReportDocument({
                           <p className="text-[14.5px] leading-[1.5] text-body">
                             <span className={clsx(
                               "font-mono text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 align-middle whitespace-nowrap",
-                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : "bg-blue-50 text-blue-700 border border-blue-200"
+                              d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : d.tag === "CLAIM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
                             )}>{d.tag}</span>
                             <RichText text={d.text} />
                           </p>

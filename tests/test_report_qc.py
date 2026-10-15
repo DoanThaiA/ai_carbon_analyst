@@ -383,3 +383,43 @@ def test_baker_hughes_label_notes_us_date():
     evs = _compute_recurring_calendar_events("2026-10-14")
     bh = [e for e in evs if "Baker Hughes" in e["event"]]
     assert bh and bh[0]["date"] == "2026-10-17" and "Thứ Sáu 16/10 giờ Mỹ" in bh[0]["event"]
+
+
+# ── Spread than–khí, CJK, gộp tin trùng ────────────────────────────────
+
+
+def _px(**kw):
+    return [{"code": k, "close": v} for k, v in kw.items()]
+
+
+def test_fuel_spread_matches_client_estimate():
+    from services.report_generator import _fuel_switching_spread_summary
+
+    text = _fuel_switching_spread_summary(_px(TTF=87.0, API4=100.0, EUA=88.05))
+    # khách ước tính khí ≈ 190 EUR/MWh (than ≈ 112 với API4 = 100 USD/t)
+    assert "chạy khí (TTF 87.00, hiệu suất 55%) ≈ 191" in text
+    assert "RẺ HƠN khí" in text
+
+
+def test_fuel_spread_missing_inputs():
+    from services.report_generator import _fuel_switching_spread_summary
+
+    assert "Thiếu" in _fuel_switching_spread_summary(_px(TTF=87.0, EUA=88.0))
+
+
+def test_has_cjk():
+    from services.report_generator import _has_cjk
+
+    assert _has_cjk("chiến l略c") and _has_cjk({"a": ["碳"]})
+    assert not _has_cjk("chiến lược hạn ngạch phát thải EU")
+
+
+def test_dedupe_similar_articles():
+    from services.report_generator import _dedupe_similar_articles
+
+    arts = [
+        {"title": "Trump Putin agree diesel deal on Russian exports", "url": "1"},
+        {"title": "Trump and Putin diesel deal agreed on Russian exports", "url": "2"},
+        {"title": "EU ETS auction volumes cut by MSR", "url": "3"},
+    ]
+    assert [a["url"] for a in _dedupe_similar_articles(arts)] == ["1", "3"]

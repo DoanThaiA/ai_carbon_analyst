@@ -97,8 +97,7 @@ INFERENCE_RULES = (
     "bên dưới, (iii) nếu không phân xử được thì kết luận 'tín hiệu hỗn hợp / trung tính'.\n"
     "\n"
     "L7 — LUẬT KHÔNG BỊA SỐ (no-fabrication): hệ thống CÓ dữ liệu giá cho: EUA, TTF (gas), "
-    "than (API2), Brent/WTI, Gasoil, điện Đức baseload (DEBY1). Hệ thống KHÔNG có: Clean Dark/"
-    "Spark Spread, open interest, volume, options skew, COT positioning, sản lượng RES, dữ liệu "
+    "than (API2), Brent/WTI, Gasoil, điện Đức baseload (DEBY1). Hệ thống KHÔNG có: open interest, volume, options skew, COT positioning, sản lượng RES, dữ liệu "
     "thời tiết, giá kim loại, khối lượng đấu giá theo phiên. Các đại lượng thuộc nhóm KHÔNG CÓ "
     "chỉ được dùng khi bản tin trích dẫn nêu SỐ LIỆU CỤ THỂ; tuyệt đối không tự suy ra, không "
     "ước lượng, không mô tả định tính thay cho số liệu.\n"
@@ -240,8 +239,8 @@ FUEL_SWITCHING = (
     "dispatch điện vẫn nghiêng về than. CHỈ nêu khi tin tức xác nhận CẮT GIẢM SẢN LƯỢNG THỰC TẾ "
     "(số liệu, thông báo doanh nghiệp). KHÔNG suy diễn từ riêng việc giá năng lượng tăng.\n"
     "\n"
-    "[DỮ LIỆU] Có sẵn: TTF, API2, EUA, DEBY1. Không có sẵn: sản lượng RES, coal/gas burn thực tế, "
-    "spread — chỉ dùng khi tin tức nêu số liệu (xem RELATIVE_FUEL_ECONOMICS)."
+    "[DỮ LIỆU] Có sẵn: TTF, API2, EUA, DEBY1. Không có sẵn: sản lượng RES, coal/gas burn thực tế. "
+    "Spread than–khí: có ước tính thô tính sẵn trong prompt khi đủ giá (xem RELATIVE_FUEL_ECONOMICS)."
 )
 
 
@@ -684,9 +683,10 @@ RELATIVE_FUEL_ECONOMICS = (
     "  - Vùng chuyển đổi có giới hạn: khi giá EUA hoặc chênh lệch nhiên liệu ra ngoài vùng này, "
     "thay đổi thêm KHÔNG tạo thêm chuyển dịch dispatch.\n"
     "\n"
-    "[DỮ LIỆU] Hệ thống KHÔNG tính sẵn CDS/CSS/switching price (không có instrument riêng). CHỈ áp "
-    "dụng cơ chế spread khi bản tin nêu rõ số liệu spread/generation; nếu không, dùng chuỗi giá "
-    "tuyệt đối ở FUEL_SWITCHING."
+    "[DỮ LIỆU] Khi prompt có khối 'SPREAD THAN–KHÍ' thì đó là ƯỚC TÍNH THÔ chi phí phát điện biên và "
+    "switching price tính sẵn từ TTF/API2/API4/EUA (giả định hiệu suất/tỷ giá ghi kèm) — dùng đúng số đó, "
+    "nêu là ước tính; không có khối này thì CHỈ áp dụng cơ chế spread khi bản tin nêu số liệu, nếu không "
+    "dùng chuỗi giá tuyệt đối ở FUEL_SWITCHING. Không có dữ liệu generation/coal burn thực tế."
 )
 
 
