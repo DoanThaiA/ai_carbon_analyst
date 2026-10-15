@@ -53,6 +53,8 @@ async def render_report_pdf(report_date: str, settings: Settings) -> bytes:
                     timeout=PDF_PAGE_TIMEOUT_MS,
                 )
                 await page.wait_for_selector(REPORT_READY_SELECTOR, timeout=PDF_PAGE_TIMEOUT_MS)
+                # Chờ webfont (Arimo — dự phòng khi server không có Arial) tải xong rồi mới in.
+                await page.evaluate("document.fonts.ready.then(() => true)")
             except Exception as exc:  # noqa: BLE001 — gói lại thành lỗi có ngữ cảnh
                 raise ReportPdfError(f"Không mở được trang báo cáo {report_date}: {exc}") from exc
             await page.emulate_media(media="print")

@@ -58,11 +58,11 @@
   --color-warn: var(--color-warn);
   --color-warn-tint: var(--color-warn-tint);
 
-  /* Toàn site 1 font duy nhất: Arial, Helvetica, sans-serif (font hệ thống, không
-     nạp webfont). font-mono (ticker giá, header bảng, badge...) cũng trỏ về cùng
-     stack — không còn font thứ 2 nào trên site. */
-  --font-sans: Arial, Helvetica, sans-serif;
-  --font-mono: Arial, Helvetica, sans-serif;
+  /* Toàn site 1 font duy nhất: Arial, Arimo, Helvetica, sans-serif (Arial hệ thống; Arimo
+     tự host qua @fontsource — layout.tsx — chỉ dùng khi máy không có Arial/font thay thế).
+     font-mono (ticker giá, header bảng, badge...) cũng trỏ về cùng stack. */
+  --font-sans: Arial, Arimo, Helvetica, sans-serif;
+  --font-mono: Arial, Arimo, Helvetica, sans-serif;
 
   /* Arial chỉ có 2 độ đậm thật: 400 (Regular) và 700 (Bold). Trên Windows (DirectWrite) "Arial Black" được gộp chung family "Arial"
      ở weight 900, nên font-extrabold (800) / font-black (900) — sẽ render bằng Arial Black, font KHÔNG
@@ -74,7 +74,7 @@
 
 html,
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Arial, Arimo, Helvetica, sans-serif;
 }
 
 body {
@@ -95,7 +95,7 @@ button {
 /* SVG <text> (trục biểu đồ nến trong báo cáo) — khai báo tường minh, không phụ
    thuộc việc trình duyệt có kế thừa font-family vào SVG hay không khi in PDF. */
 svg text {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Arial, Arimo, Helvetica, sans-serif;
 }
 
 /* Các đoạn văn trong báo cáo căn đều 2 bên (justify) thay vì căn trái mặc định.
@@ -162,19 +162,19 @@ svg text {
        lệch font với báo cáo — thay bằng header/footer Arial đồng bộ. */
     @top-left {
       content: "Tin tức hàng ngày thị trường Carbon";
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: Arial, Arimo, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
     @top-right {
       content: "Stavian Industrial Metal";
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: Arial, Arimo, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
     @bottom-right {
       content: "Trang " counter(page) " / " counter(pages);
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: Arial, Arimo, Helvetica, sans-serif;
       font-size: 8pt;
       color: #707070;
     }
