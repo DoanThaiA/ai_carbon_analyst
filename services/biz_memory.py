@@ -24,6 +24,7 @@ theo dõi/nhắc lại, và load_recent_dismissed() báo cho LLM không đề xu
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -133,6 +134,71 @@ def normalize_trigger_rule(raw: Any, valid_codes: set) -> Optional[Dict[str, Any
         return None
     if code not in valid_codes or op not in _VALID_OPS:
         return None
+    return {"code": code, "op": op, "value": value}
+
+
+# Từ khoá điều kiện ngưỡng giá trong câu "Tình huống" (tiếng Việt/ký hiệu) → toán tử.
+_THRESHOLD_RE = re.compile(
+    r"(>=|<=|>|<|vượt lên trên|vượt qua|vượt|lên trên|trên|cao hơn|xuống dưới|thủng|dưới|thấp hơn)"
+    r"\s*(?:mức|ngưỡng)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:[.,]\d+)?)",
+    re.IGNORECASE,
+)
+_UP_WORDS = (">", "vượt", "trên", "cao hơn")
+_PRICE_UNIT_RE = re.compile(r"(eur|usd|€|\$|/t|/mwh|/mmbtu|/bbl|/thùng|/tấn|đóng cửa|giá)", re.IGNORECASE)
+# Tên gọi thường gặp của các mã giá (khớp thêm ngoài code/name trong bảng prices).
+_CODE_ALIASES = {
+    "EUA": ("eua", "hạn ngạch"),
+    "TTF": ("ttf", "khí eu", "khí châu âu"),
+    "BRENT": ("brent",),
+    "WTI": ("wti",),
+    "GASOIL": ("gasoil",),
+    "API2": ("api2", "than"),
+    "NEWC": ("newc", "newcastle"),
+    "DEBY1": ("deby1", "điện đức", "german power"),
+}
+
+
+def _parse_vn_number(raw: str) -> Optional[float]:
+    """'88,53' / '88.53' / '1.234,5' -> float."""
+    raw = raw.strip()
+    if "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def looks_like_price_condition(trigger: str) -> bool:
+    """Câu tình huống là điều kiện NGƯỠNG GIÁ (vd 'EUA đóng cửa trên 88,53', 'NG > 3,60 USD/MMBtu')."""
+    text = trigger or ""
+    return bool(_THRESHOLD_RE.search(text)) and bool(_PRICE_UNIT_RE.search(text))
+
+
+def infer_price_rule(trigger: str, prices: List[Dict]) -> Optional[Dict[str, Any]]:
+    """Dựng trigger_rule từ câu tình huống khi LLM quên trả trigger_rule — chỉ khi nhận ra
+    đúng 1 mã giá có trong `prices` và 1 ngưỡng ngay sau tên mã. Không chắc → None."""
+    text = (trigger or "").lower()
+    found = []
+    for p in prices:
+        code = str(p.get("code") or "").upper()
+        if not code or p.get("close") is None:
+            continue
+        aliases = {code.lower(), str(p.get("name") or "").lower(), *_CODE_ALIASES.get(code, ())}
+        positions = [m.end() for a in aliases if a for m in re.finditer(r"(?<!\w)" + re.escape(a) + r"(?!\w)", text)]
+        if positions:
+            found.append((min(positions), code))
+    if len({c for _, c in found}) != 1:
+        return None
+    pos, code = min(found)
+    m = _THRESHOLD_RE.search(text, pos)
+    if not m or m.start() - pos > 60:
+        return None
+    value = _parse_vn_number(m.group(2))
+    if value is None:
+        return None
+    word = m.group(1).lower()
+    op = word if word in _VALID_OPS else (">" if any(w in word for w in _UP_WORDS) and "dưới" not in word else "<")
     return {"code": code, "op": op, "value": value}
 
 

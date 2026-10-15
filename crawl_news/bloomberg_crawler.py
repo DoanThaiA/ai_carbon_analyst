@@ -98,6 +98,14 @@ SEARCH_DELAY_SECONDS = 1.0
 # bot/paywall nên cần dự phòng nhiều hơn 1-2)
 MAX_CANDIDATES_PER_TITLE = 5
 
+# Kết quả Google News lệch ngày quá mức này so với pubDate Bloomberg RSS thì KHÔNG phải bản
+# syndicated của bài đó (vd search rộng khớp bài cũ 5 tháng/2 năm trước có tiêu đề na ná) — bỏ.
+GNEWS_MAX_DATE_GAP_HOURS = 72
+
+# Độ giống tiêu đề tối thiểu (tỉ lệ từ của tiêu đề Bloomberg có trong tiêu đề kết quả) —
+# chặn search rộng (không ngoặc kép) trả về bài khác chủ đề.
+GNEWS_MIN_TITLE_OVERLAP = 0.6
+
 # Marker nhận diện trang lỗi/chặn bot bị trafilatura extract nhầm thành nội
 # dung bài (phát hiện thực tế: Access Denied của moneycontrol/Akamai,
 # "Performing security verification" của moneyweb/Cloudflare — cả hai đều
@@ -258,8 +266,41 @@ def _is_preferred_source(source_name: str) -> bool:
     return any(preferred.lower() in source_lower for preferred in PREFERRED_SOURCES)
 
 
-def _rank_gnews_results(entries: list) -> List[str]:
+_WORD_RE = re.compile(r"[\w']+")
+
+
+def _title_words(title: str) -> Set[str]:
+    return {w for w in _WORD_RE.findall(title.lower()) if len(w) > 2}
+
+
+def _title_overlap(bloomberg_title: str, gnews_title: str) -> float:
+    """Tỉ lệ từ (>2 ký tự) của tiêu đề Bloomberg xuất hiện trong tiêu đề kết quả Google News
+    (tiêu đề GNews có đuôi " - Tên báo", không ảnh hưởng vì chỉ đếm phía Bloomberg)."""
+    words = _title_words(bloomberg_title)
+    if not words:
+        return 0.0
+    return len(words & _title_words(gnews_title)) / len(words)
+
+
+def _is_same_story(entry: dict, bloomberg_title: str, rss_published_at: Optional[datetime]) -> bool:
+    """Kết quả Google News có đúng là bản đăng lại của bài Bloomberg không: tiêu đề đủ giống
+    VÀ ngày đăng gần pubDate Bloomberg. Kết quả không có ngày bị loại (không kiểm được)."""
+    if _title_overlap(bloomberg_title, entry.get("title", "")) < GNEWS_MIN_TITLE_OVERLAP:
+        return False
+    if rss_published_at is None:
+        return True
+    gnews_date = _parse_rss_date(entry)
+    if gnews_date is None:
+        return False
+    gap_hours = abs((gnews_date - rss_published_at).total_seconds()) / 3600
+    return gap_hours <= GNEWS_MAX_DATE_GAP_HOURS
+
+
+def _rank_gnews_results(
+    entries: list, bloomberg_title: str = "", rss_published_at: Optional[datetime] = None
+) -> List[str]:
     """Sắp xếp kết quả Google News theo độ ưu tiên, trả về danh sách URL (redirect links).
+    Có `bloomberg_title` thì loại trước các kết quả không phải cùng bài (xem _is_same_story).
 
     Check preferred TRƯỚC blocked: 1 source đã được vetted và đưa vào
     PREFERRED_SOURCES (vd "BNN Bloomberg") được tin tưởng hơn heuristic
@@ -273,6 +314,12 @@ def _rank_gnews_results(entries: list) -> List[str]:
         url = entry.get("link", "")
         source_name = entry.get("source", {}).get("title", "")
         if not url:
+            continue
+        if bloomberg_title and not _is_same_story(entry, bloomberg_title, rss_published_at):
+            logger.info(
+                "[Bloomberg] Bỏ kết quả GNews khác bài/lệch ngày (%s, %s): '%.70s'",
+                source_name, entry.get("published", "?"), entry.get("title", ""),
+            )
             continue
 
         if _is_preferred_source(source_name):
@@ -392,7 +439,7 @@ async def crawl_bloomberg_rss(
             continue
 
         # Sắp xếp URL theo độ ưu tiên (ưa chuộng Yahoo, MSN...)
-        ranked_urls = _rank_gnews_results(gnews_entries)
+        ranked_urls = _rank_gnews_results(gnews_entries, title, rss_published_at)
         if not ranked_urls:
             logger.info(
                 "[Bloomberg] Không có domain phù hợp trong %d kết quả cho: '%.60s'",

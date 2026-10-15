@@ -12,7 +12,7 @@ Kết quả qua bộ lọc sanity check: nếu ngày > hôm nay hoặc < 2020 �
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import trafilatura
@@ -22,6 +22,8 @@ from schemas.crawl_models import CrawledItem, DateConfidence, ExtractedArticle
 logger = logging.getLogger(__name__)
 
 MIN_TEXT_LENGTH = 200  # bài quá ngắn thường là lỗi extract (trang chặn/redirect/404 dạng HTML)
+# Ngày RSS mới hơn ngày ghi trên trang bài quá mức này → tin ngày trên trang (xem extract_article).
+RSS_PAGE_DATE_MAX_GAP = timedelta(days=3)
 
 _MIN_VALID_DATE = datetime(2000, 1, 1, tzinfo=timezone.utc)
 
@@ -65,6 +67,18 @@ def extract_article(item: CrawledItem) -> Optional[ExtractedArticle]:
             "[DATE] Dùng rss_published_at=%s thay trafilatura cho %s",
             published_at.strftime("%Y-%m-%d %H:%M UTC"), item.url,
         )
+        # Ngày trên CHÍNH trang bài cũ hơn ngày RSS quá xa → trang này không phải bài mới
+        # (vd Bloomberg RSS hôm nay nhưng Google News trả về bài đăng 5 tháng trước) — tin trang.
+        page_date = _parse_date(parsed.get("date"))
+        if page_date is not None:
+            if page_date.tzinfo is None:
+                page_date = page_date.replace(tzinfo=timezone.utc)
+            if published_at - page_date > RSS_PAGE_DATE_MAX_GAP:
+                logger.warning(
+                    "[DATE-FIX] Trang đăng %s, RSS ghi %s — dùng ngày trên trang: %s",
+                    page_date.date(), published_at.date(), item.url,
+                )
+                published_at = page_date
     else:
         published_at = _parse_date(parsed.get("date"))
 

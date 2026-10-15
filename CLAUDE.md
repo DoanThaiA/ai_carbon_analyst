@@ -210,9 +210,13 @@ thực thi, admin QC được cả bản draft). Trên MCP/Claude Desktop, gatew
 (`services/claude_connect.py`, mô tả bảo Claude hoá vai Jack) cho mọi user có token và gọi với `allow_jack_qc=True` →
 chỉ QC báo cáo `published` (`qc_report_text(..., published_only=True)`). Khi gọi, UI hiện trạng thái
 "Đang giao cho Jack QC báo cáo — Jack đang đối chiếu dữ liệu trên hệ thống..."; người dùng gọi tên "Jack" là Jenny gọi tool (xem mô tả tool) (`JACK_TOOLS` → `StatusEvent`). Toàn bộ là Python
-rule-based, KHÔNG gọi LLM: giá Mục 2 ↔ bảng `prices`, kịch bản Mục 3 ↔ nhãn "**Tổng hợp:**", URL nguồn
-Mục 1/4/9 ↔ `articles`, lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurring_calendar_events`, gợi ý biz ↔
-`biz_suggestions.trigger_rule`, độ phủ tin tức ↔ bài crawl trong khung tin của báo cáo (cùng khung với
+rule-based, KHÔNG gọi LLM: giá Mục 2 ↔ bảng `prices`, kịch bản Mục 3 ↔ nhãn "**Tổng hợp:**" + số học (R:R ≥ 1,5,
+điều kiện ↔ Entry, cắt lỗ sát đáy/đỉnh phiên — `_check_strategy_math`; bộ sinh dùng lại check này để tự sửa Mục 3 1 lần:
+`_revise_scenarios_if_invalid`), URL nguồn Mục 1/4/9 ↔ `articles` (+ tin cũ hơn khung `STALE_NEWS_MAX_AGE_DAYS`, nhãn nguồn ≠
+nhà xuất bản thật `news_source_label`), lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurring_calendar_events` (cửa sổ
+`CALENDAR_WINDOW_DAYS`=7, lùi lịch theo ngày nghỉ lễ liên bang Mỹ; số liệu phải đúng kỳ — `data_matches_event`), gợi ý biz ↔
+`biz_suggestions.trigger_rule` (+ gợi ý cũ đánh dấu ĐÃ KÍCH HOẠT phải chạm ngưỡng thật; ngưỡng giá thiếu rule thì tự dựng
+bằng `biz_memory.infer_price_rule`, mã không có trong bảng giá thì không bao giờ kích hoạt qua tin tức), độ phủ tin tức ↔ bài crawl trong khung tin của báo cáo (cùng khung với
 `get_news_for_report`). Điểm mỗi check = 100 − 25/error − 10/warning − 2/info; tổng = trung bình 6 check.
 `qc_report_text()` trả văn bản (điểm, thống kê tin, vấn đề theo mục) làm tool_result. Các hàm `check_*` là
 hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cáo sạch đúng định dạng bộ sinh, PHẢI ra

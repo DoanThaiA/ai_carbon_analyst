@@ -51,13 +51,13 @@ GOLDEN = {
         "trading_scenarios": [
             {"horizon": "ngắn hạn", "probability": "Cao", "direction": "giảm", "condition": "Nếu ...",
              "price_zone": "78,5–80,0", "key_risk": "...",
-             "trading_strategy": "**Entry:** Bán quanh 79,0–79,5 EUR/tCO2\n**Mục tiêu:** 76,5\n**Quản trị rủi ro:** Cắt lỗ nếu trên 81,0"},
+             "trading_strategy": "**Entry:** Bán quanh 79,0–79,5 EUR/tCO2\n**Mục tiêu:** 75,5 (hỗ trợ 30 phiên)\n**Quản trị rủi ro:** Cắt lỗ nếu trên 81,0"},
             {"horizon": "trung hạn", "probability": "Trung bình", "direction": "đi ngang", "condition": "Nếu ...",
              "price_zone": "75–83", "key_risk": "...",
              "trading_strategy": "**Entry:** Mua quanh 75, bán quanh 83\n**Mục tiêu:** 82 / 76\n**Quản trị rủi ro:** Cắt lỗ dưới 73 hoặc trên 85"},
             {"horizon": "dài hạn", "probability": "Thấp", "direction": "tăng", "condition": "Nếu ...",
              "price_zone": "75–90", "key_risk": "...",
-             "trading_strategy": "**Entry:** Mua quanh 75–76\n**Mục tiêu:** 85\n**Quản trị rủi ro:** Cắt lỗ dưới 72"},
+             "trading_strategy": "**Entry:** Mua quanh 75–76\n**Mục tiêu:** 85 (kháng cự 30 phiên)\n**Quản trị rủi ro:** Cắt lỗ dưới 72"},
         ],
     },
     "4": {"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": [{"text": "**VCM:** ...", "source_name": None, "source_url": None}]},
@@ -154,7 +154,7 @@ def _set_short(c, **kw):
 
 def test_scenario_contradicts_summary():
     c = _set_short(g(), direction="tăng",
-                   trading_strategy="**Entry:** Mua quanh 79\n**Mục tiêu:** 82\n**Quản trị rủi ro:** Cắt lỗ dưới 77")
+                   trading_strategy="**Entry:** Mua quanh 79\n**Mục tiêu:** 82 (kháng cự 30 phiên)\n**Quản trị rủi ro:** Cắt lỗ dưới 77")
     issues = report_qc.check_scenarios(c)
     assert [i["severity"] for i in issues] == ["error"] and "[TIÊU CỰC]" in issues[0]["message"]
 
@@ -382,7 +382,35 @@ def test_baker_hughes_label_notes_us_date():
 
     evs = _compute_recurring_calendar_events("2026-10-14")
     bh = [e for e in evs if "Baker Hughes" in e["event"]]
-    assert bh and bh[0]["date"] == "2026-10-17" and "Thứ Sáu 16/10 giờ Mỹ" in bh[0]["event"]
+    assert bh and bh[0]["date"] == "2026-10-17" and "Thứ Sáu 16/10 12:00 giờ Chicago" in bh[0]["event"]
+
+
+def test_calendar_window_and_us_holiday_shift():
+    """Báo cáo 15/10/2026 (dữ liệu 14/10): Columbus Day 12/10 → EIA lùi sang Thứ Năm 15/10;
+    cửa sổ 7 ngày phải có cả EIA 21/10."""
+    from services.report_generator import _compute_recurring_calendar_events
+
+    eia = [e["date"] for e in _compute_recurring_calendar_events("2026-10-14") if "EIA" in e["event"]]
+    assert eia == ["2026-10-15", "2026-10-21"]
+
+
+def test_eia_outcome_must_match_event_week():
+    from datetime import date
+    from services.report_generator import data_matches_event
+
+    assert data_matches_event("Tồn kho dầu thô EIA", date(2026, 10, 15), "2026-10-09")
+    assert not data_matches_event("Tồn kho dầu thô EIA", date(2026, 10, 15), "2026-10-02")
+    assert data_matches_event("Số giàn khoan Baker Hughes", date(2026, 10, 17), "2026-10-16")
+
+
+def test_calendar_flags_outcome_from_previous_week():
+    c = g()
+    c["8"]["events"].append({
+        "date": "2026-10-15", "datetime_vn": "15/10", "event": "Tồn kho dầu thô EIA (EIA Weekly Petroleum Status Report)",
+        "impact": "Cao", "outcome": "Tồn kho 424.134 Mbbl (tuần kết thúc 02/10/2026)",
+    })
+    m = msgs(report_qc.check_calendar(c, "2026-10-16"))
+    assert "tuần kết thúc 02/10" in m
 
 
 # ── Spread than–khí, CJK, gộp tin trùng ────────────────────────────────
@@ -423,3 +451,60 @@ def test_dedupe_similar_articles():
         {"title": "EU ETS auction volumes cut by MSR", "url": "3"},
     ]
     assert [a["url"] for a in _dedupe_similar_articles(arts)] == ["1", "3"]
+
+
+# ── Tin cũ / nhãn nguồn / gợi ý kích hoạt sai / số học kịch bản ─────────
+
+def test_source_label_is_real_publisher():
+    from services.report_generator import news_source_label
+
+    assert news_source_label("bloomberg.com", "https://www.business-standard.com/x") == "business-standard.com (theo bloomberg.com)"
+    assert news_source_label("reuters.com", "https://www.reuters.com/a") == "reuters.com"
+
+
+def test_sources_flag_stale_article_and_wrong_label():
+    from datetime import datetime, timezone
+
+    url = "https://www.business-standard.com/vessel-sinks"
+    c = g()
+    c["9"]["items"].append({"source": "bloomberg.com", "title": "Vessel sinks", "url": url})
+    meta = {report_qc._norm_url(url): {"source": "bloomberg.com", "published_at": datetime(2026, 5, 14, tzinfo=timezone.utc)}}
+    issues = report_qc.check_sources(
+        c, report_qc.collect_source_urls(c), meta, datetime(2026, 10, 11, tzinfo=timezone.utc),
+    )
+    m = msgs(issues)
+    assert "tin CŨ — đăng 14/05/2026" in m and "không đúng nhà xuất bản" in m
+
+
+def test_biz_reminder_triggered_below_threshold_is_error():
+    prices = [{"code": "EUA", "name": "EUA", "close": 88.34}]
+    content = {"biz": {"short_term": [], "reminders": [
+        {"id": 1, "suggested_date": "2026-10-09", "outcome": "triggered",
+         "trigger": "Nếu EUA đóng cửa trên 88,53 EUR/t", "source_url": "https://x"},
+        {"id": 2, "suggested_date": "2026-10-10", "outcome": "triggered",
+         "trigger": "Nếu NG vượt 3,60 USD/MMBtu", "source_url": "https://y"},
+    ]}}
+    issues = [i for i in report_qc.check_biz(content, {}, {"EUA"}, prices) if i["severity"] == "error"]
+    assert len(issues) == 2
+    assert "CHƯA chạm" in issues[0]["message"] and "không kiểm chứng được" in issues[1]["message"]
+
+
+def test_infer_price_rule_from_trigger_text():
+    from services.biz_memory import infer_price_rule, looks_like_price_condition
+
+    prices = [{"code": "EUA", "name": "EU Carbon", "close": 87.1}, {"code": "BRENT", "name": "Brent", "close": 70}]
+    assert infer_price_rule("Khi EUA đóng cửa trên 88,53 EUR/t", prices) == {"code": "EUA", "op": ">", "value": 88.53}
+    assert infer_price_rule("Nếu NG vượt 3,60 USD/MMBtu", prices) is None
+    assert looks_like_price_condition("Nếu NG vượt 3,60 USD/MMBtu")
+    assert not looks_like_price_condition("Khi xác nhận nội dung và phạm vi ngừng bắn năng lượng")
+
+
+def test_scenario_math_condition_rr_and_tight_stop():
+    c = g()
+    c["2"]["chart_data"] = [{"open": 87.5, "high": 88.24, "low": 86.62, "close": 87.14}]
+    c = _set_short(
+        c, direction="tăng", condition="Nếu EUA đóng cửa trên 88,24",
+        trading_strategy="**Entry:** mua quanh 87,0–87,5\n**Mục tiêu:** 88,82 (đo biên độ)\n**Quản trị rủi ro:** cắt lỗ dưới 86,6",
+    )
+    m = msgs(report_qc.check_scenarios(c))
+    assert "mâu thuẫn với Entry" in m and "R:R chỉ 0.35:1" in m and "dễ bị quét" in m

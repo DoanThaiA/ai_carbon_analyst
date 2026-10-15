@@ -33,8 +33,12 @@ from services.report_generator import (
     CBAM_CODE,
     SECTION_TOPICS,
     TOPIC_DISPLAY_LABELS,
+    CALENDAR_WINDOW_DAYS,
+    STALE_NEWS_MAX_AGE_DAYS,
     _compute_recurring_calendar_events,
     _parse_event_date,
+    data_matches_event,
+    news_source_label,
     is_no_price_report,
     report_data_date,
 )
@@ -383,7 +387,79 @@ def _eua_last_close(content: Dict[str, Any]) -> Optional[float]:
     return float(row["close"]) if row and isinstance(row.get("close"), (int, float)) else None
 
 
-def _check_strategy(sc: Dict[str, Any], label: str, path: str, eua_close: Optional[float]) -> List[Dict[str, str]]:
+# R:R tối thiểu (prompt Mục 3: "PHẢI ≥ 1:1,5").
+MIN_RISK_REWARD = 1.5
+# Cắt lỗ cách đáy/đỉnh phiên gần hơn tỉ lệ này của biên độ phiên → coi là đặt sát, dễ bị quét.
+STOP_MIN_RANGE_FRACTION = 0.25
+_CONDITION_LEVEL_RE = re.compile(
+    r"(đóng cửa|vượt|phá|giữ|thủng|xuống)[^\d]{0,20}(trên|dưới|qua)?[^\d]{0,8}(\d+(?:[.,]\d+)?)", re.IGNORECASE
+)
+
+
+def _eua_last_session(content: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    """Nến phiên gần nhất của EUA (chart_data) — {"high", "low"} để kiểm khoảng cách cắt lỗ."""
+    chart = (content.get("2") or {}).get("chart_data") or []
+    last = chart[-1] if chart and isinstance(chart[-1], dict) else None
+    if last and isinstance(last.get("high"), (int, float)) and isinstance(last.get("low"), (int, float)):
+        return {"high": float(last["high"]), "low": float(last["low"])}
+    return None
+
+
+def _check_strategy_math(
+    sc: Dict[str, Any], label: str, path: str, long: bool, entry_range: List[float],
+    target: float, stop: float, session: Optional[Dict[str, float]], target_body: str,
+) -> List[Dict[str, str]]:
+    """Kiểm số học kịch bản: điều kiện ↔ Entry, R:R, cắt lỗ sát đáy/đỉnh phiên, cơ sở mục tiêu."""
+    issues: List[Dict[str, str]] = []
+    p = f"{path}.trading_strategy"
+    entries = list(entry_range)
+    cond = _CONDITION_LEVEL_RE.search(str(sc.get("condition") or ""))
+    if cond:
+        level = float(cond.group(3).replace(",", ".", 1))
+        word = cond.group(0).lower()
+        above = ("trên" in word or "vượt" in word or ("phá" in word and long)) and "dưới" not in word
+        if level >= 10 and long and above and max(entry_range) < level:
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"{label}: điều kiện \"trên {_fmt(level)}\" mâu thuẫn với Entry mua quanh {_fmt(min(entry_range))}–{_fmt(max(entry_range))} (thấp hơn ngưỡng).",
+                p,
+            ))
+            entries.append(level)  # vào lệnh theo điều kiện → R:R tính cả từ ngưỡng này
+        elif level >= 10 and not long and not above and min(entry_range) > level:
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"{label}: điều kiện \"dưới {_fmt(level)}\" mâu thuẫn với Entry bán quanh {_fmt(min(entry_range))}–{_fmt(max(entry_range))} (cao hơn ngưỡng).",
+                p,
+            ))
+            entries.append(level)
+    worst = max(entries) if long else min(entries)
+    reward, risk = (target - worst, worst - stop) if long else (worst - target, stop - worst)
+    if risk > 0 and reward / risk < MIN_RISK_REWARD:
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            f"{label}: R:R chỉ {reward / risk:.2f}:1 (vào {_fmt(worst)}, mục tiêu {_fmt(target)}, cắt lỗ {_fmt(stop)}) — dưới 1,5:1.",
+            p,
+        ))
+    if session and sc.get("horizon") == "ngắn hạn":
+        rng = session["high"] - session["low"]
+        edge = session["low"] if long else session["high"]
+        gap = (edge - stop) if long else (stop - edge)
+        if rng > 0 and 0 <= gap < STOP_MIN_RANGE_FRACTION * rng:
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"{label}: cắt lỗ {_fmt(stop)} chỉ cách {'đáy' if long else 'đỉnh'} phiên {_fmt(edge)} {_fmt(gap)} EUR "
+                f"(biên độ phiên {_fmt(rng)}) — dễ bị quét.",
+                p,
+            ))
+    if "(" not in target_body:
+        issues.append(_issue("scenario", "3", "info", f"{label}: mục tiêu không ghi cơ sở (kháng cự/đo biên độ/%...).", p))
+    return issues
+
+
+def _check_strategy(
+    sc: Dict[str, Any], label: str, path: str, eua_close: Optional[float],
+    session: Optional[Dict[str, float]] = None,
+) -> List[Dict[str, str]]:
     issues: List[Dict[str, str]] = []
     is_short = sc.get("horizon") == "ngắn hạn"
     parts = parse_strategy(sc.get("trading_strategy"))
@@ -438,6 +514,8 @@ def _check_strategy(sc: Dict[str, Any], label: str, path: str, eua_close: Option
                 f"{label}: Cắt lỗ {_fmt(stop)} nằm sai phía so với Entry {_fmt(entry)} cho lệnh {side}.",
                 f"{path}.trading_strategy",
             ))
+        elif (target - entry if long else entry - target) > 0:
+            issues += _check_strategy_math(sc, label, path, long, entry_range, target, stop, session, bodies["Mục tiêu"])
     if is_short and eua_close and abs(entry - eua_close) / eua_close > ENTRY_MAX_DISTANCE:
         issues.append(_issue(
             "scenario", "3", "warning",
@@ -492,6 +570,7 @@ def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
         return issues
 
     eua_close = _eua_last_close(content)
+    session = _eua_last_session(content)
     seen_horizons: Set[str] = set()
     for i, sc in enumerate(scenarios):
         path = f"3.trading_scenarios[{i}]"
@@ -519,7 +598,7 @@ def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
             issues.append(_issue("scenario", "3", "error", f"{label}: chiều giá \"{direction}\" không thuộc tăng/giảm/đi ngang.", f"{path}.direction"))
 
         if not _blank(sc.get("trading_strategy")):
-            issues += _check_strategy(sc, label, path, eua_close)
+            issues += _check_strategy(sc, label, path, eua_close, session)
 
     # Prompt Mục 3 yêu cầu ĐÚNG 3 kịch bản, đủ cả 3 horizon.
     for horizon in VALID_HORIZONS:
@@ -573,33 +652,64 @@ def collect_source_urls(content: Dict[str, Any]) -> List[str]:
     return urls
 
 
-def check_sources(content: Dict[str, Any], known_urls: Iterable[str]) -> List[Dict[str, str]]:
-    """`known_urls`: những URL trong `collect_source_urls(content)` CÓ tồn tại ở bảng articles."""
+def check_sources(
+    content: Dict[str, Any],
+    known_urls: Iterable[str],
+    article_meta: Optional[Dict[str, Dict[str, Any]]] = None,
+    stale_before: Optional[datetime] = None,
+) -> List[Dict[str, str]]:
+    """`known_urls`: những URL trong `collect_source_urls(content)` CÓ tồn tại ở bảng articles.
+    `article_meta`: _norm_url(url) -> {"source", "published_at"} của các bài đó — kiểm thêm tin cũ
+    (đăng trước `stale_before`) và nhãn nguồn khác nhà xuất bản thật của URL."""
     known = {_norm_url(u) for u in known_urls}
+    meta_by_url = article_meta or {}
     issues: List[Dict[str, str]] = []
 
-    def _check_url(url: Optional[str], section: str, label: str, path: str) -> None:
-        if url and _norm_url(url) not in known:
+    def _check_url(url: Optional[str], section: str, label: str, path: str, shown_source: Any = None) -> None:
+        if not url:
+            return
+        if _norm_url(url) not in known:
             issues.append(_issue("source", section, "warning", f"{label}: URL nguồn không tìm thấy trong DB ({url}).", path))
+            return
+        meta = meta_by_url.get(_norm_url(url))
+        if not meta:
+            return
+        published = meta.get("published_at")
+        if stale_before and isinstance(published, datetime):
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            if published < stale_before:
+                issues.append(_issue(
+                    "source", section, "error",
+                    f"{label}: tin CŨ — đăng {published.strftime('%d/%m/%Y')}, không phải tin trong khung báo cáo ({url}).",
+                    path,
+                ))
+        expected = news_source_label(meta.get("source") or "", url)
+        if isinstance(shown_source, str) and shown_source.strip() and shown_source.strip() != expected:
+            issues.append(_issue(
+                "source", section, "warning",
+                f"{label}: nhãn nguồn \"{shown_source.strip()}\" không đúng nhà xuất bản của URL (đúng: {expected}).",
+                path,
+            ))
 
     # Bullet KHÔNG có nguồn là hợp lệ (prompt Mục 1: source_index=null khi bullet dựa trên dữ
     # liệu giá, vd bullet giá EUA đầu tiên) — chỉ kiểm URL khi CÓ trích dẫn.
     for i, b in enumerate((content.get("1") or {}).get("bullets") or []):
         if isinstance(b, dict):
-            _check_url(b.get("source_url"), "1", f"Bullet {i + 1}", f"1.bullets[{i}].source_url")
+            _check_url(b.get("source_url"), "1", f"Bullet {i + 1}", f"1.bullets[{i}].source_url", b.get("source_name"))
 
     for i, b in enumerate((content.get("4") or {}).get("bullets") or []):
         if isinstance(b, dict):
-            _check_url(b.get("source_url"), "4", f"Tín chỉ/CBAM #{i + 1}", f"4.bullets[{i}].source_url")
+            _check_url(b.get("source_url"), "4", f"Tín chỉ/CBAM #{i + 1}", f"4.bullets[{i}].source_url", b.get("source_name"))
     # key_developments hiển thị chung khối "Diễn biến chính" với Mục 4 → gắn note vào "4".
     for i, d in enumerate((content.get("2") or {}).get("key_developments") or []):
         if isinstance(d, dict):
-            _check_url(d.get("source_url"), "4", f"Diễn biến chính #{i + 1}", f"2.key_developments[{i}].source_url")
+            _check_url(d.get("source_url"), "4", f"Diễn biến chính #{i + 1}", f"2.key_developments[{i}].source_url", d.get("source_name"))
     drivers = (content.get("2") or {}).get("market_drivers") or {}
     for side, side_label in (("bullish", "hỗ trợ giá"), ("bearish", "gây áp lực giá")):
         for i, d in enumerate((drivers.get(side) if isinstance(drivers, dict) else None) or []):
             if isinstance(d, dict):
-                _check_url(d.get("source_url"), "3", f"Yếu tố {side_label} #{i + 1}", f"2.market_drivers.{side}[{i}].source_url")
+                _check_url(d.get("source_url"), "3", f"Yếu tố {side_label} #{i + 1}", f"2.market_drivers.{side}[{i}].source_url", d.get("source_name"))
 
     items = (content.get("9") or {}).get("items") or []
     if not items:
@@ -615,7 +725,7 @@ def check_sources(content: Dict[str, Any], known_urls: Iterable[str]) -> List[Di
             issues.append(_issue("source", "9", "info", f"Nguồn #{i + 1}: trùng URL với nguồn phía trên.", f"{path}.url"))
             continue
         seen.add(_norm_url(url))
-        _check_url(url, "9", f"Nguồn #{i + 1}", f"{path}.url")
+        _check_url(url, "9", f"Nguồn #{i + 1}", f"{path}.url", it.get("source"))
     return issues
 
 
@@ -657,7 +767,7 @@ def check_calendar(content: Dict[str, Any], report_date: str) -> List[Dict[str, 
 
     target_date = report_data_date(report_date)
     target = datetime.strptime(target_date, "%Y-%m-%d").date()
-    window_end = target + timedelta(days=6)
+    window_end = target + timedelta(days=CALENDAR_WINDOW_DAYS)
     expected = expected_recurring_dates(target_date)
     upcoming_expected = {
         kind: {d for d in dates if target <= date.fromisoformat(d) <= window_end} for kind, dates in expected.items()
@@ -692,6 +802,18 @@ def check_calendar(content: Dict[str, Any], report_date: str) -> List[Dict[str, 
                         f"{path}.date",
                     ))
                 found[kind].add(ev_date.isoformat())
+                # Số liệu phải đúng kỳ của sự kiện — file nguồn luôn là kỳ mới nhất nên dễ gắn nhầm
+                # số tuần trước cho sự kiện mới (vd EIA 14/10 mang số "tuần kết thúc 02/10").
+                week = re.search(r"tuần kết thúc\s*(\d{1,2})/(\d{1,2})/(\d{4})", str(ev.get("outcome") or ""))
+                if week:
+                    week_iso = f"{week.group(3)}-{int(week.group(2)):02d}-{int(week.group(1)):02d}"
+                    if not data_matches_event(name, ev_date, week_iso):
+                        issues.append(_issue(
+                            "calendar", "8", "error",
+                            f"{label} {ev_date.strftime('%d/%m')}: kết quả là số của tuần kết thúc "
+                            f"{week.group(1)}/{week.group(2)} — không phải kỳ công bố ngày này (số kỳ trước?).",
+                            f"{path}.outcome",
+                        ))
 
             # Giao diện hiển thị NGÀY theo "datetime_vn" (EventTimeline), không theo "date".
             shown = str(ev.get("datetime_vn") or "")
@@ -804,6 +926,35 @@ def check_biz(
                 f"{label}: ngưỡng {rule['code']} {_fmt(rule['value'])} lệch >{int(BIZ_RULE_MAX_DISTANCE * 100)}% so với giá hiện tại {_fmt(close)} — kiểm tra đơn vị/mã.",
                 f"{path}.trigger_rule",
             ))
+
+    # Gợi ý CŨ được đánh dấu "ĐÃ KÍCH HOẠT" — đối chiếu lại với giá thật (ngưỡng giá) hoặc nguồn tin.
+    for i, it in enumerate(biz.get("reminders") or []):
+        if not isinstance(it, dict) or it.get("outcome") != "triggered":
+            continue
+        path = f"biz.reminders[{i}]"
+        label = f"Gợi ý {it.get('suggested_date') or ''} đánh dấu ĐÃ KÍCH HOẠT".replace("  ", " ")
+        trigger = str(it.get("trigger") or "")
+        mem_rule = (suggestions.get(it.get("id")) or {}).get("trigger_rule")
+        rule = biz_memory.normalize_trigger_rule(mem_rule, valid_codes) if mem_rule else None
+        rule = rule or biz_memory.infer_price_rule(trigger, prices)
+        if rule:
+            if not biz_memory.check_price_rule(rule, prices):
+                price = next((p for p in prices if str(p.get("code", "")).upper() == rule["code"]), None)
+                close = price.get("close") if price else None
+                issues.append(_issue(
+                    "biz", "biz", "error",
+                    f"{label} nhưng ngưỡng {rule['code']} {rule['op']} {_fmt(rule['value'])} CHƯA chạm "
+                    f"(giá đóng cửa {_fmt(close) if isinstance(close, (int, float)) else 'không có'}).",
+                    f"{path}.outcome",
+                ))
+        elif biz_memory.looks_like_price_condition(trigger):
+            issues.append(_issue(
+                "biz", "biz", "error",
+                f"{label} nhưng điều kiện là ngưỡng giá của mã không có trong bảng giá — không kiểm chứng được ({trigger[:80]}).",
+                f"{path}.outcome",
+            ))
+        elif _blank(it.get("source_url")):
+            issues.append(_issue("biz", "biz", "warning", f"{label} nhưng không có nguồn tin làm bằng chứng.", f"{path}.source_url"))
 
     for i, it in enumerate(biz.get("long_term") or []):
         path = f"biz.long_term[{i}]"
@@ -999,12 +1150,19 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
 
     urls = collect_source_urls(content)
     known_urls: Set[str] = set()
+    article_meta: Dict[str, Dict[str, Any]] = {}
     if urls:
         candidates = {u for u in urls} | {_norm_url(u) for u in urls} | {_norm_url(u) + "/" for u in urls}
-        known_urls = set((await session.execute(select(Article.url).where(Article.url.in_(candidates)))).scalars())
+        for r in (await session.execute(
+            select(Article.url, Article.source, Article.published_at).where(Article.url.in_(candidates))
+        )).all():
+            known_urls.add(r.url)
+            article_meta[_norm_url(r.url)] = {"source": r.source, "published_at": r.published_at}
+    stale_before = news_window(target_date)[0] - timedelta(days=STALE_NEWS_MAX_AGE_DAYS)
 
+    biz = content.get("biz") or {}
     biz_ids = [
-        it["id"] for it in ((content.get("biz") or {}).get("short_term") or [])
+        it["id"] for it in (biz.get("short_term") or []) + (biz.get("reminders") or [])
         if isinstance(it, dict) and isinstance(it.get("id"), int)
     ]
     suggestions: Dict[int, Dict[str, Any]] = {}
@@ -1017,7 +1175,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
     issues_by_check = {
         "price": check_prices(content, db_prices, latest_price_date, report_date),
         "scenario": check_scenarios(content),
-        "source": check_sources(content, known_urls),
+        "source": check_sources(content, known_urls, article_meta, stale_before),
         "calendar": check_calendar(content, report_date),
         "biz": check_biz(content, suggestions, valid_codes, (content.get("2") or {}).get("prices") or [], report_date),
         "news": news_issues,

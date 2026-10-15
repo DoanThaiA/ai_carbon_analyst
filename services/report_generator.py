@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone, date, time as dtime
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 import asyncio
 import anthropic
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +55,16 @@ CONCISENESS_RULE = (
     "(8) Cùng 1 sự kiện có cả nguồn gốc (Bloomberg, Reuters, Argus, cơ quan chính thức) và nguồn thứ cấp/tổng hợp (vd cafef.vn) → "
     "ưu tiên trích nguồn gốc. "
     "(9) Liên hệ tới EUA CHỈ khi bài/dữ liệu nêu cơ chế rõ; KHÔNG viết lại tin 'không liên quan' thành 'có liên quan' và "
-    "KHÔNG đưa dự báo EUA dài hạn không có căn cứ."
+    "KHÔNG đưa dự báo EUA dài hạn không có căn cứ. "
+    "(10) NGÀY ĐĂNG: mỗi tin có ghi 'đăng DD/MM/YYYY' — chỉ trình bày là diễn biến hôm nay/mới khi tin đăng trong 2 "
+    "ngày gần nhất; tin cũ hơn chỉ dùng làm bối cảnh và PHẢI nêu ngày (vd 'từ tháng 4/2026'). Sự việc/phát ngôn đã có "
+    "từ trước thì không gọi là mới. KHÔNG quy nguyên nhân biến động giá của 1 phiên cho 1 tin khi không rõ tin ra "
+    "trước/trong phiên đó — chỉ viết 'có thể góp phần' và nêu rõ là nhận định. "
+    "(11) ĐỊNH DẠNG SỐ thống nhất kiểu Việt Nam ở MỌI mục: dấu phẩy thập phân, dấu chấm phân cách nghìn (87,14; "
+    "-1,03%; 424.134). Dữ liệu đầu vào ghi '87.14' thì khi viết thành '87,14'. "
+    "(12) Viết 'rủi ro hai chiều'/'hai chiều' thì PHẢI nêu cả chiều tăng lẫn chiều giảm; chỉ có 1 chiều thì ghi đúng 1 chiều. "
+    "(13) Mọi chính sách/văn bản/quy định nêu ra (vd hướng dẫn ESMA, cắt giảm phân bổ miễn phí, ngày hiệu lực) PHẢI có "
+    "trong tin đã cung cấp, đúng như tin viết — tin chỉ nêu ngày thông qua thì không tự suy ra ngày hiệu lực."
 )
 
 _anthropic_client: anthropic.AsyncAnthropic | None = None
@@ -668,6 +677,28 @@ async def get_historical_ohlc_for_report(
     return chart_data
 
 
+# Bài có ngày đăng cũ hơn đầu khung tin quá số ngày này KHÔNG đưa vào báo cáo dù vừa crawl
+# (vd bài đăng lại/kết quả search cũ 5 tháng-2 năm vẫn lọt vào crawl) — báo cáo ngày chỉ dùng tin mới.
+STALE_NEWS_MAX_AGE_DAYS = 3
+
+
+def _host(url: str) -> str:
+    host = (urlparse(url or "").hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def news_source_label(source: str, url: str) -> str:
+    """Nhãn nguồn hiển thị = NHÀ XUẤT BẢN thật (domain của URL). Nguồn cấu hình khác domain
+    (vd crawl Bloomberg qua bản đăng lại trên Business Standard/CNBC...) → "domain (theo nguồn)"
+    — tránh gắn nhãn "bloomberg.com" cho link thuộc báo khác."""
+    host = _host(url)
+    src = (source or "").lower()
+    src = src[4:] if src.startswith("www.") else src
+    if not host or not src or host == src or host.endswith("." + src):
+        return source or host
+    return f"{host} (theo {source})"
+
+
 async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tuple[Dict[str, List[Dict]], List[str]]:
     """Lấy tin tức trong khung 07:00 (VN) ngày báo cáo → 07:00 (VN) ngày hôm sau.
 
@@ -704,8 +735,18 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
 
     news_by_topic: Dict[str, List[Dict]] = {}
     sources: set = set()
+    stale_before = start_utc.replace(tzinfo=timezone.utc) - timedelta(days=STALE_NEWS_MAX_AGE_DAYS)
     for article in articles:
         if not article.topic:
+            continue
+        published = article.published_at
+        if published is not None and published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        if published is not None and published < stale_before:
+            logger.warning(
+                "[REPORT] Bỏ tin cũ (đăng %s, crawl %s): %s",
+                published.date(), article.crawled_at, article.url,
+            )
             continue
         sources.add(article.source)
         # Nhãn topic hiển thị (Mục 6) — TOÀN BỘ topic đã gắn cho bài (tối đa 3,
@@ -718,7 +759,7 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
                 "title": article.title,
                 "summary": article.content[:500] + "...",
                 "content_excerpt": article.content[:2000],
-                "source": article.source,
+                "source": news_source_label(article.source, article.url),
                 "url": article.url,
                 "region": article.region,
                 "topics": topic_labels,
@@ -752,7 +793,7 @@ def _filter_news_for_section(news_by_topic: Dict[str, List[Dict]], section_key: 
         text_parts.append(f"\n--- TOPIC: {topic.upper()} ---")
         for i, art in enumerate(articles[:4]):  # tối đa 4 tin/topic để tiết kiệm token
             text_parts.append(
-                f"{i+1}. [{art['source']}] {art['title']}\n   Tóm tắt: {art['summary']}"
+                f"{i+1}. [{art['source']}, đăng {art['published_date']}] {art['title']}\n   Tóm tắt: {art['summary']}"
             )
     return "\n".join(text_parts) if text_parts else "Không có tin tức liên quan."
 
@@ -784,7 +825,7 @@ def _filter_news_with_index(
 
     index_lookup = {i + 1: art for i, art in enumerate(numbered)}
     lines = [
-        f"[{i}] [{art['source']}] {art['title']}\n   Tóm tắt: {art['summary']}"
+        f"[{i}] [{art['source']}, đăng {art['published_date']}] {art['title']}\n   Tóm tắt: {art['summary']}"
         for i, art in index_lookup.items()
     ]
     return "\n".join(lines), index_lookup
@@ -1241,6 +1282,40 @@ async def get_previous_report_events(session: AsyncSession, report_date_str: str
     return prev_report.content.get("8", {}).get("events", [])
 
 
+async def get_previous_scenarios_text(session: AsyncSession, report_date_str: str, eua_close: Optional[float]) -> str:
+    """Kịch bản giao dịch của báo cáo GẦN NHẤT có kịch bản (trước `report_date_str`) + EUA đã đi
+    thế nào từ đó — để Mục 3 hôm nay nhìn thấy nhận định cũ, thừa nhận khi đi ngược và giải thích
+    khi đổi chiều/mục tiêu (người đọc so sánh các ngày với nhau)."""
+    stmt = (
+        select(Report)
+        .where(Report.report_date < report_date_str, Report.status.in_(["draft", "published"]))
+        .order_by(desc(Report.report_date))
+        .limit(5)
+    )
+    for prev in (await session.execute(stmt)).scalars():
+        scenarios = ((prev.content or {}).get("3") or {}).get("trading_scenarios") or []
+        if not scenarios:
+            continue  # báo cáo CN/T2 không có kịch bản → lùi tiếp
+        prev_close = next(
+            (p.get("close") for p in ((prev.content.get("2") or {}).get("prices") or [])
+             if isinstance(p, dict) and str(p.get("code", "")).upper() == "EUA"),
+            None,
+        )
+        lines = [f"Báo cáo {prev.report_date}" + (f" — EUA khi đó đóng cửa {prev_close:.2f}" if isinstance(prev_close, (int, float)) else "")]
+        if isinstance(prev_close, (int, float)) and prev_close and eua_close:
+            lines.append(f"EUA hiện tại {eua_close:.2f} ({(eua_close / prev_close - 1) * 100:+.2f}% so với khi đó)")
+        for sc in scenarios:
+            if not isinstance(sc, dict):
+                continue
+            strategy = " | ".join(l.strip() for l in str(sc.get("trading_strategy") or "").splitlines() if l.strip())
+            lines.append(
+                f"- {sc.get('horizon')}: {sc.get('direction')} (xác suất {sc.get('probability')}); "
+                f"điều kiện: {sc.get('condition')}; {strategy}"
+            )
+        return "\n".join(lines)
+    return ""
+
+
 def _parse_event_date(ev: Dict) -> Optional[date]:
     """Parse field 'date' (YYYY-MM-DD) của 1 event Mục 8; None nếu thiếu/sai định dạng."""
     raw = ev.get("date")
@@ -1269,7 +1344,7 @@ def _split_prev_events(events: List[Dict], target_date_str: str) -> tuple[List[D
     Sự kiện đã có outcome, đã quá hạn quá lâu, vượt quá 7 ngày tới, hoặc thiếu "date"
     hợp lệ đều bị loại khỏi cả 2 nhóm (không mang sang báo cáo mới)."""
     target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
-    window_end = target + timedelta(days=6)
+    window_end = target + timedelta(days=CALENDAR_WINDOW_DAYS)
     pending_outcome, still_upcoming = [], []
     for ev in events:
         ev_date = _parse_event_date(ev)
@@ -1317,7 +1392,7 @@ def _finalize_section8_events(
     hay parse JSON lỗi ở mục này — không phụ thuộc hoàn toàn vào việc LLM chép
     đúng theo hướng dẫn trong prompt."""
     target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
-    window_end = target + timedelta(days=6)
+    window_end = target + timedelta(days=CALENDAR_WINDOW_DAYS)
     kept = []
     for ev in events or []:
         ev_date = _parse_event_date(ev)
@@ -1341,6 +1416,90 @@ def _finalize_section8_events(
 
     kept.sort(key=lambda ev: ev.get("date") or "")
     return kept
+
+
+# Cửa sổ "7 ngày tới" của Mục 8 tính từ NGÀY DỮ LIỆU (= report_date − 1) → +7 để phủ đủ 7 ngày
+# kể từ ngày phát hành báo cáo (trước là +6 nên lỡ EIA thứ Tư tuần sau, vd báo cáo 15/10 thiếu EIA 21/10).
+CALENDAR_WINDOW_DAYS = 7
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """Ngày thứ `weekday` (0=Thứ Hai) lần thứ n của tháng; n=-1 = lần cuối."""
+    if n > 0:
+        d = date(year, month, 1)
+        d += timedelta(days=(weekday - d.weekday()) % 7)
+        return d + timedelta(weeks=n - 1)
+    d = (date(year + (month == 12), month % 12 + 1, 1)) - timedelta(days=1)
+    return d - timedelta(days=(d.weekday() - weekday) % 7)
+
+
+def us_federal_holidays(year: int) -> set:
+    """Ngày nghỉ lễ liên bang Mỹ (ngày nghỉ bù: rơi Thứ Bảy → Thứ Sáu, Chủ Nhật → Thứ Hai) —
+    EIA lùi lịch công bố khi tuần có ngày nghỉ, Baker Hughes công bố sớm khi Thứ Sáu là ngày nghỉ."""
+    fixed = [date(year, 1, 1), date(year, 6, 19), date(year, 7, 4), date(year, 11, 11), date(year, 12, 25)]
+    observed = set()
+    for d in fixed:
+        if d.weekday() == 5:
+            d -= timedelta(days=1)
+        elif d.weekday() == 6:
+            d += timedelta(days=1)
+        observed.add(d)
+    observed |= {
+        _nth_weekday(year, 1, 0, 3),   # Martin Luther King Jr. Day
+        _nth_weekday(year, 2, 0, 3),   # Presidents' Day
+        _nth_weekday(year, 5, 0, -1),  # Memorial Day
+        _nth_weekday(year, 9, 0, 1),   # Labor Day
+        _nth_weekday(year, 10, 0, 2),  # Columbus Day
+        _nth_weekday(year, 11, 3, 4),  # Thanksgiving
+    }
+    return observed
+
+
+def eia_release_date(week_wednesday: date) -> date:
+    """Ngày công bố EIA (giờ Mỹ) của tuần chứa `week_wednesday`: lùi 1 ngày cho mỗi ngày nghỉ lễ
+    liên bang rơi vào Thứ Hai–Thứ Tư tuần đó (vd Columbus Day 12/10/2026 → EIA công bố Thứ Năm 15/10)."""
+    holidays = us_federal_holidays(week_wednesday.year)
+    monday = week_wednesday - timedelta(days=2)
+    shift = sum(1 for k in range(3) if monday + timedelta(days=k) in holidays)
+    return week_wednesday + timedelta(days=shift)
+
+
+def baker_hughes_release_date(week_friday: date) -> date:
+    """Baker Hughes công bố Thứ Sáu; Thứ Sáu là ngày nghỉ lễ (vd 25/12) → công bố sớm 1 ngày.
+    Tuần Lễ Tạ Ơn (Thứ Năm nghỉ, Thứ Sáu nhiều nơi nghỉ) Baker Hughes thường công bố Thứ Tư."""
+    holidays = us_federal_holidays(week_friday.year)
+    if week_friday - timedelta(days=1) in holidays:  # Thanksgiving
+        return week_friday - timedelta(days=2)
+    if week_friday in holidays:
+        return week_friday - timedelta(days=1)
+    return week_friday
+
+
+def expected_data_week_ending(event_name: str, event_vn_date: date) -> Optional[date]:
+    """Tuần dữ liệu (week_ending) mà sự kiện Mục 8 ngày `event_vn_date` (giờ VN) PHẢI công bố:
+    EIA = Thứ Sáu liền trước ngày công bố (21:30/22:30 VN cùng ngày Mỹ); Baker Hughes = Thứ Sáu
+    của tuần công bố (rạng sáng VN hôm sau). Dùng để KHÔNG gắn nhầm số kỳ trước vào sự kiện mới."""
+    if "EIA" in event_name:
+        return event_vn_date - timedelta(days=(event_vn_date.weekday() - 4) % 7 or 7)
+    if "Baker Hughes" in event_name:
+        # Giờ VN rơi vào rạng sáng hôm sau ngày công bố Mỹ → lùi 1 ngày rồi lấy Thứ Sáu của tuần đó.
+        us_date = event_vn_date - timedelta(days=1)
+        return us_date + timedelta(days=4 - us_date.weekday())
+    return None
+
+
+def data_matches_event(event_name: str, event_vn_date: date, week_ending: Optional[str]) -> bool:
+    """Số liệu (week_ending "YYYY-MM-DD") có đúng kỳ của sự kiện không — EIA khớp tuyệt đối,
+    Baker Hughes cho lệch 1 ngày (tuần lễ công bố sớm, file có thể ghi ngày Thứ Năm)."""
+    expected = expected_data_week_ending(event_name, event_vn_date)
+    if expected is None:
+        return True
+    try:
+        actual = date.fromisoformat(str(week_ending or ""))
+    except ValueError:
+        return False
+    tolerance = 1 if "Baker Hughes" in event_name else 0
+    return abs((actual - expected).days) <= tolerance
 
 
 # Múi giờ nguồn công bố gốc của 3 lịch định kỳ Mục 8 có DST (khác VN — VN
@@ -1368,16 +1527,19 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
     Quy đổi qua zoneinfo (tự bù DST của Mỹ) thay vì hardcode 1 offset cố định.
     """
     target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
-    window_end = target + timedelta(days=6)
+    window_end = target + timedelta(days=CALENDAR_WINDOW_DAYS)
     events: List[Dict] = []
 
     def _add_us_release(anchor_date: date, anchor_time: dtime, tz: ZoneInfo, label: str, impact: str) -> None:
         vn_dt = datetime.combine(anchor_date, anchor_time, tzinfo=tz).astimezone(_VN_TZ)
         if target <= vn_dt.date() <= window_end:
-            if vn_dt.date() != anchor_date:
-                # Giờ VN lệch sang ngày hôm sau (vd Baker Hughes thứ Sáu 12:00 CT = 00:00 thứ Bảy VN) —
-                # ghi rõ ngày công bố theo giờ Mỹ để người đọc không tưởng nhầm ngày.
-                label = f"{label} — công bố {_VN_WEEKDAYS[anchor_date.weekday()]} {anchor_date.strftime('%d/%m')} giờ Mỹ"
+            # Luôn ghi giờ công bố gốc + giờ VN (cột ngày chỉ có DD/MM giờ VN) — vd Baker Hughes Thứ Sáu
+            # 12:00 Chicago = rạng sáng Thứ Bảy VN; EIA lùi sang Thứ Năm khi tuần có ngày nghỉ lễ Mỹ.
+            city = "New York" if tz is _EIA_API_TZ else "Chicago"
+            label = (
+                f"{label} — công bố {_VN_WEEKDAYS[anchor_date.weekday()]} {anchor_date.strftime('%d/%m')} "
+                f"{anchor_time.strftime('%H:%M')} giờ {city} ({vn_dt.strftime('%H:%M')} giờ VN)"
+            )
             events.append({
                 "date": vn_dt.date().isoformat(),
                 "datetime_vn": vn_dt.strftime("%d/%m"),
@@ -1390,11 +1552,11 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
     # (VD: EIA 10:30 ET mùa hè = 21:30 VN cùng ngày; mùa đông = 22:30 VN cùng ngày).
     scan_day = target - timedelta(days=2)
     while scan_day <= window_end:
-        if scan_day.weekday() == 2:  # Thứ Tư (ET)
-            _add_us_release(scan_day, dtime(10, 30), _EIA_API_TZ,
+        if scan_day.weekday() == 2:  # Thứ Tư (ET) — lùi lịch nếu tuần có ngày nghỉ lễ Mỹ
+            _add_us_release(eia_release_date(scan_day), dtime(10, 30), _EIA_API_TZ,
                              "Tồn kho dầu thô EIA (EIA Weekly Petroleum Status Report)", "Cao")
-        if scan_day.weekday() == 4:  # Thứ Sáu (CT)
-            _add_us_release(scan_day, dtime(12, 0), _BAKER_HUGHES_TZ,
+        if scan_day.weekday() == 4:  # Thứ Sáu (CT) — sớm hơn nếu Thứ Sáu/Thứ Năm là ngày nghỉ lễ Mỹ
+            _add_us_release(baker_hughes_release_date(scan_day), dtime(12, 0), _BAKER_HUGHES_TZ,
                              "Số giàn khoan Baker Hughes (Baker Hughes Rig Count)", "Trung")
         scan_day += timedelta(days=1)
 
@@ -1632,6 +1794,7 @@ YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
 - Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo tác động EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
 - Bullet đầu: giá đóng cửa EUA + biên độ phiên (dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên; nếu "Không có dữ liệu" → bỏ qua biên độ) + xu hướng 30 ngày.
 - Mỗi bullet mở đầu bằng tag đậm (**EUA:**, **Chính sách:**...). Nêu tin chính sách/địa chính trị ảnh hưởng EUA.
+- CHUYỂN ĐỔI NHIÊN LIỆU (thống nhất với Mục 2/3): than (API2/API4) TĂNG so với khí → khí rẻ hơn tương đối → phát điện chuyển sang khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → chuyển sang than → cầu EUA TĂNG. TUYỆT ĐỐI KHÔNG viết "than tăng hỗ trợ chi phí phát điện than/giữ nhu cầu EUA". Chỉ có %Δ, chưa có spread khí/than thực → ghi rõ "theo %Δ, chưa tính spread".
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm nếu bullet dựa trên 1 tin cụ thể ở trên), hoặc null nếu bullet chỉ dựa trên DỮ LIỆU GIÁ hệ thống (không phải tin tức) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
 
@@ -1783,6 +1946,7 @@ def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
     gasoil_crack_spread: str, target_date: str, topics_present: List[str],
     overrides: Optional[Dict[str, str]] = None, eua_technical_levels: str = "", fuel_spread: str = "",
+    prev_scenarios: str = "",
 ) -> tuple[str, str]:
     framework = _eua_framework(topics_present, full=True, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
@@ -1805,6 +1969,12 @@ XU HƯỚNG EUA 30 NGÀY:
 
 MỐC KỸ THUẬT EUA (tính sẵn từ OHLC thật — nguồn DUY NHẤT cho mức giá ở "trading_scenarios"):
 {eua_technical_levels or "Không có đủ dữ liệu mốc kỹ thuật — KHÔNG đưa mức giá cụ thể, direction = đi ngang."}
+
+KỊCH BẢN CỦA BÁO CÁO TRƯỚC (đối chiếu — người đọc so sánh các ngày với nhau):
+{prev_scenarios or "Không có."}
+NHẤT QUÁN VỚI BÁO CÁO TRƯỚC (BẮT BUỘC khi có kịch bản trước): nếu hôm nay đổi "direction"/xác suất của 1 horizon, hoặc dời Mục tiêu/cắt lỗ đáng kể, thì đoạn "**Tổng hợp:**" PHẢI có 1 câu ngắn nêu rõ điều chỉnh (cũ → mới) và lý do bằng dữ liệu; nếu kịch bản ngắn hạn trước đã đi NGƯỢC thực tế (giá đi ngược chiều dự báo) thì thừa nhận thẳng và hạ xác suất hoặc giải thích vì sao vẫn giữ — TUYỆT ĐỐI KHÔNG lặng lẽ đổi số.
+
+CÂN NHẮC BẰNG CHỨNG NGƯỢC CHIỀU (BẮT BUỘC): trước khi chốt "**Tổng hợp:**", rà các tin ở dưới đi NGƯỢC kết luận của bạn (vd nguồn cung dầu phục hồi, sản lượng kỷ lục, lạm phát/lãi suất tăng khi kết luận tăng giá) — tin ngược chiều có tác động thật phải được nêu trong "Phân tích" hoặc hạ xác suất kịch bản; không chỉ trình bày 1 chiều.
 
 TIN TỨC LIÊN QUAN (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, energy_renewable, energy_hydrogen, geopolitics, eu_policy, cbam, vcm, global_carbon_market, vietnam_carbon_policy):
 {news_text}
@@ -1877,6 +2047,8 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      • Nhất quán giá vào lệnh: nếu Entry khác giá đóng cửa hiện tại thì phải ghi điều kiện kích hoạt (vd "mua khi đóng cửa trên X"), và R:R PHẢI tính từ đúng giá vào lệnh đó (X), không dùng giá hiện tại. Entry không được "ngược" với điều kiện (vd mua khi giá đang dưới Entry mà không ghi chờ vượt).
      • Mức vô hiệu của kịch bản (trong "key_risk"/Phân tích) PHẢI trùng đúng mức cắt lỗ ở "Quản trị rủi ro" — không để 2 con số khác nhau (vd 87,01 và 87,15).
      • "price_zone" hỗ trợ/kháng cự KHÔNG được chứa giá đóng cửa hiện tại (vùng hỗ trợ phải nằm dưới giá, kháng cự nằm trên).
+     • ĐIỀU KIỆN ↔ ENTRY: "condition" dạng "đóng cửa trên X" (lệnh mua) thì Entry là "mua khi đóng cửa trên X" (giá vào = X), KHÔNG được "mua quanh" vùng thấp hơn X; tương tự "dưới X" cho lệnh bán. R:R tính từ đúng X.
+     • Kịch bản trung/dài hạn: mục tiêu PHẢI có phép suy ra từ dữ liệu (vd "+8% so với đóng cửa 87,14", "đỉnh 30 phiên"); không suy ra được → không đặt mức giá cụ thể. Luận điểm chính sách dài hạn (vd cắt phân bổ miễn phí) chỉ dùng khi có trong tin đã cung cấp.
      • Mỗi "Mục tiêu" ghi kèm cơ sở trong ngoặc ngắn (vd "(kháng cự 30 phiên)", "(đo biên độ)", "(+4% so với đóng cửa)"); mục tiêu không nêu được cơ sở → bỏ.
      • Không dùng cụm "không phải khuyến nghị giao dịch" trong nội dung — giao diện đã có lưu ý riêng.
 
@@ -1946,7 +2118,7 @@ def _prompt_section8(
     news_text: str, prev_events_text: str, target_date: str, recurring_events_text: str,
 ) -> tuple[str, str]:
     window_start = target_date
-    window_end = (datetime.strptime(target_date, "%Y-%m-%d").date() + timedelta(days=6)).isoformat()
+    window_end = (datetime.strptime(target_date, "%Y-%m-%d").date() + timedelta(days=CALENDAR_WINDOW_DAYS)).isoformat()
     system = f"Bạn là chuyên gia lịch trình thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date} (Giờ Việt Nam, UTC+7)
 CỬA SỔ HIỂN THỊ: CHỈ liệt kê sự kiện có ngày diễn ra ("date") từ {window_start} đến {window_end} (đúng 7 ngày kể từ ngày báo cáo) — TUYỆT ĐỐI KHÔNG liệt kê sự kiện có "date" trước {window_start}, TRỪ đúng các sự kiện thuộc nhóm "Đã diễn ra, CẦN cập nhật kết quả" bên dưới.
@@ -1981,6 +2153,13 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 
 
 
+# Hồ sơ ngắn của SIM cho prompt gợi ý kinh doanh — gợi ý phải bám ngành lõi, không lan sang lĩnh vực xa.
+SIM_PROFILE = (
+    "SIM (Stavian Industrial Metal) là doanh nghiệp Việt Nam kinh doanh KIM LOẠI (nhôm, thép, đồng, kẽm...) — "
+    "có khách hàng nhôm/thép xuất khẩu sang EU (chịu CBAM), quan tâm chi phí năng lượng/carbon trong chuỗi cung ứng kim loại."
+)
+
+
 def _prompt_biz_recommendation(
     news_text: str, prices_text: str, eua_trend: str, target_date: str,
     tracking_text: str = "Không có.", valid_codes: str = "", dismissed_text: str = "Không có.",
@@ -1988,7 +2167,10 @@ def _prompt_biz_recommendation(
 ) -> tuple[str, str]:
     """`news_only=True`: báo cáo không có phiên giá (is_no_price_report) — bỏ khối giá
     khỏi prompt, gợi ý chỉ dựa trên tin tức, "trigger" dạng tin tức/chính sách."""
-    system = f"Bạn là chuyên gia tư vấn kinh doanh về carbon và năng lượng cho doanh nghiệp Việt Nam (SIM).\n{CONCISENESS_RULE}"
+    system = (
+        f"Bạn là chuyên gia tư vấn kinh doanh về carbon và năng lượng cho doanh nghiệp Việt Nam (SIM).\n"
+        f"{SIM_PROFILE}\n{CONCISENESS_RULE}"
+    )
     if news_only:
         price_block = (
             f"{_NO_PRICE_PROMPT_RULE}\n"
@@ -2024,11 +2206,57 @@ B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân 
 CBAM: SIM có khách hàng nhôm/thép xuất khẩu sang EU nên nếu tin tức/dữ liệu có CBAM (giá CBAM, chính sách, nhôm/thép) thì BẮT BUỘC có ít nhất 1 gợi ý về CBAM, kèm phép tính chi phí theo tấn sản phẩm: chi phí CBAM/tấn ≈ (phát thải nhúng tCO2/tấn − phần phân bổ miễn phí) × giá CBAM (EUR/tCO2) — dùng giá CBAM từ dữ liệu giá nếu có; phát thải nhúng/tấn KHÔNG có trong dữ liệu → đưa ví dụ minh họa gắn nhãn "giả định" hoặc để khách tự điền, KHÔNG bịa như số thật.
 QUY TẮC NỘI DUNG: gợi ý dài hạn phải có 1 bước thí điểm cụ thể (quy mô/đối tượng/thời gian) hoặc chỉ tiêu tài chính gắn với dữ kiện trong tin tức — KHÔNG chỉ nêu khái niệm chung (BII, NBS, điện hóa nhiệt...). Số tiền/cam kết của 1 tổ chức phải khớp với bài được trích, không tự đổi số.
 QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng. TỐI ĐA 3 gợi ý MỖI bảng (short_term và long_term riêng biệt) — nếu có nhiều hơn 3 gợi ý đủ căn cứ, CHỈ giữ lại ĐÚNG 3 gợi ý TRỌNG TÂM/có căn cứ mạnh nhất, bỏ phần còn lại (KHÔNG cố nhồi hết vào 1 bảng, sẽ làm output quá dài và bị cắt).
+QUY TẮC NGÀNH LÕI: mọi gợi ý (nhất là "long_term") PHẢI gắn với hoạt động kinh doanh KIM LOẠI của SIM (nhôm, thép, đồng, kẽm — sản xuất/thương mại, khách hàng xuất khẩu EU, chi phí năng lượng/carbon của chuỗi cung ứng kim loại). Ý xa ngành lõi (vd bếp sạch, lúa phát thải thấp, MRV nông nghiệp) → KHÔNG đưa vào, kể cả khi tin hôm nay có.
+QUY TẮC "trigger": phải CỤ THỂ, MỘT CHIỀU, kiểm chứng được — tin tức: nêu đúng sự kiện sẽ xảy ra (vd "Khi Nga và Ukraine công bố thoả thuận ngừng tấn công hạ tầng năng lượng có hiệu lực"), KHÔNG viết mơ hồ kiểu "xác nhận nội dung và phạm vi..."; ngưỡng giá: CHỈ dùng mã có trong bảng giá (mã không có — vd khí Henry Hub/NG — KHÔNG dùng làm ngưỡng) và BẮT BUỘC kèm "trigger_rule".
 Lưu ý: KHÔNG dùng câu lệnh mua/bán tài chính trực tiếp.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 {{"biz": {{"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [{{"trigger": "Nếu ...", "trigger_rule": null, "action": "...", "reason": "..."}}], "long_term": [{{"opportunity": "...", "solution": "...", "expectation": "..."}}]}}}}"""
     return system, user
+
+
+def _scenario_math_issues(sec3: Dict[str, Any], chart_data: List[Dict], prices: List[Dict]) -> List[str]:
+    """Lỗi số học của "trading_scenarios" (R:R, điều kiện ↔ Entry, cắt lỗ sát đáy/đỉnh phiên, sai
+    phía) — dùng ĐÚNG bộ kiểm tra của Jack QC (services/report_qc.py) để bản sinh ra qua được QC."""
+    from services.report_qc import check_scenarios  # import muộn: report_qc import module này
+
+    issues = check_scenarios({"2": {"chart_data": chart_data, "prices": prices}, "3": sec3})
+    return [
+        it["message"] for it in issues
+        if it["severity"] in ("error", "warning") and ".trading_strategy" in it.get("field_path", "")
+    ]
+
+
+async def _revise_scenarios_if_invalid(
+    sec3: Dict[str, Any], system_prompt: str, user_prompt: str, chart_data: List[Dict], prices: List[Dict],
+) -> Dict[str, Any]:
+    """Mục 3 vi phạm quy tắc số học của kịch bản → gọi LLM sửa ĐÚNG 1 lần, kèm danh sách lỗi.
+    Chỉ nhận bản sửa nếu ít lỗi hơn (và parse được) — không thì giữ bản gốc, Jack QC sẽ báo."""
+    problems = _scenario_math_issues(sec3, chart_data, prices)
+    if not problems:
+        return sec3
+    logger.warning("[REPORT] Mục 3: kịch bản giao dịch vi phạm %d quy tắc, yêu cầu sửa: %s", len(problems), problems)
+    feedback = (
+        f"{user_prompt}\n\nBẢN TRƯỚC CỦA BẠN:\n{json.dumps({'3': sec3}, ensure_ascii=False)}\n\n"
+        "BẢN TRÊN VI PHẠM QUY TẮC SỐ HỌC CỦA \"trading_scenarios\" — sửa đúng các lỗi sau (đổi Entry/Mục tiêu/"
+        "cắt lỗ/điều kiện theo MỐC KỸ THUẬT, hoặc đổi direction thành \"đi ngang\" nếu không đạt được R:R ≥ 1,5), "
+        "giữ nguyên các phần khác, trả về TOÀN BỘ JSON mục 3:\n- " + "\n- ".join(problems)
+    )
+    try:
+        raw = await _call_llm(feedback, system=system_prompt, max_tokens=SECTION_MAX_TOKENS.get("3", 8192))
+    except Exception:
+        logger.exception("[REPORT] Mục 3: gọi LLM sửa kịch bản lỗi — giữ bản gốc.")
+        return sec3
+    parsed = _extract_json(raw) if raw else None
+    revised = parsed.get("3") if isinstance(parsed, dict) and isinstance(parsed.get("3"), dict) else None
+    if not revised or _has_cjk(revised):
+        return sec3
+    remaining = _scenario_math_issues(revised, chart_data, prices)
+    if len(remaining) >= len(problems):
+        logger.warning("[REPORT] Mục 3: bản sửa không tốt hơn (%d lỗi) — giữ bản gốc.", len(remaining))
+        return sec3
+    logger.info("[REPORT] Mục 3: đã sửa kịch bản, còn %d lỗi.", len(remaining))
+    return revised
 
 
 async def _check_biz_triggers_llm(
@@ -2052,6 +2280,8 @@ TIN TỨC TRONG NGÀY đã đánh số [N] — CHỈ trích dẫn số có thậ
 
 YÊU CẦU: Với TỪNG gợi ý [S<id>], xác định tin tức trong ngày có cho thấy "Tình huống" của gợi ý ĐÃ THỰC SỰ XẢY RA hay chưa.
 - "triggered": true CHỈ khi có bài báo nêu RÕ sự kiện/số liệu khớp với điều kiện (không suy diễn, không "có thể sắp xảy ra"); khi đó BẮT BUỘC "source_index" là số [N] của bài đó và "evidence" là 1 câu ngắn nêu điều đã xảy ra.
+- Khớp ĐẦY ĐỦ mọi vế của điều kiện mới tính. Sự kiện chỉ LIÊN QUAN cùng chủ đề, khớp 1 phần, hoặc NGƯỢC với điều kiện (vd điều kiện "xác nhận ngừng bắn" nhưng tin là tập kích/đổ vỡ ngừng bắn) → "triggered": false.
+- Điều kiện là NGƯỠNG GIÁ (vd "đóng cửa trên X", "> X USD") → LUÔN "triggered": false (hệ thống tự so với giá thật, không xét qua tin tức).
 - Chưa đủ căn cứ → "triggered": false, "source_index": null, "evidence": null.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ:
@@ -2218,10 +2448,19 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             continue  # Sự kiện tương lai — không inject outcome
 
         event_name = ev.get("event", "")
-        if "EIA" in event_name and eia_data:
-            ev["outcome"] = format_eia_outcome(eia_data)
-        elif "Baker Hughes" in event_name and bh_data:
-            ev["outcome"] = format_bh_outcome(bh_data)
+        data = eia_data if "EIA" in event_name else bh_data if "Baker Hughes" in event_name else None
+        if data is None:
+            continue
+        # File nguồn luôn là kỳ MỚI NHẤT đã công bố — chỉ gắn khi đúng tuần của sự kiện; lệch tuần
+        # (kỳ này chưa công bố/lùi lịch) mà gắn vào sẽ thành số của tuần trước mang nhãn ngày mới.
+        if not data_matches_event(event_name, ev_date, data.get("week_ending")):
+            logger.warning(
+                "[REPORT] Mục 8: %s ngày %s cần số tuần kết thúc %s nhưng nguồn đang là %s — không gắn.",
+                event_name, ev_date_str, expected_data_week_ending(event_name, ev_date), data.get("week_ending"),
+            )
+            ev["outcome"] = "Chưa có số liệu kỳ này tại thời điểm lập báo cáo"
+            continue
+        ev["outcome"] = format_eia_outcome(data) if "EIA" in event_name else format_bh_outcome(data)
 
     recurring_events_text = _format_recurring_calendar_events(recurring_calendar_events)
 
@@ -2290,16 +2529,23 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     triggered_suggestions: Dict[int, Dict[str, Optional[str]]] = {}
     llm_check_candidates = []
     for s in active_suggestions:
-        if s.trigger_rule:
-            evidence = biz_memory.check_price_rule(s.trigger_rule, prices)
+        # LLM quên trả trigger_rule (hoặc báo cáo CN/T2 ép null) nhưng câu tình huống là ngưỡng
+        # giá → tự dựng rule từ câu chữ để so với giá thật, KHÔNG để LLM đọc tin rồi tự kết luận.
+        rule = s.trigger_rule or biz_memory.infer_price_rule(s.trigger, prices)
+        if rule:
+            evidence = biz_memory.check_price_rule(rule, prices)
             if evidence:
                 triggered_suggestions[s.id] = {
                     "evidence": evidence,
                     "source_name": "Giá chốt phiên (Barchart)",
                     "source_url": next(
-                        (p.get("source_url") for p in prices if p.get("code") == s.trigger_rule.get("code")), None
+                        (p.get("source_url") for p in prices if p.get("code") == rule.get("code")), None
                     ),
                 }
+        elif biz_memory.looks_like_price_condition(s.trigger):
+            # Ngưỡng giá của mã hệ thống KHÔNG theo dõi (vd NG/Henry Hub) — không kiểm chứng được
+            # bằng số liệu → giữ trạng thái chờ, không cho LLM suy ra "đã kích hoạt" từ tin tức.
+            logger.info("[REPORT] Gợi ý S%s: ngưỡng giá không có mã trong bảng giá — không xét kích hoạt.", s.id)
         else:
             llm_check_candidates.append(s)
     biz_news_text, biz_index_lookup = _filter_news_with_index(news_by_topic, "biz", max_articles=15)
@@ -2365,6 +2611,10 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 overrides=eua_framework_overrides,
                 eua_technical_levels=eua_technical_levels,
                 fuel_spread=fuel_spread,
+                prev_scenarios=await get_previous_scenarios_text(
+                    session, report_date,
+                    next((p.get("close") for p in prices if str(p.get("code", "")).upper() == "EUA"), None),
+                ),
             )),
             ("4", _prompt_section4(
                 section4_news_text,
@@ -2437,6 +2687,8 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 )
                 sec_data = FALLBACKS[sec_key]
 
+            if sec_key == "3" and not no_price and sec_data is not FALLBACKS["3"]:
+                sec_data = await _revise_scenarios_if_invalid(sec_data, system_prompt, user_prompt, chart_data, prices)
             return sec_key, sec_data
 
     tasks = [_process_section(k, sys_p, usr_p) for k, (sys_p, usr_p) in SECTIONS]
