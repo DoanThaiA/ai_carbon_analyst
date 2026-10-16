@@ -77,6 +77,43 @@ GLOSSARY: Dict[str, str] = {
 # Nhãn xu hướng EUA ngay sau "**Tổng hợp:**" (EUA_SENTIMENT_RE ở frontend).
 SENTIMENT_TAGS = {"TÍCH CỰC": "POSITIVE", "TRUNG LẬP": "NEUTRAL", "TIÊU CỰC": "NEGATIVE"}
 
+# Chuỗi cố định do bộ sinh viết (tiêu đề mục...) → dịch bằng bảng, khớp NGUYÊN chuỗi. Argos dịch
+# rác với cụm ngắn (thử thật: "Lịch sự kiện 7 ngày tới" → "Synchronising folder").
+FIXED_STRINGS: Dict[str, str] = {
+    "Tóm tắt điều hành": "Executive summary",
+    "Bảng giá nhanh": "Price snapshot",
+    "Diễn biến chính": "Key developments",
+    "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA":
+        "Analysis of related energy factors and policies affecting EUA prices",
+    "Phân tích tác động của tin tức tới EUA (không có phiên giao dịch)":
+        "News impact on EUA (no trading session)",
+    "Cập nhật tín chỉ carbon & CBAM": "Carbon credits & CBAM update",
+    "Chi tiết các tin tức chính": "Key news in detail",
+    "Lịch sự kiện 7 ngày tới": "Events calendar — next 7 days",
+    "Nguồn tham khảo": "References",
+    "Gợi ý kinh doanh & giải pháp cho SIM": "Business suggestions & solutions for SIM",
+    "Không có diễn biến trọng yếu.": "No significant developments.",
+    "Không thể sinh nội dung tự động.": "Content could not be generated automatically.",
+}
+
+# Thẻ chủ đề cạnh bài viết Mục 6 (khoá "topics", nhãn lấy từ report_generator.TOPIC_DISPLAY_LABELS)
+# — nhãn cố định nên dịch bằng bảng, không qua máy dịch. Thêm topic mới thì bổ sung ở đây.
+TOPIC_LABELS_EN: Dict[str, str] = {
+    "EUA/ETS": "EUA/ETS",
+    "Khí gas": "Gas",
+    "Điện châu Âu": "European power",
+    "Than": "Coal",
+    "Dầu": "Oil",
+    "Năng lượng tái tạo": "Renewables",
+    "Hydrogen": "Hydrogen",
+    "Địa chính trị": "Geopolitics",
+    "Chính sách EU": "EU policy",
+    "CBAM": "CBAM",
+    "VCM": "VCM",
+    "Thị trường carbon toàn cầu": "Global carbon market",
+    "Chính sách carbon VN": "Vietnam carbon policy",
+}
+
 # Tiền tố dòng tiêu đề nhóm Mục 3 — dòng bắt đầu bằng "<Tên nhóm>:" (không bold).
 GROUP_PREFIXES = ("Năng lượng & nhiên liệu hóa thạch:", "Hạn ngạch & tín chỉ carbon:", "Chính sách:")
 
@@ -222,6 +259,8 @@ def _line_parts(line: str) -> List[Part]:
 def split_for_translation(text: str) -> List[Part]:
     if text in KEEP_VERBATIM or not _has_vietnamese(text):
         return [(False, text)]
+    if text.strip() in FIXED_STRINGS:
+        return [(False, FIXED_STRINGS[text.strip()])]
     parts: List[Part] = []
     for i, line in enumerate(text.split("\n")):
         if i:
@@ -246,6 +285,8 @@ def _rebuild(node: Any, key: Optional[str], mt: Dict[str, str]) -> Any:
         return {k: _rebuild(v, k, mt) for k, v in node.items()}
     if isinstance(node, list):
         return [_rebuild(v, key, mt) for v in node]
+    if isinstance(node, str) and key == "topics":
+        return TOPIC_LABELS_EN.get(node, node)
     if isinstance(node, str) and key not in PROTECTED_KEYS:
         return "".join(mt.get(t, t) if needs else t for needs, t in split_for_translation(node))
     return node
@@ -334,12 +375,26 @@ def unmask_segment(translated: str, tokens: Sequence[str], pattern: "re.Pattern[
     return pattern.sub(restore, translated)
 
 
-async def translate_report_content(content: dict, translator: Translator) -> dict:
-    """Bản dịch tiếng Anh của `content` (cùng cấu trúc). Raise TranslationError nếu máy dịch lỗi."""
-    segments: List[str] = []
-    _collect(content, None, segments)
-    masked = {seg: mask_segment(seg) for seg in dict.fromkeys(segments)}
-    mt: Dict[str, str] = {}
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;!?])\s+(?=\S)")
+
+
+def _raw_output_ok(translated: str, tokens: Sequence[str]) -> bool:
+    """Bản dịch KHÔNG che (bước dự phòng) chỉ được nhận khi mọi số/mã/đơn vị còn nguyên văn
+    và đoạn gốc không chứa thuật ngữ cần dịch cố định (TERMS)."""
+    if not translated or any(t.lower() in TERMS for t in tokens):
+        return False
+    normalized = re.sub(r"(?<=\d),(?=\d)", ".", translated)
+    return all(_restore_token(t) in normalized or t in translated for t in tokens)
+
+
+async def _translate_segments(segments: Sequence[str], translator: Translator) -> Dict[str, str]:
+    """Dịch các đoạn (đã khử trùng lặp) theo thứ tự chiến lược, đoạn nào xong thì thôi:
+    1-2. che số/mã bằng placeholder kiểu "X0X" rồi "[0]";
+    3. gửi nguyên văn, chỉ nhận khi số/mã còn y nguyên (Argos hay trả rác cho đoạn NGẮN có
+       placeholder — thử thật: "Lịch sự kiện [0] ngày tới" → "Organisation").
+    Đoạn không dịch được thì không có trong kết quả."""
+    masked = {seg: mask_segment(seg) for seg in segments}
+    done: Dict[str, str] = {}
     pending = list(masked)
     for fmt, pattern in PLACEHOLDER_STYLES:
         if not pending:
@@ -351,13 +406,42 @@ async def translate_report_content(content: dict, translator: Translator) -> dic
             m, tokens = masked[seg]
             out = unmask_segment(by_text.get(_styled(m, fmt), "").strip(), tokens, pattern)
             if out:
-                mt[seg] = out
+                done[seg] = out
             else:
                 still.append(seg)
         pending = still
-    if pending:
-        logger.warning("[TRANSLATE] %d/%d đoạn giữ nguyên tiếng Việt do máy dịch làm hỏng placeholder.",
-                       len(pending), len(masked))
+    raw_candidates = [seg for seg in pending if not any(t.lower() in TERMS for t in masked[seg][1])]
+    if raw_candidates:
+        for seg, out in zip(raw_candidates, await translator.translate_batch(raw_candidates)):
+            out = out.strip()
+            if _raw_output_ok(out, masked[seg][1]):
+                done[seg] = out
+    return done
+
+
+async def translate_report_content(content: dict, translator: Translator) -> dict:
+    """Bản dịch tiếng Anh của `content` (cùng cấu trúc). Raise TranslationError nếu máy dịch lỗi."""
+    segments: List[str] = []
+    _collect(content, None, segments)
+    unique = list(dict.fromkeys(segments))
+    mt = await _translate_segments(unique, translator)
+
+    # Dự phòng cuối: đoạn nhiều câu còn hỏng → tách từng câu dịch riêng (câu ngắn ít mất placeholder).
+    multi = {seg: _SENTENCE_SPLIT_RE.split(seg) for seg in unique if seg not in mt}
+    multi = {seg: parts for seg, parts in multi.items() if len(parts) > 1}
+    if multi:
+        pieces = list(dict.fromkeys(p for parts in multi.values() for p in parts))
+        piece_mt = await _translate_segments(pieces, translator)
+        for seg, parts in multi.items():
+            if all(p in piece_mt for p in parts):
+                mt[seg] = " ".join(piece_mt[p] for p in parts)
+
+    failed = [seg for seg in unique if seg not in mt]
+    if failed:
+        logger.warning(
+            "[TRANSLATE] %d/%d đoạn giữ nguyên tiếng Việt (máy dịch làm hỏng số/mã), vd: %s",
+            len(failed), len(unique), " | ".join(repr(f[:80]) for f in failed[:5]),
+        )
     return _rebuild(content, None, mt)
 
 

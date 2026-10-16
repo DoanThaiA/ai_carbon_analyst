@@ -114,3 +114,54 @@ def test_retries_with_second_placeholder_style():
 def test_keeps_vietnamese_when_placeholders_lost():
     out = asyncio.run(translate_report_content({"text": "giá EUA giảm 3%"}, _DropPlaceholderOnce(always_fail=True)))
     assert out["text"] == "giá EUA giảm 3%"
+
+
+def test_topic_tags_use_fixed_labels():
+    out, _ = _tr({"6": {"international": [{"title": "t", "topics": ["Năng lượng tái tạo", "Địa chính trị", "Lạ"]}]}})
+    assert out["6"]["international"][0]["topics"] == ["Renewables", "Geopolitics", "Lạ"]
+
+
+def test_topic_labels_cover_generator():
+    from services.report_generator import TOPIC_DISPLAY_LABELS
+    from services.report_translation import TOPIC_LABELS_EN
+    assert set(TOPIC_DISPLAY_LABELS.values()) <= set(TOPIC_LABELS_EN)
+
+
+class _GarbageWithPlaceholders(Translator):
+    """Đoạn có placeholder → rác; nguyên văn → dịch giữ số; câu đơn lẻ → dịch được."""
+
+    async def translate_batch(self, texts):
+        out = []
+        for t in texts:
+            if "X0X" in t or "[0]" in t:
+                out.append("Organisation" if "Lịch" in t or "và" in t else f"EN {t}")
+            else:
+                out.append("Event calendar next 7 days" if t.startswith("Lịch") else "garbage")
+        return out
+
+
+def test_raw_fallback_accepts_only_when_numbers_kept():
+    out = asyncio.run(translate_report_content({"title": "Lịch họp 7 ngày tới"}, _GarbageWithPlaceholders()))
+    assert out["title"] == "Event calendar next 7 days"
+
+
+def test_sentence_split_fallback():
+    out = asyncio.run(translate_report_content(
+        {"text": "Giá EUA giảm 2% và yếu. Giá TTF tăng 1%."}, _GarbageWithPlaceholders()))
+    # Cả đoạn hỏng → tách câu; câu 1 vẫn hỏng nên giữ nguyên tiếng Việt cả đoạn (không ghép nửa vời)
+    assert out["text"] == "Giá EUA giảm 2% và yếu. Giá TTF tăng 1%."
+
+
+class _FailsOnMultiSentence(Translator):
+    async def translate_batch(self, texts):
+        return ["broken" if ". " in t else f"EN({t})" for t in texts]
+
+
+def test_sentence_split_fallback_success():
+    out = asyncio.run(translate_report_content({"text": "Giá EUA giảm 2%. Giá TTF tăng 1%."}, _FailsOnMultiSentence()))
+    assert out["text"] == "EN(Giá EUA giảm 2%.) EN(Giá TTF tăng 1%.)"
+
+
+def test_fixed_section_titles_not_machine_translated():
+    out, fake = _tr({"8": {"title": "Lịch sự kiện 7 ngày tới", "events": []}})
+    assert out["8"]["title"] == "Events calendar — next 7 days" and fake.calls == []
