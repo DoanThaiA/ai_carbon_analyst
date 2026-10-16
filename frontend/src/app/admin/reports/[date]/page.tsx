@@ -4,18 +4,21 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download, Undo2 } from "lucide-react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
 import { ReportEditor } from "@/components/ReportEditor";
 import { QuoteChat } from "@/components/QuoteChat";
+import { EnglishFallbackNotice } from "@/components/EnglishFallbackNotice";
+import { localizeReport, removeBizFromContentEn } from "@/lib/reportLocale";
 
 const POLL_INTERVAL_MS = 5000;
 
 export default function AdminReportReview() {
   const t = useTranslations("adminMiscReportDetail");
+  const locale = useLocale();
   const params = useParams();
   const router = useRouter();
   const date = params.date as string;
@@ -117,7 +120,11 @@ export default function AdminReportReview() {
       const res = await api.post(`/api/admin/reports/${date}/biz-suggestions/${id}/dismiss`, {
         reason: reason.trim() || null,
       });
-      setReport((prev) => (prev ? { ...prev, content: { ...prev.content, biz: res.data.biz } } : prev));
+      setReport((prev) => (prev ? {
+        ...prev,
+        content: { ...prev.content, biz: res.data.biz },
+        content_en: prev.content_en ? removeBizFromContentEn(prev.content_en, id) : prev.content_en,
+      } : prev));
     } catch (err: any) {
       alert(err.response?.data?.detail || t("dismissError"));
     }
@@ -134,7 +141,9 @@ export default function AdminReportReview() {
     setSaving(true);
     try {
       await api.put(`/api/admin/reports/${date}`, { content: editContent });
-      setReport(prev => prev ? { ...prev, content: editContent } : null);
+      // Bản dịch cũ không còn khớp nội dung vừa sửa — backend dịch lại nền; tới khi tải lại
+      // trang, giao diện EN hiện bản tiếng Việt kèm thông báo.
+      setReport(prev => prev ? { ...prev, content: editContent, content_en: null } : null);
       setIsEditing(false);
     } catch (err: any) {
       alert(err.response?.data?.detail || t("saveError"));
@@ -296,9 +305,18 @@ export default function AdminReportReview() {
           </button>
         </div>
       ) : (
-        <QuoteChat reportDate={date}>
-          <ReportDocument report={report} onDismissBizSuggestion={handleDismissBizSuggestion} />
-        </QuoteChat>
+        (() => {
+          // Giao diện EN → xem content_en; sửa nội dung (ReportEditor) luôn trên bản tiếng Việt.
+          const { report: shown, fallback } = localizeReport(report, locale);
+          return (
+            <>
+              {fallback && <EnglishFallbackNotice />}
+              <QuoteChat reportDate={date}>
+                <ReportDocument report={shown} onDismissBizSuggestion={handleDismissBizSuggestion} />
+              </QuoteChat>
+            </>
+          );
+        })()
       )}
     </div>
   );

@@ -9,7 +9,42 @@ import {
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X, Trash2,
   Leaf, Calendar, RefreshCw
 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
+import { format as formatDateFns } from "date-fns";
 import type { Report } from "@/lib/types";
+import { dateFnsLocale } from "@/i18n/dateLocale";
+
+// Hàm dịch của namespace "reportDoc" — truyền xuống các hàm thuần (không gọi được hook).
+type ReportT = ReturnType<typeof useTranslations>;
+
+// Giá trị enum trong content (horizon/direction/probability/impact/heading) LUÔN là
+// tiếng Việt, kể cả trong content_en (backend cố ý không dịch để mọi phép so sánh
+// === ở dưới giữ nguyên) — chỉ đổi nhãn khi HIỂN THỊ. Giá trị lạ → hiện nguyên văn.
+const ENUM_KEYS: Record<string, string> = {
+  "ngắn hạn": "shortTerm",
+  "trung hạn": "midTerm",
+  "dài hạn": "longTerm",
+  "tăng": "up",
+  "giảm": "down",
+  "đi ngang": "sideways",
+  "trung lập": "neutral",
+  "Cao": "high",
+  "Trung bình": "medium",
+  "Trung": "mediumShort",
+  "Thấp": "low",
+  "Phân tích": "headingAnalysis",
+  "Cần theo dõi": "headingWatch",
+  "Diễn biến chính": "headingKeyDev",
+};
+
+function useEnumLabel() {
+  const t = useTranslations("reportDoc");
+  return (value: string | null | undefined): string => {
+    if (!value) return value ?? "";
+    const key = ENUM_KEYS[value];
+    return key ? t(`enum.${key}`) : value;
+  };
+}
 
 // "YYYY-MM-DD" -> "dd/MM" (nhãn trục X) — tránh phụ thuộc date-fns chỉ cho 1 format đơn giản.
 function formatShortDate(dateStr: string) {
@@ -27,13 +62,14 @@ function formatCompactPriceNumber(numStr: string): string {
 }
 
 // Các mục trong menu hamburger điều hướng (id khớp với <section id> trong báo cáo).
+// labelKey: khoá dịch trong reportDoc.nav.*
 const REPORT_SECTIONS = [
-  { id: "section-highlights", label: "Tóm tắt điều hành" },
-  { id: "section-market", label: "Diễn biến thị trường" },
-  { id: "section-analysis", label: "Phân tích & Giao dịch" },
-  { id: "section-news", label: "Tin tức chi tiết" },
-  { id: "section-sources", label: "Nguồn tham khảo" },
-];
+  { id: "section-highlights", labelKey: "highlights" },
+  { id: "section-market", labelKey: "market" },
+  { id: "section-analysis", labelKey: "analysis" },
+  { id: "section-news", labelKey: "news" },
+  { id: "section-sources", labelKey: "sources" },
+] as const;
 
 function formatFullDate(dateStr: string) {
   const parts = dateStr.split("-");
@@ -57,10 +93,11 @@ const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: strin
 // Nhãn xu hướng dạng mũi tên + chữ cho thẻ KHUYẾN NGHỊ VỊ THẾ (Phần 2) — chỉ là
 // cách gọi tên khác của cùng "direction" (tăng/giảm/đi ngang) đã có sẵn trong
 // trading_scenarios, KHÔNG phải trường dữ liệu mới/suy diễn thêm.
-const TREND_META: Record<string, { arrow: string; label: string; className: string }> = {
-  "tăng": { arrow: "▲", label: "NGHIÊNG TĂNG", className: "text-up" },
-  "giảm": { arrow: "▼", label: "NGHIÊNG GIẢM", className: "text-down" },
-  "đi ngang": { arrow: "↔", label: "GIẰNG CO", className: "text-blue-700" },
+// labelKey: khoá dịch reportDoc.trend.* / reportDoc.position.*
+const TREND_META: Record<string, { arrow: string; labelKey: "up" | "down" | "sideways"; className: string }> = {
+  "tăng": { arrow: "▲", labelKey: "up", className: "text-up" },
+  "giảm": { arrow: "▼", labelKey: "down", className: "text-down" },
+  "đi ngang": { arrow: "↔", labelKey: "sideways", className: "text-blue-700" },
 };
 
 // Nhãn tác động của từng SỰ KIỆN TIN TỨC trong "Diễn biến chính" lên cán cân
@@ -73,11 +110,7 @@ const IMPACT_META: Record<string, { arrow: string; label: string; badge: string;
 
 // "Khuyến nghị vị thế" cũng suy ra trực tiếp từ "direction" có sẵn của kịch
 // bản "ngắn hạn" — không phải khuyến nghị đầu tư mới do LLM tự sinh riêng.
-const POSITION_META: Record<string, string> = {
-  "tăng": "MUA (LONG) — theo xu hướng ngắn hạn",
-  "giảm": "BÁN (SHORT) — theo xu hướng ngắn hạn",
-  "đi ngang": "CHỜ — không mở mới, không đóng vị thế đang có",
-};
+// (Nhãn hiển thị: reportDoc.position.<labelKey của TREND_META>.)
 
 // Mục 1: mỗi bullet mở đầu bằng 1 tag tự do do LLM đặt tên (EUA, Chính sách, Địa
 // chính trị...) — không phải enum cố định nên không thể map tay từng giá trị.
@@ -140,7 +173,7 @@ function priceNums(text: string): number[] {
   const clean = text
     .replace(/\*\*/g, "")
     .replace(/EUR\s*\/\s*tCO[₂2]/gi, "")
-    .replace(/\d+(?:[.,]\d+)?\s*(?:%|phiên|ngày|tuần|tháng)/gi, "")
+    .replace(/\d+(?:[.,]\d+)?\s*(?:%|phiên|ngày|tuần|tháng|sessions?\b|days?\b|weeks?\b|months?\b)/gi, "")
     .replace(/tCO[₂2]/gi, "");
   return (clean.match(/\d+(?:[.,]\d+)?/g) ?? [])
     .map(m => parseFloat(m.replace(",", ".")))
@@ -158,7 +191,8 @@ function splitBuySell(body: string) {
   for (const c of clauses(body)) {
     const nums = priceNums(c);
     if (!nums.length) continue;
-    const isBuy = /mua/i.test(c), isSell = /bán/i.test(c);
+    // Bản tiếng Anh (content_en): "buy"/"sell" thay cho "mua"/"bán".
+    const isBuy = /mua|\bbuy/i.test(c), isSell = /bán|\bsell/i.test(c);
     if (isBuy && !isSell) buy.push(...nums);
     else if (isSell && !isBuy) sell.push(...nums);
     else free.push(...nums);
@@ -191,8 +225,9 @@ function parseSignalLevels(
   }
 
   // Cắt lỗ: ưu tiên từ khoá "dưới"/"trên" ngay trước số; không có → theo chiều giá.
-  const below = riskBody.match(/dưới[^\d]{0,15}(\d+(?:[.,]\d+)?)/i);
-  const above = riskBody.match(/trên[^\d]{0,15}(\d+(?:[.,]\d+)?)/i);
+  // Bản tiếng Anh: "below"/"under" ↔ "dưới", "above"/"over" ↔ "trên".
+  const below = riskBody.match(/(?:dưới|\bbelow\b|\bunder\b)[^\d]{0,15}(\d+(?:[.,]\d+)?)/i);
+  const above = riskBody.match(/(?:trên|\babove\b|\bover\b)[^\d]{0,15}(\d+(?:[.,]\d+)?)/i);
   const num = (m: RegExpMatchArray | null) => (m ? parseFloat(m[1].replace(",", ".")) : undefined);
   let stopLower = num(below), stopUpper = num(above);
   if (stopLower === undefined && stopUpper === undefined) {
@@ -209,11 +244,13 @@ function parseSignalLevels(
   return { entryBuy, entrySell, targetBuy, targetSell, stopLower, stopUpper };
 }
 
-// 84.8 → "84,80" (quy ước dấu phẩy thập phân như phần còn lại của báo cáo)
-function fmtPrice(n: number): string {
-  return n.toFixed(2).replace(".", ",");
+// 84.8 → "84,80" (quy ước dấu phẩy thập phân như phần còn lại của báo cáo);
+// giao diện tiếng Anh → "84.80".
+function fmtPrice(n: number, locale?: string): string {
+  const s = n.toFixed(2);
+  return locale === "en" ? s : s.replace(".", ",");
 }
-const fmtRange = (r: number[]) => r.map(fmtPrice).join("–");
+const fmtRange = (r: number[], locale?: string) => r.map(n => fmtPrice(n, locale)).join("–");
 const mid = (r: number[]) => r.reduce((a, b) => a + b, 0) / r.length;
 
 // In đậm + tô màu mọi con số trong văn bản (giá, %, số phiên…) để mắt bắt ngay.
@@ -233,6 +270,8 @@ function HighlightNumbers({ text }: { text: string }) {
 // Thang giá: Cắt lỗ — Vào lệnh — Mục tiêu trên 1 trục, tô đỏ vùng rủi ro / xanh
 // vùng lợi nhuận, vạch "Hiện tại" là giá đóng cửa gần nhất của chart_data.
 function SignalLadder({ stop, entry, target, last }: { stop: number; entry: number; target: number; last?: number }) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
   const pts = [stop, entry, target, ...(last !== undefined ? [last] : [])];
   const lo = Math.min(...pts), hi = Math.max(...pts);
   const pad = (hi - lo) * 0.08 || 1;
@@ -240,9 +279,9 @@ function SignalLadder({ stop, entry, target, last }: { stop: number; entry: numb
   const pct = (n: number) => ((n - min) / span) * 100;
   const zone = (a: number, b: number) => ({ left: `${pct(Math.min(a, b))}%`, width: `${Math.abs(pct(a) - pct(b))}%` });
   const marks = [
-    { key: "Cắt lỗ", v: stop, color: "bg-red-500", text: "text-red-600" },
-    { key: "Vào lệnh", v: entry, color: "bg-primary", text: "text-primary-dark" },
-    { key: "Mục tiêu", v: target, color: "bg-emerald-600", text: "text-emerald-700" },
+    { key: t("ladder.stop"), v: stop, color: "bg-red-500", text: "text-red-600" },
+    { key: t("ladder.entry"), v: entry, color: "bg-primary", text: "text-primary-dark" },
+    { key: t("ladder.target"), v: target, color: "bg-emerald-600", text: "text-emerald-700" },
   ];
   return (
     <div className="relative h-[66px] mt-4 select-none [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true">
@@ -251,14 +290,14 @@ function SignalLadder({ stop, entry, target, last }: { stop: number; entry: numb
       <div className="absolute top-[20px] h-[8px] bg-emerald-500/70" style={zone(entry, target)} />
       {last !== undefined && (
         <div className="absolute top-0 flex flex-col items-center" style={{ left: `${pct(last)}%`, transform: "translateX(-50%)" }}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-label whitespace-nowrap">Hiện tại {fmtPrice(last)}</span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-label whitespace-nowrap">{t("ladder.current", { price: fmtPrice(last, locale) })}</span>
           <span className="w-[2px] h-[22px] bg-label" />
         </div>
       )}
       {marks.map(m => (
         <div key={m.key} className="absolute top-[16px] flex flex-col items-center" style={{ left: `${pct(m.v)}%`, transform: "translateX(-50%)" }}>
           <span className={clsx("w-[16px] h-[16px] rounded-full border-2 border-white shadow", m.color)} />
-          <span className={clsx("mt-1 text-[10px] sm:text-[11px] font-bold whitespace-nowrap tabular-nums", m.text)}>{m.key} {fmtPrice(m.v)}</span>
+          <span className={clsx("mt-1 text-[10px] sm:text-[11px] font-bold whitespace-nowrap tabular-nums", m.text)}>{m.key} {fmtPrice(m.v, locale)}</span>
         </div>
       ))}
     </div>
@@ -308,16 +347,21 @@ interface TechnicalLevels { support: number; resistance: number; target: number 
 function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: {
   signal: any; midTermSignal?: any; technicalLevels: TechnicalLevels | null; lastClose?: number;
 }) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const enumLabel = useEnumLabel();
+  const fp = (n: number) => fmtPrice(n, locale);
   const dir: Dir = (["tăng", "giảm", "đi ngang"] as const).includes(signal.direction) ? signal.direction : "đi ngang";
   const trendMeta = TREND_META[dir];
   const midTrendMeta = midTermSignal ? TREND_META[midTermSignal.direction] : undefined;
-  const position = POSITION_META[dir];
+  const position = trendMeta ? t(`position.${trendMeta.labelKey}`) : undefined;
   const strategy = parseStrategy(signal.trading_strategy);
   const body = (re: RegExp) => {
     const p = strategy?.find(s => re.test(s.label));
     return p ? subCO2(stripMarkdown(p.body)) : "";
   };
-  const entryBody = body(/entry/i), targetBody = body(/mục tiêu/i), riskBody = body(/quản trị rủi ro|cắt lỗ|stop/i);
+  // Nhãn tiếng Anh (content_en): "Target", "Risk management"/"Stop-loss".
+  const entryBody = body(/entry/i), targetBody = body(/mục tiêu|target/i), riskBody = body(/quản trị rủi ro|cắt lỗ|stop|risk/i);
   const lv = parseSignalLevels(dir, entryBody, targetBody, riskBody);
 
   const hasEntry = lv.entryBuy.length > 0 || lv.entrySell.length > 0;
@@ -326,16 +370,16 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
 
   const buyCls = "text-primary-dark", sellCls = "text-[#a67520]";
   const entryRows = [
-    ...(lv.entryBuy.length ? [{ label: "Mua quanh", value: fmtRange(lv.entryBuy), className: buyCls }] : []),
-    ...(lv.entrySell.length ? [{ label: "Bán quanh", value: fmtRange(lv.entrySell), className: sellCls }] : []),
+    ...(lv.entryBuy.length ? [{ label: t("signal.buyAround"), value: fmtRange(lv.entryBuy, locale), className: buyCls }] : []),
+    ...(lv.entrySell.length ? [{ label: t("signal.sellAround"), value: fmtRange(lv.entrySell, locale), className: sellCls }] : []),
   ];
   const targetRows = [
-    ...(lv.targetBuy !== undefined ? [{ label: "Chốt vị thế mua", value: fmtPrice(lv.targetBuy), className: "text-emerald-700" }] : []),
-    ...(lv.targetSell !== undefined ? [{ label: "Chốt vị thế bán", value: fmtPrice(lv.targetSell), className: "text-red-600" }] : []),
+    ...(lv.targetBuy !== undefined ? [{ label: t("signal.takeLong"), value: fp(lv.targetBuy), className: "text-emerald-700" }] : []),
+    ...(lv.targetSell !== undefined ? [{ label: t("signal.takeShort"), value: fp(lv.targetSell), className: "text-red-600" }] : []),
   ];
   const stopRows = [
-    ...(lv.stopLower !== undefined ? [{ label: "Cắt lỗ nếu dưới", value: fmtPrice(lv.stopLower), className: "text-red-600" }] : []),
-    ...(lv.stopUpper !== undefined ? [{ label: "Cắt lỗ nếu trên", value: fmtPrice(lv.stopUpper), className: "text-red-600" }] : []),
+    ...(lv.stopLower !== undefined ? [{ label: t("signal.stopBelow"), value: fp(lv.stopLower), className: "text-red-600" }] : []),
+    ...(lv.stopUpper !== undefined ? [{ label: t("signal.stopAbove"), value: fp(lv.stopUpper), className: "text-red-600" }] : []),
   ];
 
   // KPI tính TỪ chính các mức giá đã tách (không qua LLM): chỉ khi kịch bản có
@@ -353,15 +397,15 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
       if (reward > 0 && risk > 0) {
         ladder = { stop, entry, target };
         kpis = [
-          { label: "Risk / Reward", value: `1 : ${(reward / risk).toFixed(1)}`, sub: "rủi ro : lợi nhuận", className: "text-primary-dark" },
-          { label: "Lợi nhuận mục tiêu", value: `+${((reward / entry) * 100).toFixed(1)}%`, sub: `${fmtPrice(reward)} EUR/tCO₂`, className: "text-emerald-700" },
-          { label: "Rủi ro tối đa", value: `−${((risk / entry) * 100).toFixed(1)}%`, sub: `${fmtPrice(risk)} EUR/tCO₂`, className: "text-red-600" },
+          { label: "Risk / Reward", value: `1 : ${(reward / risk).toFixed(1)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
+          { label: t("signal.targetProfit"), value: `+${((reward / entry) * 100).toFixed(1)}%`, sub: `${fp(reward)} EUR/tCO₂`, className: "text-emerald-700" },
+          { label: t("signal.maxRisk"), value: `−${((risk / entry) * 100).toFixed(1)}%`, sub: `${fp(risk)} EUR/tCO₂`, className: "text-red-600" },
         ];
       }
     }
   } else if (dir === "đi ngang" && lv.entryBuy.length && lv.entrySell.length) {
     const lo = mid(lv.entryBuy), hi = mid(lv.entrySell);
-    if (hi > lo) kpis = [{ label: "Biên độ giao dịch", value: `${(((hi - lo) / lo) * 100).toFixed(1)}%`, sub: `${fmtPrice(lo)} → ${fmtPrice(hi)}`, className: "text-blue-700" }];
+    if (hi > lo) kpis = [{ label: t("signal.tradingRange"), value: `${(((hi - lo) / lo) * 100).toFixed(1)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
   }
 
   // Dữ liệu cũ (chưa có trading_strategy) chỉ có action_plan dạng câu — vẫn hiển thị.
@@ -375,26 +419,26 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
           <div className="flex items-center justify-between flex-wrap gap-y-2">
             <div className="flex items-center gap-2.5 text-white">
               <LineChart size={20} strokeWidth={2.5} aria-hidden="true" />
-              <h2 className="text-[18px] sm:text-[20px] font-extrabold uppercase tracking-wide">KHUYẾN NGHỊ VỊ THẾ</h2>
+              <h2 className="text-[18px] sm:text-[20px] font-extrabold uppercase tracking-wide">{t("signal.title")}</h2>
             </div>
             <div className="flex items-center gap-3 sm:gap-4 text-white/90 text-[12px] sm:text-[13px]">
               {signal.probability && (
                 <div className="flex flex-col items-center leading-tight">
-                  <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Độ tin cậy:</span>
-                  <strong className="font-bold text-white">{signal.probability}</strong>
+                  <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.confidence")}</span>
+                  <strong className="font-bold text-white">{enumLabel(signal.probability)}</strong>
                 </div>
               )}
               <div className="w-px h-6 bg-white/25 hidden sm:block" />
               <div className="flex flex-col items-center leading-tight">
-                <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Thị trường:</span>
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.market")}</span>
                 <strong className="font-bold text-white uppercase">Carbon</strong>
               </div>
               {trendMeta && (
                 <>
                   <div className="w-px h-6 bg-white/25 hidden sm:block" />
                   <div className="flex flex-col items-center leading-tight">
-                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Ngắn hạn (1–2 tuần):</span>
-                    <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{trendMeta.arrow} {trendMeta.label}</strong>
+                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.shortTerm")}</span>
+                    <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{trendMeta.arrow} {t(`trend.${trendMeta.labelKey}`)}</strong>
                   </div>
                 </>
               )}
@@ -402,8 +446,8 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
                 <>
                   <div className="w-px h-6 bg-white/25 hidden sm:block" />
                   <div className="flex flex-col items-center leading-tight">
-                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">Trung hạn (1–3 tháng):</span>
-                    <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{midTrendMeta.arrow} {midTrendMeta.label}</strong>
+                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.midTerm")}</span>
+                    <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{midTrendMeta.arrow} {t(`trend.${midTrendMeta.labelKey}`)}</strong>
                   </div>
                 </>
               )}
@@ -415,14 +459,14 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
         <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-2 px-4 sm:px-6 py-2.5 bg-tint border-b border-primary/10 text-[13px] sm:text-[14px] text-body [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
           {position && (
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark">Vị thế</span>
+              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark">{t("signal.position")}</span>
               <strong className={clsx("font-extrabold", trendMeta?.className)}>{position}</strong>
             </div>
           )}
           {signal.price_zone && (
             <div className="flex items-start gap-2 min-w-0 sm:border-l sm:border-primary/15 sm:pl-6">
               <Compass size={15} strokeWidth={2.5} className="shrink-0 mt-0.5 text-primary-dark" aria-hidden="true" />
-              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0 mt-[3px]">Vùng giá</span>
+              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0 mt-[3px]">{t("signal.priceZone")}</span>
               <span><HighlightNumbers text={signal.price_zone} /></span>
             </div>
           )}
@@ -432,9 +476,9 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
           <>
             {/* ═══ 3 ô số liệu lớn: Entry · Mục tiêu · Cắt lỗ ═══ */}
             <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10">
-              <LevelTile icon={Crosshair} title="Vào lệnh (Entry)" tone="text-primary-dark" rows={entryRows} />
-              <LevelTile icon={Target} title="Mục tiêu (Target)" tone="text-emerald-700" rows={targetRows} />
-              <LevelTile icon={ShieldCheck} title="Cắt lỗ (Stop Loss)" tone="text-red-600" rows={stopRows} />
+              <LevelTile icon={Crosshair} title={t("signal.tileEntry")} tone="text-primary-dark" rows={entryRows} />
+              <LevelTile icon={Target} title={t("signal.tileTarget")} tone="text-emerald-700" rows={targetRows} />
+              <LevelTile icon={ShieldCheck} title={t("signal.tileStop")} tone="text-red-600" rows={stopRows} />
             </div>
 
             {/* ═══ KPI + thang giá ═══ */}
@@ -457,14 +501,14 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
         {technicalLevels && (
           <div className="grid grid-cols-3 border-t border-primary/10 divide-x divide-primary/10">
             {[
-              { label: "Hỗ trợ", value: technicalLevels.support, sub: "đáy 30 phiên" },
-              { label: "Kháng cự", value: technicalLevels.resistance, sub: "đỉnh 30 phiên" },
-              { label: "Mục tiêu kỹ thuật", value: technicalLevels.target, sub: "nếu phá kháng cự" },
-            ].map(t => (
-              <div key={t.label} className="px-3 sm:px-6 py-3 text-center sm:text-left">
-                <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light">{t.label}</div>
-                <div className="font-extrabold tabular-nums text-label text-[18px] sm:text-[20px] leading-tight">{fmtPrice(t.value)}</div>
-                <div className="text-[10px] sm:text-[11px] text-muted-light">{t.sub}</div>
+              { label: t("signal.support"), value: technicalLevels.support, sub: t("signal.supportSub") },
+              { label: t("signal.resistance"), value: technicalLevels.resistance, sub: t("signal.resistanceSub") },
+              { label: t("signal.techTarget"), value: technicalLevels.target, sub: t("signal.techTargetSub") },
+            ].map(lvl => (
+              <div key={lvl.label} className="px-3 sm:px-6 py-3 text-center sm:text-left">
+                <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light">{lvl.label}</div>
+                <div className="font-extrabold tabular-nums text-label text-[18px] sm:text-[20px] leading-tight">{fp(lvl.value)}</div>
+                <div className="text-[10px] sm:text-[11px] text-muted-light">{lvl.sub}</div>
               </div>
             ))}
           </div>
@@ -477,7 +521,7 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
               <Sparkles size={14} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
             </div>
             <div className="min-w-0">
-              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">Cơ sở</h4>
+              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">{t("signal.basis")}</h4>
               <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
                 {signal.condition ? <HighlightNumbers text={signal.condition} /> : <span className="text-muted-light">—</span>}
               </p>
@@ -488,7 +532,7 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
               <AlertTriangle size={14} strokeWidth={2.5} className="text-red-500" aria-hidden="true" />
             </div>
             <div className="min-w-0">
-              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-red-600 mb-0.5">Rủi ro chính</h4>
+              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-red-600 mb-0.5">{t("signal.keyRisk")}</h4>
               <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
                 {signal.key_risk ? <HighlightNumbers text={signal.key_risk} /> : <span className="text-muted-light">—</span>}
               </p>
@@ -519,6 +563,8 @@ function parseStrategy(text?: string): { label: string; body: string }[] | null 
 // Mobile: mỗi khung thời gian 1 tab (Ngắn/Trung/Dài hạn) — trong tab đọc liền mạch
 // 1 kịch bản theo đúng mạch "Nếu X → vùng giá → chiến lược → rủi ro".
 function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: Record<string, any> }) {
+  const t = useTranslations("reportDoc");
+  const enumLabel = useEnumLabel();
   const [active, setActive] = useState(horizons[0]);
   const current = horizons.includes(active) ? active : horizons[0];
   const sc = byHorizon[current];
@@ -544,7 +590,7 @@ function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: 
                 on ? "border-primary bg-white text-primary-dark" : "border-transparent text-muted-light"
               )}
             >
-              <Icon size={13} className="shrink-0" /> {h}
+              <Icon size={13} className="shrink-0" /> {enumLabel(h)}
             </button>
           );
         })}
@@ -555,32 +601,32 @@ function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: 
           <div className="flex flex-wrap items-center gap-2">
             {dirMeta && (
               <span className={clsx("inline-flex items-center gap-1 font-mono text-[12px] font-bold uppercase tracking-wider rounded px-2 py-1 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
-                <DirIcon size={13} className="shrink-0" /> Chiều giá: {sc.direction}
+                <DirIcon size={13} className="shrink-0" /> {t("scenario.direction", { dir: enumLabel(sc.direction) })}
               </span>
             )}
             {sc.probability && (
-              <span className="font-mono text-[12px] uppercase tracking-wider text-body">Xác suất: <b>{sc.probability}</b></span>
+              <span className="font-mono text-[12px] uppercase tracking-wider text-body">{t("scenario.probability")} <b>{enumLabel(sc.probability)}</b></span>
             )}
           </div>
         )}
 
         {sc.condition && (
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-wide text-muted-light mb-0.5">Điều kiện kích hoạt</div>
+            <div className="text-[11px] font-bold uppercase tracking-wide text-muted-light mb-0.5">{t("scenario.condition")}</div>
             <RichText text={sc.condition} />
           </div>
         )}
 
         <div className="rounded-lg border-l-2 border-primary bg-primary/[0.08] px-3 py-2">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-primary-dark mb-0.5">
-            <Target size={13} className="shrink-0" /> Vùng giá tham chiếu
+            <Target size={13} className="shrink-0" /> {t("scenario.priceZone")}
           </div>
           {sc.price_zone ? <span className="font-semibold text-primary-dark"><RichText text={sc.price_zone} /></span> : <span className="text-muted-light">—</span>}
         </div>
 
         <div className="rounded-lg border-l-2 border-primary bg-primary/[0.06] px-3 py-2">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-primary-dark mb-1">
-            <Crosshair size={13} className="shrink-0" /> Chiến lược Trading
+            <Crosshair size={13} className="shrink-0" /> {t("scenario.strategy")}
           </div>
           {strategy ? (
             <dl className="flex flex-col gap-1.5">
@@ -597,7 +643,7 @@ function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: 
         {sc.key_risk && (
           <div className="rounded-lg bg-red-50 px-3 py-2">
             <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-down mb-0.5">
-              <AlertTriangle size={13} className="shrink-0" /> Rủi ro chính
+              <AlertTriangle size={13} className="shrink-0" /> {t("scenario.keyRisk")}
             </div>
             <span className="text-down"><RichText text={sc.key_risk} /></span>
           </div>
@@ -618,23 +664,28 @@ function stripMarkdown(text: string) {
 // 3 không còn dùng tag "**Kết luận:**" nữa — đã gộp thẳng vào dòng tiêu đề đầu
 // nhóm, xem renderAnalysisLine — nhưng regex này vẫn giữ "Kết luận" để tương
 // thích các nơi khác trong báo cáo còn dùng tag đó.)
-const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận)\s*:?\*\*/;
+// content_en: "**Summary:**"/"**Conclusion:**" (backend dịch tag theo bảng thuật ngữ cố định).
+const CONCLUSION_TAG_RE = /\*\*(?:Tổng hợp|Kết luận|Summary|Conclusion)\s*:?\*\*/;
 
 // Riêng dòng "**Tổng hợp:**" cuối mục 3 (kết luận chung về giá EUA — xem
 // _prompt_section3/KẾT LUẬN CHUNG CHO CẢ MỤC "PHÂN TÍCH" trong report_generator.py)
 // cần TÁCH RA khỏi các block phân tích để đưa lên đầu báo cáo, làm phần "Nhận
 // định" trong khối "🚨 ĐIỂM NHẤN" gộp chung với "Tóm tắt điều hành".
-const EUA_SUMMARY_TAG_RE = /\*\*Tổng hợp\s*:?\*\*/;
+const EUA_SUMMARY_TAG_RE = /\*\*(?:Tổng hợp|Summary)\s*:?\*\*/;
 
 // Nhãn xu hướng giá EUA do backend ghi ngay sau "**Tổng hợp:**" (xem
 // _prompt_section3 trong report_generator.py): [TÍCH CỰC]/[TRUNG LẬP]/[TIÊU CỰC]
 // — quyết định màu khung "Nhận định". Báo cáo cũ (chưa có nhãn) mặc định trung lập.
 type EuaSentiment = "positive" | "neutral" | "negative";
-const EUA_SENTIMENT_RE = /^\s*\[\s*(TÍCH CỰC|TRUNG LẬP|TIÊU CỰC)\s*\]\s*/i;
+const EUA_SENTIMENT_RE = /^\s*\[\s*(TÍCH CỰC|TRUNG LẬP|TIÊU CỰC|POSITIVE|NEUTRAL|NEGATIVE)\s*\]\s*/i;
 const EUA_SENTIMENT_MAP: Record<string, EuaSentiment> = {
   "TÍCH CỰC": "positive",
   "TRUNG LẬP": "neutral",
   "TIÊU CỰC": "negative",
+  // content_en
+  "POSITIVE": "positive",
+  "NEUTRAL": "neutral",
+  "NEGATIVE": "negative",
 };
 // Tiêu cực: nền đỏ chữ trắng; Trung lập: nền vàng chữ đen; Tích cực: nền xanh chữ trắng.
 // print-color-adjust: exact — giữ màu nền khi in PDF (trình duyệt mặc định bỏ nền).
@@ -661,6 +712,10 @@ const GROUP_HEADLINE_PREFIXES = [
   "Năng lượng & nhiên liệu hóa thạch:",
   "Hạn ngạch & tín chỉ carbon:",
   "Chính sách:",
+  // content_en (bảng thuật ngữ cố định của backend)
+  "Energy & fossil fuels:",
+  "Allowances & carbon credits:",
+  "Policy:",
 ];
 
 // Chỉ thay đổi VỊ TRÍ hiển thị, không đổi nội dung: rút đúng 1 dòng "**Tổng
@@ -848,6 +903,8 @@ function DotBullets({ items, render }: { items: any[]; render: (item: any, i: nu
 // có outcome) và "Sự kiện sắp tới" (chưa diễn ra), thay vì 1 danh sách gộp lẫn
 // lộn cả hai như trước.
 function EventTimeline({ events }: { events: any[] }) {
+  const t = useTranslations("reportDoc");
+  const enumLabel = useEnumLabel();
   return (
     <div>
       {events.map((ev: any, i: number) => {
@@ -872,11 +929,11 @@ function EventTimeline({ events }: { events: any[] }) {
                   ev.impact === "Cao" ? "text-down border-down/30 bg-red-50" :
                     ev.impact === "Trung" ? "text-warn border-warn/30 bg-warn-tint" :
                       "text-muted-light border-border"
-                )}>{ev.impact}</span>
+                )}>{enumLabel(ev.impact)}</span>
               </div>
               {ev.outcome && (
                 <p className="mt-1.5 text-[14.5px] leading-[1.5] text-body italic">
-                  <span className="font-semibold not-italic text-label">Kết quả: </span>{ev.outcome}
+                  <span className="font-semibold not-italic text-label">{t("events.outcome")}</span>{ev.outcome}
                 </p>
               )}
             </div>
@@ -892,12 +949,13 @@ function EventTimeline({ events }: { events: any[] }) {
 // gộp thành 1 đoạn văn dài, để dễ quét theo hàng như các bảng chuẩn khác trong báo cáo.
 // Nút gỡ gợi ý kinh doanh — chỉ hiện ở màn hình admin; type="button" nên tự ẩn khi in.
 function DismissButton({ onClick, className }: { onClick: () => void; className?: string }) {
+  const t = useTranslations("reportDoc");
   return (
     <button
       type="button"
       onClick={onClick}
-      title="Gỡ gợi ý này khỏi báo cáo"
-      aria-label="Gỡ gợi ý này khỏi báo cáo"
+      title={t("biz.dismiss")}
+      aria-label={t("biz.dismiss")}
       className={clsx(
         "inline-flex items-center justify-center w-6 h-6 rounded-md border border-down/30 text-down bg-background hover:bg-red-50 transition-colors print:hidden",
         className
@@ -929,6 +987,8 @@ function BizRecommendationTable({
   // lưu trong bộ nhớ biz_suggestions).
   onDismiss?: (id: number) => void;
 }) {
+  const t = useTranslations("reportDoc");
+  const infoName = infoLabel || t("biz.detailsLower");
   const [openInfo, setOpenInfo] = useState<Set<number>>(new Set());
   const toggleInfo = (i: number) =>
     setOpenInfo((prev) => {
@@ -998,8 +1058,8 @@ function BizRecommendationTable({
                                   type="button"
                                   onClick={() => toggleInfo(ri)}
                                   aria-expanded={isOpen}
-                                  aria-label={isOpen ? `Ẩn ${infoLabel || "chi tiết"}` : `Xem ${infoLabel || "chi tiết"}`}
-                                  title={isOpen ? `Ẩn ${infoLabel || "chi tiết"}` : `Xem ${infoLabel || "chi tiết"}`}
+                                  aria-label={isOpen ? t("biz.hideInfo", { label: infoName }) : t("biz.showInfo", { label: infoName })}
+                                  title={isOpen ? t("biz.hideInfo", { label: infoName }) : t("biz.showInfo", { label: infoName })}
                                   className={clsx(
                                     "shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full border transition-colors print:hidden",
                                     isOpen ? "bg-primary text-white border-primary" : "text-primary border-primary/40 hover:bg-tint"
@@ -1019,7 +1079,7 @@ function BizRecommendationTable({
                       <tr className={clsx(isOpen ? "table-row" : "hidden print:table-row")}>
                         <td className="border-r border-border bg-surface" />
                         <td colSpan={columns.length} className="px-2 sm:px-3 py-2 bg-tint/50 text-[14.5px] leading-[1.5] text-body">
-                          <span className="font-bold text-primary-dark mr-1">{infoLabel || "Chi tiết"}:</span>
+                          <span className="font-bold text-primary-dark mr-1">{infoLabel || t("biz.details")}:</span>
                           <RichText text={info} />
                         </td>
                       </tr>
@@ -1031,7 +1091,7 @@ function BizRecommendationTable({
           </table>
         </div>
       ) : (
-        <p className="text-[14.5px] text-muted-light italic">Không có gợi ý nào đủ căn cứ trong kỳ này.</p>
+        <p className="text-[14.5px] text-muted-light italic">{t("biz.empty")}</p>
       )}
     </div>
   );
@@ -1053,6 +1113,7 @@ function formatVolume(v: number) {
 }
 
 function CandlestickChart({ report }: { report: Report }) {
+  const t = useTranslations("reportDoc");
   const rawData = report?.content["2"]?.chart_data;
   const candles = rawData && rawData.length > 0 ? rawData : [];
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -1089,7 +1150,7 @@ function CandlestickChart({ report }: { report: Report }) {
   if (candles.length === 0) {
     return (
       <div className="w-full h-[300px] sm:h-[360px] flex items-center justify-center text-muted-light text-sm border border-border rounded-lg bg-background">
-        Đang cập nhật dữ liệu...
+        {t("chart.updating")}
       </div>
     );
   }
@@ -1177,7 +1238,7 @@ function CandlestickChart({ report }: { report: Report }) {
 
       <svg
         width="100%" viewBox={`0 0 ${W} ${H}`} className="candle-chart block w-full h-auto cursor-crosshair select-none touch-pan-y"
-        role="img" aria-label={`Biểu đồ nến ${candles.length} phiên, đóng cửa gần nhất ${last.close.toFixed(2)}`}
+        role="img" aria-label={t("chart.aria", { count: candles.length, close: last.close.toFixed(2) })}
         onMouseMove={handlePointer}
         onMouseLeave={() => setHoverIndex(null)}
         onTouchStart={handlePointer}
@@ -1286,7 +1347,8 @@ function CandlestickChart({ report }: { report: Report }) {
   );
 }
 
-function formatVietnameseDate(dateStr: string) {
+// Tiếng Việt: "Ngày dd tháng MM năm yyyy"; tiếng Anh: "October 16, 2026" (date-fns).
+function formatReportDate(dateStr: string, locale: string, t: ReportT) {
   if (!dateStr) return "";
   const parts = dateStr.split("-");
   if (parts.length !== 3) return dateStr;
@@ -1294,18 +1356,26 @@ function formatVietnameseDate(dateStr: string) {
   const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
   if (isNaN(d.getTime())) return dateStr;
 
-  return `Ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
+  if (locale === "en") {
+    return t("masthead.date", {
+      day: String(d.getDate()),
+      month: formatDateFns(d, "MMMM", { locale: dateFnsLocale(locale) }),
+      year: parts[0],
+    });
+  }
+  return t("masthead.date", { day: parts[2], month: parts[1], year: parts[0] });
 }
 
 const VIETNAMESE_DAYS = ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
 
 // "YYYY-MM-DD" -> "Thứ Ba"... (dựng Date theo giờ địa phương từ từng phần — tránh
 // new Date("YYYY-MM-DD") parse theo UTC làm lệch 1 ngày ở múi giờ âm).
-function vietnameseWeekday(dateStr: string) {
+function reportWeekday(dateStr: string, locale: string) {
   const parts = (dateStr || "").split("-");
   if (parts.length !== 3) return "";
   const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-  return isNaN(d.getTime()) ? "" : VIETNAMESE_DAYS[d.getDay()];
+  if (isNaN(d.getTime())) return "";
+  return locale === "en" ? formatDateFns(d, "EEEE", { locale: dateFnsLocale(locale) }) : VIETNAMESE_DAYS[d.getDay()];
 }
 
 function formatVietnameseDateFull(dateStr: string) {
@@ -1330,6 +1400,7 @@ function TrendDot({ up }: { up: boolean }) {
 }
 
 function EuaDashboardWidget({ report }: { report: Report }) {
+  const t = useTranslations("reportDoc");
   const chartData = report.content["2"]?.chart_data || [];
   if (chartData.length === 0) return null;
 
@@ -1383,9 +1454,9 @@ function EuaDashboardWidget({ report }: { report: Report }) {
                 EUA Dec-26
                 {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
                 <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-primary text-white">1M</span>
-                <span className="text-muted-light font-normal text-[13px]">Nến ngày · 30 phiên</span>
+                <span className="text-muted-light font-normal text-[13px]">{t("dash.candles")}</span>
               </h3>
-              <p className="text-muted-light text-[13px] mt-0.5">Thị trường quyền phát thải CO₂ châu Âu · EUR/tCO₂e</p>
+              <p className="text-muted-light text-[13px] mt-0.5">{t("dash.marketDesc")}</p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1 ml-auto">
@@ -1397,7 +1468,7 @@ function EuaDashboardWidget({ report }: { report: Report }) {
               </span>
             </div>
             <div className="flex items-center text-[12px] text-muted-light gap-1.5 font-medium">
-              <Calendar size={13} /> Đóng cửa phiên {formatFullDate(lastDate)}
+              <Calendar size={13} /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
             </div>
           </div>
         </div>
@@ -1407,47 +1478,47 @@ function EuaDashboardWidget({ report }: { report: Report }) {
 
       {/* Tầng 2 — Số liệu */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:break-inside-avoid">
-        <StatTile icon={<RefreshCw size={14} />} label="Biên độ phiên gần nhất"
+        <StatTile icon={<RefreshCw size={14} />} label={t("dash.lastRange")}
           value={`${dayLow.toFixed(2)} – ${dayHigh.toFixed(2)}`}
-          sub={`biên độ ${dayRange.toFixed(2)} (~${dayRangePct.toFixed(1)}%)`} />
+          sub={t("dash.rangeSub", { range: dayRange.toFixed(2), pct: dayRangePct.toFixed(1) })} />
         <StatTile
           icon={sevenDayChange >= 0 ? <TrendingUp size={14} className="text-up" /> : <TrendingDown size={14} className="text-down" />}
-          label={`${sevenDayChange >= 0 ? "Tăng" : "Giảm"} 7 phiên`}
+          label={sevenDayChange >= 0 ? t("dash.up7") : t("dash.down7")}
           value={`${sevenDayChange > 0 ? "+" : ""}${sevenDayChange.toFixed(2)}`}
           valueClass={sevenDayChange >= 0 ? "text-up" : "text-down"}
-          sub={`${sevenDayChangePct > 0 ? "+" : ""}${sevenDayChangePct.toFixed(2)}% so với ${sevenDaysAgo.toFixed(2)}`} />
-        <StatTile icon={<CalendarRange size={14} />} label="Vùng giá 30 phiên"
+          sub={t("dash.vsPrice", { pct: `${sevenDayChangePct > 0 ? "+" : ""}${sevenDayChangePct.toFixed(2)}`, price: sevenDaysAgo.toFixed(2) })} />
+        <StatTile icon={<CalendarRange size={14} />} label={t("dash.range30")}
           value={`${monthLow.toFixed(2)} – ${monthHigh.toFixed(2)}`}
-          sub={`thấp nhất – cao nhất`} />
+          sub={t("dash.lowHigh")} />
         <StatTile
           icon={monthChange >= 0 ? <TrendingUp size={14} className="text-up" /> : <TrendingDown size={14} className="text-down" />}
-          label="Thay đổi 30 phiên"
+          label={t("dash.change30")}
           value={`${firstClose.toFixed(2)} → ${lastClose.toFixed(2)}`}
-          sub={`${monthChangePct >= 0 ? "tăng" : "giảm"} ${Math.abs(monthChangePct).toFixed(1)}%`}
+          sub={`${monthChangePct >= 0 ? t("dash.up") : t("dash.down")} ${Math.abs(monthChangePct).toFixed(1)}%`}
           subClass={monthChangePct >= 0 ? "text-up font-bold" : "text-down font-bold"} />
       </div>
 
       {/* Tầng 3 — Nhận định */}
       <div className="bg-background rounded-xl p-3.5 sm:p-5 border border-border shadow-sm print:p-4! print:shadow-none! print:break-inside-avoid">
         <div className="flex items-center gap-2 text-primary-dark font-bold text-[14px] mb-4">
-          <div className="p-1.5 rounded-full bg-tint"><Info size={16} /></div> Nhận định thị trường
+          <div className="p-1.5 rounded-full bg-tint"><Info size={16} /></div> {t("dash.insight")}
         </div>
         <div className="grid md:grid-cols-2 gap-x-8 gap-y-3.5 text-[13px] text-body">
           <div className="flex items-start gap-2.5">
             <TrendDot up={sevenDayChange >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">Xu hướng 7 phiên:</strong> {sevenDayChange >= 0 ? "tăng" : "giảm"} {Math.abs(sevenDayChange).toFixed(2)} ({sevenDayChangePct > 0 ? "+" : ""}{sevenDayChangePct.toFixed(2)}%) so với 7 phiên trước.</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.trend7Label")}</strong> {t("dash.trend7", { dir: sevenDayChange >= 0 ? t("dash.up") : t("dash.down"), abs: Math.abs(sevenDayChange).toFixed(2), pct: `${sevenDayChangePct > 0 ? "+" : ""}${sevenDayChangePct.toFixed(2)}` })}</div>
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={lastClose >= dayOpen} />
-            <div className="leading-snug"><strong className="text-label font-bold">Phiên gần nhất:</strong> mở {dayOpen.toFixed(2)} — cao {dayHigh.toFixed(2)} — thấp {dayLow.toFixed(2)} — đóng {lastClose.toFixed(2)}; {lastClose >= dayOpen ? "tăng" : "giảm"} so với giá mở cửa, biên độ {dayRange.toFixed(2)} (~{dayRangePct.toFixed(1)}%).</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.lastSessionLabel")}</strong> {t("dash.lastSession", { open: dayOpen.toFixed(2), high: dayHigh.toFixed(2), low: dayLow.toFixed(2), close: lastClose.toFixed(2), dir: lastClose >= dayOpen ? t("dash.up") : t("dash.down"), range: dayRange.toFixed(2), pct: dayRangePct.toFixed(1) })}</div>
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={monthChange >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">EUA 30 phiên:</strong> {firstClose.toFixed(2)} → {lastClose.toFixed(2)} ({monthChangePct > 0 ? "+" : ""}{monthChangePct.toFixed(1)}%); cao nhất {monthHigh.toFixed(2)}, thấp nhất {monthLow.toFixed(2)}.</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.eua30Label")}</strong> {t("dash.eua30", { first: firstClose.toFixed(2), last: lastClose.toFixed(2), pct: `${monthChangePct > 0 ? "+" : ""}${monthChangePct.toFixed(1)}`, high: monthHigh.toFixed(2), low: monthLow.toFixed(2) })}</div>
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={volChangePct >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">Khối lượng:</strong> {vol.toLocaleString("en-US")} hợp đồng phiên {formatFullDate(lastDate)}{avgVol > 0 ? <>, {volChangePct >= 0 ? "cao hơn" : "thấp hơn"} TB {priorVols.length} phiên ({Math.round(avgVol).toLocaleString("en-US")}) {volChangePct > 0 ? "+" : ""}{volChangePct.toFixed(1)}%.</> : "."}</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.volumeLabel")}</strong> {t("dash.volume", { vol: vol.toLocaleString("en-US"), date: formatFullDate(lastDate) })}{avgVol > 0 ? t("dash.volVsAvg", { dir: volChangePct >= 0 ? t("dash.higher") : t("dash.lower"), n: priorVols.length, avg: Math.round(avgVol).toLocaleString("en-US"), pct: `${volChangePct > 0 ? "+" : ""}${volChangePct.toFixed(1)}` }) : "."}</div>
           </div>
         </div>
       </div>
@@ -1481,6 +1552,9 @@ export function ReportDocument({
   // Chỉ màn hình admin truyền vào — hiện nút gỡ gợi ý kinh doanh (services/biz_memory.py).
   onDismissBizSuggestion?: (id: number) => void;
 }) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const enumLabel = useEnumLabel();
   const priceRows = report?.content["2"]?.prices || [];
   // Báo cáo Chủ Nhật/Thứ Hai: ngày dữ liệu cuối tuần, không có phiên giao dịch — backend
   // (report_generator.py::is_no_price_report) chỉ phân tích tin tức; ẩn mọi phần giá.
@@ -1491,7 +1565,7 @@ export function ReportDocument({
     ...(report.content["2"]?.key_developments ?? []),
     ...((report.content["4"]?.bullets ?? [])
       .map((b: any) => (typeof b === "string" ? { text: b } : b))
-      .filter((b: any) => b?.text && !/không có diễn biến/i.test(b.text))),
+      .filter((b: any) => b?.text && !/không có diễn biến|\bno (?:significant |notable |major |new )?developments?\b/i.test(b.text))),
   ];
 
   // Thanh trượt giá: tên hợp đồng + giá + Δ ngày, lấy thẳng từ Bảng giá nhanh.
@@ -1591,10 +1665,10 @@ export function ReportDocument({
             <div className="text-right">
               {/* Thứ trong tuần của ngày báo cáo (thay cho nhãn "Phát hành" cũ) */}
               <div className="text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.12em] text-[#8fd9a8] mb-0.5">
-                {vietnameseWeekday(report.report_date)}
+                {reportWeekday(report.report_date, locale)}
               </div>
               <div className="text-[13px] sm:text-[15px] font-bold leading-snug">
-                {formatVietnameseDate(report.report_date)}
+                {formatReportDate(report.report_date, locale, t)}
               </div>
             </div>
           </div>
@@ -1606,13 +1680,13 @@ export function ReportDocument({
             Carbon Market Daily News
           </div>
           <h1 className="text-[21px] sm:text-[28px] font-extrabold tracking-[0.2px] leading-[1.2] [text-wrap:balance]">
-            TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON
+            {t("masthead.title")}
           </h1>
           {/* div (không phải p) — tránh rule ".report-shell p { text-align: justify }"
               làm giãn chữ khi dòng này xuống hàng trên mobile. Tên công ty đã có
               trong logo nên ẩn trên mobile cho gọn 1 dòng. */}
           <div className="mt-2 text-[11.5px] sm:text-[12.5px] leading-snug text-white/80">
-            Người báo cáo: Jenny AI · Phòng CLPT<span className="hidden sm:inline"> — Stavian Industrial Metal</span>
+            {t("masthead.reporter")}<span className="hidden sm:inline"> — Stavian Industrial Metal</span>
           </div>
         </div>
 
@@ -1630,14 +1704,14 @@ export function ReportDocument({
             onClick={() => setNavOpen((o) => !o)}
             aria-expanded={navOpen}
             aria-controls="report-section-menu"
-            aria-label={navOpen ? "Đóng menu điều hướng" : "Mở menu điều hướng"}
+            aria-label={navOpen ? t("nav.close") : t("nav.open")}
             className={clsx(
               "h-full flex items-center gap-2 px-3 sm:px-4 py-2.5 text-[#1B4D3E] transition-colors",
               navOpen ? "bg-[#e8efeb]" : "hover:bg-[#e8efeb]"
             )}
           >
             {navOpen ? <X size={18} strokeWidth={2.5} /> : <Menu size={18} strokeWidth={2.5} />}
-            <span className="hidden sm:inline text-[12.5px] font-bold uppercase tracking-wide">Mục lục</span>
+            <span className="hidden sm:inline text-[12.5px] font-bold uppercase tracking-wide">{t("nav.toc")}</span>
           </button>
 
           {navOpen && (
@@ -1658,7 +1732,7 @@ export function ReportDocument({
                       }}
                       className="w-full text-left px-4 py-2.5 text-[13.5px] font-semibold text-[#1B4D3E] hover:bg-[#e8efeb] hover:text-[#2f8749] transition-colors"
                     >
-                      {item.label}
+                      {t(`nav.${item.labelKey}`)}
                     </button>
                   </li>
                 ))}
@@ -1715,7 +1789,7 @@ export function ReportDocument({
                 EUA_SENTIMENT_STYLE[euaVerdict.sentiment].box
               )}
             >
-              <h2 className={clsx(BLOCK_TITLE_CLASS, "mb-1.5")}>NHẬN ĐỊNH TỔNG QUAN</h2>
+              <h2 className={clsx(BLOCK_TITLE_CLASS, "mb-1.5")}>{t("body.overview")}</h2>
               {/* Nội dung nhận định: chữ thường, in đậm (KHÔNG in hoa — chỉ tiêu đề in hoa) */}
               <p className="text-[14.5px] sm:text-[15.5px] leading-[1.45] font-bold normal-case text-left">
                 <RichText text={euaVerdict.text} />
@@ -1723,7 +1797,7 @@ export function ReportDocument({
             </div>
           )}
 
-          <FramedHighlight title="Tóm tắt điều hành" tone="blue">
+          <FramedHighlight title={t("body.execSummary")} tone="blue">
             <ul className="list-none -my-0.5">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
                 const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
@@ -1748,7 +1822,7 @@ export function ReportDocument({
                         rel="noopener noreferrer"
                         className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
                       >
-                        Nguồn: {sourceName} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
+                        {t("body.source")} {sourceName} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                       </a>
                     )}
                   </li>
@@ -1764,17 +1838,17 @@ export function ReportDocument({
             khoảng trắng dài phía trên khi 1 khối lớn bị đẩy nguyên sang trang
             sau vì không đủ chỗ còn lại trên trang hiện tại. */}
         <section id="section-market" className="py-5">
-          <PartHeading eyebrow="Phần 1" title="Diễn biến thị trường" icon={LineChart} />
+          <PartHeading eyebrow={t("body.part", { n: 1 })} title={t("body.marketTitle")} icon={LineChart} />
 
           <EuaDashboardWidget report={report} />
 
           {noPriceData ? (
             <div className="mt-5 rounded-lg border border-border bg-tint/40 px-3.5 py-3 text-[14.5px] leading-[1.5] text-body">
-              {report.content["2"]?.no_price_notice || "Không có phiên giao dịch — báo cáo hôm nay chỉ phân tích tin tức, không phân tích giá."}
+              {report.content["2"]?.no_price_notice || t("body.noPriceFallback")}
             </div>
           ) : (
           <div className="mt-5">
-            <SubHeading>Bảng giá nhanh</SubHeading>
+            <SubHeading>{t("body.priceTable")}</SubHeading>
             {report.content["2"]?.price_timestamp && (
               <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
             )}
@@ -1784,9 +1858,9 @@ export function ReportDocument({
               <table className="w-full sm:table-fixed border-collapse font-mono text-[14.5px]">
                 <thead>
                   <tr>
-                    <th className="w-[28%] sm:w-[30%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Hợp đồng</th>
-                    <th className="w-[18%] sm:w-[18%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">Giá</th>
-                    <th className="w-[54%] sm:w-[52%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">Biến động</th>
+                    <th className="w-[28%] sm:w-[30%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">{t("body.contract")}</th>
+                    <th className="w-[18%] sm:w-[18%] text-center text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1 sm:px-2 py-1.5 border-b-2 border-primary/30 border-r border-primary/15 bg-tint">{t("body.price")}</th>
+                    <th className="w-[54%] sm:w-[52%] text-left text-primary-dark font-bold text-[11px] uppercase tracking-wider px-1.5 sm:px-2 py-1.5 border-b-2 border-primary/30 bg-tint">{t("body.change")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -1806,7 +1880,7 @@ export function ReportDocument({
                               href={r.source_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              title={`Xem giá ${r.name} tại nguồn`}
+                              title={t("body.viewPriceAt", { name: r.name })}
                               className="text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900 transition-colors"
                             >
                               {r.name}
@@ -1828,19 +1902,19 @@ export function ReportDocument({
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] sm:text-[11px]">
                             {r.dday !== "-" && (
                               <span className={clsx("tabular-nums", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
-                                Δ Ngày: {r.dday}
+                                {t("body.dDay")} {r.dday}
                               </span>
                             )}
                             {r.dweek !== "-" && (
                               <span className={clsx("tabular-nums", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>
-                                Δ Tuần: {r.dweek}
+                                {t("body.dWeek")} {r.dweek}
                               </span>
                             )}
                           </div>
                           {r.code === "CBAM" && r.note && (
                             <div className="mt-1 rounded-md bg-tint/60 border border-primary/15 px-2 py-1.5">
                               {/* Báo cáo cũ có thể đã nối thêm ghi chú LLM phía sau — chỉ lấy phần "Giá chốt…" */}
-                              {String(r.note).match(/^Giá chốt theo quý, tại ngày .*?\d{4}(?:, ngày chốt giá tiếp theo .*?\d{4})?/)?.[0] ?? r.note}
+                              {String(r.note).match(/^Giá chốt theo quý, tại ngày .*?\d{4}(?:, ngày chốt giá tiếp theo .*?\d{4})?|^Quarterly (?:settlement|closing|fixed) price.*?\d{4}(?:, next .*?\d{4})?/i)?.[0] ?? r.note}
                             </div>
                           )}
                         </td>
@@ -1861,7 +1935,7 @@ export function ReportDocument({
               vào cuối danh sách này; bỏ dòng "không có diễn biến" vì không phải tin. */}
           {keyDevelopmentItems.length > 0 && (
             <div className="mt-6">
-              <SubHeading>Diễn biến chính</SubHeading>
+              <SubHeading>{t("body.keyDev")}</SubHeading>
               <DotBullets
                 items={keyDevelopmentItems}
                 render={(d: any) => (
@@ -1894,8 +1968,8 @@ export function ReportDocument({
         {/* PHẦN 2 — PHÂN TÍCH VÀ KHUYẾN NGHỊ GIAO DỊCH */}
         <section id="section-analysis" className="py-5">
           <PartHeading
-            eyebrow="Phần 2"
-            title={noPriceData ? "Phân tích tác động tin tức" : "Phân tích và khuyến nghị giao dịch"}
+            eyebrow={t("body.part", { n: 2 })}
+            title={noPriceData ? t("body.part2NoPrice") : t("body.part2")}
             icon={BarChart3}
           />
 
@@ -1917,11 +1991,11 @@ export function ReportDocument({
               (chuyển từ Bảng giá nhanh (Phần 1) sang đây trước đó). */}
           {hasMarketDrivers && (
             <div className="mb-6">
-              <SubHeading>Động lực thị trường</SubHeading>
+              <SubHeading>{t("body.drivers")}</SubHeading>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="border border-up/25 bg-up/[0.04] rounded-lg overflow-hidden">
                   <div className="flex items-center gap-1.5 bg-up/10 text-up font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-up/20">
-                    <TrendingUp size={14} strokeWidth={2.5} /> Động lực tăng
+                    <TrendingUp size={14} strokeWidth={2.5} /> {t("body.bullish")}
                   </div>
                   <div className="p-3 space-y-3">
                     {report.content["2"].market_drivers.bullish?.length > 0 ? (
@@ -1941,19 +2015,19 @@ export function ReportDocument({
                               rel="noopener noreferrer"
                               className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
                             >
-                              Nguồn: {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
+                              {t("body.source")} {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                             </a>
                           )}
                         </div>
                       ))
                     ) : (
-                      <p className="text-[14.5px] text-muted-light italic">Không có động lực tăng đáng chú ý.</p>
+                      <p className="text-[14.5px] text-muted-light italic">{t("body.noBullish")}</p>
                     )}
                   </div>
                 </div>
                 <div className="border border-down/25 bg-down/[0.04] rounded-lg overflow-hidden">
                   <div className="flex items-center gap-1.5 bg-down/10 text-down font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-2 border-b border-down/20">
-                    <TrendingDown size={14} strokeWidth={2.5} /> Động lực giảm
+                    <TrendingDown size={14} strokeWidth={2.5} /> {t("body.bearish")}
                   </div>
                   <div className="p-3 space-y-3">
                     {report.content["2"].market_drivers.bearish?.length > 0 ? (
@@ -1973,13 +2047,13 @@ export function ReportDocument({
                               rel="noopener noreferrer"
                               className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
                             >
-                              Nguồn: {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
+                              {t("body.source")} {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                             </a>
                           )}
                         </div>
                       ))
                     ) : (
-                      <p className="text-[14.5px] text-muted-light italic">Không có động lực giảm đáng chú ý.</p>
+                      <p className="text-[14.5px] text-muted-light italic">{t("body.noBearish")}</p>
                     )}
                   </div>
                 </div>
@@ -1989,7 +2063,7 @@ export function ReportDocument({
 
           {report.content["3"] && (
             <div className="mb-6">
-              <SubHeading>Phân tích</SubHeading>
+              <SubHeading>{t("body.analysis")}</SubHeading>
               {report.content["3"].title && (
                 <p className="-mt-2.5 mb-4 ml-[38px] text-[12px] text-muted-light italic">{report.content["3"].title}</p>
               )}
@@ -2001,7 +2075,7 @@ export function ReportDocument({
                   className="mb-4 flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-primary border border-primary/30 bg-tint/50 hover:bg-tint rounded-md px-2.5 py-1.5 transition-colors"
                 >
                   {showAnalysis ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                  {showAnalysis ? "Ẩn phân tích" : "Hiện phân tích"}
+                  {showAnalysis ? t("body.hideAnalysis") : t("body.showAnalysis")}
                 </button>
               )}
 
@@ -2011,7 +2085,7 @@ export function ReportDocument({
                     <div key={i} className="mb-5">
                       {/* Block "Phân tích" trùng với SubHeading "Phân tích" ngay phía trên → ẩn nhãn */}
                       {block.heading !== "Phân tích" && (
-                        <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{block.heading}</h4>
+                        <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{enumLabel(block.heading)}</h4>
                       )}
                       <div className="space-y-1.5">
                         {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => {
@@ -2052,17 +2126,17 @@ export function ReportDocument({
 
                   {report.content["3"].correlation_analysis && (
                     <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg px-3 sm:px-4 py-3 my-5 space-y-2">
-                      <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">Chuỗi Logic: Gas + Coal + Power → EUA</h4>
+                      <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">{t("body.correlationTitle")}</h4>
                       {(report.content["3"].correlation_analysis.gas_comment || report.content["3"].correlation_analysis.gas_coal_power) && (
                         <div className="space-y-2.5 mb-1">
                           {report.content["3"].correlation_analysis.gas_comment && (
-                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Gas:</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
+                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">{t("body.gas")}</b> <RichText text={report.content["3"].correlation_analysis.gas_comment} /></p>
                           )}
                           {report.content["3"].correlation_analysis.coal_comment && (
-                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Than:</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
+                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">{t("body.coal")}</b> <RichText text={report.content["3"].correlation_analysis.coal_comment} /></p>
                           )}
                           {report.content["3"].correlation_analysis.power_comment && (
-                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">Điện Đức:</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
+                            <p className="text-[14.5px] leading-[1.5] text-body"><b className="text-primary-dark font-bold">{t("body.power")}</b> <RichText text={report.content["3"].correlation_analysis.power_comment} /></p>
                           )}
                         </div>
                       )}
@@ -2101,7 +2175,7 @@ export function ReportDocument({
                 // Tên hàng ngắn gọn ("Xác suất / Chiều giá" cũ dài, xuống 2 dòng khó
                 // nhìn trên mobile) — thông tin nằm ngay trong nội dung, mỗi dòng
                 // có nhãn riêng "Chiều giá: ..." / "Xác suất: ...".
-                label: "Nhận định",
+                label: t("scenario.assessment"),
                 render: (sc) => {
                   const dirMeta = DIRECTION_META[sc.direction];
                   const DirIcon = dirMeta?.icon;
@@ -2109,31 +2183,31 @@ export function ReportDocument({
                     <div className="flex flex-col gap-1.5 items-start">
                       {dirMeta && (
                         <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
-                          <DirIcon size={11} className="shrink-0" /> Chiều giá: {sc.direction}
+                          <DirIcon size={11} className="shrink-0" /> {t("scenario.direction", { dir: enumLabel(sc.direction) })}
                         </span>
                       )}
                       {sc.probability && (
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-body">Xác suất: {sc.probability}</span>
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-body">{t("scenario.probability")} {enumLabel(sc.probability)}</span>
                       )}
                     </div>
                   );
                 },
               },
-              { label: "Điều kiện kích hoạt", render: (sc) => <RichText text={sc.condition} /> },
+              { label: t("scenario.condition"), render: (sc) => <RichText text={sc.condition} /> },
               {
-                label: "Vùng giá tham chiếu", icon: Target, highlight: true,
+                label: t("scenario.priceZone"), icon: Target, highlight: true,
                 render: (sc) => sc.price_zone ? <span className="font-semibold text-primary-dark"><RichText text={sc.price_zone} /></span> : <span className="text-muted-light">—</span>,
               },
-              { label: "Rủi ro chính", icon: AlertTriangle, render: (sc) => <span className="text-down"><RichText text={sc.key_risk} /></span> },
+              { label: t("scenario.keyRisk"), icon: AlertTriangle, render: (sc) => <span className="text-down"><RichText text={sc.key_risk} /></span> },
               {
-                label: "Chiến lược Trading", icon: Crosshair, highlight: true,
+                label: t("scenario.strategy"), icon: Crosshair, highlight: true,
                 render: (sc) => sc.trading_strategy ? <RichText text={sc.trading_strategy} /> : <span className="text-muted-light">—</span>,
               },
             ];
 
             return (
               <div className="mb-6">
-                <SubHeading>Kịch bản hành động</SubHeading>
+                <SubHeading>{t("scenario.heading")}</SubHeading>
 
                 {/* Mobile: mỗi khung thời gian 1 tab, đọc liền mạch 1 kịch bản (xem ScenarioTabs).
                       Từ sm+ (kể cả khi in/xuất PDF) dùng bảng % width bên dưới. */}
@@ -2147,14 +2221,14 @@ export function ReportDocument({
                   <table className="w-full table-fixed border-collapse text-[14.5px]">
                     <thead>
                       <tr>
-                        <th style={{ width: "16%" }} className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint">Chỉ tiêu</th>
+                        <th style={{ width: "16%" }} className="text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 border-r border-border bg-tint">{t("scenario.indicator")}</th>
                         {columns.map(h => {
                           const meta = HORIZON_META[h];
                           const Icon = meta.icon;
                           return (
                             <th key={h} style={{ width: `${dataColWidthPct}%` }} className="text-left px-2 sm:px-3 py-2 sm:py-2.5 border-b-2 border-primary/30 bg-tint text-primary-dark">
                               <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider">
-                                <Icon size={13} /> {h}
+                                <Icon size={13} /> {enumLabel(h)}
                               </span>
                             </th>
                           );
@@ -2197,9 +2271,7 @@ export function ReportDocument({
                 <div className="mt-3 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn-tint px-3 py-2.5">
                   <Info size={15} className="text-warn shrink-0 mt-0.5" />
                   <p className="text-[14.5px] leading-[1.5] text-body">
-                    <b className="text-label">Lưu ý:</b> Đây là các chiến lược dựa trên phân tích của Jenny, chỉ mang tính chất tham khảo.
-                    Người đọc cần xem xét kỹ, đối chiếu với bối cảnh thực tế và khẩu vị rủi ro của mình trước khi ra quyết định —
-                    đây không phải lời khuyên đầu tư cá nhân hóa.
+                    <b className="text-label">{t("scenario.noteLabel")}</b> {t("scenario.note")}
                   </p>
                 </div>
               </div>
@@ -2210,7 +2282,7 @@ export function ReportDocument({
               "Gợi ý kinh doanh & giải pháp cho SIM" (theo yêu cầu bố cục báo cáo). */}
           {watchpoints && (
             <div className="mb-6">
-              <SubHeading>Cần theo dõi</SubHeading>
+              <SubHeading>{t("body.watch")}</SubHeading>
               <div className="space-y-1.5">
                 {watchpoints.split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => (
                   <ConclusionAware key={j} text={line} className="text-[14.5px] leading-[1.5] text-body" />
@@ -2230,13 +2302,13 @@ export function ReportDocument({
                   <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
                     <div className="flex items-center gap-2.5 px-3.5 py-2.5">
                       <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-                      <div className="flex-1 min-w-0 text-[14px] sm:text-[15px] font-bold text-label">Jenny cập nhật đề xuất trước đây</div>
+                      <div className="flex-1 min-w-0 text-[14px] sm:text-[15px] font-bold text-label">{t("biz.remindersTitle")}</div>
                       <button
                         type="button"
                         onClick={() => setShowReminders((v) => !v)}
                         aria-expanded={showReminders}
-                        aria-label={showReminders ? "Ẩn cập nhật đề xuất" : "Xem cập nhật đề xuất"}
-                        title={showReminders ? "Ẩn" : "Xem chi tiết"}
+                        aria-label={showReminders ? t("biz.hideReminders") : t("biz.showReminders")}
+                        title={showReminders ? t("biz.hide") : t("biz.viewDetails")}
                         className={clsx(
                           "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full border transition-colors print:hidden",
                           showReminders
@@ -2252,22 +2324,22 @@ export function ReportDocument({
                         <li key={i} className="px-3.5 py-3 space-y-1.5">
                           <div className="flex items-start gap-2">
                             <p className="flex-1 min-w-0 text-[14.5px] leading-[1.5] text-foreground">
-                              Ngày <b>{formatFullDate(r.suggested_date)}</b> Jenny đã đề xuất: <b><RichText text={r.action} /></b>
+                              {t("biz.suggestedOn")} <b>{formatFullDate(r.suggested_date)}</b> {t("biz.suggested")} <b><RichText text={r.action} /></b>
                             </p>
                             {onDismissBizSuggestion && typeof r.id === "number" && (
                               <DismissButton onClick={() => onDismissBizSuggestion(r.id)} className="shrink-0" />
                             )}
                           </div>
                           <p className="text-[14.5px] leading-[1.5] text-body">
-                            <span className="font-semibold">Tình huống kích hoạt:</span> <RichText text={r.trigger} />
+                            <span className="font-semibold">{t("biz.trigger")}</span> <RichText text={r.trigger} />
                           </p>
                           {r.outcome === "contradicted" ? (
                             <p className="text-[14.5px] leading-[1.5] font-semibold text-down">
-                              ✗ Thực tế diễn ra ngược với đề xuất{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
+                              {t("biz.contradicted")}{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
                             </p>
                           ) : (
                             <p className="text-[14.5px] leading-[1.5] font-semibold text-up">
-                              ✓ Tình huống đã xảy ra{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
+                              {t("biz.happened")}{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
                             </p>
                           )}
                           {r.source_name && (
@@ -2278,16 +2350,16 @@ export function ReportDocument({
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-[11.5px] text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900"
                               >
-                                Nguồn: {r.source_name} <ExternalLink size={10} aria-hidden="true" />
+                                {t("body.source")} {r.source_name} <ExternalLink size={10} aria-hidden="true" />
                               </a>
                             ) : (
-                              <span className="text-[11.5px] text-muted-light">Nguồn: {r.source_name}</span>
+                              <span className="text-[11.5px] text-muted-light">{t("body.source")} {r.source_name}</span>
                             )
                           )}
                           <p className="text-[14.5px] italic text-warn font-semibold">
                             {r.outcome === "contradicted"
-                              ? "Đề xuất này không còn phù hợp — Jenny sẽ thôi theo dõi."
-                              : "Anh/chị đã thực hiện theo đề xuất này chưa?"}
+                              ? t("biz.contradictedFollow")
+                              : t("biz.askDone")}
                           </p>
                         </li>
                       ))}
@@ -2297,30 +2369,30 @@ export function ReportDocument({
 
                 <div>
                   <BizRecommendationTable
-                    heading="Ngắn hạn"
+                    heading={t("biz.shortTerm")}
                     accent="text-label"
                     rows={report.content["biz"].short_term}
                     columns={[
-                      { key: "trigger", label: "Tình huống kích hoạt" },
-                      { key: "action", label: "Hành động đề xuất" },
+                      { key: "trigger", label: t("biz.colTrigger") },
+                      { key: "action", label: t("biz.colAction") },
                     ]}
                     infoKey="reason"
-                    infoLabel="Cơ sở của đề xuất"
+                    infoLabel={t("biz.reason")}
                     onDismiss={onDismissBizSuggestion}
                   />
                 </div>
                 <BizRecommendationTable
-                  heading="Dài hạn"
+                  heading={t("biz.longTerm")}
                   accent="text-primary"
                   rows={report.content["biz"].long_term}
                   columns={[
-                    { key: "opportunity", label: "Cơ hội" },
-                    { key: "solution", label: "Giải pháp đề xuất" },
+                    { key: "opportunity", label: t("biz.colOpportunity") },
+                    { key: "solution", label: t("biz.colSolution") },
                   ]}
                   // Kỳ vọng thu vào nút "i" (như Lý do ở bảng Ngắn hạn) — 3 cột hẹp
                   // trên mobile làm mỗi ô chỉ 2–3 chữ/dòng, rất khó đọc.
                   infoKey="expectation"
-                  infoLabel="Kỳ vọng"
+                  infoLabel={t("biz.expectation")}
                   onDismiss={onDismissBizSuggestion}
                 />
               </div>
@@ -2353,13 +2425,13 @@ export function ReportDocument({
                   <div className="space-y-5">
                     {results.length > 0 && (
                       <div>
-                        <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Kết quả</h4>
+                        <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">{t("events.results")}</h4>
                         <EventTimeline events={results} />
                       </div>
                     )}
                     {upcoming.length > 0 && (
                       <div>
-                        <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">Sự kiện sắp tới</h4>
+                        <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">{t("events.upcoming")}</h4>
                         <EventTimeline events={upcoming} />
                       </div>
                     )}
@@ -2377,11 +2449,11 @@ export function ReportDocument({
         {/* PHẦN 3 — CHI TIẾT CÁC TIN TỨC CHÍNH */}
         {report.content["6"] && (
           <section id="section-news" className="py-5">
-            <PartHeading eyebrow="Phần 3" title={report.content["6"].title || "Chi tiết các tin tức chính"} icon={Newspaper} />
+            <PartHeading eyebrow={t("body.part", { n: 3 })} title={report.content["6"].title || t("body.newsTitle")} icon={Newspaper} />
             {[
-              { key: "international", label: "Quốc tế" },
-              { key: "vietnam", label: "Việt Nam" },
-            ].map(({ key, label }) => {
+              { key: "international", label: t("body.intl"), empty: t("body.noNewsIntl") },
+              { key: "vietnam", label: t("body.vn"), empty: t("body.noNewsVn") },
+            ].map(({ key, label, empty }) => {
               const items = report.content["6"][key];
               return (
                 <div key={key} className="mb-4 last:mb-0">
@@ -2413,14 +2485,14 @@ export function ReportDocument({
                               rel="noopener noreferrer"
                               className="font-mono text-[11.5px] text-primary hover:underline"
                             >
-                              Nguồn: {art.source} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
+                              {t("body.source")} {art.source} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
                             </a>
                           </p>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[14.5px] text-muted-light italic">Không có tin tức {label.toLowerCase()} trong kỳ này.</p>
+                    <p className="text-[14.5px] text-muted-light italic">{empty}</p>
                   )}
                 </div>
               );
@@ -2431,7 +2503,7 @@ export function ReportDocument({
         {/* NGUỒN THAM KHẢO — đứng độc lập cuối báo cáo, không thuộc Phần nào */}
         {report.content["9"] && (
           <section id="section-sources" className="py-5">
-            <PartHeading title={report.content["9"].title || "Nguồn tham khảo"} icon={Link2} />
+            <PartHeading title={report.content["9"].title || t("body.sourcesTitle")} icon={Link2} />
             {report.content["9"].items?.length > 0 ? (
               (() => {
                 // Sắp theo ĐÚNG thứ tự Phần 3 (Quốc tế → Việt Nam, đánh số như trên); link
@@ -2439,8 +2511,8 @@ export function ReportDocument({
                 const all: any[] = report.content["9"].items;
                 const used = new Set<string>();
                 const groups = [
-                  { label: "Quốc tế", list: report.content["6"]?.international ?? [] },
-                  { label: "Việt Nam", list: report.content["6"]?.vietnam ?? [] },
+                  { label: t("body.intl"), list: report.content["6"]?.international ?? [] },
+                  { label: t("body.vn"), list: report.content["6"]?.vietnam ?? [] },
                 ].map(({ label, list }) => ({
                   label,
                   entries: list
@@ -2469,13 +2541,13 @@ export function ReportDocument({
                 );
               })()
             ) : (
-              <p className="font-mono text-[12px] text-muted-light">Không có nguồn tin tức trong 48h qua.</p>
+              <p className="font-mono text-[12px] text-muted-light">{t("body.noSources")}</p>
             )}
           </section>
         )}
 
         <footer className="pt-6 text-center border-t border-border">
-          <p className="font-mono text-[11px] text-muted-light italic">Báo cáo nội bộ, tổng hợp tự động có kiểm duyệt. Không phải khuyến nghị đầu tư.</p>
+          <p className="font-mono text-[11px] text-muted-light italic">{t("body.footer")}</p>
         </footer>
 
       </div>

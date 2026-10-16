@@ -85,7 +85,7 @@ duplicate never costs an API call:
    semantic (paraphrase-catching) dedupe — same "raise clearly instead of silently
    wrong" pattern as `market_data.py`'s `ManualOrVendorProvider`.
 4. **Classify** — `classification.py::AnthropicClassifier` / `CohereClassifier` gọi LLM
-   (default `command-r-plus-08-2024` cho Cohere, `claude-haiku-4-5` cho Anthropic) qua
+   (default `command-r-plus-08-2024` cho Cohere, `claude-haiku-5-5` cho Anthropic — bị từ chối vì bộ lọc an toàn thì gọi lại 1 lần bằng `claude-haiku-4-5`; so sánh 2 model: `python -m scripts.compare_classifier`) qua
    `client.messages.create`. Input text được cắt tại `MAX_TEXT_CHARS_FOR_CLASSIFICATION = 6000`
    ký tự (tăng từ 4000 — đủ bắt được phần phân tích của bài dài). LLM trả về JSON gồm
    `topics` (1–3 giá trị từ `NewsTopic`), `confidence` (0–1), và `is_relevant` (bool).
@@ -172,6 +172,16 @@ dùng prompt `news_only`, Mục 3 không có `instrument_notes`/`trading_scenari
 `no_price_data`/`no_price_notice` để frontend (`ReportDocument.tsx`/`ReportEditor.tsx`), Jenny và Jack QC ẩn/bỏ qua phần giá.
 Lưu ý `AUTO_REPORT_DAYS` mặc định `tue-sat` — muốn tự sinh báo cáo CN/T2 phải đặt lại trong `.env`.
 
+**Bản tiếng Anh của báo cáo** (`services/report_translation.py`): dịch máy `reports.content` → `reports.content_en`
+bằng LibreTranslate/Argos tự host (service `libretranslate` trong docker-compose, `LIBRETRANSLATE_URL`; trống = tắt), KHÔNG
+gọi LLM. Chạy sau khi sinh báo cáo, sau khi admin sửa (PUT/gỡ gợi ý biz) và trước khi gửi email publish; lỗi dịch chỉ log.
+`content_en_source_hash` = hash của `content` lúc dịch → lệch thì `fresh_content_en()` trả None (API trả `content_en: null`,
+web hiện bản tiếng Việt kèm thông báo). Khoá enum (`PROTECTED_KEYS`: horizon/direction/impact/heading/...) giữ tiếng Việt,
+frontend tự đổi nhãn; neo cấu trúc (`**Tổng hợp:**`, `[TÍCH CỰC]`, tiền tố nhóm Mục 3, `**Mục tiêu:**`...) dịch bằng
+`GLOSSARY` cố định — các regex trong `ReportDocument.tsx` và `report_qc.parse_strategy` nhận cả 2 ngôn ngữ; thêm neo mới
+phải cập nhật cả 3 nơi. Email publish kèm 2 PDF (vi + `-en.pdf`, `render_report_pdf(lang="en")` đặt cookie `NEXT_LOCALE`).
+Dịch bù: `python -m scripts.translate_reports --missing`.
+
 **Hot news email digest** (`services/hot_news_email.py`): at the end of every
 `main.main()` crawl run (mỗi đợt crawl của cả 2 nhóm nguồn — nhóm quốc tế chạy ban đêm giờ VN; bỏ qua trong `HOT_NEWS_EMAIL_QUIET_HOURS`), all `is_hot_news` articles with
 `hot_news_emailed_at IS NULL` (crawled within `HOT_NEWS_EMAIL_MAX_AGE_HOURS`) are
@@ -204,7 +214,9 @@ bản mới = tăng version ở `mcp_client/pyproject.toml` + `MCP_CLIENT_VERSIO
 `frontend/src/lib/claudeConnect.ts`, rồi chạy `scripts/build_mcp_client.sh`. Tên file wheel BẮT BUỘC có
 phiên bản hợp lệ (uv đọc phiên bản từ tên file) — không dùng kiểu `-latest.whl`.
 
-**Jack QC báo cáo** (`services/report_qc.py`): tool `jack_qc` (tên cũ Lucy): trong Jenny chat web CHỈ bật cho admin
+**Jenny chat — token**: prompt tĩnh (`_build_static_instructions`) chỉ giữ INFERENCE_RULES + FUEL_SWITCHING + CONFLICT_RESOLUTION; các khối khung EUA khác (`FRAMEWORK_ON_DEMAND_BLOCKS`) model tra qua tool `get_eua_framework` (`FRAMEWORK_TOOL`, CỐ Ý ngoài `CLIENT_TOOLS` nên MCP gateway không bao giờ phục vụ — có test). Không liệt kê lại tool trong prompt (mô tả nằm ở chính tool). Cache: system tĩnh TTL theo `QUOTE_CHAT_CACHE_TTL` (1h|5m — chọn bằng `python -m scripts.analyze_chat_cache_ttl`), lượt lịch sử cuối, và `cache_control` cấp request cho vòng lặp tool. Báo cáo ngày KHÔNG cache system (mỗi prompt chỉ dùng 1 lần/ngày).
+
+**Jack QC báo cáo** (`services/report_qc.py`): tool `jack_qc`: trong Jenny chat web CHỈ bật cho admin
 (`ADMIN_TOOLS` trong `services/quote_chat.py`; `_execute_client_tool(..., allow_admin_tools=...)` chặn thêm ở tầng
 thực thi, admin QC được cả bản draft). Trên MCP/Claude Desktop, gateway thêm riêng `JACK_QC_DESKTOP_TOOL`
 (`services/claude_connect.py`, mô tả bảo Claude hoá vai Jack) cho mọi user có token và gọi với `allow_jack_qc=True` →

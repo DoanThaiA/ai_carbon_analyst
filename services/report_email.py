@@ -20,6 +20,7 @@ from core.config import Settings
 from db.models import Report, User
 from services.email_sender import EmailSendError, email_configured, send_report_pdf_email
 from services.report_pdf import ReportPdfError, render_report_pdf
+from services.report_translation import ensure_report_translation
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,17 @@ async def send_report_pdf_to_users(
             return result
 
         pdf_bytes = await render_report_pdf(report_date, settings)
-        result.sent = await send_report_pdf_email(report_date, pdf_bytes, recipients, settings)
+        # Kèm PDF tiếng Anh nếu dịch được (dịch bù ngay nếu bản dịch thiếu/cũ). Lỗi phần tiếng Anh
+        # chỉ log — vẫn gửi bản tiếng Việt như trước.
+        pdf_en_bytes = None
+        if await ensure_report_translation(session_factory, settings, report_date):
+            try:
+                pdf_en_bytes = await render_report_pdf(report_date, settings, lang="en")
+            except ReportPdfError:
+                logger.exception("[REPORT-EMAIL] Không render được PDF tiếng Anh %s — chỉ gửi bản tiếng Việt.", report_date)
+        result.sent = await send_report_pdf_email(
+            report_date, pdf_bytes, recipients, settings, pdf_en_bytes=pdf_en_bytes
+        )
 
         async with session_factory() as session:
             await session.execute(

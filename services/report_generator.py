@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 # Mục 1-4, 8, biz (phân tích chuyên sâu, chuỗi nhân quả, chiến lược) dùng Opus;
 # Mục 6 (tóm tắt ngắn từng bài) dùng Haiku — rẻ hơn nhiều, đủ cho việc tóm tắt.
 REPORT_MODEL_OPUS = "claude-opus-5"
-REPORT_MODEL_HAIKU = "claude-haiku-4-5"
+# Haiku 5.5: rẻ hơn Haiku 4.5 ~10 lần. Bị bộ lọc an toàn từ chối (không có fallback phía server)
+# → _call_llm gọi lại 1 lần bằng REFUSAL_FALLBACK_MODELS.
+REPORT_MODEL_HAIKU = "claude-haiku-5-5"
+REFUSAL_FALLBACK_MODELS = {"claude-haiku-5-5": "claude-haiku-4-5"}
 
 # Meta-instruction chống dài dòng — đặt ở đầu system message mọi section,
 # LLM anchor vào instruction đầu tiên mạnh nhất.
@@ -945,7 +948,7 @@ async def _summarize_section6_articles(
             raw = await _call_llm(
                 _prompt_section6_summary(art, target_date),
                 model=REPORT_MODEL_HAIKU,
-                max_tokens=512,
+                max_tokens=768,  # tokenizer Haiku 5.5 tốn hơn ~30% token cho cùng văn bản
             )
             parsed = _extract_json(raw) if raw else None
             if parsed and _has_cjk(parsed.get("summary") or ""):
@@ -953,7 +956,7 @@ async def _summarize_section6_articles(
                 raw = await _call_llm(
                     _prompt_section6_summary(art, target_date),
                     model=REPORT_MODEL_HAIKU,
-                    max_tokens=512,
+                    max_tokens=768,
                 )
                 parsed = _extract_json(raw) if raw else None
                 if parsed and _has_cjk(parsed.get("summary") or ""):
@@ -1603,11 +1606,8 @@ async def _call_llm(
     """Gọi Claude (Anthropic) async và trả về text thô, hoặc None nếu lỗi.
 
     system: instruction tĩnh (role, framework, quy tắc viết) — tách khỏi user
-    message để Claude tuân thủ tốt hơn. Đánh dấu cache_control (ephemeral) trên
-    block system — đây là phần GIỐNG HỆT nhau giữa các lần chạy (framework/quy
-    tắc không đổi theo ngày, chỉ user message chứa DATA mới đổi) nên tận dụng
-    được prompt caching thật sự của Anthropic (KHÔNG tự động nếu chỉ truyền
-    chuỗi thường — phải khai báo cache_control tường minh như dưới đây).
+    message để Claude tuân thủ tốt hơn. KHÔNG đánh cache_control: mỗi system chỉ
+    dùng 1 lần/ngày nên cache không được đọc lại, chỉ tốn thêm phụ phí ghi cache.
     model mặc định Opus cho các mục phân tích chuyên sâu (Mục 1-4, 8, biz);
     Mục 6 (tóm tắt từng bài) gọi với model=REPORT_MODEL_HAIKU — rẻ hơn, đủ dùng.
     """
@@ -1622,11 +1622,22 @@ async def _call_llm(
                                                      # cho phần text thay vì bị thinking ăn bớt (gây cụt JSON).
                 "messages": [{"role": "user", "content": prompt}],
             }
+            if model.startswith("claude-haiku-5"):
+                # Tóm tắt/JSON ngắn — effort thấp (Haiku 5.5 mặc định medium; thinking đã tắt ở trên).
+                kwargs["output_config"] = {"effort": "low"}
             if system:
-                kwargs["system"] = [
-                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
-                ]
+                # KHÔNG cache: mỗi prompt hệ thống (khung phân tích riêng từng mục) chỉ gọi 1 lần/ngày,
+                # cache không bao giờ được đọc lại mà lần ghi cache bị tính thêm 25% giá input.
+                kwargs["system"] = system
             response = await client.messages.create(**kwargs)
+            fallback_model = REFUSAL_FALLBACK_MODELS.get(model)
+            if response.stop_reason == "refusal" and fallback_model:
+                logger.warning(
+                    "[LLM] %s từ chối (category=%s) — gọi lại bằng %s.",
+                    model, getattr(getattr(response, "stop_details", None), "category", None), fallback_model,
+                )
+                return await _call_llm(prompt, system=system, model=fallback_model,
+                                       max_tokens=max_tokens, max_retries=max_retries)
             if response.stop_reason == "max_tokens":
                 # Output bị CẮT NGANG do hết max_tokens — với JSON có cấu trúc,
                 # phần bị cắt gần như chắc chắn làm JSON không hợp lệ (thiếu dấu

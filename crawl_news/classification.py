@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 
 MAX_TEXT_CHARS_FOR_CLASSIFICATION = 6000
 
+# Haiku 5.5: rẻ hơn Haiku 4.5 ~10 lần ($0,10/$0,50 vs $1/$5 mỗi 1M token, prompt ≤100K token).
+DEFAULT_CLASSIFIER_MODEL = "claude-haiku-5-5"
+# Haiku 5.5 có bộ lọc an toàn (stop_reason="refusal") KHÔNG có fallback phía server — tin địa chính
+# trị/xung đột đôi khi bị từ chối → gọi lại 1 lần bằng model này thay vì bỏ bài.
+REFUSAL_FALLBACK_MODEL = "claude-haiku-4-5"
+
 _SYSTEM_PROMPT = """\
 Bạn là Chuyên gia Phân tích Thị trường Năng lượng & Carbon Châu Âu.
 
@@ -132,10 +138,31 @@ def _extract_message_text(message: "anthropic.types.Message") -> str:
 class AnthropicClassifier(Classifier):
     """Dùng Claude (mặc định Haiku — rẻ/nhanh, đủ cho tác vụ phân loại)."""
 
-    def __init__(self, api_key: str, model: str = "claude-haiku-4-5", concurrency: int = 5):
+    def __init__(self, api_key: str, model: str = DEFAULT_CLASSIFIER_MODEL, concurrency: int = 5):
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
         self._model = model
         self._semaphore = asyncio.Semaphore(concurrency)
+
+    async def _create(self, model: str, user_content: str) -> "anthropic.types.Message":
+        kwargs: dict = {}
+        if not model.startswith("claude-haiku-4"):
+            # Haiku 5.5 chạy adaptive thinking mặc định — tắt (được phép ở effort ≤ high) và hạ
+            # effort: output là JSON ngắn cố định. Haiku 4.5 không nhận tham số effort.
+            kwargs["output_config"] = {"effort": "low"}
+        return await self._client.messages.create(
+            model=model,
+            # 512 (từ 384): tokenizer Haiku 5.5 tốn hơn ~30% token cho cùng văn bản — chừa chỗ
+            # cho hot_news_reason, tránh cụt JSON.
+            max_tokens=512,
+            thinking={"type": "disabled"},
+            # Prompt hệ thống GIỐNG HỆT nhau cho mọi bài → cache (đọc lại ~0,1× giá) — mỗi đợt
+            # crawl phân loại hàng chục bài liên tiếp trong vài phút nên cache 5 phút luôn ấm.
+            # Ngắn hơn ngưỡng tối thiểu của model thì API tự bỏ qua, không lỗi, không phụ phí.
+            system=[{"type": "text", "text": _SYSTEM_PROMPT + _JSON_INSTRUCTION,
+                     "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_content}],
+            **kwargs,
+        )
 
     async def classify(self, title: Optional[str], text: str) -> ClassificationResult:
         user_content = (
@@ -144,14 +171,14 @@ class AnthropicClassifier(Classifier):
         )
         try:
             async with self._semaphore:
-                response = await self._client.messages.create(
-                    model=self._model,
-                    max_tokens=384,  # tăng từ 256 — chừa chỗ cho hot_news_reason
-                    thinking={"type": "disabled"},  # output JSON ngắn, cố định — tắt thinking để
-                                                     # không bị ăn bớt max_tokens vốn đã eo hẹp
-                    system=_SYSTEM_PROMPT + _JSON_INSTRUCTION,
-                    messages=[{"role": "user", "content": user_content}],
-                )
+                response = await self._create(self._model, user_content)
+                if response.stop_reason == "refusal" and self._model != REFUSAL_FALLBACK_MODEL:
+                    logger.warning(
+                        "[CLASSIFY] %s từ chối phân loại (category=%s) — gọi lại bằng %s: %.80s",
+                        self._model, getattr(getattr(response, "stop_details", None), "category", None),
+                        REFUSAL_FALLBACK_MODEL, title or "",
+                    )
+                    response = await self._create(REFUSAL_FALLBACK_MODEL, user_content)
         except anthropic.RateLimitError as e:
             raise ClassificationError(f"Anthropic rate limit, thử lại sau: {e}") from e
         except anthropic.APIStatusError as e:
@@ -245,7 +272,7 @@ def build_classifier(
     Dùng trong main.py để khởi tạo classifier mà không cần if/else rải rác.
     """
     if backend == "anthropic":
-        effective_model = model or "claude-haiku-4-5"
+        effective_model = model or DEFAULT_CLASSIFIER_MODEL
         return AnthropicClassifier(
             api_key=anthropic_api_key,
             model=effective_model,

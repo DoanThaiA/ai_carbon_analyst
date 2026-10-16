@@ -1144,6 +1144,56 @@ def _fmt_vn_date_short(iso: Optional[str]) -> str:
 # Chuyên môn nền tảng — tiêm vào system prompt để model suy luận
 # ─────────────────────────────────────────────────────────────────────
 
+# Khối khung EUA KHÔNG tiêm sẵn vào system prompt (tiết kiệm ~8k token/câu hỏi) — model tra qua tool
+# get_eua_framework khi cần. Giữ lại trong prompt: INFERENCE_RULES, FUEL_SWITCHING, CONFLICT_RESOLUTION.
+FRAMEWORK_ON_DEMAND_BLOCKS = (
+    "POLICY_MSR", "RELATIVE_FUEL_ECONOMICS", "POWER_EUA_TWO_WAY", "WEATHER_POWER_SYSTEM", "OIL_GASOIL",
+    "CBAM_ETS", "NON_EUA_CARBON_MARKETS", "GEOPOLITICS_SUPPLY_CHAIN", "FINANCE_SPECULATION",
+    "POSITIONING_TECHNICALS", "MACRO", "TERM_STRUCTURE_CARRY",
+)
+FRAMEWORK_TOOL_MAX_BLOCKS = 4
+
+# CỐ Ý không nằm trong CLIENT_TOOLS: MCP gateway chỉ phục vụ CLIENT_TOOLS (+ jack_qc), và khung phân tích
+# EUA là nội bộ, không gửi sang Claude Desktop (xem services/claude_connect.py::_JENNY_DESKTOP_PERSONA).
+FRAMEWORK_TOOL = {
+    "name": "get_eua_framework",
+    "description": (
+        "Tra KHUNG PHÂN TÍCH CHUẨN (nội bộ) của 1–4 kênh tác động giá EUA — chuỗi nhân quả đúng chiều, điều kiện "
+        "kích hoạt/vô hiệu. Gọi TRƯỚC khi giải thích cơ chế/nguyên nhân/kịch bản liên quan tới các kênh này (xem "
+        "mục lục trong prompt); gộp mọi kênh cần vào 1 lần gọi. Không dùng cho câu hỏi chỉ tra số liệu."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "blocks": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(FRAMEWORK_ON_DEMAND_BLOCKS)},
+                "minItems": 1,
+                "maxItems": FRAMEWORK_TOOL_MAX_BLOCKS,
+                "description": "Mã kênh trong mục lục KHUNG CHI TIẾT THEO KÊNH.",
+            },
+        },
+        "required": ["blocks"],
+    },
+}
+
+
+def _framework_index() -> str:
+    return "\n".join(f"- {bid}: {chains.BLOCK_TITLES.get(bid, bid)}" for bid in FRAMEWORK_ON_DEMAND_BLOCKS)
+
+
+def _framework_tool_text(tool_input: dict, overrides: Optional[Dict[str, str]] = None) -> str:
+    """Nội dung tool get_eua_framework — đọc qua chains.get_block để override của admin có hiệu lực."""
+    raw = tool_input.get("blocks") if isinstance(tool_input, dict) else None
+    ids = [b for b in (raw if isinstance(raw, list) else []) if b in FRAMEWORK_ON_DEMAND_BLOCKS]
+    ids = list(dict.fromkeys(ids))[:FRAMEWORK_TOOL_MAX_BLOCKS]
+    if not ids:
+        return "Không có mã kênh hợp lệ. Mã hợp lệ: " + ", ".join(FRAMEWORK_ON_DEMAND_BLOCKS)
+    return "\n\n".join(chains.get_block(bid, overrides) for bid in ids) + (
+        "\n\n(Khung nội bộ — dùng để suy luận đúng chiều, KHÔNG nhắc tên mã/nhãn nội bộ trong câu trả lời.)"
+    )
+
+
 def _build_domain_knowledge(overrides: Optional[Dict[str, str]] = None) -> str:
     """Trước đây đây là hằng số module-level `_DOMAIN_KNOWLEDGE` dựng 1 LẦN lúc
     import — chuyển thành hàm để mỗi khối `chains.X` đi qua `chains.get_block()`
@@ -1163,40 +1213,18 @@ trong câu trả lời cho người dùng — chỉ dùng nội bộ để suy l
 
 {gb("INFERENCE_RULES", overrides)}
 
-A. CƠ CHẾ CỐT LÕI EU ETS & GIÁ EUA:
-{gb("POLICY_MSR", overrides)}
-
-B. FUEL SWITCHING — chuỗi logic quan trọng nhất:
+FUEL SWITCHING — chuỗi logic quan trọng nhất (luôn áp dụng):
 {gb("FUEL_SWITCHING", overrides)}
-{gb("RELATIVE_FUEL_ECONOMICS", overrides)}
 
-C. LIÊN THỊ TRƯỜNG:
-• {gb("POWER_EUA_TWO_WAY", overrides)}
-{gb("WEATHER_POWER_SYSTEM", overrides)}
-{gb("OIL_GASOIL", overrides)}
-• Than (API2/NEWC): giá than ảnh hưởng fuel switching threshold.
-{gb("CBAM_ETS", overrides)}
-{gb("NON_EUA_CARBON_MARKETS", overrides)}
+KHUNG CHI TIẾT THEO KÊNH — KHÔNG có sẵn ở đây, tra bằng tool get_eua_framework(blocks=[...]) khi câu hỏi
+cần GIẢI THÍCH CƠ CHẾ/NGUYÊN NHÂN/KỊCH BẢN "nếu... thì..." tác động lên giá EUA qua 1 kênh dưới đây (gọi
+1 lần, gộp mọi kênh liên quan, tối đa 4). Câu hỏi chỉ tra số liệu/nội dung báo cáo thì KHÔNG cần gọi:
+{_framework_index()}
 
-D. CHÍNH SÁCH:
-• Fit-for-55: gói chính sách khí hậu EU, mục tiêu giảm 55% KNK vào 2030.
+CHÍNH SÁCH & VIỆT NAM (tóm tắt):
+• Fit-for-55: gói chính sách khí hậu EU, mục tiêu giảm 55% KNK vào 2030. Article 6 Paris: trao đổi tín chỉ giữa các quốc gia.
 • CBAM (EU & UK): thuế carbon biên giới — ảnh hưởng trực tiếp DN xuất khẩu VN ngành thép, nhôm, xi măng, phân bón, điện.
-• Article 6 Paris Agreement: cơ chế trao đổi tín chỉ carbon giữa các quốc gia.
-• NDC: cam kết giảm phát thải quốc gia — VN mục tiêu net-zero 2050.
-
-E. THỊ TRƯỜNG CARBON VIỆT NAM:
-• Nghị định 06/2022/NĐ-CP: khung pháp lý giảm KNK, phát triển thị trường carbon.
-• VETS (sàn giao dịch tín chỉ carbon VN): dự kiến vận hành thí điểm 2025, chính thức 2028.
-• DN VN chịu ảnh hưởng CBAM: ngành thép, nhôm, xi măng, phân bón xuất khẩu sang EU.
-
-F. ĐỊA CHÍNH TRỊ:
-{gb("GEOPOLITICS_SUPPLY_CHAIN", overrides)}
-
-G. TÀI CHÍNH & MACRO:
-{gb("FINANCE_SPECULATION", overrides)}
-{gb("POSITIONING_TECHNICALS", overrides)}
-{gb("MACRO", overrides)}
-{gb("TERM_STRUCTURE_CARRY", overrides)}
+• VN: Nghị định 06/2022/NĐ-CP (khung giảm KNK, thị trường carbon); sàn tín chỉ carbon dự kiến thí điểm 2025, chính thức 2028; NDC net-zero 2050.
 
 {gb("CONFLICT_RESOLUTION", overrides)}
 """
@@ -1354,22 +1382,7 @@ def _build_static_instructions(
 
     data_block = f"""=== DỮ LIỆU GIÁ / NỘI DUNG BÁO CÁO — TRA CỨU QUA TOOL, KHÔNG CÓ SẴN Ở ĐÂY ===
 Bạn CÓ CÁC TOOL sau — MỖI LẦN GỌI TOOL TỐN THỜI GIAN CHỜ THẬT (round-trip DB/API), người dùng đang chờ trực tiếp — chỉ gọi khi câu hỏi THỰC SỰ cần dữ liệu đó, KHÔNG gọi "cho chắc"/"để minh hoạ thêm bằng số" nếu thông tin đã có sẵn trong đoạn trích/DỮ LIỆU NỀN/lịch sử hội thoại. ĐẶC BIỆT với câu hỏi THUẦN SUY LUẬN ("vì sao", "cơ chế nào", "tại sao X tác động Y") mà đoạn trích/DỮ LIỆU NỀN đã nêu đủ dữ kiện định tính để giải thích — TRẢ LỜI NGAY bằng suy luận (xem NĂNG LỰC mục C bên dưới), KHÔNG gọi get_market_prices/get_eua_details/get_price_history "cho có số liệu minh hoạ" nếu người dùng không hỏi rõ 1 con số cụ thể; chỉ gọi tool giá khi câu hỏi trực tiếp cần SỐ (giá bao nhiêu, tăng/giảm bao nhiêu %, mốc kỹ thuật ở đâu...).
-- get_market_prices(date tuỳ chọn): giá đóng cửa + Δ ngày/Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức) + giá tham chiếu CBAM Certificate (EUR/tCO2, chốt theo quý, không có Δ) — hỏi "giá CBAM hôm nay/hiện tại" thì gọi tool này và trả đúng số CBAM.
-- get_eua_details(date tuỳ chọn): OHLC phiên liền trước, khối lượng phiên liền trước so với TB gần đây, mốc kỹ thuật hỗ trợ/kháng cự của EUA.
-- get_eua_volume_history(date tuỳ chọn): khối lượng EUA theo TỪNG phiên (tối đa 30 phiên), mỗi phiên kèm sẵn %chênh lệch so với TB 20 phiên NGAY TRƯỚC nó — dùng khi cần khối lượng 1 ngày cụ thể trong quá khứ hoặc SO SÁNH khối lượng GIỮA CÁC NGÀY.
-- get_report_section(section="1".."4"|"6"|"8"|"9"|"biz", date tuỳ chọn): toàn văn 1 MỤC BẤT KỲ của báo cáo ngày {report_date} (hoặc ngày khác qua `date`) — Mục 1 (Tóm tắt điều hành), Mục 2 (Bảng giá nhanh), Mục 3 (Phân tích chuyên sâu — bao gồm cả tín hiệu liên thị trường và quan điểm thị trường nếu có + kịch bản giao dịch), Mục 4 (Cập nhật tín chỉ carbon & CBAM), Mục 6 (Chi tiết TOÀN BỘ tin tức trong ngày — quốc tế + Việt Nam, kèm tóm tắt từng bài), Mục 8 (Lịch sự kiện 7 ngày tới — EIA/Baker Hughes/họp chính sách), Mục 9 (Danh sách nguồn tham khảo), "biz" (Gợi ý kinh doanh & giải pháp cho SIM). Gọi mục nào tuỳ đúng câu hỏi — không giới hạn ở đoạn trích người dùng đang bôi đen.
-- get_biz_suggestions(status, kind, days, date tuỳ chọn): BỘ NHỚ gợi ý kinh doanh của Jenny đọc thẳng từ DB — gợi ý ngắn/dài hạn đã đề xuất trong ~10 ngày gần nhất kèm trạng thái mới nhất (đang theo dõi / ĐÃ KÍCH HOẠT + bằng chứng + nguồn / THỰC TẾ NGƯỢC VỚI ĐỀ XUẤT + bằng chứng / admin đã gỡ). Dùng khi hỏi "Jenny đã đề xuất gì", "gợi ý nào đã kích hoạt/đang theo dõi". Chỉ đọc, không tạo/sửa/gỡ được gợi ý.
-- calc_price_stats(instruments[1-4], start_date, sessions, date tuỳ chọn): thống kê TÍNH SẴN (% thay đổi, cao/thấp nhất, độ biến động, tương quan lợi suất ngày + tỷ lệ/chênh lệch giữa các cặp) — dùng cho câu hỏi định lượng/liên thị trường; KHÔNG tự tính từ chuỗi giá.
-- get_report_history(section, days, date tuỳ chọn): CÙNG 1 mảng ("verdict" nhận định tổng quan, "signal" kịch bản, hoặc Mục 1/2/3/4/6/8/biz) của NHIỀU báo cáo liên tiếp — dùng để so sánh/xem xu hướng qua các ngày ("nhận định 7 ngày qua", "hôm nay khác hôm qua").
-- review_past_forecast(date, sessions tuỳ chọn): ĐỐI CHIẾU nhận định/kịch bản của 1 báo cáo quá khứ với giá EUA thực tế các phiên sau đó (kết quả cùng/ngược chiều tính sẵn) — dùng khi hỏi "dự báo có đúng không".
-- get_report_overview(date tuỳ chọn): MỤC LỤC báo cáo (nhận định tổng quan, kịch bản ngắn hạn, số lượng nội dung từng mục) — dùng cho câu hỏi chung chung "báo cáo có gì" rồi mới đọc mục cụ thể.
-- get_calendar_events(start_date, end_date): lịch sự kiện trong khoảng bất kỳ (EIA/Baker Hughes định kỳ + sự kiện đã ghi ở Mục 8, kèm kết quả) — dùng khi hỏi sự kiện ngoài cửa sổ 7 ngày của Mục 8.
-- list_reports(limit tuỳ chọn): các NGÀY đã có báo cáo published — dùng trước khi so sánh nhiều ngày hoặc khi tool báo không có báo cáo ngày đó.
-- browse_news(topic, region, hot_only, limit, date tuỳ chọn): DANH SÁCH bài đã crawl trong 1 ngày (id, nguồn, hạng, giờ đăng, tiêu đề, topic, tin nóng) — dùng cho "hôm nay có tin gì về X", "có tin nóng không", "tin Việt Nam". Khác search_news (tìm theo nội dung).
-- get_article(article_id | url): TOÀN VĂN 1 bài (id từ browse_news, url từ search_news/Mục 9) — khi cần chi tiết 1 bài cụ thể.
-- get_price_history(instrument, sessions tuỳ chọn, date tuỳ chọn, start_date tuỳ chọn): lịch sử OHLC nhiều phiên của 1 instrument BẤT KỲ hệ thống theo dõi (kể cả EUA) — dùng khi hỏi XU HƯỚNG/lịch sử giá qua thời gian, khác get_market_prices (chỉ 1 ngày). Hỏi về 1 KHOẢNG (tuần trước, tháng trước, quý...) thì truyền start_date + date theo LỊCH THAM CHIẾU bên dưới — tool tính sẵn biến động cả khoảng. Hỏi xu hướng EUA chung (không nêu khoảng ngày) thì ưu tiên get_eua_details/get_eua_volume_history trước.
-- fetch_user_source(url): ĐỌC nội dung 1 trang web (bài tin, trang giá, báo cáo công khai) mà NGƯỜI DÙNG đưa link hoặc nhờ kiểm tra theo nguồn của họ — dùng khi người dùng dán URL, hoặc khi đối chiếu phản hồi "báo cáo sai" với nguồn tin/nguồn giá họ cung cấp. KHÁC web_search (tự tìm trên web) — chỉ truyền đúng URL người dùng đã đưa hoặc URL nguồn có thật trong báo cáo/Mục 9; KHÔNG tự bịa URL.
-- search_news(query, date tuỳ chọn): tìm CHỦ ĐỘNG trong TOÀN BỘ kho tin đã crawl (không giới hạn ngày báo cáo đang xem như DỮ LIỆU NỀN tự động bên dưới) — dùng khi câu hỏi lệch chủ đề khỏi DỮ LIỆU NỀN ban đầu hoặc cần tin của NGÀY KHÁC.
+Danh sách tool và lúc nên dùng: xem MÔ TẢ của từng tool (không lặp lại ở đây). Ưu tiên: câu hỏi chung chung về báo cáo → get_report_overview rồi mới get_report_section; lịch sử/so sánh nhiều ngày → get_report_history/get_price_history/calc_price_stats (KHÔNG tự tính từ chuỗi giá); giải thích cơ chế tác động EUA → get_eua_framework; link người dùng đưa → fetch_user_source (KHÔNG tự bịa URL).
 QUAN TRỌNG VỀ THAM SỐ `date` (get_market_prices/get_eua_details/get_eua_volume_history/get_report_section/get_price_history): mặc định (không truyền `date`) các tool này trả dữ liệu theo ngày báo cáo đang xem ({report_date}) — KHÔNG PHẢI ngày người dùng vừa nhắc tới trong câu hỏi. Nếu người dùng hỏi rõ về 1 NGÀY CỤ THỂ khác {report_date} (vd "giá ngày 09/09", "báo cáo hôm qua", "tuần trước"), PHẢI quy đổi ra định dạng YYYY-MM-DD bằng LỊCH THAM CHIẾU bên dưới (không tự tính thứ/ngày) và truyền qua tham số `date` (khoảng ngày: thêm `start_date` cho get_price_history) — TUYỆT ĐỐI KHÔNG gọi tool không kèm `date` rồi mặc định trình bày kết quả (vốn là của {report_date}) như thể đó là dữ liệu của ngày người dùng hỏi. Với get_market_prices/get_eua_details/get_eua_volume_history/get_price_history, nếu ngày yêu cầu không có dữ liệu, tool trả về dữ liệu của phiên gần nhất trước đó kèm cảnh báo — PHẢI đọc và nêu đúng ngày thực tế trong câu trả lời. Với get_report_section, nếu báo cáo ngày yêu cầu chưa published, tool báo rõ không có — KHÔNG tự suy diễn nội dung ngày đó. RIÊNG search_news: không truyền `date` = tìm KHÔNG giới hạn ngày (khác các tool trên, nơi không truyền `date` nghĩa là dùng {report_date}) — chỉ truyền `date` khi cần giới hạn đúng 1 ngày tin tức cụ thể.
 Có thể gọi NHIỀU tool trong 1 lượt nếu câu hỏi cần nhiều loại dữ liệu khác nhau, nhưng KHÔNG gọi lại 1 tool đã dùng CÙNG tham số (date/section/instrument/query...) trong CÙNG hội thoại (dữ liệu là cố định, không đổi giữa các lượt hỏi kế tiếp — dùng lại kết quả cũ; gọi lại NẾU đổi tham số). Mỗi kết quả tool trả về TỰ kèm 1 dòng LƯU Ý cách dùng đúng (không tự bịa số ngoài phạm vi tool cung cấp) — PHẢI làm theo lưu ý đó.
 LƯU Ý ĐẶC BIỆT VỀ ĐOẠN TRÍCH THIẾU NGỮ CẢNH: đoạn trích người dùng bôi đen có thể được cắt ra từ BẤT KỲ mục nào của báo cáo (không chỉ Mục 1/2/3) — có thể là 1 câu KẾT LUẬN đứng riêng, chứa đại từ/cụm quy chiếu không tự giải thích được nếu tách rời (vd "nhóm này", "yếu tố này", "xu hướng này", "kịch bản này", "điều này"...). Gặp trường hợp này: GỌI get_report_section (ưu tiên thử mục có khả năng chứa đoạn trích nhất trước, dựa vào văn phong/nội dung — Mục 1 là các gạch đầu dòng tóm tắt, Mục 2 có "yếu tố hỗ trợ tăng/giảm giá", Mục 3 là phân tích chuyên sâu có tiêu đề từng khối (bao gồm cả các tín hiệu dạng "X → EUA" và quan điểm thị trường trái chiều nếu có), Mục 4 nhắc CBAM/VCM/thép xanh, Mục 8 là sự kiện có ngày giờ, "biz" là gợi ý dạng bảng kích hoạt/hành động/lý do; thử mục khác nếu không thấy, nhưng ưu tiên các mục có văn phong khớp nhất trước để không tốn lượt gọi tool vô ích) để tìm đúng vị trí đoạn trích, đọc các câu/gạch đầu dòng ngay TRƯỚC nó trong kết quả trả về để xác định chính xác đại từ/cụm đó đang chỉ tới cái gì, rồi trả lời DỰA TRÊN nghĩa đã giải quyết đó — nêu rõ luôn đối tượng cụ thể trong câu trả lời (vd viết "Gas → EUA tạo áp lực tăng..." thay vì lặp lại mơ hồ "nhóm này"). TUYỆT ĐỐI KHÔNG trả lời chung chung hay hỏi ngược người dùng "nhóm nào" khi có thể tự tra ra bằng tool."""
@@ -2159,8 +2172,10 @@ async def _stream_anthropic(
     enable_client_tools: bool = False,
     enable_admin_tools: bool = False,
     retrieval_service: Optional[RetrievalService] = None,
+    eua_framework_overrides: Optional[Dict[str, str]] = None,
+    cache_ttl: str = "1h",
 ) -> AsyncIterator[str]:
-    """PROMPT CACHING (2 breakpoint, tối đa cho phép là 4):
+    """PROMPT CACHING (3 breakpoint, tối đa cho phép là 4):
     1. `system` tách 2 block — `static_instructions` (role/kiến thức/quy tắc,
        giống hệt nhau ở MỌI request cùng report_date) đánh cache_control TTL
        1h (traffic có thể thưa nên ưu tiên giữ cache lâu hơn mặc định 5 phút);
@@ -2170,6 +2185,9 @@ async def _stream_anthropic(
        + câu hỏi mới), đánh thêm breakpoint ở tin nhắn lịch sử CUỐI CÙNG — các
        câu hỏi tiếp theo trong CÙNG phiên tái dùng lại đúng prefix hội thoại đã
        cache thay vì trả tiền đầy đủ lại từ đầu mỗi lượt.
+    3. `cache_control` cấp request (tự đặt breakpoint ở block CUỐI mỗi lượt gọi) —
+       trong vòng lặp tool, lượt sau đọc lại từ cache `dynamic_context` + kết quả
+       tool của các lượt trước thay vì trả nguyên giá mỗi lượt.
 
     LƯU Ý: model mặc định của Quote Chat (Sonnet 5) yêu cầu prefix tối thiểu
     1024 token mới thực sự được cache (thấp hơn Haiku — Haiku cần tới 4096,
@@ -2193,6 +2211,7 @@ async def _stream_anthropic(
     tools: List[dict] = []
     if enable_client_tools:
         tools.extend(CLIENT_TOOLS)
+        tools.append(FRAMEWORK_TOOL)
         if enable_admin_tools:
             tools.extend(ADMIN_TOOLS)
     if enable_web_search:
@@ -2200,7 +2219,7 @@ async def _stream_anthropic(
     extra = {"tools": tools} if tools else {}
 
     system = [
-        {"type": "text", "text": static_instructions, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+        {"type": "text", "text": static_instructions, "cache_control": {"type": "ephemeral", "ttl": cache_ttl}},
         {"type": "text", "text": dynamic_context},
     ]
 
@@ -2272,6 +2291,10 @@ async def _stream_anthropic(
             system=system,
             messages=anthropic_messages,
             output_config={"effort": "low"},
+            # Breakpoint tự động ở block CUỐI (câu hỏi / kết quả tool mới nhất) — lượt gọi tool sau
+            # đọc lại từ cache toàn bộ ngữ cảnh động + kết quả tool trước đó (~0,1× giá) thay vì
+            # trả nguyên giá mỗi lượt. Cùng 2 breakpoint ở system tĩnh + lượt lịch sử cuối = 3/4.
+            cache_control={"type": "ephemeral"},
             **extra,
         ) as stream:
             leaked_chars = 0
@@ -2354,6 +2377,10 @@ async def _stream_anthropic(
         if any(call.name in JACK_TOOLS for call in client_tool_calls):
             yield StatusEvent(JACK_STATUS_MESSAGE)
         for call in client_tool_calls:
+            if call.name == FRAMEWORK_TOOL["name"]:
+                result_text = _framework_tool_text(call.input, eua_framework_overrides)
+                tool_results.append({"type": "tool_result", "tool_use_id": call.id, "content": result_text})
+                continue
             result_text = await _execute_client_tool(
                 call.name, call.input, session, report_date,
                 tool_cache=tool_cache, chart_cache=chart_cache, retrieval_service=retrieval_service,
@@ -2447,6 +2474,8 @@ async def astream_quote_chat(
         enable_client_tools=True,
         enable_admin_tools=is_admin,
         retrieval_service=retrieval_service,
+        eua_framework_overrides=eua_framework_overrides,
+        cache_ttl=settings.quote_chat_cache_ttl,
     )
 
     async for delta in stream:

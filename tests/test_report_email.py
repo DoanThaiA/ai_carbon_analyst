@@ -67,3 +67,13 @@ def test_raises_when_nobody_sent(monkeypatch):
     _FakeResend(fail_to={"a@x"}).install(monkeypatch)
     with pytest.raises(EmailSendError):
         asyncio.run(send_report_pdf_email("2026-10-09", b"p", ["a@x"], _settings()))
+
+
+def test_attaches_english_pdf_when_given(monkeypatch):
+    fake = _FakeResend().install(monkeypatch)
+    asyncio.run(send_report_pdf_email("2026-10-09", b"vi", ["a@x"], _settings(), pdf_en_bytes=b"en"))
+    body = json.loads(fake.requests[0].content)
+    names = [a["filename"] for a in body["attachments"]]
+    assert names == ["carbon-analyst-report-2026-10-09.pdf", "carbon-analyst-report-2026-10-09-en.pdf"]
+    assert base64.b64decode(body["attachments"][1]["content"]) == b"en"
+    assert "Daily Report" in body["subject"] and "English" in body["text"]

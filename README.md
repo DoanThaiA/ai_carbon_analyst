@@ -17,7 +17,7 @@ Copy `.env.example` → `.env` và điền:
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
 ANTHROPIC_API_KEY=sk-ant-...
-CLASSIFIER_MODEL=claude-haiku-4-5   # mặc định, có thể đổi
+CLASSIFIER_MODEL=claude-haiku-5-5   # mặc định, có thể đổi
 CLASSIFY_CONCURRENCY=5
 ```
 

@@ -338,16 +338,25 @@ async def send_hot_news_digest_email(
 _REPORT_EMAIL_PAUSE_SECONDS = 0.6
 
 
-def build_report_email_message(report_date: str, settings: Settings) -> tuple[str, str, str]:
-    """(subject, text, html) cho email báo cáo ngày — hàm thuần, không gửi."""
+_REPORT_EN_NOTE = "The English version (machine-translated) is also attached."
+
+
+def build_report_email_message(
+    report_date: str, settings: Settings, *, has_english: bool = False
+) -> tuple[str, str, str]:
+    """(subject, text, html) cho email báo cáo ngày — hàm thuần, không gửi.
+    `has_english`: email kèm thêm PDF tiếng Anh → tiêu đề/nội dung song ngữ."""
     try:
         shown = datetime.strptime(report_date, "%Y-%m-%d").strftime("%d/%m/%Y")
     except ValueError:
         shown = report_date
     subject = f"Báo cáo Carbon Analyst ngày {shown}"
+    if has_english:
+        subject += f" / Carbon Analyst Daily Report {report_date}"
     link = f"{settings.app_base_url}/reports/{report_date}" if settings.app_base_url else ""
     text = (
         f"Báo cáo Carbon Analyst ngày {shown} đã được duyệt. Bản PDF được đính kèm email này."
+        + (f"\n{_REPORT_EN_NOTE}" if has_english else "")
         + (f"\n\nXem trên web: {link}" if link else "")
         + "\n\n"
         + _FOOTER_NOTE
@@ -369,7 +378,11 @@ def build_report_email_message(report_date: str, settings: Settings) -> tuple[st
         f'<p style="margin:6px 0 0;font-size:18px;font-weight:700;color:#111827;">{esc(subject)}</p>'
         '<p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#374151;">'
         "Báo cáo đã được duyệt. Bản PDF được đính kèm email này.</p>"
-        f"{link_html}"
+        + (
+            f'<p style="margin:6px 0 0;font-size:14px;line-height:1.6;color:#374151;">{esc(_REPORT_EN_NOTE)}</p>'
+            if has_english else ""
+        )
+        + f"{link_html}"
         f'<p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;">{esc(_FOOTER_NOTE)}</p>'
         "</div></body></html>"
     )
@@ -377,7 +390,12 @@ def build_report_email_message(report_date: str, settings: Settings) -> tuple[st
 
 
 async def send_report_pdf_email(
-    report_date: str, pdf_bytes: bytes, recipients: Sequence[str], settings: Settings
+    report_date: str,
+    pdf_bytes: bytes,
+    recipients: Sequence[str],
+    settings: Settings,
+    *,
+    pdf_en_bytes: Optional[bytes] = None,
 ) -> List[str]:
     """Gửi PDF báo cáo `report_date` cho từng người trong `recipients` (mỗi người 1 email
     riêng, nên không ai thấy email người khác). Trả về danh sách email gửi THÀNH CÔNG;
@@ -386,11 +404,16 @@ async def send_report_pdf_email(
     if not recipients:
         return []
 
-    subject, text, body = build_report_email_message(report_date, settings)
-    attachment = {
+    subject, text, body = build_report_email_message(report_date, settings, has_english=pdf_en_bytes is not None)
+    attachments = [{
         "filename": f"carbon-analyst-report-{report_date}.pdf",
         "content": base64.b64encode(pdf_bytes).decode("ascii"),
-    }
+    }]
+    if pdf_en_bytes is not None:
+        attachments.append({
+            "filename": f"carbon-analyst-report-{report_date}-en.pdf",
+            "content": base64.b64encode(pdf_en_bytes).decode("ascii"),
+        })
     sent: List[str] = []
     last_error: Optional[Exception] = None
     async with _http_client(settings) as client:
@@ -403,7 +426,7 @@ async def send_report_pdf_email(
                 "subject": subject,
                 "text": text,
                 "html": body,
-                "attachments": [attachment],
+                "attachments": attachments,
             }
             try:
                 # Idempotency-Key theo (ngày, người nhận): gửi lại do timeout không tạo email trùng (24h).

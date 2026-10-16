@@ -319,6 +319,10 @@ class Report(Base):
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     # Thời điểm đã gửi email PDF báo cáo cho user (services/report_email.py) — NULL = chưa gửi.
     pdf_emailed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Bản tiếng Anh của `content` (services/report_translation.py). `content_en_source_hash` =
+    # hash của `content` lúc dịch — lệch với hash hiện tại nghĩa là bản dịch đã cũ (admin sửa sau đó).
+    content_en: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    content_en_source_hash: Mapped[Optional[str]] = mapped_column(Text)
 
     def __repr__(self) -> str:
         return f"Report(id={self.id!r}, date={self.report_date!r}, status={self.status!r})"

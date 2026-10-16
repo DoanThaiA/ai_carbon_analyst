@@ -26,7 +26,11 @@ class ReportPdfError(RuntimeError):
     pass
 
 
-async def render_report_pdf(report_date: str, settings: Settings) -> bytes:
+# Cookie ngôn ngữ của next-intl (frontend/src/i18n/config.ts::LOCALE_COOKIE) — "en" để in bản tiếng Anh.
+LOCALE_COOKIE = "NEXT_LOCALE"
+
+
+async def render_report_pdf(report_date: str, settings: Settings, lang: str = "vi") -> bytes:
     if not settings.app_base_url:
         raise ReportPdfError("APP_BASE_URL chưa được cấu hình — không có địa chỉ frontend để render PDF.")
 
@@ -37,14 +41,12 @@ async def render_report_pdf(report_date: str, settings: Settings) -> bytes:
         browser = await p.chromium.launch(headless=True)
         try:
             context = await browser.new_context(viewport={"width": 1280, "height": 1600})
-            await context.add_cookies([{
-                "name": "access_token",
-                "value": token,
-                "domain": host,
-                "path": "/",
-                "httpOnly": True,
-                "secure": settings.app_base_url.startswith("https://"),
-            }])
+            secure = settings.app_base_url.startswith("https://")
+            await context.add_cookies([
+                {"name": "access_token", "value": token, "domain": host, "path": "/",
+                 "httpOnly": True, "secure": secure},
+                {"name": LOCALE_COOKIE, "value": lang, "domain": host, "path": "/", "secure": secure},
+            ])
             page = await context.new_page()
             try:
                 await page.goto(

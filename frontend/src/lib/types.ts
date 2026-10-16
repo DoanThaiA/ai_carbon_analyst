@@ -5,6 +5,9 @@ export interface Report {
   report_date: string;
   status: ReportStatus;
   content: any;
+  // Bản dịch tiếng Anh của content (services/report_translation.py) — null khi chưa dịch
+  // hoặc bản dịch đã cũ so với content hiện tại.
+  content_en?: any | null;
   error_message?: string | null;
   created_at: string;
   published_at: string | null;

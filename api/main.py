@@ -44,6 +44,7 @@ from datetime import datetime, timedelta, timezone
 from db.models import Report, ReportView
 from api.mcp_http import McpHttpApp, session_manager as mcp_session_manager
 from services.hot_news_broadcast import start_listening, stop_listening
+from services.report_translation import fresh_content_en
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,7 @@ async def get_report_by_date(
         "report_date": report.report_date,
         "status": report.status,
         "content": report.content,
+        "content_en": fresh_content_en(report),  # None = chưa có bản tiếng Anh khớp content
         "created_at": report.created_at,
         "published_at": report.published_at,
     }

@@ -13,6 +13,7 @@ from db.models import Report
 from services import biz_memory
 from services.report_email import send_report_pdf_to_users
 from services.report_generator import generate_report_content
+from services.report_translation import ensure_report_translation, fresh_content_en
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,8 @@ async def get_report_for_review(date: str, session: AsyncSession = Depends(get_d
         "report_date": report.report_date,
         "status": report.status,
         "content": report.content,
+        # Bản tiếng Anh — None nếu chưa dịch hoặc đã cũ so với content (services/report_translation.py).
+        "content_en": fresh_content_en(report),
         "error_message": report.error_message,
         "created_at": report.created_at,
         "published_at": report.published_at,
@@ -100,6 +103,13 @@ async def _run_report_generation_job(date: str) -> None:
         report.error_message = None
         await session.commit()
         logger.info("[REPORT-JOB] Sinh xong báo cáo %s.", date)
+
+    # Dịch sang tiếng Anh ngay sau khi sinh — lỗi chỉ log, bản tiếng Việt đã lưu ở trên.
+    await _translate_report_job(date)
+
+
+async def _translate_report_job(date: str) -> None:
+    await ensure_report_translation(async_session_maker, settings, date)
 
 
 @router.post("/generate", status_code=202)
@@ -207,7 +217,9 @@ async def unpublish_report(
 
 
 @router.put("/{date}")
-async def update_report(date: str, body: ReportUpdate, session: AsyncSession = Depends(get_db)):
+async def update_report(
+    date: str, body: ReportUpdate, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_db)
+):
     """Admin sửa nội dung JSON của bản draft báo cáo."""
     stmt = select(Report).where(Report.report_date == date)
     result = await session.execute(stmt)
@@ -223,6 +235,7 @@ async def update_report(date: str, body: ReportUpdate, session: AsyncSession = D
 
     report.content = body.content
     await session.commit()
+    background_tasks.add_task(_translate_report_job, date)  # bản tiếng Anh cũ hết hiệu lực theo hash
     return {"message": f"Draft report for {date} updated successfully."}
 
 
@@ -234,6 +247,7 @@ class BizSuggestionDismiss(BaseModel):
 async def dismiss_biz_suggestion(
     date: str,
     suggestion_id: int,
+    background_tasks: BackgroundTasks,
     body: Optional[BizSuggestionDismiss] = None,
     session: AsyncSession = Depends(get_db),
     admin: dict = Depends(get_current_admin),
@@ -257,6 +271,7 @@ async def dismiss_biz_suggestion(
     # Gán object content MỚI — SQLAlchemy không tự nhận ra thay đổi lồng bên trong JSONB.
     report.content = {**report.content, "biz": new_biz}
     await session.commit()
+    background_tasks.add_task(_translate_report_job, date)
     logger.info("[REPORT] Admin %s gỡ gợi ý kinh doanh #%s khỏi báo cáo %s.", admin.get("sub"), suggestion_id, date)
     return {"message": "Đã gỡ gợi ý khỏi báo cáo.", "biz": new_biz}
 

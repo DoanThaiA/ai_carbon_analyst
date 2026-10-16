@@ -33,6 +33,9 @@ class Settings:
     # web_search cần backend Anthropic, xem services/quote_chat.py). Model có
     # thể đổi qua ENV nếu cần, không cần sửa code.
     quote_chat_model: str
+    # TTL cache prompt tĩnh của Jenny chat: "1h" (ghi 2× giá, có lời khi ≥2 câu hỏi/giờ cho cùng ngày
+    # báo cáo) hoặc "5m" (ghi 1,25×, hợp khi hỏi thưa) — chọn theo scripts/analyze_chat_cache_ttl.py.
+    quote_chat_cache_ttl: str
 
     # File đính kèm Quote Chat (ảnh/PDF/Word) lưu trên MinIO (S3-compatible).
     # QUAN TRỌNG: `minio_endpoint` PHẢI là host:port PUBLIC-reachable từ trình
@@ -101,6 +104,10 @@ class Settings:
     # Gửi email PDF báo cáo cho user ngay sau khi admin duyệt (services/report_email.py).
     # Cần APP_BASE_URL (trang frontend để Chromium render PDF) + Resend đã cấu hình.
     report_pdf_email_enabled: bool = True
+    # Bản tiếng Anh của báo cáo (services/report_translation.py) — dịch máy bằng LibreTranslate
+    # (Argos, tự host, không gọi LLM). URL trống = tắt dịch, báo cáo chỉ có tiếng Việt.
+    libretranslate_url: str = ""
+    libretranslate_api_key: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -116,8 +123,9 @@ class Settings:
         anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         eia_api_key = os.environ.get("EIA_API_KEY", "")
 
-        # Haiku 4.5: siêu rẻ, siêu nhanh — đủ cho tác vụ phân loại JSON.
-        default_model = "claude-haiku-4-5"
+        # Haiku 5.5: rẻ hơn Haiku 4.5 ~10 lần — đủ cho tác vụ phân loại JSON
+        # (xem crawl_news/classification.py::DEFAULT_CLASSIFIER_MODEL).
+        default_model = "claude-haiku-5-5"
 
         return cls(
             database_url=database_url,
@@ -132,6 +140,9 @@ class Settings:
             rerank_model=os.environ.get("RERANK_MODEL", "rerank-v3.5"),
             cohere_embed_throttle_seconds=float(os.environ.get("COHERE_EMBED_THROTTLE_SECONDS", "1.5")),
             quote_chat_model=os.environ.get("QUOTE_CHAT_MODEL", "claude-sonnet-5"),
+            quote_chat_cache_ttl=(
+                "5m" if os.environ.get("QUOTE_CHAT_CACHE_TTL", "1h").strip().lower() == "5m" else "1h"
+            ),
             minio_endpoint=os.environ.get("MINIO_ENDPOINT", ""),
             minio_access_key=os.environ.get("MINIO_ACCESS_KEY", ""),
             minio_secret_key=os.environ.get("MINIO_SECRET_KEY", ""),
@@ -157,4 +168,6 @@ class Settings:
             hot_news_email_quiet_hours=os.environ.get("HOT_NEWS_EMAIL_QUIET_HOURS", "").strip(),
             report_pdf_email_enabled=os.environ.get("REPORT_PDF_EMAIL_ENABLED", "true").lower() == "true",
             crawl_lookback_hours=int(os.environ.get("CRAWL_LOOKBACK_HOURS", "36")),
+            libretranslate_url=os.environ.get("LIBRETRANSLATE_URL", "").strip().rstrip("/"),
+            libretranslate_api_key=os.environ.get("LIBRETRANSLATE_API_KEY", "").strip(),
         )

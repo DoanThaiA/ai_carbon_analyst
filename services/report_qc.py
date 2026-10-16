@@ -310,7 +310,10 @@ def parse_strategy(text: Any) -> Optional[List[tuple]]:
 def _price_nums(text: str) -> List[float]:
     clean = text.replace("**", "")
     clean = re.sub(r"EUR\s*/\s*tCO[₂2]", "", clean, flags=re.IGNORECASE)
-    clean = re.sub(r"\d+(?:[.,]\d+)?\s*(?:%|phiên|ngày|tuần|tháng)", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(
+        r"\d+(?:[.,]\d+)?\s*(?:%|phiên|ngày|tuần|tháng|sessions?\b|days?\b|weeks?\b|months?\b)", "", clean,
+        flags=re.IGNORECASE,
+    )
     clean = re.sub(r"tCO[₂2]", "", clean, flags=re.IGNORECASE)
     nums = [float(m.replace(",", ".", 1)) for m in re.findall(r"\d+(?:[.,]\d+)?", clean)]
     return [n for n in nums if n >= 10]
@@ -324,7 +327,7 @@ def _split_buy_sell(body: str) -> tuple:
         nums = _price_nums(c) if c else []
         if not nums:
             continue
-        is_buy, is_sell = bool(re.search("mua", c, re.I)), bool(re.search("bán", c, re.I))
+        is_buy, is_sell = bool(re.search(r"mua|\bbuy", c, re.I)), bool(re.search(r"bán|\bsell", c, re.I))
         if is_buy and not is_sell:
             buy += nums
         elif is_sell and not is_buy:
@@ -358,8 +361,8 @@ def parse_signal_levels(direction: str, entry_body: str, target_body: str, risk_
     def _num(m):
         return float(m.group(1).replace(",", ".", 1)) if m else None
 
-    stop_lower = _num(re.search(r"dưới[^\d]{0,15}(\d+(?:[.,]\d+)?)", risk_body, re.I))
-    stop_upper = _num(re.search(r"trên[^\d]{0,15}(\d+(?:[.,]\d+)?)", risk_body, re.I))
+    stop_lower = _num(re.search(r"(?:dưới|\bbelow\b|\bunder\b)[^\d]{0,15}(\d+(?:[.,]\d+)?)", risk_body, re.I))
+    stop_upper = _num(re.search(r"(?:trên|\babove\b|\bover\b)[^\d]{0,15}(\d+(?:[.,]\d+)?)", risk_body, re.I))
     if stop_lower is None and stop_upper is None:
         nums = _price_nums(risk_body)
         if nums:

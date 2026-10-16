@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, AlertCircle, CheckCircle2, Download } from "lucide-react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
 import { QuoteChat } from "@/components/QuoteChat";
+import { EnglishFallbackNotice } from "@/components/EnglishFallbackNotice";
+import { localizeReport } from "@/lib/reportLocale";
 
 export default function ReportDetail() {
   const t = useTranslations("userReport");
+  const locale = useLocale();
   const params = useParams();
   const router = useRouter();
   const date = params.date as string;
@@ -65,6 +68,9 @@ export default function ReportDetail() {
     );
   }
 
+  // Giao diện EN → hiển thị content_en (nếu đã dịch); không có thì giữ tiếng Việt + thông báo.
+  const { report: shown, fallback } = localizeReport(report, locale);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6 print:hidden">
@@ -87,8 +93,9 @@ export default function ReportDetail() {
         </div>
       </div>
 
+      {fallback && <EnglishFallbackNotice />}
       <QuoteChat reportDate={date}>
-        <ReportDocument report={report} />
+        <ReportDocument report={shown} />
       </QuoteChat>
     </div>
   );
