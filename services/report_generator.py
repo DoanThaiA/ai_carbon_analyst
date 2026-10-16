@@ -79,8 +79,11 @@ CONCISENESS_RULE = (
     "của con số (vd '660 tỷ EUR MỖI NĂM cho phát điện sạch, lưới, hiệu suất' — không rút thành '660 tỷ EUR cho điện khí hóa'). "
     "(15) Số liệu trong CÙNG 1 bài không khớp nhau (vd 'đã rút 330/400 triệu thùng' nhưng 'còn lại 100 triệu'): nếu 1 bài KHÁC "
     "trong dữ liệu nêu rõ hơn đúng chỉ tiêu đó (vd Argus: 'còn khoảng 96 triệu thùng, trong đó 46 triệu ở châu Âu') → DÙNG số "
-    "của bài rõ hơn, ghi nguồn, và chú thích ngắn độ lệch với bài kia; chỉ khi KHÔNG có nguồn nào rõ hơn mới ghi "
-    "'số liệu trong bài chưa khớp (400 − 330 = 70)'. KHÔNG lặp lại số mâu thuẫn như sự thật. "
+    "của bài rõ hơn, ghi nguồn, và chú thích ngắn độ lệch với bài kia (vd 'khoảng 96 triệu thùng theo Argus; con số 100 "
+    "triệu trong tiêu đề The Edge là số làm tròn'); số trong TIÊU ĐỀ thường là số làm tròn — ưu tiên số chi tiết trong thân bài/"
+    "nguồn chuyên ngành. Chỉ khi KHÔNG có nguồn nào rõ hơn mới ghi 'số liệu trong bài chưa khớp (400 − 330 = 70)'. TUYỆT ĐỐI "
+    "KHÔNG để 2 con số mâu thuẫn (vd 'đã rút 330/400' và 'còn 100') cùng nằm trong báo cáo mà không chú thích — bỏ chú "
+    "thích nhưng giữ cả 2 số là lỗi nặng hơn. "
     "(16) CHÍNH SÁCH: ghi rõ GIAI ĐOẠN (đề xuất/dự thảo/đã thông qua/có hiệu lực), MỐC áp dụng và QUY MÔ nếu bài nêu; "
     "dự thảo có hiệu lực sau hơn 12 tháng KHÔNG phải động lực giá ngắn hạn. KHÔNG suy diễn tác động mạnh hơn nguồn — "
     "nguồn nói biện pháp 'không làm giảm giá' thì không xếp là 'hỗ trợ tăng giá'; tác động lên doanh nghiệp phải "
@@ -1306,12 +1309,15 @@ def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
             "(chuẩn châu Á) thay thế và KHÔNG tự suy ra. Chỉ nêu chiều tác động theo %Δ, ghi rõ \"chưa tính spread\"."
         )
 
-    gas_fuel_pw = ttf / FUEL_GAS_EFF
     gas_carbon_pw = FUEL_GAS_EF / FUEL_GAS_EFF  # tCO2/MWh điện
-    gas_cost = gas_fuel_pw + eua * gas_carbon_pw
-    coal_fuel_pw = api2 / FUEL_EURUSD / FUEL_COAL_MWH_PER_TONNE / FUEL_COAL_EFF
     coal_carbon_pw = FUEL_COAL_EF / FUEL_COAL_EFF
-    coal_cost = coal_fuel_pw + eua * coal_carbon_pw
+
+    def _costs(ttf_p: float, api2_p: float, eua_p: float) -> tuple:
+        gas_f = ttf_p / FUEL_GAS_EFF
+        coal_f = api2_p / FUEL_EURUSD / FUEL_COAL_MWH_PER_TONNE / FUEL_COAL_EFF
+        return gas_f, coal_f, gas_f + eua_p * gas_carbon_pw, coal_f + eua_p * coal_carbon_pw
+
+    gas_fuel_pw, coal_fuel_pw, gas_cost, coal_cost = _costs(ttf, api2, eua)
     spread = gas_cost - coal_cost
     denom = coal_carbon_pw - gas_carbon_pw
     switch = (gas_fuel_pw - coal_fuel_pw) / denom if denom else None
@@ -1342,7 +1348,50 @@ def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
         f"khi trích dẫn ghi là \"ước tính theo mô hình chi phí biên\" (KHÔNG ghi \"ước tính thô\"/\"chưa kiểm chứng\"); "
         f"KHÔNG tự tính lại; KHÔNG dùng API4/NEWC cho fuel switching EU.",
         f"KẾT LUẬN DÙNG CHUNG (Mục 1, 2, 3 PHẢI cùng kết luận này, không mục nào được nói ngược): {conclusion}",
+        *_fuel_spread_weekly_lines(prices, _costs, spread),
     ])
+
+
+def _fuel_spread_weekly_lines(prices: List[Dict], costs, spread_now: float) -> List[str]:
+    """Thay đổi chênh khí − than trong TUẦN (giá 1 tuần trước suy từ Δ tuần) + quy tắc xếp chiều: giá than (API2)
+    TĂNG tự thân là yếu tố GIẢM cầu EUA (than kém cạnh tranh đi); chỉ "chênh khí − than MỞ RỘNG" (TTF tăng mạnh
+    hơn API2) mới là yếu tố hỗ trợ — tránh lỗi xếp "API2 tăng" vào động lực tăng giá EUA."""
+    rows = {p.get("code"): p for p in prices}
+    wk = {c: rows.get(c, {}).get("week_change_pct") for c in ("TTF", "API2", "EUA")}
+    closes = {c: rows.get(c, {}).get("close") for c in ("TTF", "API2", "EUA")}
+    rule = (
+        "QUY TẮC XẾP CHIỀU (BẮT BUỘC ở động lực thị trường/instrument_notes/Phân tích): giá than API2 TĂNG tự thân là yếu tố "
+        "GIẢM cầu EUA (lợi thế than so với khí thu hẹp → điện than giảm → phát thải giảm) → nếu nêu riêng \"API2 tăng\" chỉ được "
+        "xếp vào nhóm gây áp lực giảm hoặc trung lập, TUYỆT ĐỐI KHÔNG xếp vào hỗ trợ tăng giá; API2 GIẢM là yếu tố hỗ trợ. "
+        "Yếu tố được xếp hỗ trợ tăng là \"chênh khí − than mở rộng\" (TTF tăng mạnh hơn API2), KHÔNG phải \"giá than tăng\"."
+    )
+    if any(v is None for v in wk.values()) or any(not closes[c] for c in closes):
+        return [rule]
+    try:
+        prev = {c: closes[c] / (1 + wk[c] / 100) for c in closes}
+    except ZeroDivisionError:
+        return [rule]
+    spread_prev = costs(prev["TTF"], prev["API2"], prev["EUA"])[2] - costs(prev["TTF"], prev["API2"], prev["EUA"])[3]
+    delta = spread_now - spread_prev
+    saturated = spread_now > 0  # than đã rẻ hơn khí — điện than gần tối đa
+    also_api2_up = " dù API2 cũng tăng" if wk["API2"] > 0 else ""
+    if abs(delta) < 1:
+        verdict = "gần như không đổi → không có dịch chuyển tương đối đáng kể giữa than và khí"
+    elif delta > 0 and saturated:
+        verdict = (f"MỞ RỘNG → lợi thế của than được CỦNG CỐ{also_api2_up} → giữ MỨC cầu EUA (đỡ giá), KHÔNG tạo thêm "
+                   "lực tăng vì chuyển đổi đã bão hòa")
+    elif delta > 0:
+        verdict = f"MỞ RỘNG → dịch chuyển tương đối CÓ LỢI cho than{also_api2_up} (hỗ trợ cầu EUA)"
+    elif saturated:
+        verdict = "THU HẸP nhưng than vẫn rẻ hơn khí → lợi thế than giảm bớt (áp lực giảm nhẹ lên cầu EUA)"
+    else:
+        verdict = "THU HẸP → dịch chuyển tương đối CÓ LỢI cho khí (áp lực giảm cầu EUA)"
+    return [
+        f"Trong TUẦN: TTF {_vn_num(wk['TTF'], sign=True)}%, API2 {_vn_num(wk['API2'], sign=True)}%, EUA "
+        f"{_vn_num(wk['EUA'], sign=True)}% → chênh khí − than từ ≈ {spread_prev:+.0f} lên ≈ {spread_now:+.0f} EUR/MWh "
+        f"({delta:+.0f}): {verdict}. Tác động RÒNG của nhiên liệu lên EUA tuần này dùng ĐÚNG kết luận này.",
+        rule,
+    ]
 
 
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
@@ -2349,6 +2398,9 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      + "**Mục tiêu:**" mức giá chốt lời kế tiếp, risk/reward hợp lý so với Entry.
      + "**Quản trị rủi ro:**" mức giá cắt lỗ khi kịch bản bị vô hiệu, gắn với "key_risk".
      Chỉ dùng mức giá có căn cứ từ dữ liệu đã cho (giao diện đã có lưu ý tham khảo đi kèm) — không thêm giải thích sau mỗi dòng.
+     LỆNH 2 CHIỀU (thường gặp ở "đi ngang": mua biên dưới + bán biên trên) → MỖI CHÂN PHẢI ĐỦ cả mục tiêu lẫn cắt lỗ, viết theo đúng mẫu:
+       "**Entry:** Mua quanh A1–A2, bán quanh B1–B2" / "**Mục tiêu:** T_mua / T_bán" (2 số, chân mua trước) / "**Quản trị rủi ro:** Cắt lỗ dưới S_mua hoặc trên S_bán".
+       TUYỆT ĐỐI KHÔNG để chân bán (hoặc chân mua) không có cắt lỗ/mục tiêu — 1 lệnh không có cắt lỗ là lỗi nghiêm trọng (hệ thống tự kiểm tra từng chân).
      "trading_strategy" là chiến lược cho BÀN GIAO DỊCH (vị thế đầu cơ độc lập) — KHÔNG phải cho sổ phòng hộ của SIM.
    - "hedge_note" (1 câu, tối đa ~25 từ): hàm ý của kịch bản này cho SỔ PHÒNG HỘ của SIM. SIM có nghĩa vụ CBAM → đang mang vị thế SHORT carbon tự nhiên → phòng hộ đúng chiều là MUA (long) EUA; TUYỆT ĐỐI KHÔNG khuyến nghị bán khống EUA cho sổ phòng hộ (làm tăng rủi ro tổng). Theo "direction": "giảm" → "Hoãn/giảm tốc độ mua phòng hộ, chờ vùng <X–Y lấy từ Mục tiêu/price_zone>"; "tăng" → "Đẩy nhanh/tăng tỷ lệ mua phòng hộ trước khi giá vượt <mức>"; "đi ngang" → "Mua phòng hộ trải đều theo lịch trong vùng <X–Y>". Mức giá dùng ĐÚNG số đã có trong kịch bản, không thêm số mới.
    QUY TẮC SỐ HỌC CHO MỨC GIÁ (BẮT BUỘC, kiểm tra lại phép tính trước khi viết):
@@ -2604,6 +2656,68 @@ async def _revise_scenarios_if_invalid(
         return sec3
     logger.info("[REPORT] Mục 3: đã sửa kịch bản, còn %d lỗi.", len(remaining))
     return revised
+
+
+def _figure_conflicts(content: Dict[str, Any]) -> Dict[str, List[str]]:
+    """{ref: [vấn đề]} cho bullet Mục 1 ("1.i") / Diễn biến chính ("dev.i") có số "còn lại" mâu thuẫn số học hoặc
+    lệch với bài khác ở Mục 6 — dùng ĐÚNG phép kiểm tra của Jack QC (report_qc._check_remaining_*)."""
+    from services.report_qc import _check_remaining_math, _check_remaining_vs_section6  # import muộn: tránh vòng
+
+    out: Dict[str, List[str]] = {}
+    items = [(f"1.{i}", b) for i, b in enumerate((content.get("1") or {}).get("bullets") or [])]
+    items += [(f"dev.{i}", d) for i, d in enumerate((content.get("2") or {}).get("key_developments") or [])]
+    for ref, it in items:
+        if not isinstance(it, dict):
+            continue
+        text = str(it.get("text") or "")
+        found = _check_remaining_math(text, "", "", "") + _check_remaining_vs_section6(text, content, it, "", "", "")
+        if found:
+            out[ref] = [f["message"].lstrip(": ") for f in found]
+    return out
+
+
+async def _revise_figure_conflicts(content: Dict[str, Any]) -> None:
+    """Sửa tại chỗ (1 lần gọi LLM) các bullet có số liệu mâu thuẫn — chỉ nhận bản sửa của bullet nào hết mâu thuẫn.
+    Lỗi LLM chỉ log; Jack QC vẫn báo phần còn lại."""
+    conflicts = _figure_conflicts(content)
+    if not conflicts:
+        return
+    lookup = {f"1.{i}": b for i, b in enumerate((content.get("1") or {}).get("bullets") or [])}
+    lookup.update({f"dev.{i}": d for i, d in enumerate((content.get("2") or {}).get("key_developments") or [])})
+    sec6 = [a for r in ("international", "vietnam") for a in (content.get("6") or {}).get(r) or [] if isinstance(a, dict)]
+    refs_text = "\n".join(
+        f"- [{ref}] {lookup[ref].get('text')}\n  VẤN ĐỀ: {' | '.join(msgs)}" for ref, msgs in conflicts.items()
+    )
+    sec6_text = "\n".join(f"- [{a.get('source')}] {a.get('title')}: {a.get('summary')}" for a in sec6)[:12000]
+    prompt = f"""Các câu sau trong báo cáo có SỐ LIỆU MÂU THUẪN (số học sai, hoặc lệch với nguồn chính xác hơn ở Tin tức chi tiết):
+{refs_text}
+
+TIN TỨC CHI TIẾT (Mục 6) của chính báo cáo — nguồn để đối chiếu:
+{sec6_text}
+
+YÊU CẦU: viết lại ĐÚNG các câu trên — dùng con số của nguồn chính xác/chi tiết nhất (ghi "theo <nguồn>"), chú thích ngắn độ lệch
+với số kia (vd "100 triệu trong tiêu đề là số làm tròn"); bỏ con số sai số học. Giữ nguyên nhãn in đậm đầu câu (vd "**Dầu:**"),
+giữ văn phong, độ dài tương đương, số kiểu Việt Nam (96; 1,5). KHÔNG thêm thông tin không có trong các nguồn trên.
+
+CHỈ TRẢ VỀ JSON HỢP LỆ: {{"items": [{{"ref": "1.2", "text": "..."}}]}}"""
+    try:
+        raw = await _call_llm(prompt, system=CONCISENESS_RULE, max_tokens=2048)
+    except Exception:
+        logger.exception("[REPORT] Sửa số liệu mâu thuẫn lỗi — giữ nguyên.")
+        return
+    parsed = _extract_json(raw) if raw else None
+    for row in (parsed or {}).get("items") or []:
+        ref, text = (row or {}).get("ref"), (row or {}).get("text")
+        if ref not in conflicts or not isinstance(text, str) or not text.strip() or _has_cjk(text):
+            continue
+        item = lookup[ref]
+        old = item.get("text")
+        item["text"] = text.strip()
+        if ref in _figure_conflicts(content):
+            item["text"] = old  # vẫn mâu thuẫn → giữ bản gốc, để Jack báo
+            logger.warning("[REPORT] Bản sửa số liệu %s vẫn mâu thuẫn — giữ bản gốc.", ref)
+        else:
+            logger.info("[REPORT] Đã sửa số liệu mâu thuẫn ở %s.", ref)
 
 
 async def _check_biz_triggers_llm(
@@ -3173,6 +3287,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         "international": section6_international,
         "vietnam": section6_vietnam,
     }
+    # Mục 1/Diễn biến chính viết TRƯỚC khi Mục 6 tóm tắt xong và chỉ thấy 10 bài × 500 ký tự → có thể dùng số làm
+    # tròn/mâu thuẫn trong khi Mục 6 có nguồn chính xác hơn (vd IEA "còn 100 triệu thùng" vs Argus "khoảng 96").
+    await _revise_figure_conflicts(content)
 
     # ── Bộ nhớ gợi ý kinh doanh: chuẩn hoá gợi ý mới + ghi DB (BƯỚC CUỐI) ──
     biz = content.get("biz") or dict(FALLBACKS["biz"])

@@ -709,3 +709,88 @@ def test_label_matches_code_family_with_tenor_suffix():
     c["2"]["prices"][0]["code"] = "EUA_DEC26"  # báo cáo cũ: mã kèm kỳ hạn
     c["3"]["analysis_blocks"][0]["content"] += "\n- Giá EUA Futures Dec'26 đóng cửa ở mức 79,20 EUR/tCO2."
     assert report_qc.check_instrument_labels(c) == []
+
+
+# ── Nhận xét bản 17/10: (a) IEA 100 vs 96, (b) API2 tăng xếp sai chiều, (c) chân bán thiếu cắt lỗ ──
+
+
+def test_two_sided_strategy_sell_leg_without_stop_and_target_is_error():
+    c = g()
+    sc = c["3"]["trading_scenarios"][0]
+    sc.update(direction="đi ngang", trading_strategy=(
+        "**Entry:** Mua quanh 82,5–83,0, bán quanh 88,0–88,5\n**Mục tiêu:** 88,0 (biên trên)\n**Quản trị rủi ro:** Cắt lỗ dưới 81,52"
+    ))
+    issues = [i for i in report_qc.check_scenarios(c) if "chân bán" in i["message"]]
+    assert len(issues) == 1 and issues[0]["severity"] == "error"
+    assert "mục tiêu và cắt lỗ" in issues[0]["message"] and issues[0]["field_path"].endswith(".trading_strategy")
+
+
+def test_two_sided_strategy_complete_legs_ok_and_wrong_side_flagged():
+    c = g()
+    assert not [i for i in report_qc.check_scenarios(c) if "chân" in i["message"]]  # GOLDEN trung hạn: đủ 2 chân
+    c["3"]["trading_scenarios"][1]["trading_strategy"] = (
+        "**Entry:** Mua quanh 75, bán quanh 83\n**Mục tiêu:** 82 / 86\n**Quản trị rủi ro:** Cắt lỗ dưới 73 hoặc trên 85"
+    )
+    assert any("chân bán" in i["message"] and "sai phía" in i["message"] for i in report_qc.check_scenarios(c))
+
+
+def test_fuel_direction_api2_rise_as_bullish_is_error():
+    c = g()
+    c["2"]["market_drivers"]["bullish"].append({"tag": "FACT", "text": "Giá than API2 tăng 2,19% trong tuần, hỗ trợ cầu EUA."})
+    issues = report_qc.check_fuel_direction(c)
+    assert len(issues) == 1 and issues[0]["severity"] == "error" and "sai chiều" in issues[0]["message"]
+    # So với khí (chênh khí − than mở rộng) thì hợp lệ
+    c["2"]["market_drivers"]["bullish"][-1]["text"] = "TTF tăng 9,62% mạnh hơn API2 (+2,19%) → chênh khí − than mở rộng."
+    assert report_qc.check_fuel_direction(c) == []
+    c["2"]["market_drivers"]["bearish"].append({"tag": "FACT", "text": "API2 giảm 3% tuần qua."})
+    assert len(report_qc.check_fuel_direction(c)) == 1
+
+
+def test_remaining_math_conflict_and_section6_mismatch():
+    c = g()
+    c["1"]["bullets"][1]["text"] = "**Dầu:** IEA đã rút 330/400 triệu thùng dự trữ khẩn cấp, còn lại 100 triệu thùng."
+    c["6"]["international"].append({"url": "https://argus.test/x", "source": "argusmedia.com",
+                                    "summary": "Theo Argus, kho dự trữ khẩn cấp còn khoảng 96 triệu thùng, trong đó 46 triệu ở châu Âu."})
+    issues = report_qc.check_facts(c, {})
+    msgs_ = msgs(issues)
+    assert any(i["severity"] == "error" and "còn 70" in i["message"] for i in issues), msgs_
+    assert any(i["severity"] == "warning" and "96" in i["message"] and "argusmedia.com" in i["message"] for i in issues), msgs_
+
+
+def test_remaining_consistent_numbers_not_flagged():
+    c = g()
+    c["1"]["bullets"][1]["text"] = "**Dầu:** đã rút 304/400 triệu thùng, còn khoảng 96 triệu thùng (theo Argus)."
+    c["6"]["international"].append({"url": "u", "source": "argusmedia.com", "summary": "còn khoảng 96 triệu thùng"})
+    assert [i for i in report_qc.check_facts(c, {}) if "còn" in i["message"]] == []
+
+
+def test_generator_revises_figure_conflict(monkeypatch):
+    import asyncio
+
+    from services import report_generator as rg
+
+    c = g()
+    c["1"]["bullets"][1]["text"] = "**Dầu:** IEA đã rút 330/400 triệu thùng, còn lại 100 triệu thùng."
+    c["6"]["international"].append({"url": "u", "source": "argusmedia.com", "title": "IEA stocks",
+                                    "summary": "Kho dự trữ còn khoảng 96 triệu thùng."})
+    assert set(rg._figure_conflicts(c)) == {"1.1"}
+
+    async def fake_llm(prompt, **kw):
+        assert "argusmedia.com" in prompt and "[1.1]" in prompt
+        return '{"items": [{"ref": "1.1", "text": "**Dầu:** Theo Argus, kho dự trữ khẩn cấp còn khoảng 96 triệu thùng (100 triệu trong tiêu đề là số làm tròn)."}]}'
+
+    monkeypatch.setattr(rg, "_call_llm", fake_llm)
+    asyncio.run(rg._revise_figure_conflicts(c))
+    assert "96 triệu" in c["1"]["bullets"][1]["text"] and rg._figure_conflicts(c) == {}
+
+
+def test_fuel_spread_weekly_shift_and_direction_rule():
+    from services import report_generator as rg
+
+    prices = [{"code": "TTF", "close": 86.43, "week_change_pct": 9.62},
+              {"code": "EUA", "close": 85.84, "week_change_pct": -1.20},
+              {"code": "API2", "close": 149.2, "week_change_pct": 2.19}]
+    text = rg._fuel_switching_spread_summary(prices)
+    assert "TTF +9,62%, API2 +2,19%" in text and "CỦNG CỐ dù API2 cũng tăng" in text
+    assert "KHÔNG tạo thêm lực tăng" in text  # đã bão hòa
+    assert "API2 TĂNG tự thân là yếu tố GIẢM cầu EUA" in text

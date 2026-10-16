@@ -420,6 +420,7 @@ def _check_strategy(
         return issues
 
     direction = sc.get("direction")
+    issues += _check_two_sided_legs(sc, label, path, bodies)
     if direction not in ("tăng", "giảm"):
         return issues
     lv = parse_signal_levels(direction, bodies["Entry"], bodies["Mục tiêu"], bodies["Quản trị rủi ro"])
@@ -460,6 +461,66 @@ def _check_strategy(
             f"{label}: Entry {_fmt(entry)} lệch >{int(ENTRY_MAX_DISTANCE * 100)}% so với giá EUA hiện tại {_fmt(eua_close)}.",
             f"{path}.trading_strategy",
         ))
+    return issues
+
+
+def _check_two_sided_legs(sc: Dict[str, Any], label: str, path: str, bodies: Dict[str, str]) -> List[Dict[str, str]]:
+    """Lệnh 2 chiều (Entry có cả "mua" lẫn "bán" — thường là kịch bản đi ngang) → MỖI chân phải có mục tiêu và
+    cắt lỗ đúng phía. Vd bản lỗi: "Mua 82,5–83, bán 88,0–88,5 / Mục tiêu 88,0 / Cắt lỗ dưới 81,52" → chân bán
+    không có cắt lỗ lẫn mục tiêu."""
+    lv = parse_signal_levels(sc.get("direction") or "đi ngang", bodies["Entry"], bodies["Mục tiêu"], bodies["Quản trị rủi ro"])
+    if not (lv["entry_buy"] and lv["entry_sell"]):
+        return []
+    issues: List[Dict[str, str]] = []
+    p = f"{path}.trading_strategy"
+    legs = (
+        ("mua", lv["entry_buy"], lv["target_buy"], lv["stop_lower"], 1),
+        ("bán", lv["entry_sell"], lv["target_sell"], lv["stop_upper"], -1),
+    )
+    for name, entry_range, target, stop, sign in legs:
+        missing = [w for w, v in (("mục tiêu", target), ("cắt lỗ", stop)) if v is None]
+        if missing:
+            issues.append(_issue(
+                "scenario", "3", "error",
+                f"{label}: chân {name} ({_fmt(min(entry_range))}–{_fmt(max(entry_range))}) không có {' và '.join(missing)} — "
+                f"lệnh 2 chiều phải ghi đủ mục tiêu/cắt lỗ cho từng chân (\"Mục tiêu: T_mua / T_bán\", "
+                f"\"Cắt lỗ dưới S_mua hoặc trên S_bán\").",
+                p,
+            ))
+            continue
+        entry = sum(entry_range) / len(entry_range)
+        if sign * (target - entry) <= 0 or sign * (entry - stop) <= 0:
+            issues.append(_issue(
+                "scenario", "3", "error",
+                f"{label}: chân {name} có mục tiêu {_fmt(target)} / cắt lỗ {_fmt(stop)} sai phía so với Entry {_fmt(entry)}.",
+                p,
+            ))
+    return issues
+
+
+_API2_UP_RE = re.compile(r"(API ?2|giá than|than ARA)[^.;\n]{0,40}?(tăng|nhích|leo|đi lên|cao hơn)", re.IGNORECASE)
+_API2_DOWN_RE = re.compile(r"(API ?2|giá than|than ARA)[^.;\n]{0,40}?(giảm|hạ|lùi|đi xuống|thấp hơn)", re.IGNORECASE)
+_GAS_MENTION_RE = re.compile(r"TTF|khí|chênh|spread", re.IGNORECASE)
+
+
+def check_fuel_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Giá than API2 TĂNG tự thân làm than kém cạnh tranh → GIẢM cầu EUA. Xếp "API2 tăng" vào yếu tố hỗ trợ tăng giá
+    (hoặc "API2 giảm" vào áp lực giảm) là sai chiều — trừ khi câu so với khí/TTF (chênh khí − than mở rộng)."""
+    drivers = (content.get("2") or {}).get("market_drivers") or {}
+    if not isinstance(drivers, dict):
+        return []
+    issues = []
+    for side, rx, wrong in (("bullish", _API2_UP_RE, "hỗ trợ tăng giá"), ("bearish", _API2_DOWN_RE, "gây áp lực giảm giá")):
+        for i, d in enumerate(drivers.get(side) or []):
+            text = str(d.get("text") if isinstance(d, dict) else d or "")
+            if rx.search(text) and not _GAS_MENTION_RE.search(text):
+                issues.append(_issue(
+                    "scenario", "3", "error",
+                    f"Yếu tố {wrong} #{i + 1} sai chiều: giá than API2 {'tăng' if side == 'bullish' else 'giảm'} tự thân "
+                    f"{'làm giảm' if side == 'bullish' else 'hỗ trợ'} cầu EUA (than {'kém' if side == 'bullish' else 'thêm'} cạnh "
+                    f"tranh so với khí) — chỉ \"chênh khí − than mở rộng\" mới là yếu tố hỗ trợ: \"{text[:110]}\"",
+                    f"2.market_drivers.{side}[{i}].text",
+                ))
     return issues
 
 
@@ -883,6 +944,66 @@ def _checkable_number(raw: str) -> bool:
     return True
 
 
+_NUM = r"(\d+(?:[.,]\d+)?)"
+_SCALE_UNIT = r"\s*(triệu|tỷ|nghìn|million|billion)\s+(thùng|tấn|m3|mét khối|MWh|GWh|TWh|EUR|USD|tCO2|hạn ngạch)"
+# "đã rút 330/400 triệu thùng" | "330 trên tổng 400 triệu thùng"
+_FRACTION_RE = re.compile(_NUM + r"\s*(?:/|trên tổng(?: số)?|trong tổng(?: số)?|trên)\s*" + _NUM + _SCALE_UNIT, re.IGNORECASE)
+# "còn lại khoảng 100 triệu thùng" | "còn ~96 triệu thùng"
+_REMAINING_RE = re.compile(r"còn(?:\s+lại)?(?:\s+(?:khoảng|chừng|gần|~|xấp xỉ))?\s*~?\s*" + _NUM + _SCALE_UNIT, re.IGNORECASE)
+
+
+def _vnf(raw: str) -> float:
+    return float(raw.replace(".", "").replace(",", ".")) if "," in raw else float(raw)
+
+
+def _check_remaining_math(text: str, section: str, label: str, path: str) -> List[Dict[str, str]]:
+    """Cùng 1 câu/bullet nêu "đã dùng X/Y <đơn vị>" và "còn Z <cùng đơn vị>" mà Y − X ≠ Z → số học mâu thuẫn
+    (vd IEA: "đã rút 330/400 triệu thùng" nhưng "còn 100 triệu" — đúng ra 70)."""
+    issues = []
+    for f in _FRACTION_RE.finditer(text):
+        used, total = _vnf(f.group(1)), _vnf(f.group(2))
+        unit = (f.group(3).lower(), f.group(4).lower())
+        for r in _REMAINING_RE.finditer(text):
+            if (r.group(2).lower(), r.group(3).lower()) != unit:
+                continue
+            remaining = _vnf(r.group(1))
+            if abs((total - used) - remaining) > max(1.0, 0.05 * total):
+                issues.append(_issue(
+                    "fact", section, "error",
+                    f"{label}: số học mâu thuẫn — \"{f.group(0).strip()}\" nghĩa là còn {_fmt(total - used)} {' '.join(unit)}, "
+                    f"nhưng lại ghi \"{r.group(0).strip()}\". Dùng số của nguồn rõ nhất và chú thích độ lệch.",
+                    path,
+                ))
+    return issues
+
+
+def _check_remaining_vs_section6(
+    text: str, content: Dict[str, Any], item: Dict[str, Any], section: str, label: str, path: str,
+) -> List[Dict[str, str]]:
+    """"còn Z <đơn vị>" ở Tóm tắt/Diễn biến chính khác "còn W <cùng đơn vị>" mà 1 bài KHÁC ở Mục 6 nêu (vd tóm tắt
+    ghi 100 triệu thùng theo tiêu đề làm tròn, Argus ở Mục 6 ghi khoảng 96) → báo để dùng số chính xác hơn."""
+    mine = [(_vnf(m.group(1)), (m.group(2).lower(), m.group(3).lower())) for m in _REMAINING_RE.finditer(text)]
+    if not mine:
+        return []
+    issues = []
+    own_url = _norm_url(item.get("source_url") or "") if item.get("source_url") else None
+    for region in ("international", "vietnam"):
+        for art in (content.get("6") or {}).get(region) or []:
+            if not isinstance(art, dict) or (own_url and _norm_url(art.get("url") or "") == own_url):
+                continue
+            for m in _REMAINING_RE.finditer(str(art.get("summary") or "")):
+                other, unit = _vnf(m.group(1)), (m.group(2).lower(), m.group(3).lower())
+                for value, my_unit in mine:
+                    if unit == my_unit and value and abs(other - value) / value > 0.03:
+                        issues.append(_issue(
+                            "fact", section, "warning",
+                            f"{label}: ghi còn {_fmt(value)} {' '.join(unit)} nhưng bài {art.get('source') or art.get('url')} ở Tin tức "
+                            f"chi tiết nêu còn {_fmt(other)} — dùng số chính xác hơn và chú thích độ lệch (vd số làm tròn trong tiêu đề).",
+                            path,
+                        ))
+    return issues
+
+
 def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[Dict[str, str]]:
     """Mọi con số trong câu CÓ trích nguồn (Tóm tắt, Diễn biến chính, Mục 4, yếu tố thị trường) phải có
     trong chính bài nguồn (`article_texts`: _norm_url -> tiêu đề + nội dung bài). Số lấy từ bảng giá /
@@ -915,6 +1036,8 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
                 "không (dùng số đó, ghi nguồn và độ lệch) thay vì để số mâu thuẫn.",
                 f"{path}.text",
             ))
+        issues += _check_remaining_math(text, section, label, f"{path}.text")
+        issues += _check_remaining_vs_section6(text, content, it, section, label, f"{path}.text")
         url = it.get("source_url")
         source_text = article_texts.get(_norm_url(url)) if url else None
         if not source_text:
@@ -1412,7 +1535,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
 
     issues_by_check = {
         "price": check_prices(content, db_prices, latest_price_date, report_date) + check_instrument_labels(content),
-        "scenario": check_scenarios(content) + check_forecast_review(content),
+        "scenario": check_scenarios(content) + check_forecast_review(content) + check_fuel_direction(content),
         "source": check_sources(content, known_urls, article_meta, stale_before),
         "fact": check_facts(content, article_texts),
         "calendar": check_calendar(content, report_date),
