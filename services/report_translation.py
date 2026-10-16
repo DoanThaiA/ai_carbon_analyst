@@ -27,6 +27,7 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
+from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence
 
 import httpx
@@ -230,7 +231,34 @@ def _bold_parts(token: str) -> List[Part]:
     return [(False, "**"), (True, label), (False, ":**" if colon else "**")]
 
 
+# Nhãn đầu vế trong chuỗi "Cơ hội: … → Giải pháp: … → Kỳ vọng: …" (định dạng gợi ý biz cũ).
+ARROW_LABELS = {
+    "cơ hội": "Opportunity", "giải pháp": "Solution", "kỳ vọng": "Expectation",
+    "tình huống": "Situation", "hành động": "Action", "lý do": "Reason",
+}
+_ARROW_SPLIT_RE = re.compile(r"(\s*→\s*)")
+_LEADING_LABEL_RE = re.compile(r"^([^\W\d_][^:]{0,20}?):\s*")
+
+
 def _line_parts(line: str) -> List[Part]:
+    """1 dòng → các phần. "→" là dấu phân cách cấu trúc: mỗi vế dịch riêng (che "→" như token thì
+    Argos đẩy nó lệch chỗ), nhãn đầu vế ("Giải pháp:"...) dịch bằng bảng."""
+    if "→" in line:
+        parts: List[Part] = []
+        for i, piece in enumerate(_ARROW_SPLIT_RE.split(line)):
+            if i % 2:
+                parts.append((False, " → "))
+                continue
+            lab = _LEADING_LABEL_RE.match(piece)
+            if lab and lab.group(1).strip().lower() in ARROW_LABELS:
+                parts.append((False, ARROW_LABELS[lab.group(1).strip().lower()] + ": "))
+                piece = piece[lab.end():]
+            parts.extend(_line_parts_simple(piece))
+        return parts
+    return _line_parts_simple(line)
+
+
+def _line_parts_simple(line: str) -> List[Part]:
     parts: List[Part] = []
     m = _BULLET_RE.match(line)
     if m:
@@ -311,6 +339,11 @@ TERMS: Dict[str, str] = {
     "bán quanh": "Sell around",
     "mua quanh": "Buy around",
     "kháng cự": "resistance",
+    # Argos dịch "đồng" thành "dollar"/"copper" — tiền VND phải giữ đúng đơn vị.
+    "nghìn tỷ đồng": "trillion VND",
+    "tỷ đồng": "billion VND",
+    "triệu đồng": "million VND",
+    "nghìn đồng": "thousand VND",
     # Hướng cắt lỗ — frontend/QC đọc "above/below" để biết cắt lỗ phía trên hay dưới.
     "đóng cửa trên": "closes above",
     "đóng cửa dưới": "closes below",
@@ -320,12 +353,15 @@ TERMS: Dict[str, str] = {
 _TERMS_RE = re.compile(
     "|".join(re.escape(t) for t in sorted(TERMS, key=len, reverse=True)), re.IGNORECASE
 )
-_NUM = r"[+\-−]?\d+(?:[.,]\d+)*"
-_UNIT = r"[A-Za-z]+/[A-Za-z0-9]+\b"
+_NUM = r"[~≈]?[+\-−]?\d+(?:[.,]\d+)*"
+_UNIT = r"[A-Za-z]+/[^\W_]+\b"  # vế sau có thể là chữ Việt: USD/tấn, USD/thùng
 _MASK_RE = re.compile(
-    r"\d+/\d+(?:/\d+)?(?![\d.,])"                         # ngày dd/mm(/yyyy)
+    r"\d{4}-\d{2}-\d{2}"                                    # ngày ISO 2026-10-13
+    r"|\d+/\d+(?:/\d+)?(?![\d.,])"                        # ngày dd/mm(/yyyy)
+    r"|[Δ→←↑↓⇒•▲▼]"                                          # ký hiệu: Argos đổi Δ thành ←, → thành "(10)"
     rf"|{_NUM}(?:\s*[–\-−]\s*{_NUM})?(?:\s*%|\s+{_UNIT})?"  # số/khoảng số (+ % hoặc đơn vị)
     rf"|\b{_UNIT}"                                           # đơn vị đứng riêng: EUR/tCO2, Bcf/d
+    r"|\b[A-Z][a-z]{2}-\d{2}\b"                              # kỳ hạn hợp đồng: Cal-27, Nov-26
     r"|\b[A-Z][A-Za-z0-9]*[A-Z0-9](?:['’]\d+)?\b"           # mã/viết tắt: EUA, TTF, CO2, Dec'26
 )
 _PLACEHOLDER_RE = re.compile(r"\[(\d+)\]")
@@ -336,113 +372,236 @@ PLACEHOLDER_STYLES = (
 )
 
 
-def _restore_token(token: str) -> str:
+# Đơn vị tiếng Việt sau "/" → tiếng Anh (token đơn vị được che nên không qua máy dịch).
+UNIT_WORDS_EN = {"tấn": "t", "thùng": "bbl", "ngày": "day", "năm": "year", "tháng": "month", "giờ": "h"}
+# Từ chỉ độ lớn/đơn vị đứng sau 1 số — dấu hiệu "120.900" là dấu NGHÌN kiểu Việt (= 120,900).
+_MAGNITUDE_AFTER_RE = re.compile(r"\s*(?:tỷ|triệu|nghìn|ngàn|đồng|thùng|tấn|người|MW|GW|kWh|USD|EUR|VND)\b")
+_THOUSANDS_DOT_RE = re.compile(r"^[~≈+\-−]?\d{1,3}(?:\.\d{3})+$")
+
+
+def _en_number(num: str, thousands_dot: bool) -> str:
+    """Số kiểu Việt → kiểu Anh: "79,5" → "79.5"; "120.900" (dấu nghìn) → "120,900"."""
+    if thousands_dot:
+        return re.sub(r"(?<=\d)([.,])(?=\d)", lambda m: "," if m.group(1) == "." else ".", num)
+    return re.sub(r"(?<=\d),(?=\d)", ".", num)
+
+
+def _is_thousands_dot(num: str, segment: str, after: str) -> bool:
+    """`num` dùng "." làm dấu nghìn? — đúng dạng nhóm 3 chữ số VÀ (đoạn dùng dấu phẩy thập phân
+    kiểu Việt, hoặc ngay sau là từ chỉ độ lớn như "tỷ", "thùng"...). "81.4400", "88.05" không bị đổi."""
+    core = num.split()[0] if num.split() else num
+    return bool(_THOUSANDS_DOT_RE.match(core)) and (
+        bool(re.search(r"\d,\d", segment)) or bool(_MAGNITUDE_AFTER_RE.match(after))
+    )
+
+
+def _en_token(token: str, segment: str, after: str) -> str:
+    """Dạng tiếng Anh của 1 token đã che: thuật ngữ TERMS, số (đổi dấu thập phân/nghìn), đơn vị."""
     term = TERMS.get(token.lower())
     if term is not None:
         return term
-    # Dấu thập phân kiểu Việt "79,5" → "79.5" cho bản tiếng Anh (frontend đọc được cả 2).
-    return re.sub(r"(?<=\d),(?=\d)", ".", token)
+    out = _NUMBER_RE.sub(
+        lambda m: _en_number(m.group(0), _is_thousands_dot(m.group(0), segment, after)), token
+    ) if re.search(r"\d", token) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d+/\d+(?:/\d+)?", token) else token
+    if "/" in out:
+        head, _, unit = out.rpartition("/")
+        out = f"{head}/{UNIT_WORDS_EN.get(unit.lower(), unit)}"
+    return out
 
 
 def mask_segment(text: str) -> tuple:
-    """(văn bản có placeholder, danh sách token gốc theo thứ tự placeholder)."""
+    """(văn bản có placeholder, token gốc, dạng tiếng Anh của token) — cùng thứ tự placeholder."""
     tokens: List[str] = []
+    en: List[str] = []
 
     def sub(m: "re.Match[str]") -> str:
         tokens.append(m.group(0))
+        # Ngữ cảnh phía sau lấy từ văn bản GỐC (đoạn đang che đã thay "tỷ đồng"... bằng placeholder).
+        pos = text.find(m.group(0))
+        en.append(_en_token(m.group(0), text, text[pos + len(m.group(0)):] if pos >= 0 else ""))
         return f"[{len(tokens) - 1}]"
 
     masked = _TERMS_RE.sub(sub, text)
     # Che số/mã ở phần còn lại, không đụng vào placeholder vừa tạo.
     pieces = re.split(r"(\[\d+\])", masked)
     masked = "".join(p if _PLACEHOLDER_RE.fullmatch(p) else _MASK_RE.sub(sub, p) for p in pieces)
-    return masked, tokens
+    return masked, tokens, en
 
 
 def _styled(masked: str, fmt: str) -> str:
     return _PLACEHOLDER_RE.sub(lambda m: fmt.format(m.group(1)), masked)
 
 
-def unmask_segment(translated: str, tokens: Sequence[str], pattern: "re.Pattern[str]" = _PLACEHOLDER_RE) -> Optional[str]:
-    """Trả token về chỗ placeholder; None nếu bản dịch làm mất/nhân đôi/bịa placeholder."""
+def unmask_segment(translated: str, en_tokens: Sequence[str], pattern: "re.Pattern[str]" = _PLACEHOLDER_RE) -> Optional[str]:
+    """Trả token (dạng tiếng Anh) về chỗ placeholder; None nếu bản dịch làm mất/nhân đôi/bịa
+    placeholder, hoặc BỊA THÊM chữ số (thử thật: "USD/tấn" → "USD/203") — văn bản đã che không
+    còn chữ số nào ngoài số thứ tự placeholder."""
     found = [int(i) for i in pattern.findall(translated)]
-    if sorted(found) != list(range(len(tokens))):
+    if sorted(found) != list(range(len(en_tokens))) or re.search(r"\d", pattern.sub("", translated)):
         return None
+
     def restore(m: "re.Match[str]") -> str:
-        out = _restore_token(tokens[int(m.group(1))])
+        out = en_tokens[int(m.group(1))]
         return out[:1].upper() + out[1:] if m.start() == 0 else out  # thuật ngữ đứng đầu câu
 
     return pattern.sub(restore, translated)
 
 
+# Đọc placeholder kiểu CHỊU LỖI: mọi dãy số trong bản dịch chính là placeholder dù Argos làm méo
+# dấu bao quanh (thử thật: "[0][1]]", "([4].", "X0X1X").
+_LOOSE_PATTERNS = {
+    "[{}]": re.compile(r"\[?\s*(\d+)\s*\]?"),
+    "X{}X": re.compile(r"X?(\d+)X?"),
+}
+
+
+def _cleanup_markers(out: Optional[str], fmt: str, source: str) -> Optional[str]:
+    """Dọn dấu placeholder thừa sau khi trả token. "]"/"[" thừa thường là ")"/"(" bị Argos đổi;
+    còn sót chữ "X" đứng riêng (không có trong bản gốc) thì coi như hỏng."""
+    if out is None:
+        return None
+    if fmt == "[{}]" and "[" not in source and "]" not in source:
+        if out.count("(") > out.count(")"):
+            out = out.replace("]", ")")
+        if out.count(")") > out.count("("):
+            out = out.replace("[", "(")
+        out = out.replace("[", "").replace("]", "")
+    if fmt == "X{}X" and re.search(r"\bX\b", out) and not re.search(r"\bX\b", source):
+        return None
+    return re.sub(r"[ \t]{2,}", " ", out).strip()
+
+
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;!?])\s+(?=\S)")
+# Tách vế trong 1 câu (dùng khi cả câu vẫn dịch hỏng): sau dấu phẩy/hai chấm, hoặc trước ngoặc mở.
+_CLAUSE_SPLIT_RE = re.compile(r"(?<=[,:])\s+(?=\S)|\s+(?=[(→])")
+# Có cả dấu +/− để bước sửa số trả lại dấu âm Argos làm rơi ("-0,3%" → "0.3%").
+_NUMBER_RE = re.compile(r"[+\-−]?\d+(?:[.,]\d+)*")
+_DIGITS_RE = re.compile(r"\d+(?:[.,]\d+)*")
 
 
-def _raw_output_ok(translated: str, tokens: Sequence[str]) -> bool:
-    """Bản dịch KHÔNG che (bước dự phòng) chỉ được nhận khi mọi số/mã/đơn vị còn nguyên văn
-    và đoạn gốc không chứa thuật ngữ cần dịch cố định (TERMS)."""
+def _digit_signature(text: str) -> Counter:
+    """Tập con số bỏ dấu phân cách — so số trong bản dịch với bản gốc bất kể kiểu viết 1.5/1,5."""
+    return Counter(re.sub(r"[.,]", "", n) for n in _DIGITS_RE.findall(text))
+
+
+def _raw_output_ok(source: str, translated: str, tokens: Sequence[str], en_tokens: Sequence[str]) -> bool:
+    """Bản dịch KHÔNG che chỉ được nhận khi: không có thuật ngữ TERMS (Argos dịch sai các cụm đó),
+    mọi mã/đơn vị còn nguyên, và tập con số y hệt bản gốc (không mất, không bịa số)."""
     if not translated or any(t.lower() in TERMS for t in tokens):
         return False
-    normalized = re.sub(r"(?<=\d),(?=\d)", ".", translated)
-    return all(_restore_token(t) in normalized or t in translated for t in tokens)
+    if _digit_signature(translated) != _digit_signature(source):
+        return False
+    return all(e in translated or t in translated for t, e in zip(tokens, en_tokens) if not re.search(r"\d", t))
 
 
-async def _translate_segments(segments: Sequence[str], translator: Translator) -> Dict[str, str]:
-    """Dịch các đoạn (đã khử trùng lặp) theo thứ tự chiến lược, đoạn nào xong thì thôi:
-    1-2. che số/mã bằng placeholder kiểu "X0X" rồi "[0]";
+def _repair_raw(source: str, translated: str, tokens: Sequence[str]) -> Optional[str]:
+    """Bước cuối cho 1 vế ngắn: bản dịch nguyên văn có ĐÚNG số lượng con số như bản gốc → ghi đè
+    từng con số theo thứ tự bằng số gốc (Argos hay đổi giá trị nhưng giữ vị trí số). Mã viết hoa
+    (EUA, TTF...) phải còn nguyên; có thuật ngữ TERMS thì không nhận (Argos dịch sai các cụm đó)."""
+    if not translated or any(t.lower() in TERMS for t in tokens):
+        return None
+    src = list(_NUMBER_RE.finditer(source))
+    if len(src) != len(_NUMBER_RE.findall(translated)):
+        return None
+    codes = [t for t in tokens if re.search(r"[A-Za-z]", t) and not re.search(r"\d", t) and "/" not in t]
+    if any(c not in translated for c in codes):
+        return None
+    it = iter(_en_number(m.group(0), _is_thousands_dot(m.group(0), source, source[m.end():])) for m in src)
+    out = _NUMBER_RE.sub(lambda _m: next(it), translated)
+    return re.sub(r"[+\-−]\s+(?=[+\-−]\d)", "", out)  # "Day - -1.49%" → "Day -1.49%"
+
+
+async def _translate_units(
+    units: Sequence[str], translator: Translator, *, allow_repair: bool = False
+) -> Dict[str, str]:
+    """Dịch các đơn vị (đoạn/câu/vế) theo thứ tự chiến lược, đơn vị nào xong thì thôi:
+    1-2. che số/mã bằng placeholder kiểu "X0X" rồi "[0]" (đọc lại kiểu chịu lỗi);
     3. gửi nguyên văn, chỉ nhận khi số/mã còn y nguyên (Argos hay trả rác cho đoạn NGẮN có
-       placeholder — thử thật: "Lịch sự kiện [0] ngày tới" → "Organisation").
-    Đoạn không dịch được thì không có trong kết quả."""
-    masked = {seg: mask_segment(seg) for seg in segments}
+       placeholder — thử thật: "Lịch sự kiện [0] ngày tới" → "Organisation");
+    4. (`allow_repair`, chỉ cho vế ngắn) bản nguyên văn + ghi đè số theo thứ tự — `_repair_raw`.
+    Đơn vị không dịch được thì không có trong kết quả."""
+    units = list(dict.fromkeys(u for u in units if u.strip()))
+    masked = {u: mask_segment(u) for u in units}
     done: Dict[str, str] = {}
-    pending = list(masked)
+    pending = units
     for fmt, pattern in PLACEHOLDER_STYLES:
         if not pending:
             break
-        texts = list(dict.fromkeys(_styled(masked[seg][0], fmt) for seg in pending))
+        texts = list(dict.fromkeys(_styled(masked[u][0], fmt) for u in pending))
         by_text = dict(zip(texts, await translator.translate_batch(texts)))
         still: List[str] = []
-        for seg in pending:
-            m, tokens = masked[seg]
-            out = unmask_segment(by_text.get(_styled(m, fmt), "").strip(), tokens, pattern)
+        for u in pending:
+            m, _tokens, en = masked[u]
+            raw = by_text.get(_styled(m, fmt), "").strip()
+            out = _cleanup_markers(unmask_segment(raw, en, pattern), fmt, u) or _cleanup_markers(
+                unmask_segment(raw, en, _LOOSE_PATTERNS[fmt]), fmt, u
+            )
             if out:
-                done[seg] = out
+                done[u] = out
             else:
-                still.append(seg)
+                still.append(u)
         pending = still
-    raw_candidates = [seg for seg in pending if not any(t.lower() in TERMS for t in masked[seg][1])]
-    if raw_candidates:
-        for seg, out in zip(raw_candidates, await translator.translate_batch(raw_candidates)):
-            out = out.strip()
-            if _raw_output_ok(out, masked[seg][1]):
-                done[seg] = out
+    if pending:
+        raw_out = dict(zip(pending, await translator.translate_batch(pending)))
+        for u in pending:
+            out, (_m, tokens, en) = raw_out[u].strip(), masked[u]
+            if _raw_output_ok(u, out, tokens, en):
+                done[u] = out
+            elif allow_repair:
+                repaired = _repair_raw(u, out, tokens)
+                if repaired:
+                    done[u] = repaired
     return done
+
+
+def _split(text: str, pattern: "re.Pattern[str]") -> List[str]:
+    return [p for p in pattern.split(text) if p.strip()]
+
+
+async def translate_segments(segments: Sequence[str], translator: Translator) -> Dict[str, str]:
+    """Dịch nhiều tầng — đoạn → câu → vế; chỉ phần nhỏ nhất vẫn hỏng mới giữ tiếng Việt, không
+    để 1 câu hỏng kéo cả đoạn về tiếng Việt. Trả {đoạn gốc: bản dịch} cho mọi đoạn."""
+    unique = list(dict.fromkeys(segments))
+    result = await _translate_units(unique, translator)
+
+    rest = [seg for seg in unique if seg not in result]
+    sentences = {seg: _split(seg, _SENTENCE_SPLIT_RE) for seg in rest}
+    sent_done = await _translate_units(
+        [p for parts in sentences.values() if len(parts) > 1 for p in parts], translator
+    )
+    bad_sentences = [p for parts in sentences.values() for p in parts if p not in sent_done]
+    clauses = {p: _split(p, _CLAUSE_SPLIT_RE) for p in dict.fromkeys(bad_sentences)}
+    clause_done = await _translate_units(
+        [c for parts in clauses.values() for c in parts], translator, allow_repair=True
+    )
+
+    left: List[str] = []
+    for seg, parts in sentences.items():
+        out_parts = []
+        for p in parts:
+            if p in sent_done:
+                out_parts.append(sent_done[p])
+                continue
+            for c in clauses[p]:
+                if c in clause_done:
+                    out_parts.append(clause_done[c])
+                else:
+                    left.append(c)
+                    out_parts.append(c)
+        result[seg] = " ".join(out_parts)
+    if left:
+        logger.warning(
+            "[TRANSLATE] %d vế câu giữ nguyên tiếng Việt (máy dịch làm hỏng số/mã):\n  %s",
+            len(left), "\n  ".join(left),
+        )
+    return result
 
 
 async def translate_report_content(content: dict, translator: Translator) -> dict:
     """Bản dịch tiếng Anh của `content` (cùng cấu trúc). Raise TranslationError nếu máy dịch lỗi."""
     segments: List[str] = []
     _collect(content, None, segments)
-    unique = list(dict.fromkeys(segments))
-    mt = await _translate_segments(unique, translator)
-
-    # Dự phòng cuối: đoạn nhiều câu còn hỏng → tách từng câu dịch riêng (câu ngắn ít mất placeholder).
-    multi = {seg: _SENTENCE_SPLIT_RE.split(seg) for seg in unique if seg not in mt}
-    multi = {seg: parts for seg, parts in multi.items() if len(parts) > 1}
-    if multi:
-        pieces = list(dict.fromkeys(p for parts in multi.values() for p in parts))
-        piece_mt = await _translate_segments(pieces, translator)
-        for seg, parts in multi.items():
-            if all(p in piece_mt for p in parts):
-                mt[seg] = " ".join(piece_mt[p] for p in parts)
-
-    failed = [seg for seg in unique if seg not in mt]
-    if failed:
-        logger.warning(
-            "[TRANSLATE] %d/%d đoạn giữ nguyên tiếng Việt (máy dịch làm hỏng số/mã), vd: %s",
-            len(failed), len(unique), " | ".join(repr(f[:80]) for f in failed[:5]),
-        )
-    return _rebuild(content, None, mt)
+    return _rebuild(content, None, await translate_segments(segments, translator))
 
 
 async def ensure_report_translation(

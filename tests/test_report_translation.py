@@ -148,8 +148,8 @@ def test_raw_fallback_accepts_only_when_numbers_kept():
 def test_sentence_split_fallback():
     out = asyncio.run(translate_report_content(
         {"text": "Giá EUA giảm 2% và yếu. Giá TTF tăng 1%."}, _GarbageWithPlaceholders()))
-    # Cả đoạn hỏng → tách câu; câu 1 vẫn hỏng nên giữ nguyên tiếng Việt cả đoạn (không ghép nửa vời)
-    assert out["text"] == "Giá EUA giảm 2% và yếu. Giá TTF tăng 1%."
+    # Cả đoạn hỏng → tách câu; chỉ câu 1 (vẫn hỏng) giữ tiếng Việt, câu 2 vẫn được dịch
+    assert out["text"] == "Giá EUA giảm 2% và yếu. EN Giá TTF tăng 1%."
 
 
 class _FailsOnMultiSentence(Translator):
@@ -165,3 +165,51 @@ def test_sentence_split_fallback_success():
 def test_fixed_section_titles_not_machine_translated():
     out, fake = _tr({"8": {"title": "Lịch sự kiện 7 ngày tới", "events": []}})
     assert out["8"]["title"] == "Events calendar — next 7 days" and fake.calls == []
+
+
+def test_loose_unmask_fixes_mangled_brackets():
+    from services.report_translation import _LOOSE_PATTERNS, _cleanup_markers, unmask_segment
+    loose = lambda out, toks, src: _cleanup_markers(unmask_segment(out, toks, _LOOSE_PATTERNS["[{}]"]), "[{}]", src)
+    assert loose("Close ([0][1]]: [2].", ["2026-10-13", "x", "88.05 EUR/tCO2"], "src (a)") == \
+        "Close (2026-10-13x): 88.05 EUR/tCO2."
+    assert loose("lost [0] only", ["1", "2"], "src") is None
+
+
+def test_repair_raw_overwrites_numbers_in_order():
+    from services.report_translation import _repair_raw, mask_segment
+    src = "EUA giảm 0,29 (-0,3%)"
+    _, tokens, _ = mask_segment(src)
+    assert _repair_raw(src, "EUA reduced 0.170 (0.3%)", tokens) == "EUA reduced 0.29 (-0.3%)"
+    assert _repair_raw(src, "EUA reduced 0.29 (- 0.3%)", tokens) == "EUA reduced 0.29 (-0.3%)"
+    assert _repair_raw(src, "EUU reduced 0.29 (0.3%)", tokens) is None      # mã bị đổi
+    assert _repair_raw(src, "EUA reduced 0.29", tokens) is None             # thiếu số
+
+
+def test_iso_date_and_delta_masked_whole():
+    from services.report_translation import mask_segment
+    _, tokens, _ = mask_segment("Đóng cửa (2026-10-13): Δ ngày ~1,7%")
+    assert tokens == ["2026-10-13", "Δ", "~1,7%"]
+
+
+def test_number_format_and_units_to_english():
+    from services.report_translation import mask_segment
+    _, tokens, en = mask_segment("doanh thu 120.900 tỷ đồng, giá 97,25 USD/tấn, EUA 81.4400 EUR/tCO2, Cal-27")
+    assert dict(zip(tokens, en)) == {
+        "120.900": "120,900", "tỷ đồng": "billion VND", "97,25 USD/tấn": "97.25 USD/t", "EUA": "EUA",
+        "81.4400 EUR/tCO2": "81.4400 EUR/tCO2", "Cal-27": "Cal-27",
+    }
+    _, _, en = mask_segment("tăng 1.250 thùng, giảm 0,5%")  # đoạn dùng dấu phẩy thập phân → dấu chấm là nghìn
+    assert en == ["1,250 thùng".split()[0], "0.5%"]
+
+
+def test_rejects_hallucinated_digits():
+    from services.report_translation import PLACEHOLDER_STYLES, unmask_segment
+    x_style = PLACEHOLDER_STYLES[0][1]
+    assert unmask_segment("price X0X/203", ["97.25 USD"], x_style) is None
+    assert unmask_segment("price X0X/t", ["97.25 USD"], x_style) == "price 97.25 USD/t"
+
+
+def test_arrow_chains_split_and_labels_fixed():
+    out, _ = _tr({"x": ["Cơ hội: Chính sách CBAM của EU → Giải pháp: Hỗ trợ doanh nghiệp → Kỳ vọng: Giảm rủi ro."]})
+    assert out["x"][0] == "Opportunity: <Chính sách X0X của X1X> → Solution: <Hỗ trợ doanh nghiệp> → Expectation: <Giảm rủi ro.>" \
+        .replace("X0X", "CBAM").replace("X1X", "EU")

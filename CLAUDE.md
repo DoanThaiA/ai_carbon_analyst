@@ -180,7 +180,7 @@ web hiện bản tiếng Việt kèm thông báo). Khoá enum (`PROTECTED_KEYS`:
 frontend tự đổi nhãn; neo cấu trúc (`**Tổng hợp:**`, `[TÍCH CỰC]`, tiền tố nhóm Mục 3, `**Mục tiêu:**`...) dịch bằng
 `GLOSSARY` cố định — các regex trong `ReportDocument.tsx` và `report_qc.parse_strategy` nhận cả 2 ngôn ngữ; thêm neo mới
 phải cập nhật cả 3 nơi. Email publish kèm 2 PDF (vi + `-en.pdf`, `render_report_pdf(lang="en")` đặt cookie `NEXT_LOCALE`).
-Dịch bù: `python -m scripts.translate_reports --missing`.
+Argos hay làm SAI SỐ/mã/ký hiệu ("79,0"→"720", "→"→"(10)") nên số, mã, đơn vị, ký hiệu và `TERMS` được che bằng placeholder rồi trả lại (đổi sang kiểu số tiếng Anh); bản dịch có chữ số lạ hoặc mất placeholder bị loại; dịch nhiều tầng đoạn → câu → vế, chỉ vế vẫn hỏng mới giữ tiếng Việt (log liệt kê đủ từng vế). Dịch bù: `python -m scripts.translate_reports --missing` (hoặc `--from/--to`, `--last N`, `--force`).
 
 **Hot news email digest** (`services/hot_news_email.py`): at the end of every
 `main.main()` crawl run (mỗi đợt crawl của cả 2 nhóm nguồn — nhóm quốc tế chạy ban đêm giờ VN; bỏ qua trong `HOT_NEWS_EMAIL_QUIET_HOURS`), all `is_hot_news` articles with
