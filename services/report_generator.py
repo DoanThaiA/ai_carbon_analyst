@@ -15,6 +15,7 @@ from db.models import Article, EuaAuction, Price, Instrument, PriceCrawlSource, 
 from core.config import Settings
 from services import biz_memory
 from services import cbam_estimate
+from services import forecast_review
 from services.title_similarity import is_similar_title, title_tokens
 from services import eua_causal_chains as chains
 from services.eua_framework_admin import get_overrides_map
@@ -1577,65 +1578,6 @@ async def get_previous_report_digest(session: AsyncSession, report_date_str: str
     )
 
 
-TRACK_RECORD_REPORTS = 3
-SIDEWAYS_MAX_PCT = 0.5  # |Δ phiên| dưới mức này coi như "đi ngang"
-_SUMMARY_LINE_RE = re.compile(r"\*\*Tổng hợp:?\*\*\s*(.*)")
-
-
-async def get_forecast_track_record(session: AsyncSession, report_date_str: str, chart_data: List[Dict]) -> str:
-    """Đối chiếu dự báo NGẮN HẠN của các báo cáo gần nhất với phiên EUA thực tế ngay sau đó (tính sẵn
-    bằng Python từ OHLC) + tiền đề ("Tổng hợp") của từng báo cáo — để Mục 3 viết khung "So với báo cáo
-    trước": thừa nhận dự báo sai nhiều phiên liền, giải thích khi đổi hướng, xem lại tiền đề cũ."""
-    closes = [(c["date"], c["close"]) for c in chart_data if c.get("date") and isinstance(c.get("close"), (int, float))]
-    if len(closes) < 2:
-        return ""
-    reports = (await session.execute(
-        select(Report)
-        .where(Report.report_date < report_date_str, Report.status.in_(["draft", "published"]))
-        .order_by(desc(Report.report_date))
-        .limit(TRACK_RECORD_REPORTS + 4)
-    )).scalars()
-    lines: List[str] = []
-    misses_in_row, still_counting = 0, True
-    for prev in reports:
-        sec3 = (prev.content or {}).get("3") or {}
-        short = next((sc for sc in sec3.get("trading_scenarios") or [] if isinstance(sc, dict) and sc.get("horizon") == "ngắn hạn"), None)
-        if not short:
-            continue  # báo cáo CN/T2 không có kịch bản
-        # Phiên đầu tiên SAU khi báo cáo phát hành (báo cáo ngày R dùng dữ liệu R-1 → phiên R trở đi).
-        idx = next((i for i, (d, _) in enumerate(closes) if d >= prev.report_date), None)
-        if idx is None or idx == 0:
-            continue
-        d, close = closes[idx]
-        pct = (close / closes[idx - 1][1] - 1) * 100
-        direction = short.get("direction")
-        hit = {"tăng": pct > 0, "giảm": pct < 0, "đi ngang": abs(pct) < SIDEWAYS_MAX_PCT}.get(direction)
-        if still_counting:
-            if hit is False:
-                misses_in_row += 1
-            else:
-                still_counting = False
-        premise = next(
-            (m.group(1).strip() for b in sec3.get("analysis_blocks") or [] if isinstance(b, dict)
-             for m in [_SUMMARY_LINE_RE.search(str(b.get("content") or ""))] if m),
-            "",
-        )
-        verdict = "ĐÚNG" if hit else "SAI" if hit is False else "không xác định"
-        lines.append(
-            f"- Báo cáo {date.fromisoformat(prev.report_date).strftime('%d/%m')}: dự báo ngắn hạn \"{direction}\" "
-            f"(xác suất {short.get('probability')}) → phiên {date.fromisoformat(d).strftime('%d/%m')} EUA "
-            f"{_vn_num(pct, sign=True)}% → {verdict}. Tiền đề: {premise[:300] or 'không có dòng Tổng hợp'}"
-        )
-        if len(lines) >= TRACK_RECORD_REPORTS:
-            break
-    if not lines:
-        return ""
-    head = "ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY (tính sẵn từ giá đóng cửa thật — dùng đúng, KHÔNG tự tính lại):"
-    if misses_in_row >= 2:
-        head += f" ⚠ {misses_in_row} báo cáo LIÊN TIẾP dự báo sai chiều."
-    return "\n".join([head, *lines])
-
-
 def _parse_event_date(ev: Dict) -> Optional[date]:
     """Parse field 'date' (YYYY-MM-DD) của 1 event Mục 8; None nếu thiếu/sai định dạng."""
     raw = ev.get("date")
@@ -2338,7 +2280,7 @@ MỐC KỸ THUẬT EUA (tính sẵn từ OHLC thật — nguồn DUY NHẤT cho 
 KỊCH BẢN CỦA BÁO CÁO TRƯỚC (đối chiếu — người đọc so sánh các ngày với nhau):
 {prev_scenarios or "Không có."}
 NHẤT QUÁN VỚI BÁO CÁO TRƯỚC (BẮT BUỘC khi có kịch bản trước): nếu hôm nay đổi "direction"/xác suất của 1 horizon, hoặc dời Mục tiêu/cắt lỗ đáng kể, thì đoạn "**Tổng hợp:**" PHẢI có 1 câu ngắn nêu rõ điều chỉnh (cũ → mới) và lý do bằng dữ liệu; nếu kịch bản ngắn hạn trước đã đi NGƯỢC thực tế (giá đi ngược chiều dự báo) thì thừa nhận thẳng và hạ xác suất hoặc giải thích vì sao vẫn giữ — TUYỆT ĐỐI KHÔNG lặng lẽ đổi số.
-KHUNG "SO VỚI BÁO CÁO TRƯỚC" (BẮT BUỘC khi có kịch bản/đối chiếu ở trên): thêm trường "vs_previous" (2–3 câu, tối đa ~70 từ) ở cấp mục 3, gồm: (1) dự báo ngắn hạn trước đó đúng/sai thế nào theo "ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY" (sai nhiều phiên liền thì nói thẳng số phiên và %Δ); (2) hôm nay GIỮ hay ĐỔI hướng (cũ → mới) và lý do bằng dữ liệu; (3) TIỀN ĐỀ nào của báo cáo trước đã thay đổi/không còn đúng (vd trước coi "TTF tăng → chuyển sang than → cầu EUA tăng" nhưng spread nay cho thấy chuyển đổi đã bão hòa) — nêu thẳng, không né. Không có báo cáo trước → "vs_previous" = "".
+KHUNG "SO VỚI BÁO CÁO TRƯỚC" (BẮT BUỘC khi có kịch bản/đối chiếu ở trên): thêm trường "vs_previous" (3–4 câu, tối đa ~90 từ) ở cấp mục 3 — hiển thị ở TRANG ĐẦU ngay dưới bảng "Dự báo trước: đúng hay sai" (bảng đã có số liệu, KHÔNG chép lại từng dòng), gồm: (1) THỪA NHẬN THẲNG mọi dự báo "SAI" trong "ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY" — nêu ngày báo cáo, chiều đã dự báo, kết quả (chạm cắt lỗ ngày nào hoặc %Δ); dự báo SAI dù gắn xác suất CAO thì phải nói rõ và nêu vì sao độ tin cậy đó không có cơ sở (vd thiếu spread than–khí/dữ liệu vị thế khi chốt "Cao"); NGUYÊN NHÂN sai là tiền đề nào không đúng — KHÔNG né, KHÔNG đổ cho "biến động ngẫu nhiên"; không có dự báo sai → 1 câu ngắn xác nhận; (2) hôm nay GIỮ hay ĐỔI hướng (cũ → mới) và lý do bằng dữ liệu; (3) TIỀN ĐỀ nào của báo cáo trước đã thay đổi/không còn đúng (vd trước coi "TTF tăng → chuyển sang than → cầu EUA tăng" nhưng spread nay cho thấy chuyển đổi đã bão hòa) — nêu thẳng, không né. Không có báo cáo trước → "vs_previous" = "".
 
 CÂN NHẮC BẰNG CHỨNG NGƯỢC CHIỀU (BẮT BUỘC): trước khi chốt "**Tổng hợp:**", rà các tin ở dưới đi NGƯỢC kết luận của bạn (vd nguồn cung dầu phục hồi, sản lượng kỷ lục, lạm phát/lãi suất tăng khi kết luận tăng giá) — tin ngược chiều có tác động thật phải được nêu trong "Phân tích" hoặc hạ xác suất kịch bản; không chỉ trình bày 1 chiều.
 
@@ -2827,6 +2769,11 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         if prices and max_price_date else None
     )
     cbam_est_text = cbam_estimate.describe_for_prompt(cbam_est)
+    # Đối chiếu dự báo của các báo cáo gần đây (chiều giá + lệnh khớp/chạm cắt lỗ) — khối cố định trang đầu.
+    forecast_review_block, forecast_review_text = (
+        await forecast_review.build_forecast_review(session, report_date, max_price_date)
+        if prices and max_price_date else (None, "")
+    )
 
     # Sự kiện đấu giá EEX tính lại mỗi ngày từ eua_auctions (_auction_calendar_events) — bỏ bản của
     # báo cáo trước để không bị đưa vào nhóm "cần cập nhật kết quả" (kết quả đấu giá nằm ở khối CBAM).
@@ -3041,7 +2988,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                         session, report_date,
                         next((p.get("close") for p in prices if str(p.get("code", "")).upper() == "EUA"), None),
                     ),
-                    await get_forecast_track_record(session, report_date, chart_data),
+                    forecast_review_text,
                 ])),
             )),
             ("4", _prompt_section4(
@@ -3209,6 +3156,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             "key_facts": eua_key_facts,
             "prices": prices,
             "cbam_estimate": cbam_est,
+            "forecast_review": forecast_review_block,
             "key_developments": key_developments,
             "chart_data": chart_data,
             "market_drivers": {

@@ -13,6 +13,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
 import type { Report } from "@/lib/types";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
+import { ForecastReviewCard } from "@/components/ForecastReviewCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
 
 // Hàm dịch của namespace "reportDoc" — truyền xuống các hàm thuần (không gọi được hook).
@@ -1831,7 +1832,13 @@ export function ReportDocument({
 
           {/* So với báo cáo trước — dự báo cũ đúng/sai, giữ/đổi hướng và tiền đề đã thay đổi
               (report_generator.py: content["3"].vs_previous). Báo cáo cũ không có → ẩn. */}
-          {report.content["3"]?.vs_previous && (
+          {/* Dự báo trước đúng/sai — bảng tính bằng Python (content["2"].forecast_review) + đoạn vs_previous
+              làm phần "nguyên nhân & điều chỉnh". Báo cáo cũ chưa có bảng → chỉ hiện vs_previous như trước. */}
+          {report.content["2"]?.forecast_review?.items?.length > 0 ? (
+            <ForecastReviewCard review={report.content["2"].forecast_review} enumLabel={enumLabel}>
+              {report.content["3"]?.vs_previous && <RichText text={report.content["3"].vs_previous} />}
+            </ForecastReviewCard>
+          ) : report.content["3"]?.vs_previous && (
             <div className="rounded-lg border border-border bg-surface px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
               <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label mb-1">{t("body.vsPrevious")}</h3>
               <p className="text-[14px] sm:text-[14.5px] leading-[1.55] text-body">

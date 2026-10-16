@@ -39,6 +39,36 @@ export interface CbamEstimate {
   prev_quarter: { quarter: string; vwap: number | null; official: number | null } | null;
 }
 
+// Khối "Dự báo trước: đúng hay sai" (content["2"].forecast_review) — services/forecast_review.py.
+export interface ForecastReviewItem {
+  report_date: string;
+  direction: string;
+  probability: string | null;
+  ref_close: number;
+  last_date: string;
+  last_close: number;
+  change_pct: number;
+  sessions: number;
+  verdict: "correct" | "wrong" | "unclear";
+  high_confidence_miss: boolean;
+  trade: {
+    side: "buy" | "sell";
+    entry_low: number;
+    entry_high: number;
+    stop: number;
+    target: number | null;
+    status: "not_filled" | "open" | "stopped" | "target_hit";
+    filled_date: string | null;
+    exit_date: string | null;
+    exit_price: number | null;
+  } | null;
+}
+
+export interface ForecastReview {
+  items: ForecastReviewItem[];
+  wrong_in_row: number;
+}
+
 export interface ReportSummary {
   id: number;
   report_date: string;

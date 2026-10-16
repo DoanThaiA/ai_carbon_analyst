@@ -529,6 +529,31 @@
     "placeholderFree": "Type a question for Jenny...",
     "placeholderNone": "Pick a session or highlight a passage to ask..."
   },
+  "forecastReview": {
+    "title": "Previous forecasts: right or wrong",
+    "wrongInRow": "{n} consecutive reports got the direction wrong",
+    "verdict": {
+      "correct": "Right",
+      "wrong": "Wrong",
+      "unclear": "Unclear"
+    },
+    "report": "Report {date}:",
+    "forecast": "short-term forecast {direction}, probability {probability}.",
+    "highConfidenceMiss": "Wrong despite high confidence.",
+    "move": "EUA {from} → {to} ({pct}%, {sessions, plural, one {# session} other {# sessions}} to {date})",
+    "trade": {
+      "buy": "Buy {low}–{high}, stop {stop}",
+      "sell": "Sell {low}–{high}, stop {stop}",
+      "target": "target {target}",
+      "status": {
+        "not_filled": "not filled",
+        "open": "filled {date}, still open",
+        "stopped": "stopped out {date}",
+        "target_hit": "target hit {date}"
+      }
+    },
+    "lesson": "Cause & adjustment"
+  },
   "meta": {
     "title": "Carbon Analyst Dashboard",
     "description": "Daily Carbon Intelligence Reports"

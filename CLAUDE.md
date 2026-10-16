@@ -237,9 +237,16 @@ bằng `biz_memory.infer_price_rule`, mã không có trong bảng giá thì khô
 `qc_report_text()` trả văn bản (điểm, thống kê tin, vấn đề theo mục) làm tool_result. Các hàm `check_*` là
 hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cáo sạch đúng định dạng bộ sinh, PHẢI ra
 0 vấn đề — đổi định dạng output của `report_generator.py` thì cập nhật fixture này). `parse_strategy` /
-`parse_signal_levels` là bản port 1-1 parser thẻ KHUYẾN NGHỊ VỊ THẾ (trước là TÍN HIỆU HÔM NAY) trong `ReportDocument.tsx` — sửa bên nào
+`parse_signal_levels` (nằm ở `services/strategy_levels.py`, `report_qc` re-export) là bản port 1-1 parser thẻ KHUYẾN NGHỊ VỊ THẾ (trước là TÍN HIỆU HÔM NAY) trong `ReportDocument.tsx` — sửa bên nào
 phải sửa cả bên kia. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
+
+**Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
+frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
+chấm `REVIEW_MAX_REPORTS` báo cáo gần nhất có kịch bản ngắn hạn (còn trong `REVIEW_MAX_SESSIONS` phiên): %Δ EUA luỹ kế từ giá
+báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi biên độ phiên chạm vùng Entry; phiên khớp chỉ xét giá đóng cửa;
+1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ) → chạm cắt lỗ = SAI, chạm mục tiêu = ĐÚNG, còn lại theo chiều %Δ. Jack
+`check_forecast_review`: có dự báo SAI mà `vs_previous` trống → error, không nhắc ngày báo cáo sai → warning.
 
 **Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,
 vd Bloomberg). Tóm tắt Mục 6 trả thêm `origin` (hãng gốc khi bài dẫn lại, vd "Zelenskyy told the FT" trên Politico) →

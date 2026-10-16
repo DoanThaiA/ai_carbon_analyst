@@ -1,0 +1,54 @@
+{
+  "forecastReview": {
+    "vi": {
+      "title": "Dự báo trước: đúng hay sai",
+      "wrongInRow": "{n} báo cáo liên tiếp dự báo sai",
+      "verdict": {
+        "correct": "Đúng",
+        "wrong": "Sai",
+        "unclear": "Chưa rõ"
+      },
+      "report": "Báo cáo {date}:",
+      "forecast": "dự báo ngắn hạn {direction}, xác suất {probability}.",
+      "highConfidenceMiss": "Sai dù gắn xác suất cao.",
+      "move": "EUA {from} → {to} ({pct}%, {sessions} phiên tới {date})",
+      "trade": {
+        "buy": "Lệnh mua {low}–{high}, cắt lỗ {stop}",
+        "sell": "Lệnh bán {low}–{high}, cắt lỗ {stop}",
+        "target": "mục tiêu {target}",
+        "status": {
+          "not_filled": "chưa khớp",
+          "open": "đã khớp {date}, đang mở",
+          "stopped": "chạm cắt lỗ {date}",
+          "target_hit": "chạm mục tiêu {date}"
+        }
+      },
+      "lesson": "Nguyên nhân & điều chỉnh"
+    },
+    "en": {
+      "title": "Previous forecasts: right or wrong",
+      "wrongInRow": "{n} consecutive reports got the direction wrong",
+      "verdict": {
+        "correct": "Right",
+        "wrong": "Wrong",
+        "unclear": "Unclear"
+      },
+      "report": "Report {date}:",
+      "forecast": "short-term forecast {direction}, probability {probability}.",
+      "highConfidenceMiss": "Wrong despite high confidence.",
+      "move": "EUA {from} → {to} ({pct}%, {sessions, plural, one {# session} other {# sessions}} to {date})",
+      "trade": {
+        "buy": "Buy {low}–{high}, stop {stop}",
+        "sell": "Sell {low}–{high}, stop {stop}",
+        "target": "target {target}",
+        "status": {
+          "not_filled": "not filled",
+          "open": "filled {date}, still open",
+          "stopped": "stopped out {date}",
+          "target_hit": "target hit {date}"
+        }
+      },
+      "lesson": "Cause & adjustment"
+    }
+  }
+}

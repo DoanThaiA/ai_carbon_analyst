@@ -529,6 +529,31 @@
     "placeholderFree": "Nhập câu hỏi cho Jenny...",
     "placeholderNone": "Chọn 1 phiên hoặc bôi đen đoạn trích để hỏi..."
   },
+  "forecastReview": {
+    "title": "Dự báo trước: đúng hay sai",
+    "wrongInRow": "{n} báo cáo liên tiếp dự báo sai",
+    "verdict": {
+      "correct": "Đúng",
+      "wrong": "Sai",
+      "unclear": "Chưa rõ"
+    },
+    "report": "Báo cáo {date}:",
+    "forecast": "dự báo ngắn hạn {direction}, xác suất {probability}.",
+    "highConfidenceMiss": "Sai dù gắn xác suất cao.",
+    "move": "EUA {from} → {to} ({pct}%, {sessions} phiên tới {date})",
+    "trade": {
+      "buy": "Lệnh mua {low}–{high}, cắt lỗ {stop}",
+      "sell": "Lệnh bán {low}–{high}, cắt lỗ {stop}",
+      "target": "mục tiêu {target}",
+      "status": {
+        "not_filled": "chưa khớp",
+        "open": "đã khớp {date}, đang mở",
+        "stopped": "chạm cắt lỗ {date}",
+        "target_hit": "chạm mục tiêu {date}"
+      }
+    },
+    "lesson": "Nguyên nhân & điều chỉnh"
+  },
   "meta": {
     "title": "Carbon Analyst Dashboard",
     "description": "Báo cáo tình báo carbon hằng ngày"

@@ -287,98 +287,15 @@ def extract_eua_summary(content: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-# Port 1-1 của parseStrategy/priceNums/splitBuySell/parseSignalLevels trong
-# frontend/src/components/ReportDocument.tsx — QC kiểm ĐÚNG những mức giá mà thẻ
-# "KHUYẾN NGHỊ VỊ THẾ" sẽ hiển thị. Sửa parser bên frontend thì phải sửa cả ở đây.
-_STRATEGY_LINE_RE = re.compile(r"^\*\*([^*]+?)\*\*\s*:?\s*(.*)$")
-
-
-def parse_strategy(text: Any) -> Optional[List[tuple]]:
-    """"**Entry:** ...\n**Mục tiêu:** ..." -> [(label, body)], None nếu có dòng không đúng định dạng."""
-    if not isinstance(text, str) or not text.strip():
-        return None
-    parts = []
-    for line in (l.strip() for l in re.split(r"\n+", text)):
-        if not line:
-            continue
-        m = _STRATEGY_LINE_RE.match(line)
-        if not m:
-            return None
-        parts.append((re.sub(r":\s*$", "", m.group(1)).strip(), m.group(2).strip()))
-    return parts or None
-
-
-def _price_nums(text: str) -> List[float]:
-    clean = text.replace("**", "")
-    clean = re.sub(r"EUR\s*/\s*tCO[₂2]", "", clean, flags=re.IGNORECASE)
-    clean = re.sub(
-        r"\d+(?:[.,]\d+)?\s*(?:%|phiên|ngày|tuần|tháng|sessions?\b|days?\b|weeks?\b|months?\b)", "", clean,
-        flags=re.IGNORECASE,
-    )
-    clean = re.sub(r"tCO[₂2]", "", clean, flags=re.IGNORECASE)
-    nums = [float(m.replace(",", ".", 1)) for m in re.findall(r"\d+(?:[.,]\d+)?", clean)]
-    return [n for n in nums if n >= 10]
-
-
-def _split_buy_sell(body: str) -> tuple:
-    buy: List[float] = []
-    sell: List[float] = []
-    free: List[float] = []
-    for c in (x.strip() for x in re.split(r";|,\s+|\.\s+|\s/\s", body)):
-        nums = _price_nums(c) if c else []
-        if not nums:
-            continue
-        is_buy, is_sell = bool(re.search(r"mua|\bbuy", c, re.I)), bool(re.search(r"bán|\bsell", c, re.I))
-        if is_buy and not is_sell:
-            buy += nums
-        elif is_sell and not is_buy:
-            sell += nums
-        else:
-            free += nums
-    return buy, sell, free
-
-
-def parse_signal_levels(direction: str, entry_body: str, target_body: str, risk_body: str) -> Dict[str, Any]:
-    e_buy, e_sell, e_free = _split_buy_sell(entry_body)
-    entry_buy, entry_sell = e_buy[:2], e_sell[:2]
-    if not entry_buy and not entry_sell and e_free:
-        if direction == "giảm":
-            entry_sell = e_free[:2]
-        else:
-            entry_buy = e_free[:2]
-
-    t_buy, t_sell, t_free = _split_buy_sell(target_body)
-    target_buy = t_buy[0] if t_buy else None
-    target_sell = t_sell[0] if t_sell else None
-    if target_buy is None and target_sell is None and t_free:
-        if direction == "giảm":
-            target_sell = t_free[0]
-        elif direction == "tăng":
-            target_buy = t_free[0]
-        else:
-            target_buy = t_free[0]
-            target_sell = t_free[1] if len(t_free) > 1 else None
-
-    def _num(m):
-        return float(m.group(1).replace(",", ".", 1)) if m else None
-
-    stop_lower = _num(re.search(r"(?:dưới|\bbelow\b|\bunder\b)[^\d]{0,15}(\d+(?:[.,]\d+)?)", risk_body, re.I))
-    stop_upper = _num(re.search(r"(?:trên|\babove\b|\bover\b)[^\d]{0,15}(\d+(?:[.,]\d+)?)", risk_body, re.I))
-    if stop_lower is None and stop_upper is None:
-        nums = _price_nums(risk_body)
-        if nums:
-            if direction == "tăng":
-                stop_lower = min(nums)
-            elif direction == "giảm":
-                stop_upper = max(nums)
-            else:
-                stop_lower = min(nums)
-                if len(nums) > 1:
-                    stop_upper = max(nums)
-    return {
-        "entry_buy": entry_buy, "entry_sell": entry_sell, "target_buy": target_buy,
-        "target_sell": target_sell, "stop_lower": stop_lower, "stop_upper": stop_upper,
-    }
+# Parser thẻ chiến lược — port 1-1 của frontend ReportDocument.tsx, nằm ở services/strategy_levels.py
+# (re-export để code/test cũ gọi report_qc.parse_strategy/parse_signal_levels vẫn chạy).
+from services.strategy_levels import (  # noqa: E402
+    _STRATEGY_LINE_RE,
+    _price_nums,
+    _split_buy_sell,
+    parse_signal_levels,
+    parse_strategy,
+)
 
 
 def _eua_last_close(content: Dict[str, Any]) -> Optional[float]:
@@ -544,6 +461,39 @@ def _check_strategy(
             f"{path}.trading_strategy",
         ))
     return issues
+
+
+def check_forecast_review(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Dự báo trước bị chấm SAI (content["2"].forecast_review, tính bằng Python) thì "vs_previous" phải thừa
+    nhận — có đoạn đó và nhắc đúng ngày báo cáo đã dự báo sai."""
+    review = (content.get("2") or {}).get("forecast_review") or {}
+    wrong = [it for it in review.get("items") or [] if isinstance(it, dict) and it.get("verdict") == "wrong"]
+    if not wrong:
+        return []
+    text = str((content.get("3") or {}).get("vs_previous") or "")
+    if not text.strip():
+        return [_issue(
+            "scenario", "3", "error",
+            "Có dự báo trước bị chấm SAI (" + ", ".join(_dm_label(it["report_date"]) for it in wrong)
+            + ") nhưng không có đoạn \"So với báo cáo trước\" thừa nhận và giải thích nguyên nhân.",
+            "3.vs_previous",
+        )]
+    issues = []
+    for it in wrong:
+        d = date.fromisoformat(it["report_date"])
+        if not re.search(rf"\b0?{d.day}/0?{d.month}\b", text):
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Dự báo báo cáo {_dm_label(it['report_date'])} bị chấm SAI"
+                + (" (gắn xác suất Cao)" if it.get("high_confidence_miss") else "")
+                + " nhưng đoạn \"So với báo cáo trước\" không nhắc tới báo cáo này.",
+                "3.vs_previous",
+            ))
+    return issues
+
+
+def _dm_label(iso: str) -> str:
+    return date.fromisoformat(iso).strftime("%d/%m")
 
 
 def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -1462,7 +1412,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
 
     issues_by_check = {
         "price": check_prices(content, db_prices, latest_price_date, report_date) + check_instrument_labels(content),
-        "scenario": check_scenarios(content),
+        "scenario": check_scenarios(content) + check_forecast_review(content),
         "source": check_sources(content, known_urls, article_meta, stale_before),
         "fact": check_facts(content, article_texts),
         "calendar": check_calendar(content, report_date),
