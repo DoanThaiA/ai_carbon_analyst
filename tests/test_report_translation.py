@@ -213,3 +213,16 @@ def test_arrow_chains_split_and_labels_fixed():
     out, _ = _tr({"x": ["Cơ hội: Chính sách CBAM của EU → Giải pháp: Hỗ trợ doanh nghiệp → Kỳ vọng: Giảm rủi ro."]})
     assert out["x"][0] == "Opportunity: <Chính sách X0X của X1X> → Solution: <Hỗ trợ doanh nghiệp> → Expectation: <Giảm rủi ro.>" \
         .replace("X0X", "CBAM").replace("X1X", "EU")
+
+
+def test_superscript_units_and_document_numbers_masked():
+    from services.report_translation import mask_segment
+    _, tokens, _ = mask_segment("diện tích 9.000 m² và 18 nghìn tỷ m³, theo Quyết định số 781/QĐ-UBND ngày 28/02/2026")
+    assert tokens == ["9.000 m²", "m³", "781/QĐ-UBND", "28/02/2026"] or tokens == ["9.000 m²", "18", "m³", "781/QĐ-UBND", "28/02/2026"]
+    assert "18" in tokens and "781/QĐ-UBND" in tokens and "9.000 m²" in tokens
+
+
+def test_thousands_with_area_units():
+    from services.report_translation import mask_segment
+    _, tokens, en = mask_segment("đám cháy rộng 9.000 m², giá 81.4400 EUR/tCO2")
+    assert dict(zip(tokens, en)) == {"9.000 m²": "9,000 m²", "81.4400 EUR/tCO2": "81.4400 EUR/tCO2"}

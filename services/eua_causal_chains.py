@@ -240,7 +240,7 @@ FUEL_SWITCHING = (
     "(số liệu, thông báo doanh nghiệp). KHÔNG suy diễn từ riêng việc giá năng lượng tăng.\n"
     "\n"
     "[DỮ LIỆU] Có sẵn: TTF, API2, EUA, DEBY1. Không có sẵn: sản lượng RES, coal/gas burn thực tế. "
-    "Spread than–khí: có ước tính thô tính sẵn trong prompt khi đủ giá (xem RELATIVE_FUEL_ECONOMICS)."
+    "Spread than–khí: có ước tính theo mô hình chi phí biên tính sẵn trong prompt khi đủ giá TTF/API2/EUA (xem RELATIVE_FUEL_ECONOMICS)."
 )
 
 
@@ -683,9 +683,10 @@ RELATIVE_FUEL_ECONOMICS = (
     "  - Vùng chuyển đổi có giới hạn: khi giá EUA hoặc chênh lệch nhiên liệu ra ngoài vùng này, "
     "thay đổi thêm KHÔNG tạo thêm chuyển dịch dispatch.\n"
     "\n"
-    "[DỮ LIỆU] Khi prompt có khối 'SPREAD THAN–KHÍ' thì đó là ƯỚC TÍNH THÔ chi phí phát điện biên và "
-    "switching price tính sẵn từ TTF/API2/API4/EUA (giả định hiệu suất/tỷ giá ghi kèm) — dùng đúng số đó, "
-    "nêu là ước tính; không có khối này thì CHỈ áp dụng cơ chế spread khi bản tin nêu số liệu, nếu không "
+    "[DỮ LIỆU] Khi prompt có khối 'SPREAD THAN–KHÍ' thì đó là ước tính theo mô hình chi phí phát điện biên và "
+    "switching price tính sẵn từ TTF/API2 (CIF ARA)/EUA (giả định hiệu suất/tỷ giá ghi kèm) — dùng đúng số đó và "
+    "đúng 'KẾT LUẬN DÙNG CHUNG' của khối; API4 (Richards Bay)/NEWC là chuẩn châu Á, KHÔNG dùng cho fuel switching EU; "
+    "không có khối này thì CHỈ áp dụng cơ chế spread khi bản tin nêu số liệu, nếu không "
     "dùng chuỗi giá tuyệt đối ở FUEL_SWITCHING. Không có dữ liệu generation/coal burn thực tế."
 )
 

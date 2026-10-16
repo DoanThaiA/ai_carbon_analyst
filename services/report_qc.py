@@ -394,17 +394,26 @@ def _eua_last_close(content: Dict[str, Any]) -> Optional[float]:
 MIN_RISK_REWARD = 1.5
 # Cắt lỗ cách đáy/đỉnh phiên gần hơn tỉ lệ này của biên độ phiên → coi là đặt sát, dễ bị quét.
 STOP_MIN_RANGE_FRACTION = 0.25
+# Khoảng cách tối thiểu giá vào ↔ cắt lỗ, theo bội số ATR 14 phiên (mọi khung thời gian) — vd mua 82,5
+# cắt lỗ 82,35 (đệm 0,15) khi ATR ~1,8 là bị nhiễu 1 phiên quét.
+STOP_MIN_ATR_FRACTION = 0.5
 _CONDITION_LEVEL_RE = re.compile(
     r"(đóng cửa|vượt|phá|giữ|thủng|xuống)[^\d]{0,20}(trên|dưới|qua)?[^\d]{0,8}(\d+(?:[.,]\d+)?)", re.IGNORECASE
 )
 
 
 def _eua_last_session(content: Dict[str, Any]) -> Optional[Dict[str, float]]:
-    """Nến phiên gần nhất của EUA (chart_data) — {"high", "low"} để kiểm khoảng cách cắt lỗ."""
+    """Nến phiên gần nhất của EUA (chart_data) — {"high", "low", "atr"} để kiểm khoảng cách cắt lỗ.
+    "atr" = biên độ cao-thấp TB 14 phiên (cùng công thức _eua_technical_levels_summary bên bộ sinh)."""
     chart = (content.get("2") or {}).get("chart_data") or []
     last = chart[-1] if chart and isinstance(chart[-1], dict) else None
     if last and isinstance(last.get("high"), (int, float)) and isinstance(last.get("low"), (int, float)):
-        return {"high": float(last["high"]), "low": float(last["low"])}
+        recent = [
+            c for c in chart[-14:]
+            if isinstance(c, dict) and isinstance(c.get("high"), (int, float)) and isinstance(c.get("low"), (int, float))
+        ]
+        atr = sum(c["high"] - c["low"] for c in recent) / len(recent) if recent else None
+        return {"high": float(last["high"]), "low": float(last["low"]), "atr": atr}
     return None
 
 
@@ -441,6 +450,14 @@ def _check_strategy_math(
         issues.append(_issue(
             "scenario", "3", "warning",
             f"{label}: R:R chỉ {reward / risk:.2f}:1 (vào {_fmt(worst)}, mục tiêu {_fmt(target)}, cắt lỗ {_fmt(stop)}) — dưới 1,5:1.",
+            p,
+        ))
+    atr = (session or {}).get("atr")
+    if atr and 0 < risk < STOP_MIN_ATR_FRACTION * atr:
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            f"{label}: cắt lỗ {_fmt(stop)} chỉ cách giá vào {_fmt(worst)} {_fmt(risk)} EUR — dưới "
+            f"{str(STOP_MIN_ATR_FRACTION).replace('.', ',')} × ATR ({_fmt(STOP_MIN_ATR_FRACTION * atr)}), nằm trong nhiễu giá.",
             p,
         ))
     if session and sc.get("horizon") == "ngắn hạn":
@@ -939,7 +956,7 @@ def check_biz(
         trigger = str(it.get("trigger") or "")
         mem_rule = (suggestions.get(it.get("id")) or {}).get("trigger_rule")
         rule = biz_memory.normalize_trigger_rule(mem_rule, valid_codes) if mem_rule else None
-        rule = rule or biz_memory.infer_price_rule(trigger, prices)
+        rule = biz_memory.resolve_price_rule(rule, trigger, prices)
         if rule:
             if not biz_memory.check_price_rule(rule, prices):
                 price = next((p for p in prices if str(p.get("code", "")).upper() == rule["code"]), None)

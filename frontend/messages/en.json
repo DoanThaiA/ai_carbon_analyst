@@ -574,7 +574,8 @@
       "techTarget": "Technical target",
       "techTargetSub": "on a resistance breakout",
       "basis": "Basis",
-      "keyRisk": "Key risk"
+      "keyRisk": "Key risk",
+      "hedge": "SIM hedge book (CBAM)"
     },
     "scenario": {
       "heading": "Action scenarios",
@@ -584,7 +585,8 @@
       "condition": "Trigger condition",
       "priceZone": "Reference price zone",
       "keyRisk": "Key risk",
-      "strategy": "Trading strategy",
+      "strategy": "Trading desk strategy",
+      "hedge": "SIM hedge book (CBAM)",
       "indicator": "Item",
       "noteLabel": "Note:",
       "note": "These strategies are based on Jenny's analysis and are for reference only. Readers should review them carefully against the actual market context and their own risk appetite before making any decision — this is not personalised investment advice."
@@ -612,6 +614,8 @@
       "contradicted": "✗ What happened contradicted the suggestion",
       "happened": "✓ The trigger has occurred",
       "contradictedFollow": "This suggestion no longer applies — Jenny will stop tracking it.",
+      "pending": "○ Not triggered yet — Jenny keeps tracking it.",
+      "pendingUntil": "○ Not triggered yet — Jenny tracks it until {date}.",
       "askDone": "Have you acted on this suggestion?",
       "shortTerm": "Short term",
       "longTerm": "Long term",
@@ -672,6 +676,8 @@
       "viewPriceAt": "View {name} price at the source",
       "dDay": "Δ Day:",
       "dWeek": "Δ Week:",
+      "vsPrevious": "Versus the previous report",
+      "noTrade": "No trading this session (open = high = low = close) — nominal price; the daily change does not reflect market movement.",
       "keyDev": "Key developments",
       "part2NoPrice": "News impact analysis",
       "part2": "Analysis and trading recommendations",

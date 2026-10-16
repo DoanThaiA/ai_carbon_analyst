@@ -42,6 +42,8 @@ def test_reminders_for_content_splits_triggered_and_tracking():
     assert [r["suggested_date"] for r in reminders] == ["2026-09-18"]
     assert reminders[0]["evidence"] == "Brent 101,5"
     assert [t["action"] for t in tracking] == ["Cập nhật mô hình"]
+    # chưa kích hoạt ≠ đề xuất sai: hiển thị kèm hạn theo dõi
+    assert tracking[0]["expires_on"] == "2026-09-30"
 
 
 def test_remove_from_biz_content():
@@ -73,3 +75,38 @@ def test_remove_from_biz_content_long_term():
 def test_describe_for_prompt_labels_long_term():
     s = SimpleNamespace(id=3, kind="long", first_report_date="2026-09-18", trigger="CBAM mở rộng", action="Tư vấn kiểm kê")
     assert "Cơ hội: CBAM mở rộng" in biz_memory.describe_for_prompt([s])
+
+
+def test_qtd_avg_rule():
+    """Trigger liên quan chi phí CBAM so với EUA TB lũy kế quý, không với giá đóng cửa 1 phiên."""
+    prices = [{"code": "EUA", "name": "EUA", "close": 85.4, "qtd_avg": 81.9}]
+    rule = biz_memory.normalize_trigger_rule({"code": "EUA", "basis": "qtd_avg", "op": ">", "value": 82.32}, {"EUA"})
+    assert rule == {"code": "EUA", "op": ">", "value": 82.32, "basis": "qtd_avg"}
+    assert biz_memory.check_price_rule(rule, prices) is None  # TB quý 81,9 chưa vượt dù close 85,4 đã vượt
+    assert "trung bình lũy kế quý" in biz_memory.check_price_rule({**rule, "op": "<"}, prices)
+    inferred = biz_memory.infer_price_rule("Nếu giá EUA trung bình lũy kế quý IV vượt 82,32 EUR/t", prices)
+    assert inferred == {"code": "EUA", "op": ">", "value": 82.32, "basis": "qtd_avg"}
+    assert "basis" not in biz_memory.infer_price_rule("Nếu EUA đóng cửa trên 88,82 EUR/t", prices)
+
+
+def test_threshold_parsing_regressions():
+    """Lỗi thật: 'Gasoil vượt mốc 1.500' bị đọc 1,5 (→ ĐÃ KÍCH HOẠT sai) hoặc không nhận là ngưỡng giá
+    (→ LLM đọc tin rồi tự kết luận đã xảy ra)."""
+    prices = [{"code": "GASOIL", "name": "Gasoil", "close": 1386.75}, {"code": "EUA", "name": "EUA", "close": 85.84}]
+    for trigger, expected in [
+        ("Nếu giá Gasoil vượt mốc 1.500 USD/t", {"code": "GASOIL", "op": ">", "value": 1500.0}),
+        ("Nếu EUA vượt kháng cự 88,82 EUR/t", {"code": "EUA", "op": ">", "value": 88.82}),
+        ("Nếu EUA phá vỡ hỗ trợ 82,35", {"code": "EUA", "op": "<", "value": 82.35}),
+        ("Nếu EUA giảm về 82,35", {"code": "EUA", "op": "<", "value": 82.35}),
+    ]:
+        assert biz_memory.looks_like_price_condition(trigger)
+        rule = biz_memory.resolve_price_rule(None, trigger, prices)
+        assert rule == expected, trigger
+        assert biz_memory.check_price_rule(rule, prices) is None  # chưa kích hoạt
+    # rule LLM lưu sai (1,5 / sai chiều) → câu chữ thắng
+    assert biz_memory.resolve_price_rule({"code": "GASOIL", "op": ">", "value": 1.5}, "Nếu Gasoil vượt mốc 1.500 USD/t", prices)["value"] == 1500.0
+    assert biz_memory.resolve_price_rule({"code": "EUA", "op": "<", "value": 88.82}, "Nếu EUA vượt 88,82", prices)["op"] == ">"
+    # rule sai bậc độ lớn, không dựng lại được từ câu chữ → bỏ, không kích hoạt
+    assert biz_memory.resolve_price_rule({"code": "GASOIL", "op": ">", "value": 1.5}, "Khi giá diesel leo thang", prices) is None
+    assert not biz_memory.looks_like_price_condition("Khi EU công bố cắt giảm phân bổ miễn phí cho ngành thép 2027")
+    assert not biz_memory.looks_like_price_condition("Nếu Brent tăng 10% trong tuần")

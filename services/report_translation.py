@@ -355,11 +355,14 @@ _TERMS_RE = re.compile(
 )
 _NUM = r"[~≈]?[+\-−]?\d+(?:[.,]\d+)*"
 _UNIT = r"[A-Za-z]+/[^\W_]+\b"  # vế sau có thể là chữ Việt: USD/tấn, USD/thùng
+_SUPER_UNIT = r"[A-Za-z]{1,3}[²³]"  # m², m³, km² — Argos đổi thành "m2" (bị coi là bịa số)
 _MASK_RE = re.compile(
-    r"\d{4}-\d{2}-\d{2}"                                    # ngày ISO 2026-10-13
+    r"\d+(?:/[^\W\d_][\w]*(?:-[\w]+)*)+"                       # số hiệu văn bản: 781/QĐ-UBND, 15/2025/NĐ-CP
+    r"|\d{4}-\d{2}-\d{2}"                                   # ngày ISO 2026-10-13
     r"|\d+/\d+(?:/\d+)?(?![\d.,])"                        # ngày dd/mm(/yyyy)
     r"|[Δ→←↑↓⇒•▲▼]"                                          # ký hiệu: Argos đổi Δ thành ←, → thành "(10)"
-    rf"|{_NUM}(?:\s*[–\-−]\s*{_NUM})?(?:\s*%|\s+{_UNIT})?"  # số/khoảng số (+ % hoặc đơn vị)
+    rf"|{_NUM}(?:\s*[–\-−]\s*{_NUM})?(?:\s*%|\s+{_UNIT}|\s*{_SUPER_UNIT})?"  # số/khoảng số (+ %/đơn vị)
+    rf"|\b{_SUPER_UNIT}"                                      # m³ đứng riêng ("18 nghìn tỷ m³")
     rf"|\b{_UNIT}"                                           # đơn vị đứng riêng: EUR/tCO2, Bcf/d
     r"|\b[A-Z][a-z]{2}-\d{2}\b"                              # kỳ hạn hợp đồng: Cal-27, Nov-26
     r"|\b[A-Z][A-Za-z0-9]*[A-Z0-9](?:['’]\d+)?\b"           # mã/viết tắt: EUA, TTF, CO2, Dec'26
@@ -375,7 +378,9 @@ PLACEHOLDER_STYLES = (
 # Đơn vị tiếng Việt sau "/" → tiếng Anh (token đơn vị được che nên không qua máy dịch).
 UNIT_WORDS_EN = {"tấn": "t", "thùng": "bbl", "ngày": "day", "năm": "year", "tháng": "month", "giờ": "h"}
 # Từ chỉ độ lớn/đơn vị đứng sau 1 số — dấu hiệu "120.900" là dấu NGHÌN kiểu Việt (= 120,900).
-_MAGNITUDE_AFTER_RE = re.compile(r"\s*(?:tỷ|triệu|nghìn|ngàn|đồng|thùng|tấn|người|MW|GW|kWh|USD|EUR|VND)\b")
+_MAGNITUDE_AFTER_RE = re.compile(
+    r"\s*(?:tỷ|triệu|nghìn|ngàn|đồng|thùng|tấn|người|ha|MW|GW|kWh|USD|EUR|VND|[A-Za-z]{1,3}[²³])(?!\w)"
+)
 _THOUSANDS_DOT_RE = re.compile(r"^[~≈+\-−]?\d{1,3}(?:\.\d{3})+$")
 
 
@@ -400,8 +405,8 @@ def _en_token(token: str, segment: str, after: str) -> str:
     term = TERMS.get(token.lower())
     if term is not None:
         return term
-    out = _NUMBER_RE.sub(
-        lambda m: _en_number(m.group(0), _is_thousands_dot(m.group(0), segment, after)), token
+    out = _NUMBER_RE.sub(  # ngữ cảnh sau số = phần còn lại của token (vd " m²") + văn bản phía sau
+        lambda m: _en_number(m.group(0), _is_thousands_dot(m.group(0), segment, m.string[m.end():] + after)), token
     ) if re.search(r"\d", token) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d+/\d+(?:/\d+)?", token) else token
     if "/" in out:
         head, _, unit = out.rpartition("/")

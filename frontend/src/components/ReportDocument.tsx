@@ -55,10 +55,17 @@ function formatShortDate(dateStr: string) {
 // Backend luôn trả 4 số thập phân (vd "72.4000") — rút gọn còn 2 số khi hiển thị
 // trong bảng giá để chuỗi số ngắn lại, đủ nằm gọn trong cột hẹp trên mobile mà
 // không cần ngắt dòng giữa chừng. Không đổi dữ liệu gốc, chỉ rút gọn phần hiển thị.
-function formatCompactPriceNumber(numStr: string): string {
+// Giá trong DB/nội dung lưu dạng "1,386.7500" — hiển thị theo quy ước số của ngôn ngữ đang xem
+// (tiếng Việt: "1.386,75", cùng kiểu với phần văn bản của báo cáo; tiếng Anh: "1,386.75").
+function formatCompactPriceNumber(numStr: string, locale?: string): string {
   const n = Number(numStr.replace(/,/g, ""));
   if (Number.isNaN(n)) return numStr;
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Δ ngày/Δ tuần lưu dạng "+1.23% (+1.62)" → tiếng Việt "+1,23% (+1,62)".
+function formatDelta(delta: string, locale?: string): string {
+  return locale === "en" ? delta : delta.replace(/(\d)\.(\d)/g, "$1,$2");
 }
 
 // Các mục trong menu hamburger điều hướng (id khớp với <section id> trong báo cáo).
@@ -539,6 +546,21 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
             </div>
           </div>
         </div>
+
+        {/* ═══ Sổ phòng hộ SIM — Entry/Mục tiêu ở trên là cho bàn giao dịch ═══ */}
+        {signal.hedge_note && (
+          <div className="px-4 sm:px-6 py-3.5 flex items-start gap-2.5 border-t border-primary/10">
+            <div className="mt-0.5 shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+              <ShieldCheck size={14} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">{t("signal.hedge")}</h4>
+              <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
+                <HighlightNumbers text={signal.hedge_note} />
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -646,6 +668,15 @@ function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: 
               <AlertTriangle size={13} className="shrink-0" /> {t("scenario.keyRisk")}
             </div>
             <span className="text-down"><RichText text={sc.key_risk} /></span>
+          </div>
+        )}
+
+        {sc.hedge_note && (
+          <div className="rounded-lg border-l-2 border-label/40 bg-tint px-3 py-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-label mb-0.5">
+              <ShieldCheck size={13} className="shrink-0" /> {t("scenario.hedge")}
+            </div>
+            <RichText text={sc.hedge_note} />
           </div>
         )}
       </div>
@@ -1576,9 +1607,9 @@ export function ReportDocument({
       const [rawNumber, ...unitParts] = String(r.price).split(" ");
       return {
         name: r.name as string,
-        price: formatCompactPriceNumber(rawNumber),
+        price: formatCompactPriceNumber(rawNumber, locale),
         unit: subCO2(unitParts.join(" ")),
-        dday: r.dday && r.dday !== "-" ? String(r.dday) : null,
+        dday: r.dday && r.dday !== "-" ? formatDelta(String(r.dday), locale) : null,
       };
     });
   // Lặp danh sách cho đủ ≥ 12 mục mỗi bản — ít hợp đồng thì 1 bản có thể hẹp hơn
@@ -1797,6 +1828,17 @@ export function ReportDocument({
             </div>
           )}
 
+          {/* So với báo cáo trước — dự báo cũ đúng/sai, giữ/đổi hướng và tiền đề đã thay đổi
+              (report_generator.py: content["3"].vs_previous). Báo cáo cũ không có → ẩn. */}
+          {report.content["3"]?.vs_previous && (
+            <div className="rounded-lg border border-border bg-surface px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+              <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label mb-1">{t("body.vsPrevious")}</h3>
+              <p className="text-[14px] sm:text-[14.5px] leading-[1.55] text-body">
+                <RichText text={report.content["3"].vs_previous} />
+              </p>
+            </div>
+          )}
+
           <FramedHighlight title={t("body.execSummary")} tone="blue">
             <ul className="list-none -my-0.5">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
@@ -1866,7 +1908,7 @@ export function ReportDocument({
                 <tbody className="divide-y divide-border">
                   {priceRows.map((r: any, i: number) => {
                     const [rawPriceNumber, ...priceUnitParts] = String(r.price || "").split(" ");
-                    const priceNumber = formatCompactPriceNumber(rawPriceNumber);
+                    const priceNumber = formatCompactPriceNumber(rawPriceNumber, locale);
                     const priceUnit = subCO2(priceUnitParts.join(" "));
                     return (
                       <tr key={i} className="even:bg-surface/60 hover:bg-tint/40 transition-colors">
@@ -1902,15 +1944,23 @@ export function ReportDocument({
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] sm:text-[11px]">
                             {r.dday !== "-" && (
                               <span className={clsx("tabular-nums", isPositiveDelta(r.dday) ? "text-up" : "text-down")}>
-                                {t("body.dDay")} {r.dday}
+                                {t("body.dDay")} {formatDelta(String(r.dday), locale)}
                               </span>
                             )}
                             {r.dweek !== "-" && (
                               <span className={clsx("tabular-nums", isPositiveDelta(r.dweek) ? "text-up" : "text-down")}>
-                                {t("body.dWeek")} {r.dweek}
+                                {t("body.dWeek")} {formatDelta(String(r.dweek), locale)}
                               </span>
                             )}
                           </div>
+                          {/* Chú thích chất lượng dữ liệu (report_generator.py): phiên không có giao dịch
+                              (giá danh nghĩa) / nguồn điều chỉnh hồi tố giá phiên trước. */}
+                          {(r.no_trade || r.revision) && (
+                            <div className="mt-1 text-[11.5px] leading-[1.45] text-warn">
+                              {r.no_trade && <div>⚠ {t("body.noTrade")}</div>}
+                              {r.revision && <div>⚠ {r.revision}</div>}
+                            </div>
+                          )}
                           {r.code === "CBAM" && r.note && (
                             <div className="mt-1 rounded-md bg-tint/60 border border-primary/15 px-2 py-1.5">
                               {/* Báo cáo cũ có thể đã nối thêm ghi chú LLM phía sau — chỉ lấy phần "Giá chốt…" */}
@@ -2203,6 +2253,12 @@ export function ReportDocument({
                 label: t("scenario.strategy"), icon: Crosshair, highlight: true,
                 render: (sc) => sc.trading_strategy ? <RichText text={sc.trading_strategy} /> : <span className="text-muted-light">—</span>,
               },
+              // Hàm ý cho sổ phòng hộ SIM (nghĩa vụ CBAM = short carbon tự nhiên → phòng hộ là mua EUA),
+              // tách khỏi chiến lược bàn giao dịch. Báo cáo cũ không có trường này → ẩn hàng.
+              ...(columns.some(h => byHorizon[h]?.hedge_note) ? [{
+                label: t("scenario.hedge"), icon: ShieldCheck,
+                render: (sc: any) => sc.hedge_note ? <RichText text={sc.hedge_note} /> : <span className="text-muted-light">—</span>,
+              }] : []),
             ];
 
             return (
@@ -2297,8 +2353,9 @@ export function ReportDocument({
               <SubHeading>{report.content["biz"].title}</SubHeading>
               <div className="flex flex-col gap-6">
                 {/* Jenny nhắc lại — gợi ý ở báo cáo trước (trong 10 ngày) mà tình huống
-                    kích hoạt vừa xảy ra hôm nay (services/biz_memory.py). */}
-                {report.content["biz"].reminders?.length > 0 && (
+                    kích hoạt vừa xảy ra hôm nay, cùng các gợi ý CHƯA kích hoạt còn theo dõi
+                    tới "expires_on" (services/biz_memory.py). */}
+                {(report.content["biz"].reminders?.length > 0 || report.content["biz"].tracking?.length > 0) && (
                   <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
                     <div className="flex items-center gap-2.5 px-3.5 py-2.5">
                       <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
@@ -2360,6 +2417,26 @@ export function ReportDocument({
                             {r.outcome === "contradicted"
                               ? t("biz.contradictedFollow")
                               : t("biz.askDone")}
+                          </p>
+                        </li>
+                      ))}
+                      {(report.content["biz"].tracking ?? []).map((r: any, i: number) => (
+                        <li key={`tracking-${i}`} className="px-3.5 py-3 space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            <p className="flex-1 min-w-0 text-[14.5px] leading-[1.5] text-foreground">
+                              {t("biz.suggestedOn")} <b>{formatFullDate(r.suggested_date)}</b> {t("biz.suggested")} <b><RichText text={r.action} /></b>
+                            </p>
+                            {onDismissBizSuggestion && typeof r.id === "number" && (
+                              <DismissButton onClick={() => onDismissBizSuggestion(r.id)} className="shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-[14.5px] leading-[1.5] text-body">
+                            <span className="font-semibold">{t("biz.trigger")}</span> <RichText text={r.trigger} />
+                          </p>
+                          <p className="text-[14.5px] leading-[1.5] font-semibold text-label">
+                            {r.expires_on
+                              ? t("biz.pendingUntil", { date: formatFullDate(r.expires_on) })
+                              : t("biz.pending")}
                           </p>
                         </li>
                       ))}

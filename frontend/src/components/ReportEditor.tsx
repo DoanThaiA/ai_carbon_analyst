@@ -571,7 +571,8 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                     { key: "condition", label: "Điều kiện kích hoạt", type: "textarea" },
                     { key: "price_zone", label: "Vùng giá tham chiếu" },
                     { key: "key_risk", label: "Rủi ro chính", type: "textarea" },
-                    { key: "trading_strategy", label: "Chiến lược Trading", type: "textarea" },
+                    { key: "trading_strategy", label: "Chiến lược bàn giao dịch", type: "textarea" },
+                    { key: "hedge_note", label: "Sổ phòng hộ SIM (CBAM)", type: "textarea" },
                   ]}
                   rows={sec3.trading_scenarios}
                   onChange={(rows) => patchSection("3", { trading_scenarios: rows })}

@@ -423,10 +423,22 @@ def _px(**kw):
 def test_fuel_spread_matches_client_estimate():
     from services.report_generator import _fuel_switching_spread_summary
 
-    text = _fuel_switching_spread_summary(_px(TTF=87.0, API4=100.0, EUA=88.05))
-    # khách ước tính khí ≈ 190 EUR/MWh (than ≈ 112 với API4 = 100 USD/t)
-    assert "chạy khí (TTF 87.00, hiệu suất 55%) ≈ 191" in text
-    assert "RẺ HƠN khí" in text
+    text = _fuel_switching_spread_summary(_px(TTF=87.0, API2=100.0, EUA=88.05))
+    # khách ước tính khí ≈ 190 EUR/MWh (than ≈ 112 với than = 100 USD/t)
+    assert "Chạy khí (TTF 87.00 EUR/MWh, CCGT hiệu suất 55%) ≈ 191" in text
+    assert "ĐÃ BÃO HÒA" in text and "KẾT LUẬN DÙNG CHUNG" in text
+    # nhãn cũ khiến báo cáo trông như chưa kiểm chứng — chỉ còn xuất hiện trong câu cấm
+    assert "ước tính thô, chưa kiểm chứng" not in text
+
+
+def test_fuel_spread_ignores_api4():
+    """Fuel switching EU phải dùng API2 (CIF ARA) — API4 (Richards Bay) là chuẩn châu Á."""
+    from services.report_generator import _fuel_switching_spread_summary
+
+    only_api4 = _fuel_switching_spread_summary(_px(TTF=87.0, API4=100.0, EUA=88.05))
+    assert only_api4.startswith("Thiếu giá than API2")
+    both = _fuel_switching_spread_summary(_px(TTF=87.0, API2=100.0, API4=80.0, EUA=88.05))
+    assert "API4 80" not in both and "API2 CIF ARA 100.0" in both
 
 
 def test_fuel_spread_missing_inputs():
@@ -508,3 +520,51 @@ def test_scenario_math_condition_rr_and_tight_stop():
     )
     m = msgs(report_qc.check_scenarios(c))
     assert "mâu thuẫn với Entry" in m and "R:R chỉ 0.35:1" in m and "dễ bị quét" in m
+
+
+def test_no_trade_and_vn_number_format():
+    from types import SimpleNamespace
+    from services.report_generator import _is_no_trade_session, _summarize_prices, _vn_num
+
+    flat = SimpleNamespace(open_price=132.0, high_price=132.0, low_price=132.0, close_price=132.0, volume=0)
+    traded = SimpleNamespace(open_price=130.0, high_price=133.0, low_price=129.5, close_price=132.0, volume=120)
+    assert _is_no_trade_session(flat) and not _is_no_trade_session(traded)
+    assert _vn_num(1386.75) == "1.386,75" and _vn_num(-3.054, sign=True) == "-3,05"
+    text = _summarize_prices([{
+        "name": "Coal API4", "code": "API4", "price": "1,132.0000 USD/t", "close": 1132.0,
+        "dday": "+1.23% (+13.70)", "dweek": "-0.32% (-3.60)", "day_change_pct": 1.23, "week_change_pct": -0.32,
+        "no_trade": True, "revision": "Dữ liệu phiên 14/10 đã được nguồn điều chỉnh",
+    }])
+    assert "1.132,00 USD/t" in text and "+1,23% (+13,70)" in text
+    assert "KHÔNG có giao dịch" in text and "đã được nguồn điều chỉnh" in text
+
+
+def test_stop_inside_noise_flagged_for_all_horizons():
+    from services.report_qc import _check_strategy
+
+    sc = {
+        "horizon": "trung hạn", "direction": "tăng", "condition": "Nếu EUA giữ trên 82,5",
+        "trading_strategy": "**Entry:** Mua quanh 82,5\n**Mục tiêu:** 88,8 (kháng cự 30 phiên)\n**Quản trị rủi ro:** Cắt lỗ dưới 82,35",
+    }
+    issues = _check_strategy(sc, "Kịch bản trung hạn", "3.trading_scenarios[1]", 85.0, {"high": 86.0, "low": 84.5, "atr": 1.8})
+    assert any("nằm trong nhiễu" in it["message"] for it in issues)
+
+
+def test_technical_levels_include_near_levels():
+    from services.report_generator import _eua_technical_levels_summary
+
+    chart = [{"high": 80 + i * 0.3 + 1, "low": 80 + i * 0.3 - 1, "close": 80 + i * 0.3} for i in range(30)]
+    text = _eua_technical_levels_summary(chart)
+    assert "10 phiên gần nhất" in text
+
+
+def test_prompts_render():
+    """Các prompt sửa đổi dựng được (không lỗi f-string/KeyError)."""
+    from services import report_generator as rg
+
+    _, biz = rg._prompt_biz_recommendation("[1] tin", "giá", "xu hướng", "2026-10-15", valid_codes="EUA")
+    assert "97,5%" in biz and "phát thải TRỰC TIẾP" in biz and "qtd_avg" in biz
+    _, s3 = rg._prompt_section3("[1] tin", "giá", "xu hướng", "biên độ", "crack", "2026-10-15", [])
+    assert "hedge_note" in s3 and "vs_previous" in s3 and "Chỉ thị (EU) 2023/959" in s3
+    _, s1 = rg._prompt_section1("[1] tin", "giá", "xu hướng", "biên độ", "2026-10-15", fuel_spread="KẾT LUẬN DÙNG CHUNG: x")
+    assert "KẾT LUẬN DÙNG CHUNG" in s1

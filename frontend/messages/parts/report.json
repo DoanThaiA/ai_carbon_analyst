@@ -72,7 +72,8 @@
         "techTarget": "Mục tiêu kỹ thuật",
         "techTargetSub": "nếu phá kháng cự",
         "basis": "Cơ sở",
-        "keyRisk": "Rủi ro chính"
+        "keyRisk": "Rủi ro chính",
+        "hedge": "Sổ phòng hộ SIM (CBAM)"
       },
       "scenario": {
         "heading": "Kịch bản hành động",
@@ -82,7 +83,8 @@
         "condition": "Điều kiện kích hoạt",
         "priceZone": "Vùng giá tham chiếu",
         "keyRisk": "Rủi ro chính",
-        "strategy": "Chiến lược Trading",
+        "strategy": "Chiến lược bàn giao dịch",
+        "hedge": "Sổ phòng hộ SIM (CBAM)",
         "indicator": "Chỉ tiêu",
         "noteLabel": "Lưu ý:",
         "note": "Đây là các chiến lược dựa trên phân tích của Jenny, chỉ mang tính chất tham khảo. Người đọc cần xem xét kỹ, đối chiếu với bối cảnh thực tế và khẩu vị rủi ro của mình trước khi ra quyết định — đây không phải lời khuyên đầu tư cá nhân hóa."
@@ -110,6 +112,8 @@
         "contradicted": "✗ Thực tế diễn ra ngược với đề xuất",
         "happened": "✓ Tình huống đã xảy ra",
         "contradictedFollow": "Đề xuất này không còn phù hợp — Jenny sẽ thôi theo dõi.",
+        "pending": "○ Chưa kích hoạt — Jenny tiếp tục theo dõi.",
+        "pendingUntil": "○ Chưa kích hoạt — Jenny theo dõi đến {date}.",
         "askDone": "Anh/chị đã thực hiện theo đề xuất này chưa?",
         "shortTerm": "Ngắn hạn",
         "longTerm": "Dài hạn",
@@ -170,6 +174,8 @@
         "viewPriceAt": "Xem giá {name} tại nguồn",
         "dDay": "Δ Ngày:",
         "dWeek": "Δ Tuần:",
+        "vsPrevious": "So với báo cáo trước",
+        "noTrade": "Phiên không có giao dịch (mở = cao = thấp = đóng) — giá danh nghĩa, Δ ngày không phản ánh biến động thị trường.",
         "keyDev": "Diễn biến chính",
         "part2NoPrice": "Phân tích tác động tin tức",
         "part2": "Phân tích và khuyến nghị giao dịch",
@@ -268,7 +274,8 @@
         "techTarget": "Technical target",
         "techTargetSub": "on a resistance breakout",
         "basis": "Basis",
-        "keyRisk": "Key risk"
+        "keyRisk": "Key risk",
+        "hedge": "SIM hedge book (CBAM)"
       },
       "scenario": {
         "heading": "Action scenarios",
@@ -278,7 +285,8 @@
         "condition": "Trigger condition",
         "priceZone": "Reference price zone",
         "keyRisk": "Key risk",
-        "strategy": "Trading strategy",
+        "strategy": "Trading desk strategy",
+        "hedge": "SIM hedge book (CBAM)",
         "indicator": "Item",
         "noteLabel": "Note:",
         "note": "These strategies are based on Jenny's analysis and are for reference only. Readers should review them carefully against the actual market context and their own risk appetite before making any decision — this is not personalised investment advice."
@@ -306,6 +314,8 @@
         "contradicted": "✗ What happened contradicted the suggestion",
         "happened": "✓ The trigger has occurred",
         "contradictedFollow": "This suggestion no longer applies — Jenny will stop tracking it.",
+        "pending": "○ Not triggered yet — Jenny keeps tracking it.",
+        "pendingUntil": "○ Not triggered yet — Jenny tracks it until {date}.",
         "askDone": "Have you acted on this suggestion?",
         "shortTerm": "Short term",
         "longTerm": "Long term",
@@ -366,6 +376,8 @@
         "viewPriceAt": "View {name} price at the source",
         "dDay": "Δ Day:",
         "dWeek": "Δ Week:",
+        "vsPrevious": "Versus the previous report",
+        "noTrade": "No trading this session (open = high = low = close) — nominal price; the daily change does not reflect market movement.",
         "keyDev": "Key developments",
         "part2NoPrice": "News impact analysis",
         "part2": "Analysis and trading recommendations",

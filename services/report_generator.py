@@ -50,7 +50,8 @@ CONCISENESS_RULE = (
     "— loại hẳn thay vì giữ lại kèm lời rào đón. "
     "(4) Tương quan ngắn hạn KHÔNG phải nhân quả: không viết 'X kéo Y' chỉ vì cùng chiều trong vài phiên; "
     "khi thiếu số liệu định lượng (spark/dark spread, giá chuyển đổi nhiên liệu, vị thế quỹ, đấu giá EEX, MSR) "
-    "phải nêu rõ là chưa kiểm chứng được và hạ mức tự tin tương ứng. "
+    "phải nêu rõ là chưa kiểm chứng được và hạ mức tự tin tương ứng (spark/dark spread và giá chuyển đổi nhiên liệu ĐÃ "
+    "có sẵn khi prompt có khối 'SPREAD THAN–KHÍ' — khi đó dùng số đó, không gọi là chưa kiểm chứng). "
     "(5) Không lặp một tin ở nhiều mục/bullet cho cùng 1 ý. "
     "(6) Viết đúng chính tả tiếng Việt, đọc lại để tránh lỗi gõ (vd 'tiêu tụ', 'khuyến hướng', 'hôm tháng 9'). "
     "(7) CHỈ dùng tiếng Việt và ký tự Latin — TUYỆT ĐỐI KHÔNG chèn chữ Hán/Nhật/Hàn. Thuật ngữ chuẩn: EUA = hạn ngạch phát thải EU "
@@ -67,7 +68,32 @@ CONCISENESS_RULE = (
     "-1,03%; 424.134). Dữ liệu đầu vào ghi '87.14' thì khi viết thành '87,14'. "
     "(12) Viết 'rủi ro hai chiều'/'hai chiều' thì PHẢI nêu cả chiều tăng lẫn chiều giảm; chỉ có 1 chiều thì ghi đúng 1 chiều. "
     "(13) Mọi chính sách/văn bản/quy định nêu ra (vd hướng dẫn ESMA, cắt giảm phân bổ miễn phí, ngày hiệu lực) PHẢI có "
-    "trong tin đã cung cấp, đúng như tin viết — tin chỉ nêu ngày thông qua thì không tự suy ra ngày hiệu lực."
+    "trong tin đã cung cấp, đúng như tin viết — tin chỉ nêu ngày thông qua thì không tự suy ra ngày hiệu lực. "
+    "(14) TRUNG THỰC VỚI NGUỒN: mọi con số/tuyên bố gắn với 1 bài PHẢI có trong chính bài đó — KHÔNG thêm chi tiết bài "
+    "không viết (bài nói Mỹ 'vận động không chính thức' thì KHÔNG viết 'Mỹ đề nghị bổ sung ít nhất X'); KHÔNG dùng "
+    "'dường như/có vẻ/được cho là' để đưa vào thông tin bài không nêu. Giữ ĐÚNG đơn vị, KỲ (mỗi năm hay tổng) và PHẠM VI "
+    "của con số (vd '660 tỷ EUR MỖI NĂM cho phát điện sạch, lưới, hiệu suất' — không rút thành '660 tỷ EUR cho điện khí hóa'). "
+    "(15) Số liệu trong CÙNG 1 bài không khớp nhau (vd 'đã rút 330/400 triệu thùng' nhưng 'còn lại 100 triệu') → nêu rõ "
+    "'số liệu trong bài chưa khớp (400 − 330 = 70)' thay vì lặp lại như sự thật. "
+    "(16) CHÍNH SÁCH: ghi rõ GIAI ĐOẠN (đề xuất/dự thảo/đã thông qua/có hiệu lực), MỐC áp dụng và QUY MÔ nếu bài nêu; "
+    "dự thảo có hiệu lực sau hơn 12 tháng KHÔNG phải động lực giá ngắn hạn. KHÔNG suy diễn tác động mạnh hơn nguồn — "
+    "nguồn nói biện pháp 'không làm giảm giá' thì không xếp là 'hỗ trợ tăng giá'; tác động lên doanh nghiệp phải "
+    "tương xứng quy mô thật (vd tổng phí vài trăm triệu EUR/năm chia cho cả nền kinh tế thì không viết 'làm tăng mạnh chi phí'). "
+    "Sức ép từ nước thành viên/doanh nghiệp đòi nới, hoãn, áp trần giá EU ETS (vd Italy, Czechia, Eni) là RỦI RO CHÍNH SÁCH "
+    "GIẢM GIÁ EUA — không gộp thành 'trung lập' nếu không có yếu tố ngược chiều cụ thể. "
+    "(17) SỰ KIỆN CŨ: sự kiện đã xảy ra trước ngày dữ liệu hoặc đã nêu ở 'BÁO CÁO TRƯỚC' → PHẢI ghi ngày diễn ra và chỉ "
+    "nhắc lại khi có diễn biến MỚI; nếu cơ quan chính thức/nguồn nói 'quy mô hạn chế', 'hoạt động bình thường' → PHẢI nêu "
+    "lời đó và hạ mức tác động (không viết 'nguy cơ ảnh hưởng cung dầu toàn cầu'). "
+    "(18) Cùng 1 chỉ tiêu mà các nguồn/ngày nêu số KHÁC nhau (vd xuất khẩu qua Hormuz 'còn ~50%' theo Eni hôm trước vs "
+    "'gần mức trước chiến tranh' theo Argus hôm nay) → nêu CẢ 2 kèm nguồn và ngày, không lặng lẽ chọn 1."
+)
+
+# Văn bản đã luật hoá được phép dùng làm luận điểm chính sách dài hạn KÈM trích dẫn văn bản (ngoài tin trong ngày).
+LEGISLATED_POLICY_FACTS = (
+    "- Lộ trình loại bỏ phân bổ miễn phí EU ETS cho các ngành thuộc CBAM (Chỉ thị (EU) 2023/959, Điều 10a(1a); "
+    "Quy định CBAM (EU) 2023/956): tỷ lệ phân bổ miễn phí còn lại 97,5% (2026), 95% (2027), 90% (2028), 77,5% (2029), "
+    "51,5% (2030), 39% (2031), 26,5% (2032), 14% (2033), 0% (2034). Khi dùng PHẢI ghi trích dẫn văn bản trong câu, "
+    "vd \"(Chỉ thị (EU) 2023/959)\"; nếu tin trong ngày nêu đề xuất sửa đổi lộ trình thì nêu theo tin."
 )
 
 _anthropic_client: anthropic.AsyncAnthropic | None = None
@@ -587,7 +613,17 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             "volume": price.volume,
             "category": instrument.category,
             "source_url": _barchart_url(symbol) if symbol else None,
+            "no_trade": _is_no_trade_session(price),
         })
+
+    # EUA trung bình lũy kế quý — giá CBAM 2026 chốt theo trung bình quý, nên điều kiện liên
+    # quan chi phí CBAM so với số này chứ không với giá đóng cửa 1 phiên (biz_memory.check_price_rule).
+    eua = next((p for p in prices if p["code"] == "EUA"), None)
+    if eua is not None:
+        qtd_avg, qtd_sessions = await _get_quarter_to_date_avg(session, "EUA", max_date)
+        if qtd_avg is not None:
+            eua["qtd_avg"] = qtd_avg
+            eua["qtd_sessions"] = qtd_sessions
 
     # Ưu tiên giá CBAM đã lưu DB (as-of target date); chưa có dòng nào (chưa chạy crawl lần đầu)
     # thì fallback fetch trực tiếp như trước.
@@ -602,6 +638,39 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             prices.append(cbam_price)
 
     return prices, max_date
+
+
+def _is_no_trade_session(price: Any) -> bool:
+    """Phiên không có giao dịch thật: mở = cao = thấp = đóng (giá danh nghĩa/settlement mang sang),
+    kèm khối lượng 0 hoặc không có. Δ ngày của phiên này không phải biến động thị trường."""
+    ohlc = (price.open_price, price.high_price, price.low_price, price.close_price)
+    if any(v is None for v in ohlc):
+        return False
+    return len(set(ohlc)) == 1 and not price.volume
+
+
+def quarter_start(date_str: str) -> str:
+    """'2026-11-14' -> '2026-10-01' (ngày đầu quý chứa ngày đó)."""
+    d = date.fromisoformat(date_str)
+    return date(d.year, 3 * ((d.month - 1) // 3) + 1, 1).isoformat()
+
+
+async def _get_quarter_to_date_avg(
+    session: AsyncSession, code: str, as_of: str
+) -> tuple[Optional[float], int]:
+    """Trung bình giá đóng cửa của `code` từ đầu quý tới `as_of` (gồm cả ngày đó)."""
+    row = (await session.execute(
+        select(func.avg(Price.close_price), func.count(Price.id))
+        .join(Instrument, Price.instrument_id == Instrument.id)
+        .where(
+            Instrument.code == code,
+            Price.price_date >= quarter_start(as_of),
+            Price.price_date <= as_of,
+            Price.close_price.isnot(None),
+        )
+    )).one()
+    avg, count = row
+    return (round(float(avg), 2) if avg is not None else None), int(count or 0)
 
 
 async def find_missing_price_codes(session: AsyncSession, target_date_str: str) -> List[str]:
@@ -911,6 +980,8 @@ YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT, ĐÚNG 2 C
 - Tuyên bố/số liệu do 1 bên nêu (quan chức, công ty, nhà phân tích) PHẢI ghi rõ chủ thể phát ngôn đúng như bài ("theo Phó Thủ tướng...", "đặc phái viên...") — KHÔNG viết như sự thật đã xác nhận. Giữ nguyên chức danh đúng như bài, không tự đổi.
 - KHÔNG chép giá/%Δ của Brent, WTI, khí, EUA... nêu trong bài (giá trong bài là giá tại 1 thời điểm khác, sẽ lệch với Bảng giá nhanh của báo cáo) — chỉ nêu giá nếu đó là nội dung chính của sự kiện (vd mức trần giá, giá đấu giá).
 - Viết đúng chính tả tiếng Việt.
+- Giữ ĐÚNG mức độ của bài: bài/cơ quan chính thức nói "quy mô hạn chế", "hoạt động bình thường", "không ảnh hưởng nguồn cung" → PHẢI nêu lời đó, KHÔNG viết "có nguy cơ ảnh hưởng cung toàn cầu". Sự kiện xảy ra trước ngày báo cáo → ghi ngày diễn ra.
+- "relevant": false nếu bài KHÔNG có diễn biến mới (vd bài giới thiệu/nhắc lại dự án đã vận hành từ nhiều năm trước, bài tổng quan/bối cảnh không có sự kiện, số liệu hay quyết định mới).
 - "relevant": true CHỈ KHI bài liên quan TRỰC TIẾP tới thị trường carbon (EU ETS/EUA, CBAM, VCM, chính sách carbon) hoặc năng lượng (gas, điện, than, dầu, tái tạo, hydrogen) VÀ nêu rõ tác động tới cung/cầu/giá/chính sách. Tác động không rõ ràng, phải suy đoán, hoặc chỉ là bối cảnh chính trị/kinh tế chung → false (vẫn viết "summary" như bình thường).
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
@@ -992,9 +1063,25 @@ def _summarize_prices(prices: List[Dict]) -> str:
                 f"(chỉ báo cáo giá hiện tại, KHÔNG phân tích biến động/nhân quả cho mã này)."
             )
         else:
-            lines.append(
-                f"  - {p['name']} ({p['code']}): {p['price']} | Δ ngày {p['dday']} | Δ tuần {p['dweek']}"
-            )
+            # Số viết kiểu tiếng Việt (1.386,75) — LLM chép nguyên số vào văn bản, để kiểu "85.84" thì báo
+            # cáo lẫn 2 kiểu dấu thập phân.
+            unit = " ".join(str(p.get("price") or "").split(" ")[1:])
+            price_vn = f"{_vn_num(p['close'])} {unit}".strip() if isinstance(p.get("close"), (int, float)) else p["price"]
+            dday, dweek = (re.sub(r"(\d)\.(\d)", r"\1,\2", str(p.get(k) or "-")) for k in ("dday", "dweek"))
+            line = f"  - {p['name']} ({p['code']}): {price_vn} | Δ ngày {dday} | Δ tuần {dweek}"
+            if p.get("no_trade"):
+                line += (
+                    " | ⚠ phiên KHÔNG có giao dịch (mở = cao = thấp = đóng, khối lượng 0) — giá danh nghĩa: KHÔNG dùng "
+                    "Δ ngày của mã này làm căn cứ (không viết \"tăng/nhích lên\"), nếu nhắc phải ghi rõ \"không có giao dịch\""
+                )
+            if p.get("revision"):
+                line += f" | ⚠ {p['revision']}"
+            if p.get("qtd_avg") is not None:
+                line += (
+                    f" | EUA TB lũy kế quý (giá đóng cửa, {p.get('qtd_sessions') or 0} phiên): {p['qtd_avg']:,.2f} "
+                    f"— dùng số này (không phải giá đóng cửa 1 phiên) khi so với giá CBAM"
+                )
+            lines.append(line)
     return "\n".join(lines) if lines else "Chưa có dữ liệu giá."
 
 
@@ -1054,6 +1141,9 @@ def _eua_technical_levels_summary(chart_data: List[Dict]) -> str:
     # mức cắt lỗ (0,5 × ATR) ở Mục 3, tránh cắt lỗ sát hỗ trợ đến mức nhiễu phiên cũng quét.
     recent = chart_data[-14:]
     atr = sum(c["high"] - c["low"] for c in recent) / len(recent)
+    # Mốc gần (10 phiên) cho kịch bản NGẮN HẠN — biên 30 phiên thường quá xa cho 1–2 tuần.
+    near = chart_data[-10:]
+    near_res, near_sup = max(c["high"] for c in near), min(c["low"] for c in near)
 
     return (
         f"Biên độ TB phiên (ATR 14 phiên): ~{atr:.2f} EUR/tCO2 → đệm cắt lỗ tối thiểu ngoài hỗ trợ/kháng cự "
@@ -1063,6 +1153,7 @@ def _eua_technical_levels_summary(chart_data: List[Dict]) -> str:
         f"~{breakout_target:.2f} EUR/tCO2. "
         f"Hỗ trợ/điểm giảm kỹ thuật (đáy 30 phiên gần nhất): ~{support:.2f} EUR/tCO2 — vùng thường "
         f"xuất hiện lực mua bắt đáy về mặt kỹ thuật. "
+        f"Mốc gần cho kịch bản NGẮN HẠN (10 phiên gần nhất): kháng cự ~{near_res:.2f}, hỗ trợ ~{near_sup:.2f} EUR/tCO2. "
         f"Giá đóng cửa gần nhất: {last_close:.2f} EUR/tCO2."
     )
 
@@ -1124,7 +1215,7 @@ def _eua_volume_summary(chart_data: List[Dict]) -> str:
 
 
 # ── Ước tính spread chuyển đổi nhiên liệu than ↔ khí (tính sẵn bằng Python) ──
-# Giả định CHUẨN NGÀNH, ghi rõ trong output là ƯỚC TÍNH THÔ (không phải spread thị trường).
+# Giả định CHUẨN NGÀNH (mô hình chi phí biên, không phải spread thị trường) — ghi kèm trong output.
 FUEL_COAL_EFF = 0.38          # hiệu suất nhà máy than
 FUEL_GAS_EFF = 0.55           # hiệu suất CCGT
 FUEL_COAL_EF = 0.34           # tCO2/MWh nhiệt của than
@@ -1135,51 +1226,58 @@ FUEL_EURUSD = 1.15            # giả định tỷ giá EUR→USD (hệ thống 
 
 def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
     """Chi phí phát điện biên (EUR/MWh điện) của than và khí gồm cả chi phí EUA, và giá EUA
-    hòa vốn chuyển đổi (switching price) — tính từ TTF, API2/API4, EUA có trong bảng giá.
-    Mục đích: Mục 2/3 dùng số này để biết than đã thắng khí chưa (chuyển đổi nhiên liệu có chạm
-    trần chưa), thay vì lập luận chỉ dựa trên chiều giá."""
+    hòa vốn chuyển đổi (switching price) — tính từ TTF, API2, EUA có trong bảng giá.
+    CHỈ dùng API2 (CIF ARA — giá than nhà máy điện EU thực mua); API4 (Richards Bay) là chuẩn
+    châu Á/Ấn Độ nên KHÔNG dùng cho fuel switching tại EU.
+    Mục đích: MỌI mục (1/2/3) dùng chung 1 kết luận ("KẾT LUẬN DÙNG CHUNG" ở cuối khối) để biết
+    than đã thắng khí chưa (chuyển đổi nhiên liệu đã bão hòa chưa), tránh mục này nói ngược mục kia."""
     by_code = {p["code"]: p.get("close") for p in prices}
-    ttf, eua = by_code.get("TTF"), by_code.get("EUA")
+    ttf, eua, api2 = by_code.get("TTF"), by_code.get("EUA"), by_code.get("API2")
+    api2_no_trade = any(p.get("no_trade") for p in prices if p.get("code") == "API2")
     if not ttf or not eua:
-        return "Thiếu giá TTF hoặc EUA — không ước tính được spread than–khí; KHÔNG tự suy ra."
-    coal_codes = [c for c in ("API2", "API4") if by_code.get(c)]
-    if not coal_codes:
-        return "Thiếu giá than (API2/API4) — không ước tính được spread than–khí; KHÔNG tự suy ra."
+        return "Thiếu giá TTF hoặc EUA — không tính được spread than–khí; KHÔNG tự suy ra."
+    if not api2:
+        return (
+            "Thiếu giá than API2 (CIF ARA) — không tính được spread than–khí cho EU; KHÔNG dùng API4/NEWC "
+            "(chuẩn châu Á) thay thế và KHÔNG tự suy ra. Chỉ nêu chiều tác động theo %Δ, ghi rõ \"chưa tính spread\"."
+        )
 
     gas_fuel_pw = ttf / FUEL_GAS_EFF
     gas_carbon_pw = FUEL_GAS_EF / FUEL_GAS_EFF  # tCO2/MWh điện
     gas_cost = gas_fuel_pw + eua * gas_carbon_pw
-    lines = [
-        f"Ước tính THÔ chi phí phát điện biên (EUR/MWh điện, gồm chi phí EUA {eua:.2f} EUR/t): "
-        f"chạy khí (TTF {ttf:.2f}, hiệu suất {FUEL_GAS_EFF:.0%}) ≈ {gas_cost:.0f}."
-    ]
-    for code in coal_codes:
-        coal_fuel_pw = by_code[code] / FUEL_EURUSD / FUEL_COAL_MWH_PER_TONNE / FUEL_COAL_EFF
-        coal_carbon_pw = FUEL_COAL_EF / FUEL_COAL_EFF
-        coal_cost = coal_fuel_pw + eua * coal_carbon_pw
-        spread = gas_cost - coal_cost
-        verdict = (
-            "than RẺ HƠN khí → chuyển đổi nhiên liệu có thể đã chạm trần; TTF tăng thêm chủ yếu tác động qua "
-            "chi phí/hedge và kênh công nghiệp cắt sản lượng, KHÔNG thêm huy động than"
-            if spread > 0 else
-            "khí rẻ hơn than → dispatch nghiêng về khí; than tăng cạnh tranh khi TTF tăng thêm"
-        )
-        denom = coal_carbon_pw - gas_carbon_pw
-        switch = (gas_fuel_pw - coal_fuel_pw) / denom if denom else None
-        switch_txt = (
-            f"; giá EUA hòa vốn chuyển đổi ≈ {switch:.0f} EUR/t" if switch is not None and switch > 0
-            else "; than rẻ hơn khí ở MỌI mức giá EUA hợp lý (không có điểm hòa vốn dương)"
-        )
-        lines.append(
-            f"  - Chạy than ({code} {by_code[code]:.1f} USD/t): ≈ {coal_cost:.0f}; chênh khí − than ≈ {spread:+.0f} "
-            f"EUR/MWh → {verdict}{switch_txt}."
-        )
-    lines.append(
-        f"Giả định: hiệu suất than {FUEL_COAL_EFF:.0%}/CCGT {FUEL_GAS_EFF:.0%}, than 6.000 kcal/kg, "
-        f"1 EUR = {FUEL_EURUSD} USD (tỷ giá không lấy từ hệ thống), TTF coi như giá nhiệt. Khi dùng PHẢI ghi là "
-        f"ước tính thô, chưa kiểm chứng; KHÔNG tự tính lại."
+    coal_fuel_pw = api2 / FUEL_EURUSD / FUEL_COAL_MWH_PER_TONNE / FUEL_COAL_EFF
+    coal_carbon_pw = FUEL_COAL_EF / FUEL_COAL_EFF
+    coal_cost = coal_fuel_pw + eua * coal_carbon_pw
+    spread = gas_cost - coal_cost
+    denom = coal_carbon_pw - gas_carbon_pw
+    switch = (gas_fuel_pw - coal_fuel_pw) / denom if denom else None
+    switch_txt = (
+        f"giá EUA hòa vốn chuyển đổi ≈ {switch:.0f} EUR/t" if switch is not None and switch > 0
+        else "than rẻ hơn khí ở MỌI mức giá EUA hợp lý (không có điểm hòa vốn dương)"
     )
-    return "\n".join(lines)
+    if spread > 0:
+        conclusion = (
+            "chuyển đổi khí→than ĐÃ BÃO HÒA (than đã rẻ hơn khí) — TTF tăng thêm KHÔNG còn nâng cầu EUA qua "
+            "kênh fuel switching, chỉ tác động qua chi phí/hedge và có kênh ngược (công nghiệp cắt sản lượng → "
+            "cầu EUA giảm). KHÔNG được viết \"TTF tăng → chuyển sang than → cầu EUA tăng\" và KHÔNG xếp \"TTF tăng\" "
+            "vào động lực tăng/bullish của EUA."
+        )
+    else:
+        conclusion = (
+            "khí vẫn rẻ hơn than → dispatch nghiêng về khí; TTF tăng thêm (hoặc API2 giảm) làm than cạnh tranh hơn "
+            "→ cầu EUA tăng; API2 tăng hoặc TTF giảm → cầu EUA giảm."
+        )
+    return "\n".join([
+        f"Ước tính chi phí phát điện biên (EUR/MWh điện, gồm chi phí EUA {eua:.2f} EUR/t):",
+        f"  - Chạy khí (TTF {ttf:.2f} EUR/MWh, CCGT hiệu suất {FUEL_GAS_EFF:.0%}) ≈ {gas_cost:.0f}.",
+        f"  - Chạy than (API2 CIF ARA {api2:.1f} USD/t, hiệu suất {FUEL_COAL_EFF:.0%}) ≈ {coal_cost:.0f}"
+        + (" (API2 phiên này KHÔNG có giao dịch — giá danh nghĩa; ảnh hưởng nhỏ tới kết luận)" if api2_no_trade else "") + ".",
+        f"  - Chênh khí − than ≈ {spread:+.0f} EUR/MWh; {switch_txt}.",
+        f"Mô hình chi phí biên chuẩn ngành (than 6.000 kcal/kg, 1 EUR = {FUEL_EURUSD} USD, TTF coi như giá nhiệt) — "
+        f"khi trích dẫn ghi là \"ước tính theo mô hình chi phí biên\" (KHÔNG ghi \"ước tính thô\"/\"chưa kiểm chứng\"); "
+        f"KHÔNG tự tính lại; KHÔNG dùng API4/NEWC cho fuel switching EU.",
+        f"KẾT LUẬN DÙNG CHUNG (Mục 1, 2, 3 PHẢI cùng kết luận này, không mục nào được nói ngược): {conclusion}",
+    ])
 
 
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
@@ -1226,7 +1324,7 @@ def _dedupe_similar_articles(articles: List[Dict]) -> List[Dict]:
 GASOIL_BBL_PER_TONNE = 7.45
 
 
-def _gasoil_crack_spread_summary(prices: List[Dict]) -> Optional[str]:
+def _gasoil_crack_spread_summary(prices: List[Dict], prev_report_close: Optional[Dict[str, float]] = None) -> Optional[str]:
     """Ước tính crack spread Gasoil vs Brent — tính bằng Python (quy đổi đơn vị),
     thay vì để LLM tự suy luận từ 2 số liệu khác đơn vị (Gasoil USD/MT, Brent
     USD/bbl), việc rất dễ cho ra kết luận sai vì lệch đơn vị.
@@ -1257,6 +1355,14 @@ def _gasoil_crack_spread_summary(prices: List[Dict]) -> Optional[str]:
             f"({spread_prev:+.2f} → {spread_today:+.2f})."
         )
 
+    prev_report_close = prev_report_close or {}
+    if (gasoil.get("revision") or brent.get("revision")) and prev_report_close.get("GASOIL") and prev_report_close.get("BRENT"):
+        spread_prev_report = prev_report_close["GASOIL"] / GASOIL_BBL_PER_TONNE - prev_report_close["BRENT"]
+        trend += (
+            f" LƯU Ý: giá phiên trước đã được nguồn điều chỉnh hồi tố — mức thay đổi trên tính theo chuỗi ĐÃ điều chỉnh; "
+            f"so với số liệu đã in ở báo cáo trước ({spread_prev_report:+.2f} USD/bbl) spread thực thay đổi "
+            f"{spread_today - spread_prev_report:+.2f} USD/bbl. Khi nhắc tới thay đổi crack spread PHẢI nêu cả 2 con số và ghi rõ dữ liệu đã điều chỉnh."
+        )
     return (
         f"Gasoil crack spread vs Brent (ƯỚC TÍNH, quy đổi {GASOIL_BBL_PER_TONNE} thùng/tấn — "
         f"KHÔNG phải số liệu chính thức từ sàn): {spread_today:+.2f} USD/bbl "
@@ -1283,6 +1389,65 @@ async def get_previous_report_events(session: AsyncSession, report_date_str: str
     if not prev_report or not prev_report.content:
         return []
     return prev_report.content.get("8", {}).get("events", [])
+
+
+PRICE_REVISION_MIN_PCT = 0.1  # lệch < 0,1% coi là làm tròn, không phải điều chỉnh
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+async def annotate_price_revisions(
+    session: AsyncSession, report_date_str: str, prices: List[Dict]
+) -> Dict[str, float]:
+    """So giá đóng cửa báo cáo GẦN NHẤT trước đó đã in với giá hiện có trong DB cho CÙNG phiên —
+    nguồn (Barchart) đôi khi điều chỉnh hồi tố (vd Gasoil 14/10: 1.448,25 → 1.404,00), làm Δ ngày/Δ tuần
+    và crack spread hôm nay lệch với số người đọc thấy hôm qua. Mã bị điều chỉnh được gắn
+    p["revision"] (vào prompt) + nối vào p["note"] (hiển thị ở Bảng giá nhanh).
+    Trả về {code: giá đóng cửa báo cáo trước đã in} để tính thay đổi "so với báo cáo trước"."""
+    prev = (await session.execute(
+        select(Report)
+        .where(Report.report_date < report_date_str, Report.status.in_(["draft", "published"]))
+        .order_by(desc(Report.report_date))
+        .limit(5)
+    )).scalars()
+    for rep_ in prev:
+        sec2 = (rep_.content or {}).get("2") or {}
+        prev_prices = [p for p in sec2.get("prices") or [] if isinstance(p, dict) and isinstance(p.get("close"), (int, float))]
+        m = _ISO_DATE_RE.search(str(sec2.get("price_timestamp") or ""))
+        if prev_prices and m:
+            break
+    else:
+        return {}
+    prev_date = m.group(0)
+    prev_close = {str(p["code"]).upper(): float(p["close"]) for p in prev_prices if p.get("code") != CBAM_CODE}
+    rows = (await session.execute(
+        select(Instrument.code, Price.close_price)
+        .join(Instrument, Price.instrument_id == Instrument.id)
+        .where(Price.price_date == prev_date, Instrument.code.in_(list(prev_close)))
+    )).all()
+    by_code = {p["code"]: p for p in prices}
+    for code, now_close in rows:
+        old = prev_close.get(code)
+        if not old or now_close is None or code not in by_code:
+            continue
+        pct = (now_close / old - 1) * 100
+        if abs(pct) < PRICE_REVISION_MIN_PCT:
+            continue
+        d = date.fromisoformat(prev_date).strftime("%d/%m")
+        text = (
+            f"Dữ liệu phiên {d} đã được nguồn điều chỉnh: {_vn_num(old)} → {_vn_num(now_close)} ({_vn_num(pct, sign=True)}%) "
+            f"— Δ ngày/Δ tuần hôm nay tính trên chuỗi đã điều chỉnh"
+        )
+        p = by_code[code]
+        p["revision"] = text
+        p["note"] = f"{p['note']} {text}.".strip() if p.get("note") else f"{text}."
+        logger.warning("[REPORT] %s: %s", code, text)
+    return prev_close
+
+
+def _vn_num(x: float, digits: int = 2, sign: bool = False) -> str:
+    """1386.75 -> '1.386,75' (kiểu số tiếng Việt, dùng trong văn bản báo cáo)."""
+    s = f"{x:+,.{digits}f}" if sign else f"{x:,.{digits}f}"
+    return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
 
 async def get_previous_scenarios_text(session: AsyncSession, report_date_str: str, eua_close: Optional[float]) -> str:
@@ -1317,6 +1482,107 @@ async def get_previous_scenarios_text(session: AsyncSession, report_date_str: st
             )
         return "\n".join(lines)
     return ""
+
+
+PREV_DIGEST_MAX_CHARS = 3000
+
+
+async def get_previous_report_digest(session: AsyncSession, report_date_str: str) -> str:
+    """Tóm lược báo cáo gần nhất trước đó (Mục 1, Diễn biến chính, Động lực thị trường) — nối SAU danh
+    sách tin của Mục 1/2/3 để LLM biết sự kiện nào đã nêu (chỉ nhắc lại khi có diễn biến mới, ghi ngày)
+    và số liệu nào hôm nay lệch với hôm trước (nêu cả 2). KHÔNG phải nguồn trích dẫn."""
+    prev = (await session.execute(
+        select(Report)
+        .where(Report.report_date < report_date_str, Report.status.in_(["draft", "published"]))
+        .order_by(desc(Report.report_date))
+        .limit(1)
+    )).scalar_one_or_none()
+    if prev is None or not prev.content:
+        return ""
+    c = prev.content
+    lines: List[str] = []
+
+    def _src(it: Dict) -> str:
+        return f" [{it['source_name']}]" if it.get("source_name") else ""
+
+    for b in (c.get("1") or {}).get("bullets") or []:
+        if isinstance(b, dict) and b.get("text"):
+            lines.append(f"- (Tóm tắt) {b['text']}{_src(b)}")
+    for d in (c.get("2") or {}).get("key_developments") or []:
+        if isinstance(d, dict) and d.get("title"):
+            lines.append(f"- (Diễn biến) {d['title']}: {d.get('summary') or ''}{_src(d)}")
+    drivers = (c.get("2") or {}).get("market_drivers") or {}
+    for side in ("bullish", "bearish"):
+        for it in drivers.get(side) or []:
+            if isinstance(it, dict) and it.get("text"):
+                lines.append(f"- (Động lực {'tăng' if side == 'bullish' else 'giảm'}) {it['text']}{_src(it)}")
+    if not lines:
+        return ""
+    body = "\n".join(lines)[:PREV_DIGEST_MAX_CHARS]
+    return (
+        f"\n\nBÁO CÁO TRƯỚC ({date.fromisoformat(prev.report_date).strftime('%d/%m')}) ĐÃ NÊU — CHỈ để đối chiếu, "
+        f"KHÔNG phải nguồn trích dẫn (không có số [N]): sự kiện đã nêu ở đây thì chỉ nhắc lại khi tin hôm nay có diễn biến "
+        f"MỚI và PHẢI ghi ngày diễn ra; số liệu hôm nay khác với ở đây cho CÙNG chỉ tiêu → nêu cả 2 kèm nguồn/ngày.\n{body}"
+    )
+
+
+TRACK_RECORD_REPORTS = 3
+SIDEWAYS_MAX_PCT = 0.5  # |Δ phiên| dưới mức này coi như "đi ngang"
+_SUMMARY_LINE_RE = re.compile(r"\*\*Tổng hợp:?\*\*\s*(.*)")
+
+
+async def get_forecast_track_record(session: AsyncSession, report_date_str: str, chart_data: List[Dict]) -> str:
+    """Đối chiếu dự báo NGẮN HẠN của các báo cáo gần nhất với phiên EUA thực tế ngay sau đó (tính sẵn
+    bằng Python từ OHLC) + tiền đề ("Tổng hợp") của từng báo cáo — để Mục 3 viết khung "So với báo cáo
+    trước": thừa nhận dự báo sai nhiều phiên liền, giải thích khi đổi hướng, xem lại tiền đề cũ."""
+    closes = [(c["date"], c["close"]) for c in chart_data if c.get("date") and isinstance(c.get("close"), (int, float))]
+    if len(closes) < 2:
+        return ""
+    reports = (await session.execute(
+        select(Report)
+        .where(Report.report_date < report_date_str, Report.status.in_(["draft", "published"]))
+        .order_by(desc(Report.report_date))
+        .limit(TRACK_RECORD_REPORTS + 4)
+    )).scalars()
+    lines: List[str] = []
+    misses_in_row, still_counting = 0, True
+    for prev in reports:
+        sec3 = (prev.content or {}).get("3") or {}
+        short = next((sc for sc in sec3.get("trading_scenarios") or [] if isinstance(sc, dict) and sc.get("horizon") == "ngắn hạn"), None)
+        if not short:
+            continue  # báo cáo CN/T2 không có kịch bản
+        # Phiên đầu tiên SAU khi báo cáo phát hành (báo cáo ngày R dùng dữ liệu R-1 → phiên R trở đi).
+        idx = next((i for i, (d, _) in enumerate(closes) if d >= prev.report_date), None)
+        if idx is None or idx == 0:
+            continue
+        d, close = closes[idx]
+        pct = (close / closes[idx - 1][1] - 1) * 100
+        direction = short.get("direction")
+        hit = {"tăng": pct > 0, "giảm": pct < 0, "đi ngang": abs(pct) < SIDEWAYS_MAX_PCT}.get(direction)
+        if still_counting:
+            if hit is False:
+                misses_in_row += 1
+            else:
+                still_counting = False
+        premise = next(
+            (m.group(1).strip() for b in sec3.get("analysis_blocks") or [] if isinstance(b, dict)
+             for m in [_SUMMARY_LINE_RE.search(str(b.get("content") or ""))] if m),
+            "",
+        )
+        verdict = "ĐÚNG" if hit else "SAI" if hit is False else "không xác định"
+        lines.append(
+            f"- Báo cáo {date.fromisoformat(prev.report_date).strftime('%d/%m')}: dự báo ngắn hạn \"{direction}\" "
+            f"(xác suất {short.get('probability')}) → phiên {date.fromisoformat(d).strftime('%d/%m')} EUA "
+            f"{_vn_num(pct, sign=True)}% → {verdict}. Tiền đề: {premise[:300] or 'không có dòng Tổng hợp'}"
+        )
+        if len(lines) >= TRACK_RECORD_REPORTS:
+            break
+    if not lines:
+        return ""
+    head = "ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY (tính sẵn từ giá đóng cửa thật — dùng đúng, KHÔNG tự tính lại):"
+    if misses_in_row >= 2:
+        head += f" ⚠ {misses_in_row} báo cáo LIÊN TIẾP dự báo sai chiều."
+    return "\n".join([head, *lines])
 
 
 def _parse_event_date(ev: Dict) -> Optional[date]:
@@ -1784,7 +2050,8 @@ def _extract_json(raw: str) -> Optional[dict]:
 # ─────────────────────────────────────────────────────────────────────
 
 def _prompt_section1(
-    news_text: str, prices_text: str, eua_trend: str, eua_session_range: str, target_date: str
+    news_text: str, prices_text: str, eua_trend: str, eua_session_range: str, target_date: str,
+    fuel_spread: str = "",
 ) -> tuple[str, str]:
     system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date}
@@ -1798,6 +2065,9 @@ BIÊN ĐỘ PHIÊN LIỀN TRƯỚC EUA (dùng ĐÚNG số này, KHÔNG tự ư�
 XU HƯỚNG EUA 30 NGÀY:
 {eua_trend}
 
+SPREAD THAN–KHÍ (tính sẵn, DÙNG CHUNG với Mục 2/3 — KHÔNG tự tính lại):
+{fuel_spread or "Không có."}
+
 TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coal, energy_oil, geopolitics, eu_policy, cbam) — CHỈ trích dẫn số có thật:
 {news_text}
 
@@ -1805,7 +2075,7 @@ YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
 - Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo tác động EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
 - Bullet đầu: giá đóng cửa EUA + biên độ phiên (dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên; nếu "Không có dữ liệu" → bỏ qua biên độ) + xu hướng 30 ngày.
 - Mỗi bullet mở đầu bằng tag đậm (**EUA:**, **Chính sách:**...). Nêu tin chính sách/địa chính trị ảnh hưởng EUA.
-- CHUYỂN ĐỔI NHIÊN LIỆU (thống nhất với Mục 2/3): than (API2/API4) TĂNG so với khí → khí rẻ hơn tương đối → phát điện chuyển sang khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → chuyển sang than → cầu EUA TĂNG. TUYỆT ĐỐI KHÔNG viết "than tăng hỗ trợ chi phí phát điện than/giữ nhu cầu EUA". Chỉ có %Δ, chưa có spread khí/than thực → ghi rõ "theo %Δ, chưa tính spread".
+- CHUYỂN ĐỔI NHIÊN LIỆU (BẮT BUỘC thống nhất với Mục 2/3): khi khối "SPREAD THAN–KHÍ" có "KẾT LUẬN DÙNG CHUNG" → nhận định fuel switching PHẢI theo ĐÚNG kết luận đó (vd đã ghi "ĐÃ BÃO HÒA" thì TUYỆT ĐỐI KHÔNG viết "TTF tăng → nghiêng về chuyển sang than/cầu EUA tăng", và KHÔNG ghi "chưa tính spread" vì spread đã tính). Chỉ khi khối này báo thiếu dữ liệu mới dùng logic %Δ: than (API2) TĂNG so với khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → cầu EUA TĂNG, ghi rõ "theo %Δ, chưa tính spread". Than cho fuel switching EU là API2 (CIF ARA), KHÔNG dùng API4/NEWC. TUYỆT ĐỐI KHÔNG viết "than tăng hỗ trợ chi phí phát điện than/giữ nhu cầu EUA".
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm nếu bullet dựa trên 1 tin cụ thể ở trên), hoặc null nếu bullet chỉ dựa trên DỮ LIỆU GIÁ hệ thống (không phải tin tức) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
 
@@ -1863,7 +2133,7 @@ XU HƯỚNG EUA 30 NGÀY:
 GASOIL CRACK SPREAD (dùng đúng, KHÔNG tự tính lại):
 {gasoil_crack_spread}
 
-SPREAD THAN–KHÍ (ước tính thô tính sẵn — dùng đúng để xếp bullish/bearish cho TTF/than, KHÔNG tự tính lại):
+SPREAD THAN–KHÍ (tính sẵn — dùng đúng "KẾT LUẬN DÙNG CHUNG" để xếp bullish/bearish cho TTF/than, KHÔNG tự tính lại):
 {fuel_spread}
 
 TIN TỨC đã đánh số [N] (CHỈ trích dẫn số có thật):
@@ -1877,7 +2147,8 @@ Cấu trúc: {{"bullish": [...], "bearish": [...]}}. Mỗi phần tử gồm "ta
 - "text": ĐÚNG 1 câu TÓM TẮT NGẮN GỌN, ĐỊNH TÍNH về trạng thái/động lực của yếu tố này — TUYỆT ĐỐI KHÔNG nhắc lại giá đóng cửa hay %Δ ngày/Δ tuần bằng SỐ (các số này đã hiển thị sẵn ở "Bảng giá nhanh" của báo cáo — lặp lại là thừa, không thêm thông tin). Thay vào đó mô tả ĐỊNH TÍNH vị thế/xu hướng — vd đang giữ vùng cao/thấp (so với biên độ 30 ngày), phá vỡ/chưa phá vỡ ngưỡng hỗ trợ-kháng cự, đi ngang tích lũy, biến động mạnh bất thường, thanh khoản tăng/giảm rõ rệt... — rồi nêu NGẮN GỌN nguyên nhân/sự kiện phía sau nếu có (vd "EUA đang giữ ở vùng cao, thanh khoản duy trì ổn định." hoặc "TTF suy yếu về vùng thấp nhiều tuần do nguồn cung LNG dồi dào."). Áp dụng ĐÚNG cách viết định tính này cho MỌI instrument trong mục này (EUA, TTF, than, dầu, điện Đức...), KHÔNG riêng EUA — KHÔNG giải thích/suy luận tác động lên EUA ở đây, KHÔNG viết chuỗi nhân quả hay kết luận hướng ảnh hưởng tới EUA (phần đó thuộc Mục 3).
 - "source_index": số [N] có thật trong danh sách, hoặc null.
 Xếp bullish/bearish theo ĐÚNG chuỗi nhân quả tới EUA (không theo chiều tăng/giảm bề ngoài của instrument) — chuỗi nhân quả CHỈ dùng để QUYẾT ĐỊNH xếp vào bullish hay bearish, KHÔNG viết ra trong "text". CHỈ đưa yếu tố có dữ liệu/tin hỗ trợ, không bịa thêm.
-- NHẤT QUÁN VỚI MỤC 3 (fuel switching là giá TƯƠNG ĐỐI): than tụt lại/rẻ hơn tương đối so với khí (khí tăng mạnh hơn than, hoặc than giảm trong khi khí tăng) → than cạnh tranh hơn → cầu EUA tăng → xếp BULLISH; than tăng nhanh hơn khí hoặc khí rẻ đi tương đối → xếp BEARISH. TUYỆT ĐỐI KHÔNG xếp "than tụt lại so với khí" vào bearish. Mỗi yếu tố chỉ xuất hiện ở MỘT phía (không có cùng 1 yếu tố ở cả bullish lẫn bearish) và phải cùng chiều với kết luận ở Mục 3.
+- KẾT LUẬN SPREAD THAN–KHÍ ƯU TIÊN TRƯỚC MỌI QUY TẮC %Δ BÊN DƯỚI: nếu khối "SPREAD THAN–KHÍ" ghi chuyển đổi khí→than "ĐÃ BÃO HÒA" → TUYỆT ĐỐI KHÔNG xếp "TTF tăng/bật mạnh" (hay "than rẻ tương đối so với khí") vào "bullish"; TTF tăng khi đó chỉ được xếp "bearish" nếu có tin xác nhận công nghiệp cắt giảm sản lượng, còn không thì bỏ khỏi bảng.
+- NHẤT QUÁN VỚI MỤC 3 (fuel switching là giá TƯƠNG ĐỐI, CHỈ áp dụng khi khối spread KHÔNG ghi "ĐÃ BÃO HÒA"): than tụt lại/rẻ hơn tương đối so với khí (khí tăng mạnh hơn than, hoặc than giảm trong khi khí tăng) → than cạnh tranh hơn → cầu EUA tăng → xếp BULLISH; than tăng nhanh hơn khí hoặc khí rẻ đi tương đối → xếp BEARISH. TUYỆT ĐỐI KHÔNG xếp "than tụt lại so với khí" vào bearish. Mỗi yếu tố chỉ xuất hiện ở MỘT phía (không có cùng 1 yếu tố ở cả bullish lẫn bearish) và phải cùng chiều với kết luận ở Mục 3.
 - Khi "SỐ LIỆU EUA" ghi dữ liệu khối lượng không hợp lệ/không đủ để so sánh → KHÔNG thêm mục khối lượng và KHÔNG viết 'khối lượng tăng đột biến', 'lực chốt lời' hay bất kỳ suy luận nào dựa trên khối lượng ở bất kỳ phần nào.
 - KHỐI LƯỢNG GIAO DỊCH EUA: dựa vào khối lượng phiên liền trước so với TB các phiên gần nhất đã nêu trong "SỐ LIỆU EUA" ở trên (KHÔNG tự bịa số) để BẮT BUỘC thêm 1 mục "FACT" riêng mô tả ĐỊNH TÍNH tín hiệu khối lượng vào bullish/bearish (KHÔNG nêu số khối lượng cụ thể trong "text"), theo đúng logic "khối lượng xác nhận xu hướng giá":
   + Khối lượng tăng đột biến CÙNG chiều với giá tăng/giảm phiên đó → tín hiệu xác nhận lực mua/bán mạnh, xếp cùng chiều bullish/bearish tương ứng (vd "Khối lượng giao dịch tăng vọt, xác nhận lực mua mạnh.").
@@ -1972,7 +2243,7 @@ BIÊN ĐỘ PHIÊN LIỀN TRƯỚC CỦA EUA:
 GASOIL CRACK SPREAD (số liệu đã tính sẵn — PHẢI dùng đúng con số này nếu nhắc đến crack spread, KHÔNG tự tính lại từ giá Gasoil/Brent thô vì khác đơn vị):
 {gasoil_crack_spread}
 
-SPREAD THAN–KHÍ (ước tính thô tính sẵn từ TTF/API2/API4/EUA — PHẢI dùng đúng khi phân tích fuel switching, KHÔNG tự tính lại; nêu rõ là ước tính chưa kiểm chứng):
+SPREAD THAN–KHÍ (tính sẵn từ TTF/API2/EUA — PHẢI dùng đúng số và "KẾT LUẬN DÙNG CHUNG" khi phân tích fuel switching, KHÔNG tự tính lại; ghi là "ước tính theo mô hình chi phí biên", KHÔNG ghi "ước tính thô"/"chưa kiểm chứng"; KHÔNG dùng API4/NEWC cho fuel switching EU):
 {fuel_spread or "Không có."}
 
 XU HƯỚNG EUA 30 NGÀY:
@@ -1984,6 +2255,7 @@ MỐC KỸ THUẬT EUA (tính sẵn từ OHLC thật — nguồn DUY NHẤT cho 
 KỊCH BẢN CỦA BÁO CÁO TRƯỚC (đối chiếu — người đọc so sánh các ngày với nhau):
 {prev_scenarios or "Không có."}
 NHẤT QUÁN VỚI BÁO CÁO TRƯỚC (BẮT BUỘC khi có kịch bản trước): nếu hôm nay đổi "direction"/xác suất của 1 horizon, hoặc dời Mục tiêu/cắt lỗ đáng kể, thì đoạn "**Tổng hợp:**" PHẢI có 1 câu ngắn nêu rõ điều chỉnh (cũ → mới) và lý do bằng dữ liệu; nếu kịch bản ngắn hạn trước đã đi NGƯỢC thực tế (giá đi ngược chiều dự báo) thì thừa nhận thẳng và hạ xác suất hoặc giải thích vì sao vẫn giữ — TUYỆT ĐỐI KHÔNG lặng lẽ đổi số.
+KHUNG "SO VỚI BÁO CÁO TRƯỚC" (BẮT BUỘC khi có kịch bản/đối chiếu ở trên): thêm trường "vs_previous" (2–3 câu, tối đa ~70 từ) ở cấp mục 3, gồm: (1) dự báo ngắn hạn trước đó đúng/sai thế nào theo "ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY" (sai nhiều phiên liền thì nói thẳng số phiên và %Δ); (2) hôm nay GIỮ hay ĐỔI hướng (cũ → mới) và lý do bằng dữ liệu; (3) TIỀN ĐỀ nào của báo cáo trước đã thay đổi/không còn đúng (vd trước coi "TTF tăng → chuyển sang than → cầu EUA tăng" nhưng spread nay cho thấy chuyển đổi đã bão hòa) — nêu thẳng, không né. Không có báo cáo trước → "vs_previous" = "".
 
 CÂN NHẮC BẰNG CHỨNG NGƯỢC CHIỀU (BẮT BUỘC): trước khi chốt "**Tổng hợp:**", rà các tin ở dưới đi NGƯỢC kết luận của bạn (vd nguồn cung dầu phục hồi, sản lượng kỷ lục, lạm phát/lãi suất tăng khi kết luận tăng giá) — tin ngược chiều có tác động thật phải được nêu trong "Phân tích" hoặc hạ xác suất kịch bản; không chỉ trình bày 1 chiều.
 
@@ -2015,7 +2287,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu của "QUY TẮC ĐỘ DÀI CHUNG" ở trên (mỗi gạch có thể dài hơn 2 câu nếu cần đủ Δ ngày/Δ tuần + kết luận), NHƯNG PHẢI súc tích, trực diện theo đúng "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên — không câu mở đầu/đệm/chuyển tiếp thừa, không lặp lại nguyên văn nội dung đã nêu ở "instrument_notes" (chỉ nhắc lại khi trực tiếp làm căn cứ cho kết luận trong chính câu đó), và KHÔNG diễn giải lại từng bước cơ chế/logic suy luận.
       QUY TẮC SUY LUẬN NỘI BỘ CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã có ghi chú ở "instrument_notes" nhóm này để XÁC ĐỊNH đúng chiều/mức độ tác động (đây là cơ sở suy luận NỘI BỘ, không phải văn mẫu để chép lại nguyên văn vào "content" — xem "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên). LƯU Ý: tên chuỗi/nhánh viết HOA bên dưới (FUEL_SWITCHING, POWER_EUA_TWO_WAY, OIL_GASOIL, GEOPOLITICS_SUPPLY_CHAIN, "nhánh (a)"...) CHỈ để bạn xác định ĐÚNG cơ chế cần áp dụng — TUYỆT ĐỐI KHÔNG chép các tên này, và TUYỆT ĐỐI KHÔNG diễn giải lại các bước (i)-(v) này bằng lời trong "content"; "content" chỉ chứa SỐ LIỆU + KẾT LUẬN đã áp dụng đúng các bước này, không mô tả quá trình suy luận:
         (i) ĐỐI CHIẾU KHUNG THỜI GIAN: so Δ ngày VÀ Δ tuần của chính mã đó. ĐỒNG THUẬN (cùng chiều) → xác nhận xu hướng bền vững, đủ cơ sở kết luận dứt khoát chiều tác động EUA. MÂU THUẪN (trái chiều) → nêu rõ đây là tín hiệu ngắn hạn/chưa đủ mạnh, cần thêm phiên xác nhận, KHÔNG được chốt chiều tác động EUA dứt khoát.
-        (ii) GAS/THAN → áp dụng FUEL_SWITCHING: đây là cơ chế GIÁ TƯƠNG ĐỐI, không phải giá tuyệt đối của riêng 1 nhiên liệu — Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than. BẮT BUỘC dựa vào khối "SPREAD THAN–KHÍ" đã tính sẵn: nếu than đã rẻ hơn khí rõ rệt (chênh dương lớn, không có điểm hòa vốn) thì chuyển đổi nhiên liệu có thể đã chạm trần → tác động BIÊN của TTF tăng thêm lên cầu EUA yếu (chỉ qua chi phí/hedge) và còn có kênh ngược (công nghiệp cắt sản lượng → cầu EUA giảm); khi đó KHÔNG xếp "TTF tăng" là động lực tăng chính. Con số là ƯỚC TÍNH THÔ (giả định ghi trong khối) — nêu rõ điều đó; vẫn chưa có vị thế quỹ/đấu giá EEX/MSR nên KHÔNG chốt hướng dứt khoát chỉ từ tương quan 1 tuần.
+        (ii) GAS/THAN → áp dụng FUEL_SWITCHING: đây là cơ chế GIÁ TƯƠNG ĐỐI, không phải giá tuyệt đối của riêng 1 nhiên liệu — Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than. BẮT BUỘC dựa vào khối "SPREAD THAN–KHÍ" đã tính sẵn: nếu than đã rẻ hơn khí rõ rệt (chênh dương lớn, không có điểm hòa vốn) thì chuyển đổi nhiên liệu có thể đã chạm trần → tác động BIÊN của TTF tăng thêm lên cầu EUA yếu (chỉ qua chi phí/hedge) và còn có kênh ngược (công nghiệp cắt sản lượng → cầu EUA giảm); khi đó KHÔNG xếp "TTF tăng" là động lực tăng (ở BẤT KỲ đâu trong mục này, kể cả "Cần theo dõi"/kịch bản). Than dùng cho fuel switching EU là API2 (CIF ARA) — API4 (Richards Bay)/NEWC là chuẩn châu Á, KHÔNG dùng làm căn cứ dispatch EU. Ghi con số là "ước tính theo mô hình chi phí biên" (KHÔNG ghi "ước tính thô"/"chưa kiểm chứng"); vẫn chưa có vị thế quỹ/đấu giá EEX/MSR nên KHÔNG chốt hướng dứt khoát chỉ từ tương quan 1 tuần.
         (iii) ĐIỆN ĐỨC (DEBY1) → áp dụng ĐÚNG nhánh (a) của POWER_EUA_TWO_WAY: nếu DEBY1 biến động đồng pha với gas/than → kết luận điện tăng do chi phí nhiên liệu cao hơn, utility hedge thêm EUA tương ứng sản lượng đã bán — kênh hedge/chi phí này TÁCH BIỆT với việc thực tế đốt nhiên liệu nào, KHÔNG gộp chung "than+điện cùng tăng" thành kết luận "đốt than nhiều hơn". CHỈ được quy nguyên nhân "RES thấp" khi có dữ liệu/tin tức THỰC SỰ xác nhận RES thấp trong ngày — nếu KHÔNG có dữ liệu RES, PHẢI nêu rõ "không có dữ liệu RES trong ngày để xác nhận nhánh này" thay vì mặc định suy diễn.
         (iv) DẦU/GASOIL → áp dụng OIL_GASOIL: đối chiếu Δ ngày/Δ tuần của Brent/WTI theo đúng bước (i) trước khi kết luận fuel switching qua kênh dầu-khí (mâu thuẫn giữa 2 khung thời gian → tín hiệu ngắn hạn chưa đủ mạnh, cần thêm phiên xác nhận, chưa kết luận). Gasoil crack spread thu hẹp/mở rộng → nêu tác động lên cầu diesel/công nghiệp nặng và cầu EUA từ kênh công nghiệp đó, tách riêng khỏi kết luận fuel switching qua gas.
         (v) ĐỊA CHÍNH TRỊ — có 2 kênh TÁCH BIỆT trong GEOPOLITICS_SUPPLY_CHAIN, phải xác định đúng kênh trước khi suy luận:
@@ -2033,6 +2305,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
    3. heading="Cần theo dõi" — KHÔNG PHẢI danh sách lịch sự kiện chung chung. Đây là các WATCHPOINT rút ra TRỰC TIẾP từ chính số liệu giá, "instrument_notes" và "Phân tích" phía trên — ưu tiên đúng những điểm ở "Phân tích" CHƯA đủ cơ sở kết luận dứt khoát (vd Δ ngày/Δ tuần mâu thuẫn cần thêm phiên xác nhận, sự kiện địa chính trị/chính sách giá CHƯA kịp phản ánh, nhánh cơ chế còn thiếu dữ liệu để xác nhận...). Mục đích: cho người đọc biết CHÍNH XÁC cần nhìn vào đâu ở phiên/tin tiếp theo và mỗi khả năng xảy ra sẽ kéo cung/cầu, giá EUA theo hướng nào.
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu — mỗi watchpoint cần đủ chỗ nêu 2 kịch bản trái chiều nên có thể dài hơn, nhưng vẫn phải súc tích, thẳng vào thông tin, không thêm câu đệm.
       MỖI WATCHPOINT PHẢI CÓ ĐỦ 3 PHẦN:
+        ƯU TIÊN BẮT BUỘC: quyết định chính sách EU đang chờ (thượng đỉnh/Hội đồng/Nghị viện EU bàn về ETS, đề xuất nới/hoãn/áp trần ETS của nước thành viên hoặc doanh nghiệp có trong tin) PHẢI có 1 watchpoint riêng, nêu rõ "chưa có kết quả" nếu tin chưa xác nhận.
         (a) CẦN THEO DÕI GÌ — nêu đích danh mã giá/chỉ số/tin tức cụ thể đã xuất hiện ở trên (vd "Δ tuần của Brent/WTI ở phiên tới", "diễn biến đàm phán sanctions Iran/Venezuela", "dữ liệu RES/gió-mặt trời ngày mai", "kết quả đấu giá EUA kỳ tới"...) — kèm ngày giờ Việt Nam cụ thể CHỈ khi tin tức/lịch công bố có nêu rõ, KHÔNG tự bịa thời điểm.
         (b) NẾU XẢY RA THEO HƯỚNG 1 — bắt đầu bằng "Nếu [diễn biến cụ thể theo hướng 1]..." → nêu rõ tác động tới cung/cầu và chiều giá EUA tương ứng.
         (c) NẾU XẢY RA THEO HƯỚNG NGƯỢC LẠI (hoặc không xảy ra) — bắt đầu bằng "Nếu [diễn biến ngược lại/không xác nhận]..." → nêu rõ tác động khác hoặc EUA đi ngang/giữ tín hiệu hỗn hợp.
@@ -2050,21 +2323,26 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      + "**Mục tiêu:**" mức giá chốt lời kế tiếp, risk/reward hợp lý so với Entry.
      + "**Quản trị rủi ro:**" mức giá cắt lỗ khi kịch bản bị vô hiệu, gắn với "key_risk".
      Chỉ dùng mức giá có căn cứ từ dữ liệu đã cho (giao diện đã có lưu ý tham khảo đi kèm) — không thêm giải thích sau mỗi dòng.
+     "trading_strategy" là chiến lược cho BÀN GIAO DỊCH (vị thế đầu cơ độc lập) — KHÔNG phải cho sổ phòng hộ của SIM.
+   - "hedge_note" (1 câu, tối đa ~25 từ): hàm ý của kịch bản này cho SỔ PHÒNG HỘ của SIM. SIM có nghĩa vụ CBAM → đang mang vị thế SHORT carbon tự nhiên → phòng hộ đúng chiều là MUA (long) EUA; TUYỆT ĐỐI KHÔNG khuyến nghị bán khống EUA cho sổ phòng hộ (làm tăng rủi ro tổng). Theo "direction": "giảm" → "Hoãn/giảm tốc độ mua phòng hộ, chờ vùng <X–Y lấy từ Mục tiêu/price_zone>"; "tăng" → "Đẩy nhanh/tăng tỷ lệ mua phòng hộ trước khi giá vượt <mức>"; "đi ngang" → "Mua phòng hộ trải đều theo lịch trong vùng <X–Y>". Mức giá dùng ĐÚNG số đã có trong kịch bản, không thêm số mới.
    QUY TẮC SỐ HỌC CHO MỨC GIÁ (BẮT BUỘC, kiểm tra lại phép tính trước khi viết):
      • Mọi mức giá (Entry/Mục tiêu/cắt lỗ/price_zone) CHỈ được lấy từ "MỐC KỸ THUẬT EUA" bên trên (đỉnh/đáy 30 phiên, mục tiêu đo biên độ, ATR) hoặc từ giá đóng cửa/biên độ phiên đã cho; KHÔNG tự đặt số tròn (vd 92,0 hay 95,0) không có phép tính nào dẫn tới. Kịch bản trung/dài hạn không có mốc từ dữ liệu → nêu mức theo % so với giá đóng cửa kèm phép tính ngắn (vd "+5% ≈ x.xx"), hoặc dùng vùng đo biên độ.
      • R:R (|Mục tiêu − Entry| / |Entry − cắt lỗ|) PHẢI ≥ 1:1,5; nếu mốc dữ liệu không cho R:R đạt mức này → đổi hướng "đi ngang"/chờ xác nhận, KHÔNG ép số.
-     • Cắt lỗ đặt NGOÀI vùng hỗ trợ/kháng cự ít nhất 0,5 × ATR (khoảng cách tới hỗ trợ không được nhỏ hơn mức đó) — hỗ trợ chỉ là đáy 1 phiên thì coi là yếu, ưu tiên mốc 30 phiên.
+     • Cắt lỗ đặt NGOÀI vùng hỗ trợ/kháng cự ít nhất 0,5 × ATR VÀ cách giá vào lệnh ít nhất 0,5 × ATR (vd ATR 1,8 → mua 82,5 thì cắt lỗ ≤ 81,6, KHÔNG đặt 82,35) — cắt lỗ sát Entry/sát mốc vài cent là nằm trong nhiễu phiên. Hỗ trợ chỉ là đáy 1 phiên thì coi là yếu.
+     • Chọn mốc theo khung: "ngắn hạn" dùng "Mốc gần ... 10 phiên" (không dùng đỉnh/đáy 30 phiên làm Entry/cắt lỗ ngắn hạn vì quá xa); "trung hạn"/"dài hạn" dùng mốc 30 phiên/đo biên độ.
      • Mục tiêu trùng đúng đỉnh/đáy 30 phiên (kháng cự mạnh) → chốt 1 phần/thận trọng, ghi rõ là vùng cản, không coi là đích chắc chắn.
      • Nhất quán giá vào lệnh: nếu Entry khác giá đóng cửa hiện tại thì phải ghi điều kiện kích hoạt (vd "mua khi đóng cửa trên X"), và R:R PHẢI tính từ đúng giá vào lệnh đó (X), không dùng giá hiện tại. Entry không được "ngược" với điều kiện (vd mua khi giá đang dưới Entry mà không ghi chờ vượt).
      • Mức vô hiệu của kịch bản (trong "key_risk"/Phân tích) PHẢI trùng đúng mức cắt lỗ ở "Quản trị rủi ro" — không để 2 con số khác nhau (vd 87,01 và 87,15).
      • "price_zone" hỗ trợ/kháng cự KHÔNG được chứa giá đóng cửa hiện tại (vùng hỗ trợ phải nằm dưới giá, kháng cự nằm trên).
      • ĐIỀU KIỆN ↔ ENTRY: "condition" dạng "đóng cửa trên X" (lệnh mua) thì Entry là "mua khi đóng cửa trên X" (giá vào = X), KHÔNG được "mua quanh" vùng thấp hơn X; tương tự "dưới X" cho lệnh bán. R:R tính từ đúng X.
-     • Kịch bản trung/dài hạn: mục tiêu PHẢI có phép suy ra từ dữ liệu (vd "+8% so với đóng cửa 87,14", "đỉnh 30 phiên"); không suy ra được → không đặt mức giá cụ thể. Luận điểm chính sách dài hạn (vd cắt phân bổ miễn phí) chỉ dùng khi có trong tin đã cung cấp.
+     • Kịch bản trung/dài hạn: mục tiêu PHẢI có phép suy ra từ dữ liệu (vd "+8% so với đóng cửa 87,14", "đỉnh 30 phiên"); không suy ra được → không đặt mức giá cụ thể. Luận điểm chính sách dài hạn (vd cắt phân bổ miễn phí) chỉ dùng khi có trong tin đã cung cấp (kèm nguồn) HOẶC thuộc "VĂN BẢN ĐÃ LUẬT HÓA" dưới đây (kèm trích dẫn văn bản ngay trong câu); không có cả hai → BỎ luận điểm/điều kiện đó.
+       VĂN BẢN ĐÃ LUẬT HÓA:
+       {LEGISLATED_POLICY_FACTS}
      • Mỗi "Mục tiêu" ghi kèm cơ sở trong ngoặc ngắn (vd "(kháng cự 30 phiên)", "(đo biên độ)", "(+4% so với đóng cửa)"); mục tiêu không nêu được cơ sở → bỏ.
      • Không dùng cụm "không phải khuyến nghị giao dịch" trong nội dung — giao diện đã có lưu ý riêng.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "instrument_notes": {{"EUA": "..."}}, "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "key_risk": "...", "trading_strategy": "..."}}]}}}}"""
+{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "instrument_notes": {{"EUA": "..."}}, "vs_previous": "...", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "key_risk": "...", "trading_strategy": "...", "hedge_note": "..."}}]}}}}"""
     return system, user
 
 
@@ -2147,7 +2425,7 @@ YÊU CẦU: Viết MỤC 8 — LỊCH SỰ KIỆN 7 NGÀY TỚI ({window_start} 
 "events" CHỈ được gồm sự kiện thuộc ĐÚNG 3 NHÓM sau — KHÔNG thêm bất kỳ sự kiện nào ngoài 3 nhóm này dù tin tức có nhắc tới:
   1. Tồn kho dầu EIA — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên (đã có kết quả thực tế nếu sự kiện đã xảy ra), không tự tính lại, không tự đoán kết quả nếu outcome đã được điền sẵn.
   2. Rig count Baker Hughes — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên (đã có kết quả thực tế nếu sự kiện đã xảy ra), không tự tính lại.
-  3. Họp chính sách (ECB / EU Climate Action / FOMC / chính sách EU ETS liên quan) — CHỈ thêm nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ngày họp cụ thể; KHÔNG có xác nhận thì KHÔNG thêm (không đoán ngày).
+  3. Họp chính sách (ECB / FOMC / Hội nghị thượng đỉnh EU – Hội đồng châu Âu / Hội đồng Môi trường hoặc Năng lượng EU / bỏ phiếu của Nghị viện EU / EU Climate Action / quyết định về EU ETS, MSR, CBAM) — CHỈ thêm nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ngày họp cụ thể; KHÔNG có xác nhận thì KHÔNG thêm (không đoán ngày). Cuộc họp đang/vừa diễn ra trong cửa sổ mà tin tức có nhắc (vd thượng đỉnh EU bàn về ETS, sức ép của các nước đòi nới ETS) → BẮT BUỘC đưa vào, kèm "outcome": "Chưa có kết quả được xác nhận" nếu tin chưa nêu kết quả — KHÔNG bỏ sót vì chưa có kết quả.
 LƯU Ý: API Crude Inventory và Đấu giá EUA EEX đã bị loại bỏ khỏi danh sách theo dõi định kỳ do không có nguồn dữ liệu công khai lấy được tự động. KHÔNG thêm các sự kiện này vào "events" dù báo cáo trước có liệt kê.
 Với sự kiện bạn TỰ thêm ở nhóm 3: "date" (YYYY-MM-DD), "datetime_vn" (CHỈ "DD/MM", KHÔNG kèm năm, TUYỆT ĐỐI KHÔNG kèm giờ dù tin tức có nêu rõ giờ), "event", "impact" (Cao/Trung/Thấp).
 
@@ -2162,6 +2440,27 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
     return system, user
 
 
+
+
+# Quy tắc CBAM dùng chung cho prompt gợi ý kinh doanh (và Jenny chat nếu cần) — tránh gửi khách con số
+# sai bản chất: giai đoạn chuyển tiếp 2026–2034 phân bổ miễn phí CHƯA bằng 0, và thép/nhôm chỉ tính phát thải
+# trực tiếp nên PPA/điện xanh không giảm chi phí CBAM của 2 nhóm hàng này.
+CBAM_COST_RULE = (
+    "Chi phí CBAM/tấn ≈ (phát thải nhúng tCO2/t − benchmark phân bổ miễn phí tCO2/t × hệ số phân bổ miễn phí còn lại) "
+    "× giá CBAM (EUR/tCO2). Năm 2026 hệ số phân bổ miễn phí còn lại là 97,5% (CBAM chỉ thu trên 2,5% phần phân bổ "
+    "miễn phí bị loại bỏ, cộng phần phát thải vượt benchmark) — TUYỆT ĐỐI KHÔNG giả định phân bổ miễn phí = 0 và "
+    "KHÔNG lấy phát thải nhúng × giá CBAM làm chi phí. Ví dụ minh họa (thép lò cao, GIẢ ĐỊNH): phát thải 1,8 − "
+    "benchmark ~1,3 × 97,5% ≈ 0,53 tCO2/t → × giá CBAM. Benchmark 2026–2030 phải đối chiếu theo mã CN cụ thể — "
+    "luôn ghi \"benchmark giả định, cần đối chiếu theo mã CN\"; phát thải nhúng không có trong dữ liệu → gắn nhãn "
+    "\"giả định\" hoặc để khách tự điền, KHÔNG trình bày như số thật."
+)
+CBAM_SCOPE_RULE = (
+    "Phạm vi phát thải: với SẮT THÉP và NHÔM, CBAM hiện CHỈ tính phát thải TRỰC TIẾP (Scope 1 của quá trình sản xuất); "
+    "phát thải gián tiếp từ điện CHỈ áp dụng cho xi măng và phân bón. Vì vậy PPA/điện tái tạo/REC KHÔNG làm giảm "
+    "chi phí CBAM/tấn của thép, nhôm — chỉ giảm Scope 2, hỗ trợ hồ sơ ESG/yêu cầu của khách EU. TUYỆT ĐỐI KHÔNG viết "
+    "PPA \"hạ chi phí CBAM\" cho thép/nhôm; muốn giảm chi phí CBAM thép/nhôm phải là giảm phát thải trực tiếp "
+    "(lò điện EAF/thép phế, hydro, anode trơ...) hoặc nộp dữ liệu phát thải thực đã thẩm định thay giá trị mặc định."
+)
 
 
 # Hồ sơ ngắn của SIM cho prompt gợi ý kinh doanh — gợi ý phải bám ngành lõi, không lan sang lĩnh vực xa.
@@ -2193,7 +2492,7 @@ def _prompt_biz_recommendation(
     user = f"""Ngày báo cáo: {target_date}
 
 {price_block}
-TIN TỨC ĐA CHIỀU:
+TIN TỨC ĐA CHIỀU đã đánh số [N] — CHỈ trích dẫn số có thật:
 {news_text}
 
 GỢI Ý NGẮN HẠN JENNY ĐÃ ĐỀ XUẤT Ở CÁC BÁO CÁO TRƯỚC, VẪN ĐANG THEO DÕI (tình huống kích hoạt chưa xảy ra):
@@ -2209,12 +2508,18 @@ A. "short_term": mảng object, gợi ý ngắn hạn MỚI gắn TRỰC TIẾP 
    - "trigger_rule": CHỈ khi "trigger" là 1 NGƯỠNG GIÁ đóng cửa của 1 mã trong bảng giá → object {{"code": "<mã>", "op": ">" | ">=" | "<" | "<=", "value": <số, cùng đơn vị với giá>}}; mã hợp lệ: {valid_codes or "(không có)"}. Điều kiện dạng tin tức/chính sách → null.
    - "action": hành động cụ thể SIM nên làm, khả thi và thực tế.
    - "reason": lý do vì sao hành động này hợp lý (bối cảnh/số liệu hôm nay + chuỗi nhân quả đã phân tích ở các mục trên).
+   - "source_index": số [N] của bài tin tức làm căn cứ chính (null nếu chỉ dựa trên dữ liệu giá) — để bài đó có trong mục Nguồn tham khảo.
 B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân tích (chính sách CBAM, VCM, chuyển dịch năng lượng...). Mỗi object gồm ĐÚNG 3 trường, MỖI TRƯỜNG TỐI ĐA 1 CÂU NGẮN GỌN:
    - "opportunity": cơ hội/xu hướng dài hạn cụ thể đã xác định được.
    - "solution": giải pháp/hướng đi đề xuất cho SIM để tận dụng cơ hội đó.
    - "expectation": kỳ vọng/kết quả nếu triển khai giải pháp này.
+   - "source_index": số [N] của bài làm căn cứ (null nếu không dựa trên 1 bài cụ thể).
 
-CBAM: SIM có khách hàng nhôm/thép xuất khẩu sang EU nên nếu tin tức/dữ liệu có CBAM (giá CBAM, chính sách, nhôm/thép) thì BẮT BUỘC có ít nhất 1 gợi ý về CBAM, kèm phép tính chi phí theo tấn sản phẩm: chi phí CBAM/tấn ≈ (phát thải nhúng tCO2/tấn − phần phân bổ miễn phí) × giá CBAM (EUR/tCO2) — dùng giá CBAM từ dữ liệu giá nếu có; phát thải nhúng/tấn KHÔNG có trong dữ liệu → đưa ví dụ minh họa gắn nhãn "giả định" hoặc để khách tự điền, KHÔNG bịa như số thật.
+CBAM: SIM có khách hàng nhôm/thép xuất khẩu sang EU nên nếu tin tức/dữ liệu có CBAM (giá CBAM, chính sách, nhôm/thép) thì BẮT BUỘC có ít nhất 1 gợi ý về CBAM. QUY TẮC CBAM BẮT BUỘC (gửi cho khách — sai là mất uy tín):
+  (a) {CBAM_COST_RULE}
+  (b) {CBAM_SCOPE_RULE}
+  (c) Giá CBAM 2026 chốt theo QUÝ (trung bình giá đấu giá EUA của quý, áp dụng cho chứng chỉ của quý đó) — điều kiện/trigger liên quan CHI PHÍ CBAM (bảng tính chi phí carbon, báo giá CBAM cho khách, mua chứng chỉ) PHẢI dùng "EUA trung bình lũy kế quý" so với giá CBAM hiện hành, KHÔNG dùng giá đóng cửa EUA 1 phiên; trigger_rule khi đó = {{"code": "EUA", "basis": "qtd_avg", "op": ..., "value": ...}} (xem "EUA TB lũy kế quý" trong DỮ LIỆU GIÁ).
+QUY TẮC NHẤT QUÁN TRIGGER: nếu gợi ý mới có CÙNG hành động (hoặc cùng mục đích) với 1 gợi ý trong danh sách "ĐANG THEO DÕI" thì KHÔNG tạo lại; nếu buộc phải nêu lại thì GIỮ ĐÚNG chiều điều kiện cũ (không đổi "> X" thành "< Y" sau 1 ngày) — muốn đổi chiều phải nêu rõ lý do bằng dữ liệu trong "reason".
 QUY TẮC NỘI DUNG: gợi ý dài hạn phải có 1 bước thí điểm cụ thể (quy mô/đối tượng/thời gian) hoặc chỉ tiêu tài chính gắn với dữ kiện trong tin tức — KHÔNG chỉ nêu khái niệm chung (BII, NBS, điện hóa nhiệt...). Số tiền/cam kết của 1 tổ chức phải khớp với bài được trích, không tự đổi số.
 QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng. TỐI ĐA 3 gợi ý MỖI bảng (short_term và long_term riêng biệt) — nếu có nhiều hơn 3 gợi ý đủ căn cứ, CHỈ giữ lại ĐÚNG 3 gợi ý TRỌNG TÂM/có căn cứ mạnh nhất, bỏ phần còn lại (KHÔNG cố nhồi hết vào 1 bảng, sẽ làm output quá dài và bị cắt).
 QUY TẮC NGÀNH LÕI: mọi gợi ý (nhất là "long_term") PHẢI gắn với hoạt động kinh doanh KIM LOẠI của SIM (nhôm, thép, đồng, kẽm — sản xuất/thương mại, khách hàng xuất khẩu EU, chi phí năng lượng/carbon của chuỗi cung ứng kim loại). Ý xa ngành lõi (vd bếp sạch, lúa phát thải thấp, MRV nông nghiệp) → KHÔNG đưa vào, kể cả khi tin hôm nay có.
@@ -2222,7 +2527,7 @@ QUY TẮC "trigger": phải CỤ THỂ, MỘT CHIỀU, kiểm chứng được �
 Lưu ý: KHÔNG dùng câu lệnh mua/bán tài chính trực tiếp.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"biz": {{"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [{{"trigger": "Nếu ...", "trigger_rule": null, "action": "...", "reason": "..."}}], "long_term": [{{"opportunity": "...", "solution": "...", "expectation": "..."}}]}}}}"""
+{{"biz": {{"title": "Gợi ý kinh doanh & giải pháp cho SIM", "short_term": [{{"trigger": "Nếu ...", "trigger_rule": null, "action": "...", "reason": "...", "source_index": null}}], "long_term": [{{"opportunity": "...", "solution": "...", "expectation": "...", "source_index": null}}]}}}}"""
     return system, user
 
 
@@ -2333,11 +2638,11 @@ async def _check_biz_contradictions_llm(
     """Hỏi LLM: với từng gợi ý cũ CHƯA kích hoạt, diễn biến thực tế hôm nay (giá + tin
     tức) có đi NGƯỢC với giả định/kỳ vọng làm nền cho đề xuất không (vd đề xuất mua
     dự phòng vì kỳ vọng giá năng lượng tăng, nhưng giá giảm mạnh do nguồn cung phục
-    hồi). Chỉ chấp nhận khi bằng chứng cụ thể: bài báo có thật (source_index → tên/URL
-    backend map) HOẶC số liệu giá trong "DỮ LIỆU GIÁ" (source_index null → nguồn ghi
-    "Giá chốt phiên (Barchart)"). Lỗi LLM/không đủ căn cứ → {} (giữ nguyên trạng thái chờ).
-    `news_only=True` (báo cáo không có phiên giá): chỉ chấp nhận bằng chứng từ bài báo."""
-    if not candidates or (news_only and not index_lookup):
+    hồi). CHỈ chấp nhận khi có bài báo có thật (source_index → tên/URL backend map) nêu sự
+    kiện làm mất hiệu lực giả định — biến động giá của 1 phiên KHÔNG đủ để kết luận đề xuất
+    sai (điều kiện chưa kích hoạt ≠ đề xuất sai; gợi ý ngưỡng giá không được đưa vào hàm này).
+    Lỗi LLM/không đủ căn cứ → {} (giữ nguyên trạng thái chờ)."""
+    if not candidates or not index_lookup:
         return {}
     if news_only:
         prices_text = "Không có — cuối tuần, không có phiên giao dịch. CHỈ đối chiếu theo tin tức (BẮT BUỘC source_index)."
@@ -2354,7 +2659,7 @@ TIN TỨC TRONG NGÀY đã đánh số [N] — CHỈ trích dẫn số có thậ
 {news_text if index_lookup else "Không có tin tức."}
 
 YÊU CẦU: Với TỪNG gợi ý [S<id>], xác định diễn biến thực tế hôm nay có đi NGƯỢC CHIỀU với giả định/kỳ vọng làm nền cho đề xuất hay không (tức đề xuất không còn phù hợp: thị trường/chính sách diễn ra trái với điều đề xuất dựa vào).
-- "contradicted": true CHỈ khi có dữ kiện RÕ RÀNG, trực tiếp trái với giả định của đề xuất — từ bài báo (BẮT BUỘC "source_index" là số [N] có thật) HOẶC từ số liệu trong DỮ LIỆU GIÁ (khi đó "source_index": null và "evidence" nêu mã + biến động cụ thể). KHÔNG suy diễn; chỉ chưa xảy ra/chưa kích hoạt KHÔNG phải là ngược chiều; biến động nhỏ, không rõ hướng → false.
+- "contradicted": true CHỈ khi có SỰ KIỆN trong bài báo (BẮT BUỘC "source_index" là số [N] có thật) làm mất hiệu lực RÕ RÀNG giả định của đề xuất (vd chính sách đã bị huỷ, xung đột đã chấm dứt). KHÔNG suy diễn. Điều kiện CHƯA KÍCH HOẠT/chưa chạm ngưỡng KHÔNG phải là ngược chiều — đề xuất vẫn được theo dõi tới ngày hết hạn ghi trong danh sách. Biến động giá của 1–vài phiên (kể cả đi xa ngưỡng) KHÔNG đủ để kết luận → false.
 - "evidence": 1 câu ngắn nêu điều đã xảy ra trái với đề xuất.
 - Không đủ căn cứ → "contradicted": false, "source_index": null, "evidence": null.
 
@@ -2384,8 +2689,6 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
         src_art = index_lookup.get(_first_source_index(chk.get("source_index")))
         if src_art:
             result[sid] = {"evidence": evidence, "source_name": src_art["source"], "source_url": src_art["url"]}
-        elif chk.get("source_index") is None and not news_only:
-            result[sid] = {"evidence": evidence, "source_name": "Giá chốt phiên (Barchart)", "source_url": None}
     return result
 
 
@@ -2416,6 +2719,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     else:
         prices, max_price_date = await get_prices_for_report(session, target_date)
         chart_data = await get_historical_ohlc_for_report(session, "EUA", target_date)
+    prev_report_close = await annotate_price_revisions(session, report_date, prices) if prices else {}
     news_by_topic, sources = await get_news_for_report(session, target_date)
 
     prices_text = _summarize_prices(prices)
@@ -2424,7 +2728,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     eua_volume = _eua_volume_summary(chart_data)
     eua_technical_levels = _eua_technical_levels_summary(chart_data)
     fuel_spread = _fuel_switching_spread_summary(prices)
-    gasoil_crack_spread = _gasoil_crack_spread_summary(prices) or (
+    gasoil_crack_spread = _gasoil_crack_spread_summary(prices, prev_report_close) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
     pending_outcome_events, still_upcoming_events = _split_prev_events(
@@ -2539,10 +2843,16 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     active_suggestions = await biz_memory.load_active(session, report_date)
     triggered_suggestions: Dict[int, Dict[str, Optional[str]]] = {}
     llm_check_candidates = []
+    # Gợi ý có điều kiện NGƯỠNG GIÁ: chưa chạm ngưỡng = "chưa kích hoạt", KHÔNG phải đề xuất sai —
+    # giữ theo dõi tới hết hạn (biz_memory.expires_on), không đưa qua bước "thực tế ngược chiều".
+    price_condition_ids = set()
     for s in active_suggestions:
         # LLM quên trả trigger_rule (hoặc báo cáo CN/T2 ép null) nhưng câu tình huống là ngưỡng
         # giá → tự dựng rule từ câu chữ để so với giá thật, KHÔNG để LLM đọc tin rồi tự kết luận.
-        rule = s.trigger_rule or biz_memory.infer_price_rule(s.trigger, prices)
+        # Rule LLM lưu có thể lệch câu chữ (sai chiều, "1.500" đọc thành 1,5) → câu chữ thắng (resolve_price_rule).
+        rule = biz_memory.resolve_price_rule(s.trigger_rule, s.trigger, prices)
+        if rule or biz_memory.looks_like_price_condition(s.trigger):
+            price_condition_ids.add(s.id)
         if rule:
             evidence = biz_memory.check_price_rule(rule, prices)
             if evidence:
@@ -2566,7 +2876,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     # Gợi ý chưa kích hoạt → đối chiếu thêm: thực tế hôm nay có đi NGƯỢC giả định của đề xuất không.
     not_triggered = [s for s in active_suggestions if s.id not in triggered_suggestions]
     contradicted_suggestions = await _check_biz_contradictions_llm(
-        not_triggered, biz_news_text, biz_index_lookup, prices_text, target_date, news_only=no_price,
+        [s for s in not_triggered if s.id not in price_condition_ids], biz_news_text, biz_index_lookup, prices_text, target_date, news_only=no_price,
     )
     still_tracking = [s for s in not_triggered if s.id not in contradicted_suggestions]
     dismissed_suggestions = await biz_memory.load_recent_dismissed(session, report_date)
@@ -2593,7 +2903,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 prev_events_text, target_date, recurring_events_text,
             )),
             ("biz", _prompt_biz_recommendation(
-                _filter_news_for_section(news_by_topic, "biz"),
+                biz_news_text,
                 prices_text, eua_trend, target_date,
                 tracking_text=biz_memory.describe_for_prompt(still_tracking),
                 dismissed_text=biz_memory.describe_for_prompt(dismissed_suggestions),
@@ -2601,14 +2911,16 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             )),
         ]
     else:
+        # Tin/số liệu báo cáo trước đã nêu — để không nhắc lại sự kiện cũ như tin mới và nêu cả 2 số khi lệch.
+        prev_digest = await get_previous_report_digest(session, report_date)
         SECTIONS = [
             ("1", _prompt_section1(
-                section1_news_text,
-                prices_text, eua_trend, eua_session_range, target_date
+                section1_news_text + prev_digest,
+                prices_text, eua_trend, eua_session_range, target_date, fuel_spread=fuel_spread,
             )),
             ("2", _prompt_section2(
                 eua_key_facts, prices_text, eua_trend, gasoil_crack_spread,
-                section2_news_text, target_date, _topics_present(news_by_topic, "2"),
+                section2_news_text + prev_digest, target_date, _topics_present(news_by_topic, "2"),
                 overrides=eua_framework_overrides, fuel_spread=fuel_spread,
             )),
             ("dev", _prompt_key_developments(
@@ -2616,16 +2928,19 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 overrides=eua_framework_overrides,
             )),
             ("3", _prompt_section3(
-                _filter_news_for_section(news_by_topic, "3"),
+                _filter_news_for_section(news_by_topic, "3") + prev_digest,
                 prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
                 _topics_present(news_by_topic, "3"),
                 overrides=eua_framework_overrides,
                 eua_technical_levels=eua_technical_levels,
                 fuel_spread=fuel_spread,
-                prev_scenarios=await get_previous_scenarios_text(
-                    session, report_date,
-                    next((p.get("close") for p in prices if str(p.get("code", "")).upper() == "EUA"), None),
-                ),
+                prev_scenarios="\n\n".join(filter(None, [
+                    await get_previous_scenarios_text(
+                        session, report_date,
+                        next((p.get("close") for p in prices if str(p.get("code", "")).upper() == "EUA"), None),
+                    ),
+                    await get_forecast_track_record(session, report_date, chart_data),
+                ])),
             )),
             ("4", _prompt_section4(
                 section4_news_text,
@@ -2636,7 +2951,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 prev_events_text, target_date, recurring_events_text,
             )),
             ("biz", _prompt_biz_recommendation(
-                _filter_news_for_section(news_by_topic, "biz"),
+                biz_news_text,
                 prices_text, eua_trend, target_date,
                 tracking_text=biz_memory.describe_for_prompt(still_tracking),
                 dismissed_text=biz_memory.describe_for_prompt(dismissed_suggestions),
@@ -2807,57 +3122,37 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         "vietnam": section6_vietnam,
     }
 
-    cited_articles = _collect_cited_articles(news_by_topic)
-    # Chỉ liệt kê nguồn THỰC SỰ được trích trong nội dung Mục 1–5 (source_url của bullet/driver/diễn biến);
-    # trước đây liệt kê cả bài chỉ đưa vào prompt mà không được trích → "nguồn mồ côi".
-    used_urls: set = set()
-
-    def _walk_urls(node: Any) -> None:
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if k == "source_url" and isinstance(v, str):
-                    used_urls.add(v)
-                else:
-                    _walk_urls(v)
-        elif isinstance(node, list):
-            for v in node:
-                _walk_urls(v)
-
-    for _k, _v in content.items():
-        if _k not in ("6", "9"):
-            _walk_urls(_v)
-    used_articles = [a for a in cited_articles if a["url"] in used_urls]
-    content["9"] = {
-        "title": "Nguồn tham khảo",
-        "items": [
-            {"source": a["source"], "title": a["title"], "url": a["url"]}
-            for a in (used_articles or cited_articles)
-        ],
-    }
-
     # ── Bộ nhớ gợi ý kinh doanh: chuẩn hoá gợi ý mới + ghi DB (BƯỚC CUỐI) ──
     biz = content.get("biz") or dict(FALLBACKS["biz"])
+    def _biz_source(it: Dict[str, Any]) -> Dict[str, Optional[str]]:
+        art = biz_index_lookup.get(_first_source_index(it.get("source_index")))
+        return {"source_name": art["source"], "source_url": art["url"]} if art else {}
+
     new_short_term: List[Dict[str, Any]] = []
     for it in biz.get("short_term") or []:
         if not isinstance(it, dict) or not (it.get("trigger") or "").strip() or not (it.get("action") or "").strip():
             continue
         new_short_term.append({
             "trigger": it["trigger"].strip(),
-            "trigger_rule": biz_memory.normalize_trigger_rule(it.get("trigger_rule"), valid_price_codes),
+            "trigger_rule": biz_memory.resolve_price_rule(
+                biz_memory.normalize_trigger_rule(it.get("trigger_rule"), valid_price_codes), it["trigger"], prices,
+            ),
             "action": it["action"].strip(),
             "reason": (it.get("reason") or "").strip(),
+            **_biz_source(it),
         })
     new_long_term: List[Dict[str, Any]] = [
         {
             "opportunity": it["opportunity"].strip(),
             "solution": it["solution"].strip(),
             "expectation": (it.get("expectation") or "").strip(),
+            **_biz_source(it),
         }
         for it in biz.get("long_term") or []
         if isinstance(it, dict) and (it.get("opportunity") or "").strip() and (it.get("solution") or "").strip()
     ]
-    # "tracking" (đề xuất chưa kích hoạt) chỉ nằm trong bộ nhớ Jenny, không đưa vào báo cáo ngày.
-    reminders, _ = biz_memory.reminders_for_content(active_suggestions, triggered_suggestions, contradicted_suggestions)
+    # "tracking" = đề xuất cũ CHƯA kích hoạt (vẫn đúng, chỉ chưa tới điều kiện) — hiển thị kèm hạn theo dõi.
+    reminders, tracking = biz_memory.reminders_for_content(active_suggestions, triggered_suggestions, contradicted_suggestions)
     try:
         # flush trong cùng session/transaction — caller commit cùng report.content.
         created, created_long = await biz_memory.persist(
@@ -2879,9 +3174,43 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         # trigger_rule chỉ dùng nội bộ để kiểm tra ngưỡng giá — không lưu vào nội dung hiển thị.
         "short_term": [{k: v for k, v in it.items() if k != "trigger_rule"} for it in new_short_term],
         "long_term": new_long_term,
-        # Chỉ gợi ý cũ vừa kích hoạt hôm nay mới lên báo cáo (khối "Jenny nhắc lại");
-        # gợi ý chưa kích hoạt ở lại trong bộ nhớ (xem tracking_text trong prompt biz).
+        # Gợi ý cũ vừa kích hoạt/bị tin tức vô hiệu hôm nay (khối "Jenny nhắc lại") + gợi ý
+        # chưa kích hoạt, còn theo dõi tới "expires_on" (cũng nằm trong tracking_text của prompt biz).
         "reminders": reminders,
+        "tracking": tracking,
+    }
+
+    cited_articles = _collect_cited_articles(news_by_topic, limit=1000)
+    # Liệt kê nguồn THỰC SỰ xuất hiện trong báo cáo: source_url của bullet/driver/diễn biến/gợi ý nhắc lại và
+    # các bài ở Mục 6 (trước đây bỏ Mục 6 + dựng trước Mục biz → bài có trong Mục 6/gợi ý mà thiếu ở Mục 9).
+    # Không liệt kê bài chỉ đưa vào prompt mà không được trích → tránh "nguồn mồ côi".
+    used_urls: set = set()
+
+    def _walk_urls(node: Any) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "source_url" and isinstance(v, str):
+                    used_urls.add(v)
+                else:
+                    _walk_urls(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk_urls(v)
+
+    for _k, _v in content.items():
+        if _k != "9":
+            _walk_urls(_v)
+    for _region in ("international", "vietnam"):
+        for _a in (content.get("6") or {}).get(_region) or []:
+            if isinstance(_a, dict) and isinstance(_a.get("url"), str):
+                used_urls.add(_a["url"])
+    used_articles = [a for a in cited_articles if a["url"] in used_urls]
+    content["9"] = {
+        "title": "Nguồn tham khảo",
+        "items": [
+            {"source": a["source"], "title": a["title"], "url": a["url"]}
+            for a in (used_articles or cited_articles[:40])
+        ],
     }
 
     return content
