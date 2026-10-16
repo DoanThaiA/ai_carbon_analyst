@@ -137,3 +137,44 @@ def test_reply_to_and_list_unsubscribe_only_when_configured(monkeypatch):
     email = json.loads(fake.requests[0].content)[0]
     assert email["reply_to"] == "desk@mcv.test"
     assert email["headers"]["List-Unsubscribe"] == "<mailto:desk@mcv.test?subject=unsubscribe>"
+
+
+# ── Tiêu chí tin nóng: 4 nhóm + chống gửi lặp ────────────────────────
+
+
+def test_classifier_hot_news_requires_valid_category():
+    from crawl_news.classification import _parse_json_response
+
+    base = '{"topics": ["energy_gas"], "confidence": 0.9, "is_relevant": true, "is_hot_news": true, '
+    r = _parse_json_response(base + '"hot_news_category": "supply_cut", "hot_news_reason": "Nauy dừng đường ống Langeled"}')
+    assert r.is_hot_news and r.hot_news_reason == "[Cắt nguồn cung] Nauy dừng đường ống Langeled"
+    # thiếu nhóm / nhóm cũ không còn hợp lệ (vd "địa chính trị tiềm ẩn") → không phải tin nóng
+    for extra in ('"hot_news_reason": "x"}', '"hot_news_category": "geopolitical_risk", "hot_news_reason": "x"}'):
+        r = _parse_json_response(base + extra)
+        assert not r.is_hot_news and r.hot_news_reason is None
+    r = _parse_json_response(base + '"hot_news_category": " Unprecedented_Policy ", "hot_news_reason": "EU áp trần giá EUA"}')
+    assert r.is_hot_news and r.hot_news_reason.startswith("[Chính sách chưa từng có]")
+
+
+def test_hot_news_prompt_lists_exactly_four_groups():
+    from crawl_news.classification import HOT_NEWS_CATEGORIES, _JSON_INSTRUCTION, _SYSTEM_PROMPT
+
+    assert set(HOT_NEWS_CATEGORIES) == {"political_shock", "supply_cut", "price_reversal", "unprecedented_policy"}
+    for code in HOT_NEWS_CATEGORIES:
+        assert code in _SYSTEM_PROMPT and code in _JSON_INSTRUCTION
+    assert "MẶC ĐỊNH is_hot_news=false" in _SYSTEM_PROMPT
+
+
+def test_split_duplicate_events_keeps_first_report_of_each_event():
+    from services.hot_news_email import split_duplicate_events
+
+    arts = [
+        SimpleNamespace(id=1, title="Norway halts Langeled gas pipeline after outage"),
+        SimpleNamespace(id=2, title="Langeled gas pipeline halted after outage, Norway says"),
+        SimpleNamespace(id=3, title="EU proposes cap on carbon prices"),
+        SimpleNamespace(id=4, title="OPEC+ agrees surprise 2 million bpd output cut"),
+    ]
+    sent = ["OPEC+ agrees surprise 2 million bpd output cut in Vienna"]
+    keep, dup = split_duplicate_events(arts, sent)
+    assert [a.id for a in keep] == [1, 3]
+    assert [a.id for a in dup] == [2, 4]

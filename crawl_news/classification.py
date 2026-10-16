@@ -19,6 +19,14 @@ DEFAULT_CLASSIFIER_MODEL = "claude-haiku-5-5"
 # trị/xung đột đôi khi bị từ chối → gọi lại 1 lần bằng model này thay vì bỏ bài.
 REFUSAL_FALLBACK_MODEL = "claude-haiku-4-5"
 
+# 4 nhóm tin nóng (tin được gửi email ngay tới mọi khách hàng) — mã do LLM trả → nhãn hiển thị.
+HOT_NEWS_CATEGORIES = {
+    "political_shock": "Chính trị gây sốc thị trường",
+    "supply_cut": "Cắt nguồn cung",
+    "price_reversal": "Đảo chiều giá",
+    "unprecedented_policy": "Chính sách chưa từng có",
+}
+
 _SYSTEM_PROMPT = """\
 Bạn là Chuyên gia Phân tích Thị trường Năng lượng & Carbon Châu Âu.
 
@@ -88,27 +96,23 @@ QUY TẮC PHÂN LOẠI NGHIÊM NGẶT:
 3. BÀI KHÔNG LIÊN QUAN: Trả về topics=[] và is_relevant=false khi bài KHÔNG có tác động rõ ràng (trực tiếp, hoặc gián tiếp có chuỗi nhân quả cụ thể do chính bài nêu) nào tới energy, carbon, climate, commodities, hay finance/policy/địa chính trị ảnh hưởng đến các thị trường trên — chỉ nhắc tên/đề cập thoáng qua không tính là liên quan.
 
 
-HOT NEWS — đánh giá ĐỘC LẬP với việc gắn topic ở trên, chỉ đánh dấu is_hot_news=true khi bài khớp ĐÚNG 1 trong 5 tiêu chí sau (nghiêm ngặt, KHÔNG suy diễn rộng ra ngoài định nghĩa):
-1. Đảo chiều giá EUA: bài xác nhận một sự đảo chiều xu hướng giá EUA (từ tăng sang giảm hoặc ngược lại), không phải biến động thông thường trong xu hướng đang có.
-2. CBAM thay đổi quy định đột ngột: đưa ra quy định CBAM MỚI mà trước đó không hề được nhắc đến, hoặc thay đổi ĐỘT NGỘT so với lộ trình CBAM đã công bố trước đó — không phải cập nhật tiến độ thông thường theo đúng lộ trình.
-3. Địa chính trị tiềm ẩn xung đột: nguy cơ chiến tranh/xung đột giữa khu vực tiêu thụ nhiều khí gas và khu vực cung cấp khí gas, giữa khu vực phát thải mạnh và khu vực đánh thuế phát thải (CBAM/carbon tax), hoặc xung đột lợi ích cấp quốc gia rõ ràng liên quan năng lượng/carbon.
-4. Quốc gia lớn rút khỏi decarbonization: một nước lớn (G20, EU member lớn, Mỹ, Trung Quốc...) tuyên bố CHÍNH THỨC không tham gia/rút khỏi chương trình giảm biến đổi khí hậu toàn cầu.
-5. Cú sốc cung/cầu LỚN ở các yếu tố dẫn dắt giá EUA: bài đưa tin 1 sự kiện CỤ THỂ (đã xảy ra, đã được công bố chính thức, hoặc sắp xảy ra có mốc thời gian/nguồn xác nhận) làm thay đổi ĐÁNG KỂ cân bằng cung hoặc cầu ở quy mô khu vực/toàn cầu của: dầu, gas/LNG, than, điện châu Âu, hoặc chính nguồn cung EUA. "Lớn" nghĩa là đủ sức dịch chuyển giá của thị trường đó, bài thường nêu được quy mô bằng số liệu. Ví dụ mức tham chiếu (không phải ngưỡng cứng):
-   - Dầu: thay đổi nguồn cung cỡ ≥1 triệu thùng/ngày (OPEC+ tăng/cắt sản lượng lớn, gián đoạn mỏ/tuyến vận chuyển lớn), xả kho dự trữ chiến lược hoặc một lượng dầu cỡ hàng chục–trăm triệu thùng sắp tràn ra thị trường, dỡ/áp lệnh trừng phạt làm thay đổi lớn dòng dầu xuất khẩu.
-   - Gas/LNG: gián đoạn hoặc khôi phục đường ống/nhà máy LNG lớn cấp châu Âu (vd dòng khí Nauy, Nga, Qatar, Mỹ), tồn kho gas EU ở mức bất thường/kỷ lục, thay đổi lớn dòng LNG nhập khẩu vào châu Âu.
-   - Than: nước xuất khẩu lớn cấm/hạn chế xuất khẩu, gián đoạn lớn ở mỏ/cảng chủ chốt.
-   - Điện châu Âu: hàng loạt lò hạt nhân dừng/khởi động lại, hạn hán làm thủy điện giảm mạnh, thay đổi lớn công suất phát điện của 1 nước lớn (đóng/mở nhà máy than/khí quy mô lớn).
-   - Cầu: cú sốc cầu lớn và cụ thể (đợt rét/nóng bất thường kéo dài làm cầu gas/điện tăng vọt, ngành công nghiệp nặng châu Âu cắt giảm sản xuất quy mô lớn).
-   - Cung EUA: thay đổi đột ngột lượng EUA đưa ra thị trường (bán thêm hạn ngạch, thay đổi lịch đấu giá/MSR ngoài lộ trình đã biết).
-   KHÔNG tính tiêu chí 5: báo cáo định kỳ (tồn kho hàng tuần EIA, số giàn khoan Baker Hughes...) với biến động trong biên độ bình thường; dự báo/bình luận/phân tích chung chung không gắn sự kiện cụ thể; biến động giá hằng ngày; sự cố nhỏ hoặc cục bộ; tin đồn không có nguồn xác nhận; kế hoạch dài hạn nhiều năm không có tác động ngắn–trung hạn.
-Nếu không rơi vào 1 trong 5 trường hợp trên → is_hot_news=false, hot_news_reason=null. Nếu true, hot_news_reason là 1 câu ngắn (tiếng Việt) nêu rõ bài khớp tiêu chí nào.\
+HOT NEWS — đánh giá ĐỘC LẬP với việc gắn topic ở trên. Tin nóng được GỬI EMAIL NGAY tới toàn bộ khách hàng nên MẶC ĐỊNH is_hot_news=false; chỉ đánh true khi bài đưa tin 1 sự kiện MỚI, CỤ THỂ, CÓ NGUỒN XÁC NHẬN thuộc ĐÚNG 1 trong 4 nhóm sau (thường chỉ 0–2 bài/ngày đạt — còn phân vân → false):
+1. political_shock — CHÍNH TRỊ GÂY SỐC THỊ TRƯỜNG: sự kiện chính trị/địa chính trị ĐÃ XẢY RA, bất ngờ, đủ sức làm giá năng lượng/carbon nhảy mạnh ngay: chiến tranh/tấn công quân sự nổ ra hoặc leo thang nhắm vào hạ tầng năng lượng hay tuyến vận tải năng lượng (Hormuz, Biển Đỏ, đường ống...); lệnh trừng phạt/cấm vận năng lượng MỚI; đảo chính/sụp đổ chính phủ ở nước cung ứng năng lượng lớn; nước lớn (G20, thành viên lớn EU, Mỹ, Trung Quốc) CHÍNH THỨC rút khỏi Thỏa thuận Paris/EU ETS/cam kết khí hậu.
+   KHÔNG tính: đàm phán, phát biểu, đe doạ, cảnh báo "nguy cơ"/"tiềm ẩn" xung đột, bầu cử theo lịch, căng thẳng kéo dài không có diễn biến mới.
+2. supply_cut — CẮT/GIÁN ĐOẠN NGUỒN CUNG: nguồn cung dầu, khí/LNG, than, điện châu Âu hoặc EUA bị CẮT hay gián đoạn THỰC TẾ (đã xảy ra, hoặc đã công bố chính thức có ngày) ở quy mô đủ dịch chuyển giá khu vực/toàn cầu: dừng đường ống/nhà máy LNG lớn cấp châu Âu (Nauy, Nga, Qatar, Mỹ), OPEC+ cắt sản lượng NGOÀI dự kiến (cỡ ≥1 triệu thùng/ngày), đóng tuyến vận tải chủ chốt, nước xuất khẩu lớn cấm/hạn chế xuất khẩu than hoặc khí, hàng loạt lò hạt nhân/nhà máy điện lớn dừng đột ngột, cắt đột ngột lượng EUA đưa ra đấu giá.
+   KHÔNG tính: báo cáo định kỳ (tồn kho EIA, Baker Hughes, tồn kho khí EU), bảo trì theo kế hoạch, sự cố nhỏ/cục bộ, dự báo/cảnh báo thiếu hụt chưa xảy ra, TĂNG nguồn cung (xả kho dự trữ, OPEC+ tăng sản lượng, khôi phục dòng khí).
+3. price_reversal — ĐẢO CHIỀU GIÁ: bài XÁC NHẬN giá EUA (hoặc TTF/Brent đang dẫn dắt EUA) đảo chiều xu hướng rõ rệt — phá vỡ xu hướng nhiều tuần bằng 1 phiên biến động mạnh (cỡ ≥4–5% với EUA/TTF) và nêu nguyên nhân cụ thể.
+   KHÔNG tính: biến động hằng ngày, điều chỉnh nhỏ trong xu hướng đang có, nhận định "có thể đảo chiều", bình luận kỹ thuật.
+4. unprecedented_policy — CHÍNH SÁCH CHƯA TỪNG CÓ: quyết định hoặc đề xuất CHÍNH THỨC của cơ quan có thẩm quyền (Ủy ban/Hội đồng/Nghị viện EU, chính phủ nước lớn) mà TRƯỚC ĐÓ CHƯA TỪNG được công bố hay nằm trong lộ trình: thay đổi đột ngột cap/MSR/lịch đấu giá EU ETS ngoài lộ trình, áp trần hoặc can thiệp giá EUA, hoãn/huỷ ETS2, quy định CBAM mới hoặc thay đổi đột ngột lộ trình CBAM, thuế carbon/cơ chế carbon mới ở nền kinh tế lớn.
+   KHÔNG tính: bước thủ tục tiếp theo của đề xuất đã công bố (bỏ phiếu, tham vấn, thông qua đúng lộ trình), cập nhật tiến độ, hướng dẫn kỹ thuật, phát biểu ủng hộ/phản đối, đề xuất của 1 nước thành viên/doanh nghiệp/tổ chức không có thẩm quyền.
+Không thuộc 4 nhóm trên → is_hot_news=false, hot_news_category=null, hot_news_reason=null. Nếu true: hot_news_category là ĐÚNG 1 mã nhóm ở trên (political_shock | supply_cut | price_reversal | unprecedented_policy), hot_news_reason là 1 câu ngắn tiếng Việt nêu sự kiện cụ thể và vì sao nó thuộc nhóm đó.\
 """
 
 _JSON_INSTRUCTION = """
 
 Trả lời CHỈ bằng JSON hợp lệ, không có text ngoài JSON:
-{"topics": ["<topic1>", "<topic2_optional>", "<topic3_optional>"], "confidence": <0.0-1.0>, "is_relevant": <true/false>, "is_hot_news": <true/false>, "hot_news_reason": <string hoặc null>}
-Nếu bài không liên quan: {"topics": [], "confidence": 1.0, "is_relevant": false, "is_hot_news": false, "hot_news_reason": null}"""
+{"topics": ["<topic1>", "<topic2_optional>", "<topic3_optional>"], "confidence": <0.0-1.0>, "is_relevant": <true/false>, "is_hot_news": <true/false>, "hot_news_category": <"political_shock"|"supply_cut"|"price_reversal"|"unprecedented_policy"|null>, "hot_news_reason": <string hoặc null>}
+Nếu bài không liên quan: {"topics": [], "confidence": 1.0, "is_relevant": false, "is_hot_news": false, "hot_news_category": null, "hot_news_reason": null}"""
 
 VALID_TOPICS = {t.value for t in NewsTopic}
 MAX_TOPICS_PER_ARTICLE = 3
@@ -247,10 +251,20 @@ def _parse_json_response(raw_text: str) -> ClassificationResult:
     # không nhắc trực tiếp EUA/gas/CBAM) nhưng vẫn là hot news hợp lệ theo tiêu
     # chí ở _SYSTEM_PROMPT. KHÔNG ép is_hot_news=false theo is_relevant ở đây —
     # pipeline (crawl_pipeline.py) mới là nơi quyết định có lưu bài hay không.
+    # Tin nóng được gửi email cho mọi khách hàng → bắt buộc model chọn ĐÚNG 1 trong 4 nhóm; không có
+    # nhóm hợp lệ (bỏ trống/bịa nhóm khác) thì KHÔNG coi là tin nóng. Nhãn nhóm đặt đầu lý do để email/
+    # chuông thông báo hiện rõ vì sao bài được gửi.
     is_hot_news = bool(data.get("is_hot_news", False))
+    category = str(data.get("hot_news_category") or "").strip().lower()
+    if is_hot_news and category not in HOT_NEWS_CATEGORIES:
+        logger.info("[CLASSIFY] is_hot_news=true nhưng nhóm '%s' không hợp lệ — bỏ cờ tin nóng.", category)
+        is_hot_news = False
     hot_news_reason = data.get("hot_news_reason") if is_hot_news else None
     if hot_news_reason is not None and not isinstance(hot_news_reason, str):
         hot_news_reason = None
+    if is_hot_news:
+        label = HOT_NEWS_CATEGORIES[category]
+        hot_news_reason = f"[{label}] {(hot_news_reason or '').strip()}".strip()
 
     return ClassificationResult(
         topics=valid,

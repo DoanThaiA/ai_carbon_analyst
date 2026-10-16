@@ -121,11 +121,11 @@ class ClassificationResult:
     Tác động trực tiếp hoặc gián tiếp rõ ràng vẫn được coi là is_relevant=True
     (kèm ít nhất 1 topic sát nhất).
 
-    is_hot_news=True: bài khớp 1 trong 5 tiêu chí HOT NEWS (đảo chiều giá EUA,
-    CBAM thay đổi đột ngột, địa chính trị tiềm ẩn xung đột, nước lớn rút khỏi
-    decarbonization, cú sốc cung/cầu lớn ở dầu/gas/than/điện/EUA — xem
-    crawl_news/classification.py::_SYSTEM_PROMPT) — pipeline sẽ đẩy lên chuông
-    thông báo trên header.
+    is_hot_news=True: bài thuộc ĐÚNG 1 trong 4 nhóm tin nóng (chính trị gây sốc
+    thị trường, cắt nguồn cung, đảo chiều giá, chính sách chưa từng có — xem
+    crawl_news/classification.py::_SYSTEM_PROMPT/HOT_NEWS_CATEGORIES); model không
+    chọn được nhóm hợp lệ thì cờ bị bỏ. hot_news_reason bắt đầu bằng nhãn nhóm
+    ("[Cắt nguồn cung] ..."). Pipeline đẩy lên chuông thông báo + email digest.
     """
     topics: List[NewsTopic]
     confidence: float

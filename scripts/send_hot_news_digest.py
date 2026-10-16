@@ -18,7 +18,7 @@ from core.config import Settings
 from db.models import Article, User
 from db.session import build_sessionmaker, create_engine
 from services.email_sender import build_hot_news_digest_message
-from services.hot_news_email import send_pending_hot_news_digest
+from services.hot_news_email import HOT_NEWS_DUP_LOOKBACK_HOURS, send_pending_hot_news_digest, split_duplicate_events
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -39,7 +39,13 @@ async def _dry_run(session_factory, settings: Settings, preview_path: str) -> No
             )
         ).scalars().all()
         recipients = (await session.execute(select(User.email).where(User.is_active.is_(True)))).scalars().all()
+        sent_titles = (await session.execute(select(Article.title).where(
+            Article.hot_news_emailed_at >= datetime.now(timezone.utc) - timedelta(hours=HOT_NEWS_DUP_LOOKBACK_HOURS)
+        ))).scalars().all()
 
+    articles, duplicates = split_duplicate_events(list(articles), list(sent_titles))
+    for a in duplicates:
+        logger.info("  BỎ (trùng sự kiện đã/đang gửi) [ID:%d] %s", a.id, a.title)
     logger.info("Bài chờ gửi: %d | Người nhận is_active: %d", len(articles), len(recipients))
     for a in articles:
         logger.info("  [ID:%d] %s — %s", a.id, a.title, a.url)

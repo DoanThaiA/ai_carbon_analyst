@@ -11,6 +11,11 @@ Tại sao gom theo đợt crawl thay vì debounce timer trong API server:
   process/worker không gửi trùng (claim bằng `FOR UPDATE SKIP LOCKED`), Resend lỗi
   thì bài vẫn NULL và được gửi lại ở đợt crawl sau.
 
+Cùng 1 sự kiện thường được nhiều báo đưa (và crawl ở nhiều đợt) — `split_duplicate_events` chỉ giữ
+bài ĐẦU TIÊN của mỗi sự kiện (so tiêu đề, services/title_similarity) và bỏ bài trùng sự kiện đã gửi trong
+`HOT_NEWS_DUP_LOOKBACK_HOURS` giờ; bài bị bỏ vẫn được đánh dấu `hot_news_emailed_at` (= đã xử lý) để
+không bị xét lại ở đợt sau.
+
 Chuông đỏ real-time trên UI vẫn đi qua Postgres NOTIFY + SSE như cũ
 (services/hot_news_broadcast.py) — email chỉ là kênh bổ sung cho user offline.
 """
@@ -28,8 +33,29 @@ from sqlalchemy.orm import defer
 from core.config import Settings
 from db.models import Article, User
 from services.email_sender import EmailSendError, email_configured, send_hot_news_digest_email
+from services.title_similarity import is_similar_title, title_tokens
 
 logger = logging.getLogger(__name__)
+
+
+# Bài trùng sự kiện với tin nóng đã gửi trong số giờ này → không gửi lại.
+HOT_NEWS_DUP_LOOKBACK_HOURS = 72
+
+
+def split_duplicate_events(articles: List[Article], sent_titles: List[str]) -> tuple[List[Article], List[Article]]:
+    """-> (bài cần gửi, bài trùng sự kiện). `articles` theo thứ tự crawl; giữ bài đầu tiên của mỗi sự
+    kiện, bỏ bài trùng với nhau hoặc trùng `sent_titles` (tin nóng đã gửi gần đây)."""
+    seen = [title_tokens(t) for t in sent_titles]
+    keep: List[Article] = []
+    dup: List[Article] = []
+    for a in articles:
+        tokens = title_tokens(a.title or "")
+        if tokens and is_similar_title(tokens, seen):
+            dup.append(a)
+            continue
+        keep.append(a)
+        seen.append(tokens)
+    return keep, dup
 
 
 # Múi giờ Việt Nam (UTC+7) — khung giờ yên lặng tính theo giờ VN
@@ -112,11 +138,27 @@ async def send_pending_hot_news_digest(
                     result.skipped_reason = "no_recipients"
                     return result
 
-                result.recipients_sent = await send_hot_news_digest_email(articles, recipients, settings)
-                result.article_ids = [a.id for a in articles]
+                sent_titles = (
+                    await session.execute(
+                        select(Article.title).where(
+                            Article.hot_news_emailed_at >= datetime.now(timezone.utc) - timedelta(hours=HOT_NEWS_DUP_LOOKBACK_HOURS)
+                        )
+                    )
+                ).scalars().all()
+                to_send, duplicates = split_duplicate_events(list(articles), list(sent_titles))
+                if duplicates:
+                    logger.info(
+                        "[HOT-NEWS-EMAIL] Bỏ %d bài trùng sự kiện đã/đang gửi: %s",
+                        len(duplicates), [a.id for a in duplicates],
+                    )
+                if to_send:
+                    result.recipients_sent = await send_hot_news_digest_email(to_send, recipients, settings)
+                else:
+                    result.skipped_reason = "duplicates_only"
+                result.article_ids = [a.id for a in to_send]
                 await session.execute(
                     update(Article)
-                    .where(Article.id.in_(result.article_ids))
+                    .where(Article.id.in_([a.id for a in articles]))
                     .values(hot_news_emailed_at=func.now())
                 )
             # session.begin() commit ở đây
@@ -129,6 +171,9 @@ async def send_pending_hot_news_digest(
         result.skipped_reason = "unexpected_error"
         return result
 
+    if result.skipped_reason == "duplicates_only":
+        logger.info("[HOT-NEWS-EMAIL] Mọi bài chờ gửi đều trùng sự kiện đã gửi — không gửi email.")
+        return result
     logger.info(
         "[HOT-NEWS-EMAIL] Đã gửi digest %d bài tới %d/%d người nhận.",
         len(result.article_ids), result.recipients_sent, len(recipients),

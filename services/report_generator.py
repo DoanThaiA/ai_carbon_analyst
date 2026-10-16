@@ -15,6 +15,7 @@ from db.models import Article, EuaAuction, Price, Instrument, PriceCrawlSource, 
 from core.config import Settings
 from services import biz_memory
 from services import cbam_estimate
+from services.title_similarity import is_similar_title, title_tokens
 from services import eua_causal_chains as chains
 from services.eua_framework_admin import get_overrides_map
 from crawl_prices.crawl_ice import ice_product_url, is_ice_symbol
@@ -1354,27 +1355,14 @@ def _has_cjk(text: Any) -> bool:
     return bool(_CJK_RE.search(text))
 
 
-def _title_tokens(title: str) -> set:
-    return {w for w in re.findall(r"\w+", (title or "").lower()) if len(w) > 2}
-
-
 def _dedupe_similar_articles(articles: List[Dict]) -> List[Dict]:
-    """Gộp các bài cùng 1 sự kiện (tiêu đề gần giống nhau) cho Mục 6 — giữ bài đầu tiên.
-    Ngưỡng: Jaccard ≥ 0,5 hoặc phủ ≥ 0,75 bộ từ của tiêu đề ngắn hơn (tối thiểu 4 từ)."""
+    """Gộp các bài cùng 1 sự kiện (tiêu đề gần giống nhau) cho Mục 6 — giữ bài đầu tiên
+    (ngưỡng ở services/title_similarity.is_similar_title)."""
     kept: List[Dict] = []
     kept_tokens: List[set] = []
     for art in articles:
-        tokens = _title_tokens(art.get("title", ""))
-        duplicate = False
-        for other in kept_tokens:
-            inter = len(tokens & other)
-            if not inter:
-                continue
-            smaller = min(len(tokens), len(other))
-            if inter / len(tokens | other) >= 0.5 or (smaller >= 4 and inter / smaller >= 0.75):
-                duplicate = True
-                break
-        if not duplicate:
+        tokens = title_tokens(art.get("title", ""))
+        if not is_similar_title(tokens, kept_tokens):
             kept.append(art)
             kept_tokens.append(tokens)
     return kept

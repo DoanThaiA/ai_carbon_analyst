@@ -188,7 +188,11 @@ Argos hay làm SAI SỐ/mã/ký hiệu ("79,0"→"720", "→"→"(10)") nên s�
 sent as ONE digest to every active `users` row via Resend (`services/email_sender.py`, httpx) —
 each recipient gets their own email via `POST /emails/batch` (batched by `HOT_NEWS_EMAIL_BATCH_SIZE`, ≤100).
 Rows are claimed with `FOR UPDATE SKIP LOCKED` and marked only after a successful
-send, so a failed send retries next crawl. Real-time UI alerts are separate (Postgres
+send, so a failed send retries next crawl. Tiêu chí tin nóng (classifier, `crawl_news/classification.py::HOT_NEWS_CATEGORIES`): CHỈ 4 nhóm —
+chính trị gây sốc thị trường, cắt nguồn cung, đảo chiều giá, chính sách chưa từng có; mặc định false, model phải trả
+`hot_news_category` hợp lệ (không thì bỏ cờ), lý do lưu kèm nhãn "[Cắt nguồn cung] ...". Digest bỏ bài trùng sự kiện
+(so tiêu đề, `services/title_similarity.py`) với nhau hoặc với tin đã gửi trong `HOT_NEWS_DUP_LOOKBACK_HOURS` (72h) — bài
+bị bỏ vẫn đánh dấu `hot_news_emailed_at`. Real-time UI alerts are separate (Postgres
 NOTIFY + SSE, `services/hot_news_broadcast.py`). Manual: `python -m scripts.send_hot_news_digest --dry-run`.
 
 **Kết nối Claude Desktop (MCP)**: user bấm "Hỏi Claude" trên quote → web tạo handoff
