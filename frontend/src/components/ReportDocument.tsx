@@ -2352,10 +2352,10 @@ export function ReportDocument({
             <div className="mb-6">
               <SubHeading>{report.content["biz"].title}</SubHeading>
               <div className="flex flex-col gap-6">
-                {/* Jenny nhắc lại — gợi ý ở báo cáo trước (trong 10 ngày) mà tình huống
-                    kích hoạt vừa xảy ra hôm nay, cùng các gợi ý CHƯA kích hoạt còn theo dõi
-                    tới "expires_on" (services/biz_memory.py). */}
-                {(report.content["biz"].reminders?.length > 0 || report.content["biz"].tracking?.length > 0) && (
+                {/* Jenny nhắc lại — CHỈ gợi ý ở báo cáo trước (trong 10 ngày) mà tình huống
+                    kích hoạt vừa xảy ra hôm nay (services/biz_memory.py). Gợi ý chưa kích hoạt
+                    (`tracking`) vẫn được backend lưu/theo dõi nhưng không hiện ra báo cáo. */}
+                {report.content["biz"].reminders?.length > 0 && (
                   <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
                     <div className="flex items-center gap-2.5 px-3.5 py-2.5">
                       <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
@@ -2417,26 +2417,6 @@ export function ReportDocument({
                             {r.outcome === "contradicted"
                               ? t("biz.contradictedFollow")
                               : t("biz.askDone")}
-                          </p>
-                        </li>
-                      ))}
-                      {(report.content["biz"].tracking ?? []).map((r: any, i: number) => (
-                        <li key={`tracking-${i}`} className="px-3.5 py-3 space-y-1.5">
-                          <div className="flex items-start gap-2">
-                            <p className="flex-1 min-w-0 text-[14.5px] leading-[1.5] text-foreground">
-                              {t("biz.suggestedOn")} <b>{formatFullDate(r.suggested_date)}</b> {t("biz.suggested")} <b><RichText text={r.action} /></b>
-                            </p>
-                            {onDismissBizSuggestion && typeof r.id === "number" && (
-                              <DismissButton onClick={() => onDismissBizSuggestion(r.id)} className="shrink-0" />
-                            )}
-                          </div>
-                          <p className="text-[14.5px] leading-[1.5] text-body">
-                            <span className="font-semibold">{t("biz.trigger")}</span> <RichText text={r.trigger} />
-                          </p>
-                          <p className="text-[14.5px] leading-[1.5] font-semibold text-label">
-                            {r.expires_on
-                              ? t("biz.pendingUntil", { date: formatFullDate(r.expires_on) })
-                              : t("biz.pending")}
                           </p>
                         </li>
                       ))}

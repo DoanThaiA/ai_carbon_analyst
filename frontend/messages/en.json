@@ -614,8 +614,6 @@
       "contradicted": "✗ What happened contradicted the suggestion",
       "happened": "✓ The trigger has occurred",
       "contradictedFollow": "This suggestion no longer applies — Jenny will stop tracking it.",
-      "pending": "○ Not triggered yet — Jenny keeps tracking it.",
-      "pendingUntil": "○ Not triggered yet — Jenny tracks it until {date}.",
       "askDone": "Have you acted on this suggestion?",
       "shortTerm": "Short term",
       "longTerm": "Long term",

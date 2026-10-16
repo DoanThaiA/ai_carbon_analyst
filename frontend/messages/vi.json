@@ -614,8 +614,6 @@
       "contradicted": "✗ Thực tế diễn ra ngược với đề xuất",
       "happened": "✓ Tình huống đã xảy ra",
       "contradictedFollow": "Đề xuất này không còn phù hợp — Jenny sẽ thôi theo dõi.",
-      "pending": "○ Chưa kích hoạt — Jenny tiếp tục theo dõi.",
-      "pendingUntil": "○ Chưa kích hoạt — Jenny theo dõi đến {date}.",
       "askDone": "Anh/chị đã thực hiện theo đề xuất này chưa?",
       "shortTerm": "Ngắn hạn",
       "longTerm": "Dài hạn",
