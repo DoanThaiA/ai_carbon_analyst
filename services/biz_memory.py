@@ -282,7 +282,7 @@ def check_price_rule(rule: Dict[str, Any], prices: List[Dict]) -> Optional[str]:
     }[op]
     if not hit:
         return None
-    what = "trung bình lũy kế quý" if qtd else "đóng cửa"
+    what = ("VWAP đấu giá lũy kế quý" if price.get("qtd_basis") == "auction_vwap" else "trung bình lũy kế quý (xấp xỉ)") if qtd else "đóng cửa"
     return f"{price.get('name') or rule['code']} {what} {close:,.2f} (ngưỡng {op} {value:,.2f})."
 
 

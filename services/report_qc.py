@@ -3,11 +3,12 @@ xem services/quote_chat.py::ADMIN_TOOLS). Toàn bộ là check RULE-BASED bằng
 LLM: đối chiếu nội dung JSON báo cáo (`reports.content`) với dữ liệu thật trong DB / lịch cố định.
 
     check       section(s)   nguồn sự thật
-    price       "2"          bảng `prices` (giá chốt phiên)
+    price       "2"          bảng `prices` (giá chốt phiên) + nhãn mã ↔ giá thật (check_instrument_labels)
     scenario    "3"          logic + schema trading_scenarios / dòng "**Tổng hợp:**"
     source      "1","4","9"  bảng `articles` (URL nguồn có thật)
     calendar    "8"          lịch định kỳ EIA/Baker Hughes (_compute_recurring_calendar_events)
-    biz         "biz"        schema gợi ý + `biz_suggestions.trigger_rule`
+    biz         "biz"        schema gợi ý + `biz_suggestions.trigger_rule` + nguồn gợi ý nằm trong Mục 6/9
+    fact        "1","2","4"  số liệu trong câu có trích nguồn ↔ nội dung bài gốc (`articles.content`)
     news        "6",...      bảng `articles` trong khung tin của báo cáo (số lượng, độ phủ)
 
 Mỗi hàm `check_*` là hàm THUẦN (nhận content + dữ liệu đã truy vấn sẵn, trả list issue) để
@@ -45,9 +46,9 @@ from services.report_generator import (
 
 logger = logging.getLogger(__name__)
 
-CHECKS = ("price", "scenario", "source", "calendar", "biz", "news")
+CHECKS = ("price", "scenario", "source", "fact", "calendar", "biz", "news")
 CHECK_LABELS = {
-    "price": "Giá số liệu", "scenario": "Kịch bản giao dịch", "source": "Nguồn tin",
+    "price": "Giá số liệu", "scenario": "Kịch bản giao dịch", "source": "Nguồn tin", "fact": "Số liệu ↔ tin gốc",
     "calendar": "Lịch sự kiện", "biz": "Gợi ý kinh doanh", "news": "Độ phủ tin tức",
 }
 SECTION_LABELS = {
@@ -705,7 +706,9 @@ def check_sources(
                     path,
                 ))
         expected = news_source_label(meta.get("source") or "", url)
-        if isinstance(shown_source, str) and shown_source.strip() and shown_source.strip() != expected:
+        shown = shown_source.strip() if isinstance(shown_source, str) else ""
+        # Chuỗi "Gốc (gốc) → nơi đăng" (report_generator.source_chain_label) hợp lệ khi nơi đăng đúng.
+        if shown and shown != expected and not shown.endswith(f"→ {expected}"):
             issues.append(_issue(
                 "source", section, "warning",
                 f"{label}: nhãn nguồn \"{shown_source.strip()}\" không đúng nhà xuất bản của URL (đúng: {expected}).",
@@ -855,7 +858,8 @@ def check_calendar(content: Dict[str, Any], report_date: str) -> List[Dict[str, 
                 issues.append(_issue("calendar", "8", "warning", f"{label}: trùng sự kiện cùng ngày {ev_date.strftime('%d/%m')}.", path))
             seen_keys.add(key)
 
-        if re.search(r"\bAPI\b|đấu giá EUA|EEX", name, re.IGNORECASE) and not _event_kind(name):
+        # Đấu giá EUA EEX đã trở lại lịch (tính từ lịch EEX chính thức — report_generator._auction_calendar_events).
+        if re.search(r"\bAPI\b", name) and not _event_kind(name):
             issues.append(_issue("calendar", "8", "info", f"{label}: đã bỏ khỏi danh sách theo dõi định kỳ (không có nguồn dữ liệu).", path))
         impact = ev.get("impact")
         if impact and impact not in VALID_IMPACTS:
@@ -868,6 +872,226 @@ def check_calendar(content: Dict[str, Any], report_date: str) -> List[Dict[str, 
                 f"Thiếu sự kiện {EVENT_KIND_LABEL[kind]} ngày {date.fromisoformat(d).strftime('%d/%m')}.",
                 "8.events",
             ))
+    return issues
+
+
+# ── 3b. Số liệu ↔ tin gốc ────────────────────────────────────────────
+
+# Số kiểu Việt (1.386,75 / 96 / -1,5) hoặc kiểu Anh LLM lỡ chép (85.84). Bỏ số dính chữ/ký tự
+# (mã như API2, Q4, CO2) — chỉ lấy token số đứng riêng.
+_TEXT_NUM_RE = re.compile(r"(?<![\w/.,])[+\-−]?\d+(?:[.,]\d+)*(?![\w/])")
+_ARTICLE_NUM_RE = re.compile(r"\d+(?:[.,]\d+)*")
+_DATE_TOKEN_RE = re.compile(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b")
+_SELF_FLAGGED_MISMATCH_RE = re.compile(r"chưa khớp|không khớp", re.IGNORECASE)
+FACT_SMALL_INT_MAX = 10  # số đếm nhỏ ("3 tháng", "2 nước") hay được viết bằng chữ trong bài gốc
+
+
+def _number_candidates(raw: str) -> Set[float]:
+    """Mọi cách hiểu hợp lý của 1 token số: '1.386' = 1386 (kiểu Việt) hoặc 1,386 (kiểu Anh)."""
+    raw = raw.replace("−", "-").lstrip("+")
+    out: Set[float] = set()
+    for cand in (
+        raw.replace(".", "").replace(",", "."),  # kiểu Việt
+        raw.replace(",", ""),                   # kiểu Anh
+    ):
+        try:
+            out.add(abs(float(cand)))
+        except ValueError:
+            pass
+    return out
+
+
+def _decimals(raw: str) -> int:
+    m = re.search(r"[.,](\d+)$", raw)
+    return len(m.group(1)) if m and len(m.group(1)) != 3 else 0
+
+
+def _numbers_in(text: str) -> Set[float]:
+    out: Set[float] = set()
+    for raw in _ARTICLE_NUM_RE.findall(text or ""):
+        out |= _number_candidates(raw)
+    return out
+
+
+def _supported(raw: str, pool: Set[float]) -> bool:
+    """Số trong câu khớp 1 số trong `pool` — cho phép làm tròn theo số chữ số thập phân đang hiển thị."""
+    d = _decimals(raw)
+    for v in _number_candidates(raw):
+        for a in pool:
+            if round(a, d) == round(v, d) or abs(a - v) <= 0.005 * max(abs(v), 1e-9):
+                return True
+    return False
+
+
+def _checkable_number(raw: str) -> bool:
+    vals = _number_candidates(raw)
+    if not vals:
+        return False
+    v = min(vals)
+    if float(v).is_integer() and (v <= FACT_SMALL_INT_MAX or 1990 <= v <= 2100):
+        return False  # số đếm nhỏ / năm
+    return True
+
+
+def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[Dict[str, str]]:
+    """Mọi con số trong câu CÓ trích nguồn (Tóm tắt, Diễn biến chính, Mục 4, yếu tố thị trường) phải có
+    trong chính bài nguồn (`article_texts`: _norm_url -> tiêu đề + nội dung bài). Số lấy từ bảng giá /
+    khối ước tính CBAM của báo cáo được miễn (bullet hay kèm giá phiên). Bài không có trong DB → bỏ qua
+    (check_sources đã báo URL lạ). Bullet tự ghi "số liệu chưa khớp" → gợi ý dùng nguồn rõ hơn."""
+    issues: List[Dict[str, str]] = []
+    sec2 = content.get("2") or {}
+    report_pool = _numbers_in(" ".join(
+        str(x) for x in (sec2.get("prices"), sec2.get("cbam_estimate"), sec2.get("key_facts")) if x
+    ))
+
+    items: List[tuple] = []
+    for i, b in enumerate((content.get("1") or {}).get("bullets") or []):
+        items.append(("1", f"Tóm tắt — bullet {i + 1}", f"1.bullets[{i}]", b))
+    for i, d in enumerate(sec2.get("key_developments") or []):
+        items.append(("4", f"Diễn biến chính #{i + 1}", f"2.key_developments[{i}]", d))
+    for i, b in enumerate((content.get("4") or {}).get("bullets") or []):
+        items.append(("4", f"Tín chỉ/CBAM #{i + 1}", f"4.bullets[{i}]", b))
+    for i, d in enumerate(_market_drivers(sec2)):
+        items.append(("3", f"Yếu tố thị trường #{i + 1}", f"2.market_drivers[{i}]", d))
+
+    for section, label, path, it in items:
+        if not isinstance(it, dict):
+            continue
+        text = str(it.get("text") or it.get("summary") or "")
+        if _SELF_FLAGGED_MISMATCH_RE.search(text):
+            issues.append(_issue(
+                "fact", section, "warning",
+                f"{label}: tự ghi số liệu nguồn chưa khớp — kiểm tra bài khác trong báo cáo có nêu rõ hơn cùng chỉ tiêu "
+                "không (dùng số đó, ghi nguồn và độ lệch) thay vì để số mâu thuẫn.",
+                f"{path}.text",
+            ))
+        url = it.get("source_url")
+        source_text = article_texts.get(_norm_url(url)) if url else None
+        if not source_text:
+            continue
+        pool = _numbers_in(source_text)
+        body = _DATE_TOKEN_RE.sub(" ", re.sub(r"\*\*[^*]*\*\*", " ", text))  # bỏ ngày + nhãn in đậm đầu bullet
+        missing = [
+            raw for raw in _TEXT_NUM_RE.findall(body)
+            if _checkable_number(raw) and not _supported(raw, pool) and not _supported(raw, report_pool)
+        ]
+        if missing:
+            shown = ", ".join(dict.fromkeys(m.replace("−", "-") for m in missing))
+            issues.append(_issue(
+                "fact", section, "warning",
+                f"{label}: số {shown} không có trong bài nguồn ({it.get('source_name') or url}) — số tự tính/lấy từ bài khác "
+                "phải ghi rõ cách tính hoặc nguồn.",
+                f"{path}.text",
+            ))
+    return issues
+
+
+# ── 3c. Nhãn mã instrument ↔ giá thật ───────────────────────────────
+
+# Tên gọi CHẮC CHẮN của từng mã (không gồm từ chung như "than", "khí", "hạn ngạch").
+INSTRUMENT_LABEL_ALIASES = {
+    "EUA": (r"EUA",),
+    "TTF": (r"TTF",),
+    "BRENT": (r"Brent",),
+    "WTI": (r"WTI",),
+    "GASOIL": (r"Gasoil", r"gas ?oil"),
+    "API2": (r"API ?2",),
+    "API4": (r"API ?4", r"Richards Bay"),
+    "NEWC": (r"NEWC", r"Newcastle"),
+    "DEBY1": (r"DEBY1", r"điện Đức"),
+    "NG": (r"Henry Hub",),
+}
+_LABEL_RES = {
+    code: re.compile(r"(?<![\w])(?:" + "|".join(alts) + r")(?![\w])", re.IGNORECASE)
+    for code, alts in INSTRUMENT_LABEL_ALIASES.items()
+}
+_PRICE_UNIT_IN_SENTENCE_RE = re.compile(r"USD|EUR|€|\$|/t\b|/tấn|/MWh|/bbl|/thùng|/MMBtu", re.IGNORECASE)
+LABEL_MIN_PRICE = 10.0  # số nhỏ (Δ%, hệ số) dễ trùng ngẫu nhiên — chỉ so các số cỡ giá
+
+
+def _report_texts(content: Dict[str, Any]) -> List[tuple]:
+    """(section, field_path, text) của các phần văn xuôi có thể nhắc giá theo mã."""
+    out: List[tuple] = []
+    for i, b in enumerate((content.get("1") or {}).get("bullets") or []):
+        if isinstance(b, dict):
+            out.append(("1", f"1.bullets[{i}].text", str(b.get("text") or "")))
+    sec2 = content.get("2") or {}
+    for i, d in enumerate(sec2.get("key_developments") or []):
+        if isinstance(d, dict):
+            out.append(("4", f"2.key_developments[{i}].text", str(d.get("text") or "")))
+    for i, d in enumerate(_market_drivers(sec2)):
+        if isinstance(d, dict):
+            out.append(("3", f"2.market_drivers[{i}].text", str(d.get("text") or "")))
+    sec3 = content.get("3") or {}
+    for i, blk in enumerate(sec3.get("analysis_blocks") or []):
+        if isinstance(blk, dict):
+            out.append(("3", f"3.analysis_blocks[{i}].content", str(blk.get("content") or "")))
+    notes = sec3.get("instrument_notes")
+    if isinstance(notes, dict):
+        for k, v in notes.items():
+            out.append(("3", f"3.instrument_notes.{k}", str(v)))
+    elif isinstance(notes, list):
+        for i, v in enumerate(notes):
+            out.append(("3", f"3.instrument_notes[{i}]", str(v.get("note") if isinstance(v, dict) else v)))
+    biz = content.get("biz") or {}
+    for key in ("short_term", "long_term"):
+        for i, it in enumerate(biz.get(key) or []):
+            if isinstance(it, dict):
+                out.append(("biz", f"biz.{key}[{i}]", " ".join(str(v) for v in it.values() if isinstance(v, str))))
+    return out
+
+
+def check_instrument_labels(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Nhãn mã trong văn bản phải khớp dữ liệu thật của báo cáo (bảng giá Mục 2):
+    - ERROR: câu nhắc mã X kèm 1 số ĐÚNG BẰNG giá đóng cửa của mã Y khác (Y không được nhắc trong câu,
+      số đó không phải giá của X) — vd ghi "API2 132,0" trong khi 132,0 là giá API4.
+    - WARNING: câu nêu giá (có đơn vị) cho mã X mà bảng giá ngày này KHÔNG có X — số không kiểm chứng
+      được từ dữ liệu hệ thống (vd báo cáo nhắc giá API2 khi nguồn API2 đang hỏng)."""
+    prices = [p for p in ((content.get("2") or {}).get("prices") or []) if isinstance(p, dict)]
+    if not prices or is_no_price_content(content):
+        return []
+    # Mã theo họ — bỏ hậu tố kỳ hạn ("EUA_DEC26" → "EUA") để khớp tên gọi trong văn bản.
+    close_by_code: Dict[str, float] = {}
+    for p in prices:
+        code = str(p.get("code") or "").upper().split("_")[0]
+        if isinstance(p.get("close"), (int, float)) and code != CBAM_CODE:
+            close_by_code.setdefault(code, p["close"])
+    issues: List[Dict[str, str]] = []
+    seen: Set[tuple] = set()
+    for section, path, text in _report_texts(content):
+        for sentence in re.split(r"(?<=[^\d])[.;]\s+|\n+", text):
+            mentioned = {code for code, rx in _LABEL_RES.items() if rx.search(sentence)}
+            if not mentioned:
+                continue
+            nums = [raw for raw in _TEXT_NUM_RE.findall(_DATE_TOKEN_RE.sub(" ", sentence))]
+            for code in sorted(mentioned):
+                if code not in close_by_code and code in INSTRUMENT_LABEL_ALIASES and _PRICE_UNIT_IN_SENTENCE_RE.search(sentence) \
+                        and len(mentioned) == 1 and nums and (code, path, "missing") not in seen:
+                    seen.add((code, path, "missing"))
+                    issues.append(_issue(
+                        "price", section, "warning",
+                        f"Nhắc giá {code} nhưng bảng giá ngày này không có {code} — số liệu không kiểm chứng được từ dữ liệu "
+                        f"hệ thống: \"{sentence.strip()[:120]}\"",
+                        path,
+                    ))
+                own = close_by_code.get(code)
+                for raw in nums:
+                    vals = _number_candidates(raw)
+                    if not vals or max(vals) < LABEL_MIN_PRICE:
+                        continue
+                    if own is not None and any(_close_enough(v, own) for v in vals):
+                        continue
+                    for other, close in close_by_code.items():
+                        if other == code or other in mentioned:
+                            continue
+                        if any(_close_enough(v, close) for v in vals) and (code, other, path) not in seen:
+                            seen.add((code, other, path))
+                            issues.append(_issue(
+                                "price", section, "error",
+                                f"Số {raw} được gắn nhãn {code} nhưng là giá đóng cửa của {other} ({_fmt(close)}) — nhãn mã "
+                                f"không khớp dữ liệu: \"{sentence.strip()[:120]}\"",
+                                path,
+                            ))
     return issues
 
 
@@ -984,6 +1208,47 @@ def check_biz(
         for field, name in (("opportunity", "cơ hội"), ("solution", "giải pháp")):
             if _blank(it.get(field)):
                 issues.append(_issue("biz", "biz", "error", f"Gợi ý dài hạn #{i + 1}: thiếu {name}.", f"{path}.{field}"))
+    return issues + check_biz_sources(content, suggestions)
+
+
+def _listed_urls(content: Dict[str, Any]) -> Set[str]:
+    """URL có trong Tin tức chi tiết (Mục 6) hoặc Nguồn tham khảo (Mục 9) — nơi người đọc tra lại tin."""
+    urls: Set[str] = set()
+    for region in ("international", "vietnam"):
+        for a in (content.get("6") or {}).get(region) or []:
+            if isinstance(a, dict) and a.get("url"):
+                urls.add(_norm_url(a["url"]))
+    for it in (content.get("9") or {}).get("items") or []:
+        if isinstance(it, dict) and it.get("url"):
+            urls.add(_norm_url(it["url"]))
+    return urls
+
+
+def check_biz_sources(content: Dict[str, Any], suggestions: Dict[int, Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Mọi gợi ý kinh doanh MỚI phải kiểm chứng được: có bài nguồn, và bài đó nằm trong Mục 6/Mục 9. Gợi ý
+    ngắn hạn là ngưỡng giá (có trigger_rule trong bộ nhớ hoặc câu điều kiện giá) được miễn nguồn tin."""
+    biz = content.get("biz") or {}
+    listed = _listed_urls(content)
+    issues: List[Dict[str, str]] = []
+    for key, name in (("short_term", "ngắn hạn"), ("long_term", "dài hạn")):
+        for i, it in enumerate(biz.get(key) or []):
+            if not isinstance(it, dict):
+                continue
+            label, path = f"Gợi ý {name} #{i + 1}", f"biz.{key}[{i}].source_url"
+            url = it.get("source_url")
+            if not url:
+                if key == "short_term" and (
+                    (suggestions.get(it.get("id")) or {}).get("trigger_rule")
+                    or biz_memory.looks_like_price_condition(str(it.get("trigger") or ""))
+                ):
+                    continue
+                issues.append(_issue("biz", "biz", "warning", f"{label}: không có nguồn tin — người đọc không kiểm chứng được.", path))
+            elif _norm_url(url) not in listed:
+                issues.append(_issue(
+                    "biz", "biz", "warning",
+                    f"{label}: nguồn ({it.get('source_name') or url}) không có trong Tin tức chi tiết/Nguồn tham khảo của báo cáo.",
+                    path,
+                ))
     return issues
 
 
@@ -1163,7 +1428,7 @@ async def _load_window_articles(session: AsyncSession, target_date: str) -> List
 
 
 async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[str, Any]) -> Dict[str, Any]:
-    """Chạy 6 check cho báo cáo `report_date` -> summarize() + "news_stats"."""
+    """Chạy 7 check cho báo cáo `report_date` -> summarize() + "news_stats"."""
     target_date = report_data_date(report_date)
 
     db_prices, latest_price_date = await _load_db_prices(session, target_date, report_price_date(content))
@@ -1171,13 +1436,16 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
     urls = collect_source_urls(content)
     known_urls: Set[str] = set()
     article_meta: Dict[str, Dict[str, Any]] = {}
+    article_texts: Dict[str, str] = {}
     if urls:
         candidates = {u for u in urls} | {_norm_url(u) for u in urls} | {_norm_url(u) + "/" for u in urls}
         for r in (await session.execute(
-            select(Article.url, Article.source, Article.published_at).where(Article.url.in_(candidates))
+            select(Article.url, Article.source, Article.published_at, Article.title, Article.content)
+            .where(Article.url.in_(candidates))
         )).all():
             known_urls.add(r.url)
             article_meta[_norm_url(r.url)] = {"source": r.source, "published_at": r.published_at}
+            article_texts[_norm_url(r.url)] = f"{r.title or ''}\n{r.content or ''}"
     stale_before = news_window(target_date)[0] - timedelta(days=STALE_NEWS_MAX_AGE_DAYS)
 
     biz = content.get("biz") or {}
@@ -1193,9 +1461,10 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
     news_issues, news_stats = check_news(content, await _load_window_articles(session, target_date))
 
     issues_by_check = {
-        "price": check_prices(content, db_prices, latest_price_date, report_date),
+        "price": check_prices(content, db_prices, latest_price_date, report_date) + check_instrument_labels(content),
         "scenario": check_scenarios(content),
         "source": check_sources(content, known_urls, article_meta, stale_before),
+        "fact": check_facts(content, article_texts),
         "calendar": check_calendar(content, report_date),
         "biz": check_biz(content, suggestions, valid_codes, (content.get("2") or {}).get("prices") or [], report_date),
         "news": news_issues,

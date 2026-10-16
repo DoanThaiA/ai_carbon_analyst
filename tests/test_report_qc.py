@@ -73,7 +73,8 @@ GOLDEN = {
     ]},
     "biz": {"title": "Gợi ý kinh doanh", "short_term": [
         {"trigger": "Nếu EUA đóng cửa dưới 75", "action": "Mua bổ sung", "reason": "r", "id": 11},
-    ], "long_term": [{"opportunity": "o", "solution": "s", "expectation": "e", "id": 12}], "reminders": []},
+    ], "long_term": [{"opportunity": "o", "solution": "s", "expectation": "e", "id": 12,
+                     "source_name": "Reuters", "source_url": A1}], "reminders": []},
 }
 DB_PRICES = {
     "EUA": {"name": "EUA Futures Dec'26", "close": 79.2, "day_change_pct": -0.5, "week_change_pct": 1.2},
@@ -91,6 +92,10 @@ ARTICLES = [_art(A1, hot=True), _art(A2), _art(A3, topic=("energy_gas",)),
             _art(VN1, region="vietnam", topic=("vietnam_carbon_policy",), source="VnExpress")]
 
 
+# Nội dung bài gốc cho check_facts (bullet GOLDEN chỉ có "...", không có số → không báo).
+ARTICLE_TEXTS = {A1: "EU lawmakers agree ETS changes", A2: "Gas prices fall", A3: "Heatwave lifts power demand"}
+
+
 def g():
     return copy.deepcopy(GOLDEN)
 
@@ -104,6 +109,8 @@ def run_all(c, db_prices=DB_PRICES, latest=PRICE_DATE, known=None, suggestions=S
         + report_qc.check_sources(c, known)
         + report_qc.check_calendar(c, REPORT_DATE)
         + report_qc.check_biz(c, suggestions, CODES, c["2"]["prices"], REPORT_DATE)
+        + report_qc.check_facts(c, ARTICLE_TEXTS)
+        + report_qc.check_instrument_labels(c)
         + news_issues
     )
 
@@ -325,8 +332,8 @@ def test_news_source_outside_window():
 def test_summarize_scores():
     issues = {"price": [{"severity": "error"}], "scenario": [{"severity": "warning"}, {"severity": "info"}]}
     res = report_qc.summarize(issues)
-    assert res["scores"] == {"price": 75, "scenario": 88, "source": 100, "calendar": 100, "biz": 100, "news": 100}
-    assert res["overall_score"] == round((75 + 88 + 400) / 6)
+    assert res["scores"] == {"price": 75, "scenario": 88, "source": 100, "fact": 100, "calendar": 100, "biz": 100, "news": 100}
+    assert res["overall_score"] == round((75 + 88 + 500) / 7)
 
 
 def test_format_qc_report():
@@ -470,7 +477,8 @@ def test_dedupe_similar_articles():
 def test_source_label_is_real_publisher():
     from services.report_generator import news_source_label
 
-    assert news_source_label("bloomberg.com", "https://www.business-standard.com/x") == "business-standard.com (theo bloomberg.com)"
+    # Nguồn cấu hình crawl chỉ là kênh thu tin, không phải nguồn tin → không ghi kèm
+    assert news_source_label("bloomberg.com", "https://www.business-standard.com/x") == "business-standard.com"
     assert news_source_label("reuters.com", "https://www.reuters.com/a") == "reuters.com"
 
 
@@ -568,3 +576,136 @@ def test_prompts_render():
     assert "hedge_note" in s3 and "vs_previous" in s3 and "Chỉ thị (EU) 2023/959" in s3
     _, s1 = rg._prompt_section1("[1] tin", "giá", "xu hướng", "biên độ", "2026-10-15", fuel_spread="KẾT LUẬN DÙNG CHUNG: x")
     assert "KẾT LUẬN DÙNG CHUNG" in s1
+
+
+# ── Chuỗi nguồn gốc → nơi đăng lại (lỗi (d)) ──────────────────────────
+
+
+def test_source_chain_label_and_apply():
+    from services.report_generator import apply_source_chains, source_chain_label
+
+    assert source_chain_label("Financial Times", "politico.com") == "Financial Times (gốc) → politico.com"
+    assert source_chain_label(None, "politico.com") == "politico.com"
+    assert source_chain_label("Reuters", "reuters.com") == "reuters.com"  # tự đưa tin
+    content = {
+        "1": {"bullets": [{"text": "x", "source_name": "politico.com", "source_url": "u1"}]},
+        "9": {"items": [{"source": "politico.com", "url": "u1"}, {"source": "reuters.com", "url": "u2"}]},
+    }
+    apply_source_chains(content, {"u1": "Financial Times (gốc) → politico.com"})
+    assert content["1"]["bullets"][0]["source_name"] == "Financial Times (gốc) → politico.com"
+    assert content["9"]["items"][0]["source"] == "Financial Times (gốc) → politico.com"
+    assert content["9"]["items"][1]["source"] == "reuters.com"
+
+
+def test_sources_accept_chain_label():
+    c = g()
+    c["1"]["bullets"][1]["source_name"] = "Financial Times (gốc) → x.com"
+    meta = {A1: {"source": "x.com", "published_at": None}}
+    bullet_issues = lambda: [i for i in report_qc.check_sources(c, {A1, A2, A3, VN1}, meta) if i["section"] == "1"]
+    assert bullet_issues() == []
+    c["1"]["bullets"][1]["source_name"] = "Bloomberg"
+    assert any("nhãn nguồn" in i["message"] for i in bullet_issues())
+
+
+# ── Jack: số liệu ↔ tin gốc ───────────────────────────────────────────
+
+
+def test_facts_flag_number_missing_from_source():
+    c = g()
+    c["1"]["bullets"][1]["text"] = "**IEA:** còn 100 triệu thùng dự trữ khẩn cấp, đã giải phóng 330 triệu."
+    texts = {A1: "The IEA said 330 million barrels have been released so far."}
+    issues = report_qc.check_facts(c, texts)
+    assert len(issues) == 1 and "100" in issues[0]["message"] and "330" not in issues[0]["message"]
+    assert issues[0]["check"] == "fact" and issues[0]["severity"] == "warning"
+
+
+def test_facts_allow_rounding_formats_prices_and_small_counts():
+    c = g()
+    c["1"]["bullets"][1]["text"] = (
+        "**Dầu:** còn khoảng 96 triệu thùng (46 triệu ở châu Âu), 1.386,75 USD/tấn; 3 tháng tới; năm 2026; "
+        "EUA 79,20 EUR/t; ngày 15/10."
+    )
+    texts = {A1: "About 95.8 million barrels remain, 46m in Europe; gasoil at 1,386.75 per tonne."}
+    assert report_qc.check_facts(c, texts) == []
+
+
+def test_facts_flag_self_reported_mismatch():
+    c = g()
+    c["1"]["bullets"][1]["text"] = "**IEA:** còn 100 triệu thùng (số liệu trong bài chưa khớp: 400 − 330 = 70)."
+    issues = report_qc.check_facts(c, {})
+    assert any("chưa khớp" in i["message"] for i in issues)
+
+
+# ── Jack: nguồn của gợi ý kinh doanh (lỗi (e)) ───────────────────────
+
+
+def test_biz_long_term_without_source_or_unlisted_source():
+    c = g()
+    c["biz"]["long_term"][0].pop("source_url")
+    assert any("dài hạn #1: không có nguồn" in i["message"] for i in report_qc.check_biz_sources(c, SUGGESTIONS))
+    c["biz"]["long_term"][0]["source_url"] = "https://example.com/not-listed"
+    assert any("không có trong Tin tức chi tiết" in i["message"] for i in report_qc.check_biz_sources(c, SUGGESTIONS))
+
+
+def test_biz_short_term_news_trigger_needs_source_price_trigger_does_not():
+    c = g()
+    c["biz"]["short_term"].append({"trigger": "Nếu EU thông qua MSR mới", "action": "a", "reason": "r"})
+    issues = report_qc.check_biz_sources(c, SUGGESTIONS)
+    assert len(issues) == 1 and "ngắn hạn #2" in issues[0]["message"]
+
+
+# ── Jack: nhãn mã instrument ↔ giá thật ──────────────────────────────
+
+
+def _with_coal(c):
+    c["2"]["prices"].append(_price_row("API4 Coal Richards Bay", "API4", 132.0, 1.2, 2.3, "USD/MT"))
+    return c
+
+
+def test_label_number_belongs_to_other_instrument_is_error():
+    c = _with_coal(g())
+    c["3"]["analysis_blocks"][0]["content"] += "\n- Than API2 đứng ở 132,0 USD/t, rẻ hơn khí."
+    issues = report_qc.check_instrument_labels(c)
+    assert any(i["severity"] == "error" and "API2" in i["message"] and "API4" in i["message"] for i in issues)
+
+
+def test_label_price_for_missing_instrument_is_warning():
+    c = g()
+    c["3"]["analysis_blocks"][0]["content"] += "\n- Than API2 ở mức 149,2 USD/t."
+    issues = report_qc.check_instrument_labels(c)
+    assert len(issues) == 1 and issues[0]["severity"] == "warning" and "không có API2" in issues[0]["message"]
+
+
+def test_label_ok_when_both_codes_in_sentence_or_own_price():
+    c = _with_coal(g())
+    c["3"]["analysis_blocks"][0]["content"] += (
+        "\n- API4 132,0 USD/t (chuẩn châu Á) so với TTF 31,5 EUR/MWh.\n- EUA đóng cửa 79,20 EUR/t."
+    )
+    assert report_qc.check_instrument_labels(c) == []
+
+
+def test_instrument_labels_match_tracked_data():
+    """Nhãn mã trong mô tả tool Jenny/MCP phải là mã thật có nguồn giá (instruments.yaml) — và API2 thật sự
+    được crawl (nguồn ICE), không phải nhãn treo trên dữ liệu API4."""
+    import pathlib
+
+    import yaml
+
+    from services.quote_chat import TRACKED_INSTRUMENTS_LABEL
+
+    cfg = yaml.safe_load((pathlib.Path(__file__).parents[1] / "instruments.yaml").read_text(encoding="utf-8"))
+    codes = {i["code"] for i in cfg["instruments"]}
+    for code in ("EUA", "TTF", "BRENT", "WTI", "GASOIL", "API2", "API4", "DEBY1", "NG"):
+        assert code in codes
+    for label_code, code in (("EUA", "EUA"), ("TTF", "TTF"), ("Brent", "BRENT"), ("WTI", "WTI"), ("Gasoil", "GASOIL"),
+                             ("API2", "API2"), ("API4", "API4"), ("DEBY1", "DEBY1"), ("NG", "NG")):
+        assert label_code in TRACKED_INSTRUMENTS_LABEL and code in codes
+    api2 = next(i for i in cfg["instruments"] if i["code"] == "API2")
+    assert api2.get("symbol_ice", "").startswith("ICE:")
+
+
+def test_label_matches_code_family_with_tenor_suffix():
+    c = g()
+    c["2"]["prices"][0]["code"] = "EUA_DEC26"  # báo cáo cũ: mã kèm kỳ hạn
+    c["3"]["analysis_blocks"][0]["content"] += "\n- Giá EUA Futures Dec'26 đóng cửa ở mức 79,20 EUR/tCO2."
+    assert report_qc.check_instrument_labels(c) == []

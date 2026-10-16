@@ -13,6 +13,32 @@ export interface Report {
   published_at: string | null;
 }
 
+// Khối "Ước tính giá CBAM" (content["2"].cbam_estimate) — services/cbam_estimate.py::build_cbam_estimate.
+export interface CbamEstimate {
+  quarter: string;
+  as_of: string;
+  auctions_done: number;
+  auctions_total: number;
+  volume_done_mt: number;
+  volume_total_mt: number;
+  fixed_share_pct: number;
+  qtd_vwap: number | null;
+  spot: number;
+  spot_vs_qtd_pct: number | null;
+  estimate: number;
+  ci_level: number;
+  ci_low: number | null;
+  ci_high: number | null;
+  daily_vol_pct: number | null;
+  signal: "increase" | "hold" | "reduce";
+  signal_reason: "quarter_fixed" | "quarter_not_started" | "quarter_mostly_fixed" | "spot_below_qtd" | "spot_above_qtd" | "spot_near_qtd";
+  hedge_gap_pct: number;
+  hedge_fixed_share_pct: number;
+  last_auction: { date: string; platform: string; price: number; cover_ratio: number | null } | null;
+  upcoming: { count: number; volume_mt: number; first_date: string | null; last_date: string | null } | null;
+  prev_quarter: { quarter: string; vwap: number | null; official: number | null } | null;
+}
+
 export interface ReportSummary {
   id: number;
   report_date: string;

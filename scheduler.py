@@ -4,6 +4,7 @@ scheduler.py
 Script chạy ngầm 24/7, tự động kích hoạt các tác vụ độc lập:
 
   1. daily_prices_job       06:00 VN       — crawl giá các hợp đồng tương lai (BarchartPriceCrawler)
+                                            + giá CBAM (EC) + đấu giá EUA EEX (crawl_eex_auctions)
   2. news_crawl_job         08:00 → 17:00  — crawl tin tức đầu mỗi giờ trong giờ hành chính, mọi ngày,
                                              tách 2 job theo `region` của news_crawl_sources (xem
                                              api/routers/admin_news_sources.py, NEWS_CRAWL_SCHEDULES):
@@ -102,6 +103,18 @@ async def run_crawl_cbam_price() -> bool:
         await engine.dispose()
 
 
+async def run_crawl_eex_auctions() -> None:
+    """Lịch + kết quả đấu giá sơ cấp EUA trên EEX (ước tính giá CBAM quý + lịch Mục 8) — lỗi chỉ log,
+    KHÔNG làm hỏng job giá chính."""
+    from crawl_prices.crawl_eex_auctions import crawl_eex_auctions
+    try:
+        stats = await crawl_eex_auctions()
+        logger.info("━━━ [EEX] Đấu giá: %d kết quả, %d phiên lịch. Lỗi: %s",
+                    stats.get("results", 0), stats.get("scheduled", 0), stats.get("errors", []))
+    except Exception:
+        logger.exception("━━━ [EEX] Lỗi khi crawl đấu giá EEX")
+
+
 async def daily_prices_job() -> None:
     """Job lập lịch chạy lúc 06:00 SA (giờ VN) mỗi ngày — chỉ crawl giá."""
     now_vn = datetime.now(TZ_VN)
@@ -110,6 +123,7 @@ async def daily_prices_job() -> None:
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, run_crawl_prices)
     await run_crawl_cbam_price()
+    await run_crawl_eex_auctions()
     logger.info("✅ [SCHEDULER] Daily Prices Job hoàn thành — %s", datetime.now(TZ_VN).strftime("%H:%M:%S"))
     logger.info("=" * 60)
 

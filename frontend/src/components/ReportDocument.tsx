@@ -12,6 +12,7 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
 import type { Report } from "@/lib/types";
+import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
 
 // Hàm dịch của namespace "reportDoc" — truyền xuống các hàm thuần (không gọi được hook).
@@ -1975,6 +1976,12 @@ export function ReportDocument({
               </table>
             </div>
           </div>
+          )}
+
+          {/* Ước tính giá CBAM quý (VWAP đấu giá EEX + lịch còn lại, tín hiệu phòng vệ) — ngay dưới
+              Bảng giá nhanh, cạnh dòng CBAM Certificate. Báo cáo cũ/CN-T2 không có khối này → ẩn. */}
+          {!noPriceData && report.content["2"]?.cbam_estimate && (
+            <CbamEstimateCard estimate={report.content["2"].cbam_estimate} />
           )}
 
           {/* Diễn biến chính — tin tức nổi bật tác động cung/cầu EUA (trực tiếp

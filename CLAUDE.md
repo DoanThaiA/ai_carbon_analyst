@@ -228,14 +228,28 @@ rule-based, KHÔNG gọi LLM: giá Mục 2 ↔ bảng `prices`, kịch bản M�
 nhà xuất bản thật `news_source_label`), lịch EIA/Baker Hughes Mục 8 ↔ `_compute_recurring_calendar_events` (cửa sổ
 `CALENDAR_WINDOW_DAYS`=7, lùi lịch theo ngày nghỉ lễ liên bang Mỹ; số liệu phải đúng kỳ — `data_matches_event`), gợi ý biz ↔
 `biz_suggestions.trigger_rule` (+ gợi ý cũ đánh dấu ĐÃ KÍCH HOẠT phải chạm ngưỡng thật; ngưỡng giá thiếu rule thì tự dựng
-bằng `biz_memory.infer_price_rule`, mã không có trong bảng giá thì không bao giờ kích hoạt qua tin tức), độ phủ tin tức ↔ bài crawl trong khung tin của báo cáo (cùng khung với
-`get_news_for_report`). Điểm mỗi check = 100 − 25/error − 10/warning − 2/info; tổng = trung bình 6 check.
+bằng `biz_memory.infer_price_rule`, mã không có trong bảng giá thì không bao giờ kích hoạt qua tin tức; gợi ý mới phải có nguồn nằm trong Mục 6/9 — `check_biz_sources`, ngưỡng giá được miễn), độ phủ tin tức ↔ bài crawl trong khung tin của báo cáo (cùng khung với
+`get_news_for_report`), số liệu ↔ tin gốc (`check_facts`, hạng mục `fact`: mọi số trong câu có trích nguồn ở Mục 1/Diễn biến chính/Mục 4/yếu tố thị trường phải có trong `articles.content` của chính bài đó — miễn năm, ngày, số đếm ≤10, số của bảng giá/khối CBAM; bullet tự ghi "chưa khớp" cũng bị báo), nhãn mã ↔ giá thật (`check_instrument_labels`, gộp vào hạng mục giá: số gắn nhãn mã X mà là giá đóng cửa của mã Y → error; nêu giá mã không có trong bảng giá → warning). Điểm mỗi check = 100 − 25/error − 10/warning − 2/info; tổng = trung bình 7 check.
 `qc_report_text()` trả văn bản (điểm, thống kê tin, vấn đề theo mục) làm tool_result. Các hàm `check_*` là
 hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cáo sạch đúng định dạng bộ sinh, PHẢI ra
 0 vấn đề — đổi định dạng output của `report_generator.py` thì cập nhật fixture này). `parse_strategy` /
 `parse_signal_levels` là bản port 1-1 parser thẻ KHUYẾN NGHỊ VỊ THẾ (trước là TÍN HIỆU HÔM NAY) trong `ReportDocument.tsx` — sửa bên nào
 phải sửa cả bên kia. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
+
+**Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,
+vd Bloomberg). Tóm tắt Mục 6 trả thêm `origin` (hãng gốc khi bài dẫn lại, vd "Zelenskyy told the FT" trên Politico) →
+`apply_source_chains` đổi mọi nhãn của bài đó thành "Financial Times (gốc) → politico.com". Gợi ý kinh doanh không có nguồn
+(và không phải ngưỡng giá) bị loại ngay khi sinh báo cáo.
+
+**Giá API2 & CBAM**: API2 lấy thẳng từ ICE (`crawl_prices/crawl_ice.py`, symbol `ICE:<productId>:<hubId>[:<pageId>]` trong
+`price_crawl_sources` — Barchart ngừng cập nhật ITF* từ 2023-08-18); crawler bỏ qua + báo lỗi mọi mã có phiên mới nhất cũ quá
+`STALE_PRICE_MAX_DAYS`. Lịch + kết quả đấu giá sơ cấp EUA trên EEX → bảng `eua_auctions` (`crawl_prices/crawl_eex_auctions.py`,
+chạy trong job giá 06:00). Giá CBAM EC công bố theo quý = VWAP (gia quyền khối lượng) giá khớp mọi phiên EEX trong quý (khớp
+Q1–Q3/2026 tới 0,01) → `services/cbam_estimate.py` ước tính quý đang chạy + khoảng tin cậy 90% + tín hiệu phòng vệ
+(`HEDGE_GAP_PCT`/`HEDGE_FIXED_SHARE_HOLD`), lưu ở `content["2"].cbam_estimate` (chỉ số + enum ASCII, frontend
+`CbamEstimateCard.tsx` dựng chữ theo ngôn ngữ). "EUA lũy kế quý" (`qtd_avg`) ưu tiên VWAP đấu giá, thiếu thì TB giá đóng cửa và
+ghi "xấp xỉ" (`qtd_basis`). Mục 8 có 1 sự kiện gộp các phiên đấu giá 7 ngày tới (`_auction_calendar_events`).
 
 **Market data**: unchanged from the original crawler — `market_data.py` defines a
 `PriceProvider` ABC with `YFinanceProvider` (real data, WTI/Brent only) and

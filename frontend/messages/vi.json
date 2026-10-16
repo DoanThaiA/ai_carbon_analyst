@@ -269,7 +269,7 @@
     "title": "Nguồn Giá",
     "subtitle": "Cấu hình các hợp đồng để crawl giá từ Barchart",
     "add": "Thêm nguồn giá",
-    "phSymbol": "Symbol (vd: NG*0)",
+    "phSymbol": "Symbol (vd: NG*0 hoặc ICE:517:681:243)",
     "phCode": "Mã nội bộ (vd: NG)",
     "phName": "Tên hiển thị",
     "phCategory": "Category (vd: gas)",
@@ -430,6 +430,37 @@
     "exampleOffTitle": "Dùng câu trả lời này làm đoạn chat tham khảo (few-shot) cho Quote Chat",
     "exampleAdded": "Đã thêm để tham khảo",
     "exampleAdd": "Để tham khảo"
+  },
+  "cbamEstimate": {
+    "title": "Ước tính giá CBAM {quarter}",
+    "signalLabel": "Phòng vệ CBAM",
+    "signal": {
+      "increase": "Tăng",
+      "hold": "Giữ",
+      "reduce": "Giảm"
+    },
+    "estimate": "Ước tính giá quý",
+    "ci": "Khoảng tin cậy {level}%: {low}–{high}",
+    "qtdVwap": "VWAP đấu giá đã chốt",
+    "auctionsDone": "{done}/{total} phiên đấu giá trong quý",
+    "spot": "Giá EUA hiện tại",
+    "spotVsQtd": "{pct}% so với VWAP đã chốt",
+    "fixedShare": "Đã chốt {pct}% khối lượng quý",
+    "volume": "{done}/{total} triệu tấn",
+    "signalWhy": "Vì sao",
+    "reason": {
+      "quarter_fixed": "Toàn bộ phiên đấu giá của quý đã diễn ra — giá quý coi như đã chốt, chờ EC công bố.",
+      "quarter_not_started": "Quý chưa có phiên đấu giá nào — chưa có mốc để so sánh, giữ tỷ lệ phòng vệ hiện tại.",
+      "quarter_mostly_fixed": "Đã chốt trên {fixed}% khối lượng quý — phần còn hở nhỏ, giữ nguyên và chuyển trọng tâm sang quý sau.",
+      "spot_below_qtd": "Giá EUA hiện tại thấp hơn VWAP đã chốt {gap}% (ngưỡng {threshold}%) — mua phòng vệ phần chưa chốt lúc này rẻ hơn mức quý đã chốt.",
+      "spot_above_qtd": "Giá EUA hiện tại cao hơn VWAP đã chốt {gap}% (ngưỡng {threshold}%) — mua thêm lúc này khoá giá cao hơn mức quý đã chốt; giãn tiến độ mua phòng vệ.",
+      "spot_near_qtd": "Giá EUA hiện tại lệch VWAP đã chốt {gap}% (dưới ngưỡng {threshold}%) — giữ tiến độ phòng vệ hiện tại."
+    },
+    "lastAuction": "Phiên gần nhất {date} ({platform}): giá khớp {price} EUR/t",
+    "cover": "tỷ lệ đặt mua/chào bán {ratio}",
+    "upcoming": "7 ngày tới: {count} phiên ({from}–{to}), tổng {volume} triệu tấn",
+    "prevQuarter": "Kiểm chứng phương pháp — {quarter}: VWAP đấu giá {vwap} ↔ EC công bố {official} EUR/t",
+    "method": "Giá CBAM do EC công bố theo quý = trung bình gia quyền khối lượng (VWAP) giá khớp của mọi phiên đấu giá EUA sơ cấp trên EEX trong quý. Phần chưa đấu giá giả định bằng giá EUA hiện tại; khoảng tin cậy theo biến động ngày thực tế {vol}% của EUA (random walk). Đây là ước tính, không phải giá chính thức."
   },
   "chatLib": {
     "docNotSupported": "\"{name}\": chưa hỗ trợ file .doc — vui lòng lưu lại dưới dạng .docx.",

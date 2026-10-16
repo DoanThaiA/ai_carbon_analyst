@@ -11,11 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from db.models import Article, Price, Instrument, PriceCrawlSource, Report
+from db.models import Article, EuaAuction, Price, Instrument, PriceCrawlSource, Report
 from core.config import Settings
 from services import biz_memory
+from services import cbam_estimate
 from services import eua_causal_chains as chains
 from services.eua_framework_admin import get_overrides_map
+from crawl_prices.crawl_ice import ice_product_url, is_ice_symbol
 from crawl_prices.market_events_fetcher import (
     fetch_eia_weekly_inventory,
     fetch_baker_hughes_rig_count,
@@ -73,8 +75,10 @@ CONCISENESS_RULE = (
     "không viết (bài nói Mỹ 'vận động không chính thức' thì KHÔNG viết 'Mỹ đề nghị bổ sung ít nhất X'); KHÔNG dùng "
     "'dường như/có vẻ/được cho là' để đưa vào thông tin bài không nêu. Giữ ĐÚNG đơn vị, KỲ (mỗi năm hay tổng) và PHẠM VI "
     "của con số (vd '660 tỷ EUR MỖI NĂM cho phát điện sạch, lưới, hiệu suất' — không rút thành '660 tỷ EUR cho điện khí hóa'). "
-    "(15) Số liệu trong CÙNG 1 bài không khớp nhau (vd 'đã rút 330/400 triệu thùng' nhưng 'còn lại 100 triệu') → nêu rõ "
-    "'số liệu trong bài chưa khớp (400 − 330 = 70)' thay vì lặp lại như sự thật. "
+    "(15) Số liệu trong CÙNG 1 bài không khớp nhau (vd 'đã rút 330/400 triệu thùng' nhưng 'còn lại 100 triệu'): nếu 1 bài KHÁC "
+    "trong dữ liệu nêu rõ hơn đúng chỉ tiêu đó (vd Argus: 'còn khoảng 96 triệu thùng, trong đó 46 triệu ở châu Âu') → DÙNG số "
+    "của bài rõ hơn, ghi nguồn, và chú thích ngắn độ lệch với bài kia; chỉ khi KHÔNG có nguồn nào rõ hơn mới ghi "
+    "'số liệu trong bài chưa khớp (400 − 330 = 70)'. KHÔNG lặp lại số mâu thuẫn như sự thật. "
     "(16) CHÍNH SÁCH: ghi rõ GIAI ĐOẠN (đề xuất/dự thảo/đã thông qua/có hiệu lực), MỐC áp dụng và QUY MÔ nếu bài nêu; "
     "dự thảo có hiệu lực sau hơn 12 tháng KHÔNG phải động lực giá ngắn hạn. KHÔNG suy diễn tác động mạnh hơn nguồn — "
     "nguồn nói biện pháp 'không làm giảm giá' thì không xếp là 'hỗ trợ tăng giá'; tác động lên doanh nghiệp phải "
@@ -85,7 +89,18 @@ CONCISENESS_RULE = (
     "nhắc lại khi có diễn biến MỚI; nếu cơ quan chính thức/nguồn nói 'quy mô hạn chế', 'hoạt động bình thường' → PHẢI nêu "
     "lời đó và hạ mức tác động (không viết 'nguy cơ ảnh hưởng cung dầu toàn cầu'). "
     "(18) Cùng 1 chỉ tiêu mà các nguồn/ngày nêu số KHÁC nhau (vd xuất khẩu qua Hormuz 'còn ~50%' theo Eni hôm trước vs "
-    "'gần mức trước chiến tranh' theo Argus hôm nay) → nêu CẢ 2 kèm nguồn và ngày, không lặng lẽ chọn 1."
+    "'gần mức trước chiến tranh' theo Argus hôm nay) → nêu CẢ 2 kèm nguồn và ngày, không lặng lẽ chọn 1. "
+    "(19) CHUỖI NGUỒN: thông tin bài dẫn lại từ hãng/cơ quan khác (phỏng vấn với Financial Times, 'told Reuters', 'theo "
+    "Bloomberg', thông cáo của IEA...) → ghi theo chuỗi GỐC → NƠI ĐĂNG LẠI (vd 'theo phỏng vấn với Financial Times, Politico "
+    "đăng lại'); KHÔNG quy phát biểu cho nơi đăng lại như nguồn gốc. "
+    "(20) TÍN HIỆU CUNG TRUNG–DÀI HẠN: tin chính sách có nhắc đề xuất thay đổi cap, phạm vi hoặc nguồn cung EU ETS (đưa "
+    "loại bỏ carbon vĩnh viễn — BECCS/bio-CCS, DAC — vào ETS, rà soát MSR, mở rộng ngành, cap sau 2030, nối ETS với thị "
+    "trường khác) → PHẢI ghi nhận là yếu tố CUNG TRUNG–DÀI HẠN (kèm giai đoạn: đề xuất/tham vấn/dự thảo), kể cả khi không "
+    "có tác động ngắn hạn; KHÔNG viết 'không chạm tới cap/phạm vi ETS' khi bài có nhắc đề xuất như vậy. "
+    "(21) MỨC TÁC ĐỘNG TƯƠNG XỨNG: kênh BIÊN lên tổng cầu EUA — crack spread → lọc dầu giảm/tăng công suất, hàng không, "
+    "hàng hải, 1 nhà máy/1 doanh nghiệp — có cơ chế đúng (lọc dầu thuộc EU ETS) nhưng chỉ là phần nhỏ phát thải ETS và biến "
+    "động công suất vài % không đổi đáng kể tổng cầu hạn ngạch → PHẢI ghi rõ 'tác động Thấp', KHÔNG xếp thành động lực "
+    "chính và KHÔNG dùng làm căn cứ chính cho kịch bản giao dịch."
 )
 
 # Văn bản đã luật hoá được phép dùng làm luận điểm chính sách dài hạn KÈM trích dẫn văn bản (ngoài tin trong ngày).
@@ -370,7 +385,11 @@ BARCHART_QUOTE_URL = "https://www.barchart.com/futures/quotes/{symbol}/overview"
 CBAM_PRICE_PAGE_URL = 'https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism/price-cbam-certificates_en'
 
 
-def _barchart_url(symbol: str) -> str:
+def _barchart_url(symbol: str) -> Optional[str]:
+    """Link xem giá cho người đọc. Symbol "ICE:..." (lấy thẳng từ ICE — crawl_prices/crawl_ice.py)
+    → trang sản phẩm ICE (None nếu symbol không khai pageId), còn lại → trang quote Barchart."""
+    if is_ice_symbol(symbol):
+        return ice_product_url(symbol)
     return BARCHART_QUOTE_URL.format(symbol=quote(symbol, safe=""))
 
 
@@ -616,14 +635,21 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             "no_trade": _is_no_trade_session(price),
         })
 
-    # EUA trung bình lũy kế quý — giá CBAM 2026 chốt theo trung bình quý, nên điều kiện liên
+    # EUA lũy kế quý — giá CBAM 2026 chốt theo quý = VWAP đấu giá EEX của quý, nên điều kiện liên
     # quan chi phí CBAM so với số này chứ không với giá đóng cửa 1 phiên (biz_memory.check_price_rule).
+    # Ưu tiên VWAP đấu giá thật (eua_auctions); chưa có dữ liệu đấu giá thì lùi về TB giá đóng cửa
+    # futures — chỉ là XẤP XỈ, qtd_basis ghi rõ để prompt/nhãn không trình bày như giá CBAM thật.
     eua = next((p for p in prices if p["code"] == "EUA"), None)
     if eua is not None:
-        qtd_avg, qtd_sessions = await _get_quarter_to_date_avg(session, "EUA", max_date)
+        qtd_avg, qtd_sessions = await cbam_estimate.quarter_to_date_auction_vwap(session, max_date)
+        qtd_basis = "auction_vwap"
+        if qtd_avg is None:
+            qtd_avg, qtd_sessions = await _get_quarter_to_date_avg(session, "EUA", max_date)
+            qtd_basis = "futures_close"
         if qtd_avg is not None:
             eua["qtd_avg"] = qtd_avg
             eua["qtd_sessions"] = qtd_sessions
+            eua["qtd_basis"] = qtd_basis
 
     # Ưu tiên giá CBAM đã lưu DB (as-of target date); chưa có dòng nào (chưa chạy crawl lần đầu)
     # thì fallback fetch trực tiếp như trước.
@@ -760,15 +786,42 @@ def _host(url: str) -> str:
 
 
 def news_source_label(source: str, url: str) -> str:
-    """Nhãn nguồn hiển thị = NHÀ XUẤT BẢN thật (domain của URL). Nguồn cấu hình khác domain
-    (vd crawl Bloomberg qua bản đăng lại trên Business Standard/CNBC...) → "domain (theo nguồn)"
-    — tránh gắn nhãn "bloomberg.com" cho link thuộc báo khác."""
+    """Nhãn nguồn hiển thị = NHÀ XUẤT BẢN thật (domain của URL). Nguồn cấu hình crawl khác domain
+    (vd crawl Bloomberg qua bản đăng lại trên Politico/Business Standard...) chỉ là KÊNH THU TIN của hệ
+    thống, không phải nguồn tin → KHÔNG ghi kèm (trước đây "politico.com (theo bloomberg.com)" khiến người
+    đọc tưởng Bloomberg là nguồn gốc). Nguồn gốc thật do bài dẫn lại (FT, Reuters...) được ghi thành chuỗi
+    "Gốc (gốc) → nơi đăng" bởi `source_chain_label` từ tóm tắt Mục 6."""
     host = _host(url)
     src = (source or "").lower()
     src = src[4:] if src.startswith("www.") else src
     if not host or not src or host == src or host.endswith("." + src):
         return source or host
-    return f"{host} (theo {source})"
+    return host
+
+
+def source_chain_label(origin: Optional[str], publisher: str) -> str:
+    """"Financial Times" + "politico.com" → "Financial Times (gốc) → politico.com". Không có nguồn gốc
+    khác nơi đăng → chỉ nơi đăng."""
+    origin = (origin or "").strip()
+    if not origin or origin.lower() in publisher.lower() or publisher.lower().split(".")[0] in origin.lower():
+        return publisher
+    return f"{origin} (gốc) → {publisher}"
+
+
+def apply_source_chains(node: Any, chain_by_url: Dict[str, str]) -> None:
+    """Đổi nhãn nguồn (source_name/source) của MỌI chỗ trích bài có trong `chain_by_url` sang chuỗi
+    gốc → nơi đăng — để Tóm tắt, Diễn biến chính, Gợi ý, Mục 6 và Mục 9 ghi cùng 1 nhãn."""
+    if isinstance(node, dict):
+        url = node.get("source_url") or node.get("url")
+        if isinstance(url, str) and url in chain_by_url:
+            for key in ("source_name", "source"):
+                if isinstance(node.get(key), str) and node[key]:
+                    node[key] = chain_by_url[url]
+        for v in node.values():
+            apply_source_chains(v, chain_by_url)
+    elif isinstance(node, list):
+        for v in node:
+            apply_source_chains(v, chain_by_url)
 
 
 async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tuple[Dict[str, List[Dict]], List[str]]:
@@ -984,8 +1037,10 @@ YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT, ĐÚNG 2 C
 - "relevant": false nếu bài KHÔNG có diễn biến mới (vd bài giới thiệu/nhắc lại dự án đã vận hành từ nhiều năm trước, bài tổng quan/bối cảnh không có sự kiện, số liệu hay quyết định mới).
 - "relevant": true CHỈ KHI bài liên quan TRỰC TIẾP tới thị trường carbon (EU ETS/EUA, CBAM, VCM, chính sách carbon) hoặc năng lượng (gas, điện, than, dầu, tái tạo, hydrogen) VÀ nêu rõ tác động tới cung/cầu/giá/chính sách. Tác động không rõ ràng, phải suy đoán, hoặc chỉ là bối cảnh chính trị/kinh tế chung → false (vẫn viết "summary" như bình thường).
 
+- "origin": hãng tin/cơ quan GỐC của thông tin chính khi bài DẪN LẠI rõ ràng từ nơi khác (vd bài Politico viết "Zelenskyy told the Financial Times" → "Financial Times"; "according to a Reuters report" → "Reuters"; số liệu từ thông cáo IEA → "IEA"); trong "summary" cũng ghi theo chuỗi đó ("theo phỏng vấn với Financial Times..."). Bài tự đưa tin/phỏng vấn trực tiếp hoặc chỉ trích dẫn ngắn nhiều nguồn → null. KHÔNG đoán.
+
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"relevant": true, "summary": "..."}}"""
+{{"relevant": true, "summary": "...", "origin": null}}"""
 
 
 SECTION6_SUMMARY_CONCURRENCY = 4
@@ -1042,7 +1097,8 @@ async def _summarize_section6_articles(
                 logger.warning("[REPORT] Mục 6: tóm tắt LLM thất bại cho bài %s, dùng fallback.", art["url"])
                 summary = art["summary"]
 
-            return {**art, "summary": summary}
+            origin = parsed.get("origin") if parsed and isinstance(parsed.get("origin"), str) else None
+            return {**art, "summary": summary, "origin": (origin or "").strip() or None}
 
     summarized = await asyncio.gather(*[_summarize_one(art) for art in articles])
     return [a for a in summarized if a is not None]
@@ -1077,10 +1133,16 @@ def _summarize_prices(prices: List[Dict]) -> str:
             if p.get("revision"):
                 line += f" | ⚠ {p['revision']}"
             if p.get("qtd_avg") is not None:
-                line += (
-                    f" | EUA TB lũy kế quý (giá đóng cửa, {p.get('qtd_sessions') or 0} phiên): {p['qtd_avg']:,.2f} "
-                    f"— dùng số này (không phải giá đóng cửa 1 phiên) khi so với giá CBAM"
-                )
+                if p.get("qtd_basis") == "auction_vwap":
+                    line += (
+                        f" | EUA lũy kế quý = VWAP đấu giá EEX ({p.get('qtd_sessions') or 0} phiên — đúng phương pháp EC "
+                        f"tính giá CBAM): {_vn_num(p['qtd_avg'])} — dùng số này (không phải giá đóng cửa 1 phiên) khi so với giá CBAM"
+                    )
+                else:
+                    line += (
+                        f" | EUA lũy kế quý XẤP XỈ = TB giá đóng cửa futures ({p.get('qtd_sessions') or 0} phiên; chưa có dữ liệu "
+                        f"đấu giá EEX — giá CBAM thật tính theo VWAP đấu giá): {_vn_num(p['qtd_avg'])} — khi nhắc PHẢI ghi \"xấp xỉ\""
+                    )
             lines.append(line)
     return "\n".join(lines) if lines else "Chưa có dữ liệu giá."
 
@@ -1257,7 +1319,8 @@ def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
     )
     if spread > 0:
         conclusion = (
-            "chuyển đổi khí→than ĐÃ BÃO HÒA (than đã rẻ hơn khí) — TTF tăng thêm KHÔNG còn nâng cầu EUA qua "
+            "chuyển đổi khí→than ĐÃ BÃO HÒA (than đã rẻ hơn khí) — điện than đang chạy gần tối đa, phát thải cao → "
+            "HỖ TRỢ MỨC cầu EUA hiện tại (đỡ giá, không phải yếu tố giảm); nhưng TTF tăng thêm KHÔNG còn nâng cầu EUA qua "
             "kênh fuel switching, chỉ tác động qua chi phí/hedge và có kênh ngược (công nghiệp cắt sản lượng → "
             "cầu EUA giảm). KHÔNG được viết \"TTF tăng → chuyển sang than → cầu EUA tăng\" và KHÔNG xếp \"TTF tăng\" "
             "vào động lực tăng/bullish của EUA."
@@ -1790,8 +1853,7 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
 
     ĐÃ LOẠI BỎ (không thể lấy dữ liệu thực):
       - API Crude Inventory: URL bị 404, yêu cầu membership — không có endpoint công khai.
-      - Đấu giá EUA EEX: dữ liệu nằm trong JS widget, cần Playwright — không thể
-        fetch bằng HTTP thuần. Lịch ngày Mon/Tue/Thu là ước tính không xác nhận.
+    Đấu giá EUA EEX tính riêng từ lịch chính thức trong DB — xem `_auction_calendar_events`.
 
     Quy đổi qua zoneinfo (tự bù DST của Mỹ) thay vì hardcode 1 offset cố định.
     """
@@ -1832,6 +1894,39 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
     events.sort(key=lambda e: e["date"])
     return events
 
+
+
+AUCTION_EVENT_RE = re.compile(r"Đấu giá EUA", re.IGNORECASE)
+
+
+async def _auction_calendar_events(session: AsyncSession, target_date_str: str) -> List[Dict]:
+    """1 sự kiện gộp các phiên đấu giá sơ cấp EUA trên EEX trong (target, target + 7 ngày] — từ lịch
+    chính thức đã crawl (eua_auctions, crawl_prices/crawl_eex_auctions.py). Gộp thay vì 1 dòng/phiên vì
+    gần như ngày làm việc nào cũng có phiên; chỉ lấy phiên TƯƠNG LAI nên không cần "outcome" (kết quả
+    đấu giá đã nằm ở khối ước tính CBAM của Mục 2)."""
+    target = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    rows = (await session.execute(
+        select(EuaAuction)
+        .where(
+            EuaAuction.auction_date > target,
+            EuaAuction.auction_date <= target + timedelta(days=CALENDAR_WINDOW_DAYS),
+            EuaAuction.status != "cancelled",
+        )
+        .order_by(EuaAuction.auction_date)
+    )).scalars().all()
+    if not rows:
+        return []
+    first, last = rows[0].auction_date, rows[-1].auction_date
+    span = first.strftime("%d/%m") if first == last else f"{first.strftime('%d/%m')}–{last.strftime('%d/%m')}"
+    return [{
+        "date": first.isoformat(),
+        "datetime_vn": first.strftime("%d/%m"),
+        "event": (
+            f"Đấu giá EUA sơ cấp EEX: {len(rows)} phiên {span}, tổng {_vn_num(sum(r.volume for r in rows) / 1e6)} triệu tấn "
+            f"(09:00–11:00 giờ CET; giá khớp các phiên quyết định giá CBAM quý)"
+        ),
+        "impact": "Thấp",
+    }]
 
 
 def _format_recurring_calendar_events(events: List[Dict]) -> str:
@@ -2075,7 +2170,7 @@ YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
 - Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo tác động EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
 - Bullet đầu: giá đóng cửa EUA + biên độ phiên (dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên; nếu "Không có dữ liệu" → bỏ qua biên độ) + xu hướng 30 ngày.
 - Mỗi bullet mở đầu bằng tag đậm (**EUA:**, **Chính sách:**...). Nêu tin chính sách/địa chính trị ảnh hưởng EUA.
-- CHUYỂN ĐỔI NHIÊN LIỆU (BẮT BUỘC thống nhất với Mục 2/3): khi khối "SPREAD THAN–KHÍ" có "KẾT LUẬN DÙNG CHUNG" → nhận định fuel switching PHẢI theo ĐÚNG kết luận đó (vd đã ghi "ĐÃ BÃO HÒA" thì TUYỆT ĐỐI KHÔNG viết "TTF tăng → nghiêng về chuyển sang than/cầu EUA tăng", và KHÔNG ghi "chưa tính spread" vì spread đã tính). Chỉ khi khối này báo thiếu dữ liệu mới dùng logic %Δ: than (API2) TĂNG so với khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → cầu EUA TĂNG, ghi rõ "theo %Δ, chưa tính spread". Than cho fuel switching EU là API2 (CIF ARA), KHÔNG dùng API4/NEWC. TUYỆT ĐỐI KHÔNG viết "than tăng hỗ trợ chi phí phát điện than/giữ nhu cầu EUA".
+- CHUYỂN ĐỔI NHIÊN LIỆU (BẮT BUỘC thống nhất với Mục 2/3): khi khối "SPREAD THAN–KHÍ" có "KẾT LUẬN DÙNG CHUNG" → nhận định fuel switching PHẢI theo ĐÚNG kết luận đó (vd đã ghi "ĐÃ BÃO HÒA" thì TUYỆT ĐỐI KHÔNG viết "TTF tăng → nghiêng về chuyển sang than/cầu EUA tăng", và KHÔNG ghi "chưa tính spread" vì spread đã tính). Chỉ khi khối này báo thiếu dữ liệu mới dùng logic %Δ: than (API2) TĂNG so với khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → cầu EUA TĂNG, ghi rõ "theo %Δ, chưa tính spread". Than cho fuel switching EU là API2 (CIF ARA), KHÔNG dùng API4/NEWC. KHÔNG viết "giá than TĂNG hỗ trợ cầu EUA" (than đắt lên làm than kém cạnh tranh). NHƯNG khi than đang rẻ hơn khí rõ rệt thì ĐƯỢC (và nên) viết: điện than chạy gần tối đa, phát thải cao → HỖ TRỢ MỨC cầu EUA hiện tại (chỉ không tạo thêm lực tăng) — đây là nhánh đỡ giá, không phải nhánh giảm.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm nếu bullet dựa trên 1 tin cụ thể ở trên), hoặc null nếu bullet chỉ dựa trên DỮ LIỆU GIÁ hệ thống (không phải tin tức) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
 
@@ -2309,6 +2404,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
         (a) CẦN THEO DÕI GÌ — nêu đích danh mã giá/chỉ số/tin tức cụ thể đã xuất hiện ở trên (vd "Δ tuần của Brent/WTI ở phiên tới", "diễn biến đàm phán sanctions Iran/Venezuela", "dữ liệu RES/gió-mặt trời ngày mai", "kết quả đấu giá EUA kỳ tới"...) — kèm ngày giờ Việt Nam cụ thể CHỈ khi tin tức/lịch công bố có nêu rõ, KHÔNG tự bịa thời điểm.
         (b) NẾU XẢY RA THEO HƯỚNG 1 — bắt đầu bằng "Nếu [diễn biến cụ thể theo hướng 1]..." → nêu rõ tác động tới cung/cầu và chiều giá EUA tương ứng.
         (c) NẾU XẢY RA THEO HƯỚNG NGƯỢC LẠI (hoặc không xảy ra) — bắt đầu bằng "Nếu [diễn biến ngược lại/không xác nhận]..." → nêu rõ tác động khác hoặc EUA đi ngang/giữ tín hiệu hỗn hợp.
+        PHÉP THỬ TRUNG LẬP (BẮT BUỘC): 2 nhánh (b)/(c) của MỖI watchpoint phải dẫn tới 2 kết cục KHÁC NHAU cho EUA — TUYỆT ĐỐI KHÔNG để cả 2 nhánh cùng ra "đi ngang/giảm" (hoặc cùng "tăng"); watchpoint không có nhánh nào xác nhận được chiều ngược lại thì không còn là phép kiểm tra. Toàn bộ danh sách phải có ít nhất 1 nhánh xác nhận chiều TĂNG và 1 nhánh xác nhận chiều GIẢM của EUA. Vd watchpoint spread than–khí: "Nếu than vẫn rẻ hơn khí rõ rệt → điện than chạy gần tối đa, giữ mức cầu EUA (đỡ giá)" vs "Nếu khí rẻ đi tới mức tranh được với than → dispatch sang khí, phát thải giảm → áp lực giảm EUA".
       MỖI watchpoint là 1 DÒNG RIÊNG, đánh số "1.", "2.", "3."... — PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng, TUYỆT ĐỐI KHÔNG viết liền các watchpoint thành 1 đoạn văn dài không xuống dòng. Số lượng watchpoint bám theo đúng số điểm còn chưa chắc chắn thực sự tồn tại ở "Phân tích"/tin tức — KHÔNG bịa thêm watchpoint không có căn cứ chỉ để đủ số lượng.
 
 C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn". Đây là phần người đọc xem để RA QUYẾT ĐỊNH nên phải NGẮN, TRỰC DIỆN, đi thẳng vào giá trị: chỉ nêu điều kiện, mức giá và hành động — KHÔNG giải thích cơ chế, KHÔNG lặp lại mục B, KHÔNG câu đệm/mở đầu/sáo rỗng. Mỗi trường là 1 mệnh đề cô đọng, ưu tiên số liệu cụ thể hơn lời văn. Mỗi kịch bản gồm:
@@ -2372,16 +2468,19 @@ YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH TÁC ĐỘNG CỦA TIN TỨC TỚI CU
    - Dòng CUỐI CÙNG của "content": "**Tổng hợp:** [NHÃN] ..." — NHÃN là 1 trong "[TÍCH CỰC]" (tin tức nghiêng về hỗ trợ EUA), "[TRUNG LẬP]" (tín hiệu hỗn hợp/không đáng kể), "[TIÊU CỰC]" (tin tức nghiêng về gây áp lực lên EUA); nội dung sau nhãn 40–45 chữ, tổng hợp kết luận các nhóm thành 1 nhận định dứt khoát về tác động của TIN TỨC trong ngày lên EUA — KHÔNG nêu bất kỳ con số giá nào, KHÔNG nêu Δ ngày/Δ tuần.
    - Không có tin nào tác động thực lên EUA: "content" = "Không có thông tin mới liên quan trực tiếp đến giá EUA." (bỏ dòng "**Tổng hợp:**").
 2. heading="Quan điểm thị trường" (TÙY CHỌN) — CHỈ khi tin tức THỰC SỰ nêu quan điểm/nhận định từ nguồn xác định: nêu consensus; contrarian (nếu có, kèm tên nguồn, luận điểm, điều kiện đúng); kết thúc bằng câu "**Kết luận:** ..." đối chiếu với "**Tổng hợp:**". Không có → KHÔNG thêm block này. Dự báo giá của tổ chức được nêu ở dạng định tính (không chép con số giá).
-3. heading="Cần theo dõi" (BẮT BUỘC) — các WATCHPOINT rút ra TRỰC TIẾP từ tin/phân tích ở trên, ưu tiên điều còn chưa chắc chắn (sự kiện chính sách đang chờ quyết định, rủi ro nguồn cung chờ giá phiên tới xác nhận...). Mỗi watchpoint 1 dòng đánh số "1.", "2."... (xuống dòng thật \\n giữa các dòng), gồm: (a) cần theo dõi gì (kèm ngày giờ Việt Nam CHỈ khi tin nêu rõ); (b) "Nếu [diễn biến hướng 1]..." → tác động cung/cầu EUA; (c) "Nếu [ngược lại/không xảy ra]..." → tác động khác. KHÔNG nêu mức giá/ngưỡng giá. Không bịa watchpoint cho đủ số.
+3. heading="Cần theo dõi" (BẮT BUỘC) — các WATCHPOINT rút ra TRỰC TIẾP từ tin/phân tích ở trên, ưu tiên điều còn chưa chắc chắn (sự kiện chính sách đang chờ quyết định, rủi ro nguồn cung chờ giá phiên tới xác nhận...). Mỗi watchpoint 1 dòng đánh số "1.", "2."... (xuống dòng thật \\n giữa các dòng), gồm: (a) cần theo dõi gì (kèm ngày giờ Việt Nam CHỈ khi tin nêu rõ); (b) "Nếu [diễn biến hướng 1]..." → tác động cung/cầu EUA; (c) "Nếu [ngược lại/không xảy ra]..." → tác động khác. 2 nhánh (b)/(c) PHẢI dẫn tới 2 kết cục KHÁC NHAU cho EUA (không để cả 2 cùng "đi ngang/giảm"); cả danh sách có ít nhất 1 nhánh xác nhận chiều tăng và 1 nhánh xác nhận chiều giảm. KHÔNG nêu mức giá/ngưỡng giá. Không bịa watchpoint cho đủ số.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 {{"3": {{"title": "Phân tích tác động của tin tức tới EUA (không có phiên giao dịch)", "analysis_blocks": [{{"heading": "Phân tích", "content": "..."}}, {{"heading": "Cần theo dõi", "content": "..."}}]}}}}"""
     return system, user
 
 
-def _prompt_section4(news_text: str, target_date: str) -> tuple[str, str]:
+def _prompt_section4(news_text: str, target_date: str, cbam_estimate_text: str = "") -> tuple[str, str]:
     system = f"Bạn là chuyên gia phân tích thị trường carbon tự nguyện và CBAM.\n{CONCISENESS_RULE}"
     user = f"""Ngày báo cáo: {target_date}
+
+{cbam_estimate_text}
+Bullet "Diễn biến CBAM" nhắc tới giá CBAM/chi phí CBAM của quý → dùng ĐÚNG số ước tính ở trên (ghi "ước tính"), KHÔNG lấy giá đóng cửa EUA làm giá CBAM. Không có tin CBAM thì KHÔNG viết bullet chỉ để nhắc lại ước tính (khối ước tính đã hiển thị riêng).
 
 TIN TỨC LIÊN QUAN đã đánh số [N] (cbam, vcm, global_carbon_market, vietnam_carbon_policy) — CHỈ trích dẫn số có thật:
 {news_text}
@@ -2422,11 +2521,12 @@ TIN TỨC LIÊN QUAN:
 {news_text}
 
 YÊU CẦU: Viết MỤC 8 — LỊCH SỰ KIỆN 7 NGÀY TỚI ({window_start} → {window_end}).
-"events" CHỈ được gồm sự kiện thuộc ĐÚNG 3 NHÓM sau — KHÔNG thêm bất kỳ sự kiện nào ngoài 3 nhóm này dù tin tức có nhắc tới:
+"events" CHỈ được gồm sự kiện thuộc ĐÚNG 4 NHÓM sau — KHÔNG thêm bất kỳ sự kiện nào ngoài 4 nhóm này dù tin tức có nhắc tới:
   1. Tồn kho dầu EIA — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên (đã có kết quả thực tế nếu sự kiện đã xảy ra), không tự tính lại, không tự đoán kết quả nếu outcome đã được điền sẵn.
   2. Rig count Baker Hughes — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" ở trên (đã có kết quả thực tế nếu sự kiện đã xảy ra), không tự tính lại.
   3. Họp chính sách (ECB / FOMC / Hội nghị thượng đỉnh EU – Hội đồng châu Âu / Hội đồng Môi trường hoặc Năng lượng EU / bỏ phiếu của Nghị viện EU / EU Climate Action / quyết định về EU ETS, MSR, CBAM) — CHỈ thêm nếu TIN TỨC LIÊN QUAN ở trên xác nhận rõ ngày họp cụ thể; KHÔNG có xác nhận thì KHÔNG thêm (không đoán ngày). Cuộc họp đang/vừa diễn ra trong cửa sổ mà tin tức có nhắc (vd thượng đỉnh EU bàn về ETS, sức ép của các nước đòi nới ETS) → BẮT BUỘC đưa vào, kèm "outcome": "Chưa có kết quả được xác nhận" nếu tin chưa nêu kết quả — KHÔNG bỏ sót vì chưa có kết quả.
-LƯU Ý: API Crude Inventory và Đấu giá EUA EEX đã bị loại bỏ khỏi danh sách theo dõi định kỳ do không có nguồn dữ liệu công khai lấy được tự động. KHÔNG thêm các sự kiện này vào "events" dù báo cáo trước có liệt kê.
+  4. Đấu giá EUA sơ cấp EEX — lấy NGUYÊN từ "SỰ KIỆN ĐỊNH KỲ ĐÃ TÍNH SẴN" (tính từ lịch đấu giá chính thức của EEX), KHÔNG tự thêm phiên đấu giá khác.
+LƯU Ý: API Crude Inventory đã bị loại bỏ khỏi danh sách theo dõi định kỳ do không có nguồn dữ liệu công khai lấy được tự động. KHÔNG thêm sự kiện này vào "events" dù báo cáo trước có liệt kê.
 Với sự kiện bạn TỰ thêm ở nhóm 3: "date" (YYYY-MM-DD), "datetime_vn" (CHỈ "DD/MM", KHÔNG kèm năm, TUYỆT ĐỐI KHÔNG kèm giờ dù tin tức có nêu rõ giờ), "event", "impact" (Cao/Trung/Thấp).
 
 CẬP NHẬT KẾT QUẢ SỰ KIỆN KỲ TRƯỚC (bắt buộc, chỉ áp dụng cho danh sách "SỰ KIỆN TỪ BÁO CÁO TRƯỚC" ở trên):
@@ -2508,17 +2608,18 @@ A. "short_term": mảng object, gợi ý ngắn hạn MỚI gắn TRỰC TIẾP 
    - "trigger_rule": CHỈ khi "trigger" là 1 NGƯỠNG GIÁ đóng cửa của 1 mã trong bảng giá → object {{"code": "<mã>", "op": ">" | ">=" | "<" | "<=", "value": <số, cùng đơn vị với giá>}}; mã hợp lệ: {valid_codes or "(không có)"}. Điều kiện dạng tin tức/chính sách → null.
    - "action": hành động cụ thể SIM nên làm, khả thi và thực tế.
    - "reason": lý do vì sao hành động này hợp lý (bối cảnh/số liệu hôm nay + chuỗi nhân quả đã phân tích ở các mục trên).
-   - "source_index": số [N] của bài tin tức làm căn cứ chính (null nếu chỉ dựa trên dữ liệu giá) — để bài đó có trong mục Nguồn tham khảo.
+   - "source_index": số [N] của bài tin tức làm căn cứ chính — BẮT BUỘC khi gợi ý dựa trên tin; null CHỈ khi điều kiện là ngưỡng giá có "trigger_rule". Gợi ý dựa trên tin mà không gắn được số [N] có thật → BỎ (hệ thống sẽ tự loại).
 B. "long_term": mảng object, gợi ý dài hạn rút ra từ cơ hội phân tích (chính sách CBAM, VCM, chuyển dịch năng lượng...). Mỗi object gồm ĐÚNG 3 trường, MỖI TRƯỜNG TỐI ĐA 1 CÂU NGẮN GỌN:
    - "opportunity": cơ hội/xu hướng dài hạn cụ thể đã xác định được.
    - "solution": giải pháp/hướng đi đề xuất cho SIM để tận dụng cơ hội đó.
    - "expectation": kỳ vọng/kết quả nếu triển khai giải pháp này.
-   - "source_index": số [N] của bài làm căn cứ (null nếu không dựa trên 1 bài cụ thể).
+   - "source_index": BẮT BUỘC là số [N] có thật của bài làm căn cứ — gợi ý dài hạn không có bài làm căn cứ thì KHÔNG viết (hệ thống tự loại gợi ý thiếu nguồn vì người đọc không kiểm chứng được).
+   - TRUNG THỰC VỚI NGUỒN: tên công ty/quỹ/dự án, số tiền, công suất, ngày tháng nêu trong gợi ý PHẢI có trong CHÍNH bài [N] được gắn — KHÔNG lấy chi tiết từ bài khác hay từ hiểu biết riêng.
 
 CBAM: SIM có khách hàng nhôm/thép xuất khẩu sang EU nên nếu tin tức/dữ liệu có CBAM (giá CBAM, chính sách, nhôm/thép) thì BẮT BUỘC có ít nhất 1 gợi ý về CBAM. QUY TẮC CBAM BẮT BUỘC (gửi cho khách — sai là mất uy tín):
   (a) {CBAM_COST_RULE}
   (b) {CBAM_SCOPE_RULE}
-  (c) Giá CBAM 2026 chốt theo QUÝ (trung bình giá đấu giá EUA của quý, áp dụng cho chứng chỉ của quý đó) — điều kiện/trigger liên quan CHI PHÍ CBAM (bảng tính chi phí carbon, báo giá CBAM cho khách, mua chứng chỉ) PHẢI dùng "EUA trung bình lũy kế quý" so với giá CBAM hiện hành, KHÔNG dùng giá đóng cửa EUA 1 phiên; trigger_rule khi đó = {{"code": "EUA", "basis": "qtd_avg", "op": ..., "value": ...}} (xem "EUA TB lũy kế quý" trong DỮ LIỆU GIÁ).
+  (c) Giá CBAM 2026 chốt theo QUÝ (trung bình giá đấu giá EUA của quý, áp dụng cho chứng chỉ của quý đó) — điều kiện/trigger liên quan CHI PHÍ CBAM (bảng tính chi phí carbon, báo giá CBAM cho khách, mua chứng chỉ) PHẢI dùng "EUA lũy kế quý" so với giá CBAM hiện hành, KHÔNG dùng giá đóng cửa EUA 1 phiên; trigger_rule khi đó = {{"code": "EUA", "basis": "qtd_avg", "op": ..., "value": ...}} (xem "EUA lũy kế quý" trong DỮ LIỆU GIÁ — ghi đúng nhãn ở đó: "VWAP đấu giá EEX" hoặc "xấp xỉ"). Dự báo giá CBAM của quý: dùng ĐÚNG "ƯỚC TÍNH GIÁ CBAM" tính sẵn, KHÔNG tự ước tính.
 QUY TẮC NHẤT QUÁN TRIGGER: nếu gợi ý mới có CÙNG hành động (hoặc cùng mục đích) với 1 gợi ý trong danh sách "ĐANG THEO DÕI" thì KHÔNG tạo lại; nếu buộc phải nêu lại thì GIỮ ĐÚNG chiều điều kiện cũ (không đổi "> X" thành "< Y" sau 1 ngày) — muốn đổi chiều phải nêu rõ lý do bằng dữ liệu trong "reason".
 QUY TẮC NỘI DUNG: gợi ý dài hạn phải có 1 bước thí điểm cụ thể (quy mô/đối tượng/thời gian) hoặc chỉ tiêu tài chính gắn với dữ kiện trong tin tức — KHÔNG chỉ nêu khái niệm chung (BII, NBS, điện hóa nhiệt...). Số tiền/cam kết của 1 tổ chức phải khớp với bài được trích, không tự đổi số.
 QUY TẮC SỐ LƯỢNG: chỉ đưa vào gợi ý THỰC SỰ có căn cứ từ tin tức/dữ liệu ở trên — TUYỆT ĐỐI KHÔNG bịa thêm cho đủ số dòng. Nếu 1 bảng không có gợi ý nào đủ căn cứ, để mảng đó rỗng. TỐI ĐA 3 gợi ý MỖI bảng (short_term và long_term riêng biệt) — nếu có nhiều hơn 3 gợi ý đủ căn cứ, CHỈ giữ lại ĐÚNG 3 gợi ý TRỌNG TÂM/có căn cứ mạnh nhất, bỏ phần còn lại (KHÔNG cố nhồi hết vào 1 bảng, sẽ làm output quá dài và bị cắt).
@@ -2731,11 +2832,24 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     gasoil_crack_spread = _gasoil_crack_spread_summary(prices, prev_report_close) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
+    # Ước tính giá CBAM quý đang chạy (VWAP đấu giá EEX + lịch còn lại) — báo cáo CN/T2 không có giá → bỏ.
+    eua_close = next((p.get("close") for p in prices if p.get("code") == "EUA"), None)
+    cbam_est = (
+        await cbam_estimate.build_cbam_estimate(session, max_price_date, eua_close, [c["close"] for c in chart_data])
+        if prices and max_price_date else None
+    )
+    cbam_est_text = cbam_estimate.describe_for_prompt(cbam_est)
+
+    # Sự kiện đấu giá EEX tính lại mỗi ngày từ eua_auctions (_auction_calendar_events) — bỏ bản của
+    # báo cáo trước để không bị đưa vào nhóm "cần cập nhật kết quả" (kết quả đấu giá nằm ở khối CBAM).
     pending_outcome_events, still_upcoming_events = _split_prev_events(
-        await get_previous_report_events(session, report_date), target_date
+        [ev for ev in await get_previous_report_events(session, report_date)
+         if not AUCTION_EVENT_RE.search(str(ev.get("event") or ""))],
+        target_date,
     )
     prev_events_text = _format_prev_events(pending_outcome_events, still_upcoming_events)
     recurring_calendar_events = _compute_recurring_calendar_events(target_date)
+    recurring_calendar_events += await _auction_calendar_events(session, target_date)
 
     # ── Fetch dữ liệu thực EIA + Baker Hughes (song song, non-blocking) ──
     # Chỉ fetch 2 nguồn có endpoint công khai:
@@ -2858,7 +2972,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             if evidence:
                 triggered_suggestions[s.id] = {
                     "evidence": evidence,
-                    "source_name": "Giá chốt phiên (Barchart)",
+                    "source_name": "Giá chốt phiên (Barchart/ICE)",
                     "source_url": next(
                         (p.get("source_url") for p in prices if p.get("code") == rule.get("code")), None
                     ),
@@ -2897,7 +3011,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 _filter_news_for_section(news_by_topic, "3"), target_date,
                 _topics_present(news_by_topic, "3"), overrides=eua_framework_overrides,
             )),
-            ("4", _prompt_section4(section4_news_text, target_date)),
+            ("4", _prompt_section4(section4_news_text, target_date, cbam_est_text)),
             ("8", _prompt_section8(
                 _filter_news_for_section(news_by_topic, "8"),
                 prev_events_text, target_date, recurring_events_text,
@@ -2944,7 +3058,8 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             )),
             ("4", _prompt_section4(
                 section4_news_text,
-                target_date
+                target_date,
+                cbam_est_text,
             )),
             ("8", _prompt_section8(
                 _filter_news_for_section(news_by_topic, "8"),
@@ -2952,7 +3067,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             )),
             ("biz", _prompt_biz_recommendation(
                 biz_news_text,
-                prices_text, eua_trend, target_date,
+                prices_text + "\n\n" + cbam_est_text, eua_trend, target_date,
                 tracking_text=biz_memory.describe_for_prompt(still_tracking),
                 dismissed_text=biz_memory.describe_for_prompt(dismissed_suggestions),
                 valid_codes=", ".join(sorted(valid_price_codes)),
@@ -3102,9 +3217,10 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     else:
         content["2"] = {
             "title": "Bảng giá nhanh",
-            "price_timestamp": f"Giá chốt phiên {max_price_date or target_date} (nguồn: Barchart EOD)",
+            "price_timestamp": f"Giá chốt phiên {max_price_date or target_date} (nguồn: Barchart/ICE EOD)",
             "key_facts": eua_key_facts,
             "prices": prices,
+            "cbam_estimate": cbam_est,
             "key_developments": key_developments,
             "chart_data": chart_data,
             "market_drivers": {
@@ -3128,11 +3244,13 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         art = biz_index_lookup.get(_first_source_index(it.get("source_index")))
         return {"source_name": art["source"], "source_url": art["url"]} if art else {}
 
+    # Gợi ý KHÔNG kiểm chứng được (không có bài nguồn, cũng không phải ngưỡng giá) bị loại — người đọc
+    # phải lần được tới tin gốc (vd "L&G và NTR huy động 330 triệu EUR" không có nguồn từng lọt vào báo cáo).
     new_short_term: List[Dict[str, Any]] = []
     for it in biz.get("short_term") or []:
         if not isinstance(it, dict) or not (it.get("trigger") or "").strip() or not (it.get("action") or "").strip():
             continue
-        new_short_term.append({
+        item = {
             "trigger": it["trigger"].strip(),
             "trigger_rule": biz_memory.resolve_price_rule(
                 biz_memory.normalize_trigger_rule(it.get("trigger_rule"), valid_price_codes), it["trigger"], prices,
@@ -3140,17 +3258,25 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             "action": it["action"].strip(),
             "reason": (it.get("reason") or "").strip(),
             **_biz_source(it),
-        })
-    new_long_term: List[Dict[str, Any]] = [
-        {
+        }
+        if not item.get("source_url") and not item["trigger_rule"]:
+            logger.warning("[REPORT] Gợi ý ngắn hạn không có nguồn/ngưỡng giá — bỏ: %s", item["trigger"][:120])
+            continue
+        new_short_term.append(item)
+    new_long_term: List[Dict[str, Any]] = []
+    for it in biz.get("long_term") or []:
+        if not (isinstance(it, dict) and (it.get("opportunity") or "").strip() and (it.get("solution") or "").strip()):
+            continue
+        item = {
             "opportunity": it["opportunity"].strip(),
             "solution": it["solution"].strip(),
             "expectation": (it.get("expectation") or "").strip(),
             **_biz_source(it),
         }
-        for it in biz.get("long_term") or []
-        if isinstance(it, dict) and (it.get("opportunity") or "").strip() and (it.get("solution") or "").strip()
-    ]
+        if not item.get("source_url"):
+            logger.warning("[REPORT] Gợi ý dài hạn không có nguồn — bỏ: %s", item["opportunity"][:120])
+            continue
+        new_long_term.append(item)
     # "tracking" = đề xuất cũ CHƯA kích hoạt (vẫn đúng, chỉ chưa tới điều kiện) — hiển thị kèm hạn theo dõi.
     reminders, tracking = biz_memory.reminders_for_content(active_suggestions, triggered_suggestions, contradicted_suggestions)
     try:
@@ -3212,5 +3338,14 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             for a in (used_articles or cited_articles[:40])
         ],
     }
+
+    # Chuỗi nguồn gốc → nơi đăng lại (tóm tắt Mục 6 nhận diện "origin") áp cho mọi chỗ trích cùng bài.
+    chain_by_url = {
+        a["url"]: source_chain_label(a.get("origin"), a["source"])
+        for a in section6_international + section6_vietnam
+        if isinstance(a, dict) and a.get("origin") and a.get("url") and a.get("source")
+    }
+    if chain_by_url:
+        apply_source_chains(content, chain_by_url)
 
     return content

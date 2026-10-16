@@ -719,3 +719,36 @@ class CrawlSeenUrl(Base):
 
     def __repr__(self) -> str:
         return f"CrawlSeenUrl(url={self.url!r}, status={self.status!r}, attempts={self.attempts!r})"
+
+
+class EuaAuction(Base):
+    """1 phiên đấu giá sơ cấp EUA trên EEX (crawl_prices/crawl_eex_auctions.py).
+
+    Cùng bảng chứa cả LỊCH (status='scheduled', chưa có giá — từ file Auction Calendar) lẫn
+    KẾT QUẢ (status='successful'/'cancelled' — từ file Primary Market Auction Report); kết quả
+    ghi đè dòng lịch cùng (auction_date, auction_name). Giá CBAM 2026 EC công bố theo quý = VWAP
+    (gia quyền khối lượng) giá khớp của mọi phiên trong quý — xem services/cbam_estimate.py."""
+
+    __tablename__ = "eua_auctions"
+    __table_args__ = (
+        UniqueConstraint("auction_date", "auction_name", name="uq_eua_auctions_date_name"),
+        CheckConstraint("status IN ('scheduled', 'successful', 'cancelled')", name="ck_eua_auctions_status"),
+        Index("idx_eua_auctions_auction_date", "auction_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    auction_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Tên chuẩn hoá theo nền tảng: "EU" / "DE" / "PL" / "NIR" (file lịch và file kết quả đặt tên khác nhau).
+    auction_name: Mapped[str] = mapped_column(Text, nullable=False)
+    contract: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    volume: Mapped[float] = mapped_column(Float, nullable=False)  # tCO2 — kế hoạch (lịch) hoặc thực đấu giá
+    auction_price: Mapped[Optional[float]] = mapped_column(Float)  # EUR/tCO2, giá khớp
+    cover_ratio: Mapped[Optional[float]] = mapped_column(Float)
+    total_bidders: Mapped[Optional[int]] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"EuaAuction({self.auction_date!r}, {self.auction_name!r}, {self.status!r}, {self.auction_price!r})"

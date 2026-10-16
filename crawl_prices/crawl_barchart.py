@@ -7,7 +7,11 @@ cần thiết cho hệ thống phân tích carbon:
   Carbon   : EUA (CK*0)
   Gas      : TTF (INXU26), Henry Hub NG (NG*0)
   Oil      : Brent (CB*0), WTI (CL*0), Gasoil (LF*0)
-  Coal     : API2/ARA (ITF*1), API4/Richards Bay (LV*0)
+  Coal     : API4/Richards Bay (LV*0); API2/ARA lấy từ ICE (xem dưới)
+
+Mã khai báo symbol dạng "ICE:<productId>:<hubId>[:<pageId>]" (vd API2 = "ICE:517:681:243")
+được lấy thẳng từ dữ liệu trễ công khai của ICE qua crawl_prices/crawl_ice.py (httpx,
+không cần Chromium) — Barchart ngừng cập nhật API2 (ITF*) từ 2023-08-18 dù vẫn trả 200.
 
 Kỹ thuật (Playwright, không còn dùng requests):
   Barchart đã bật AWS WAF (trả 202 + JS challenge cho request thường, không
@@ -51,6 +55,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base_crawler import BaseCrawler
+from crawl_prices.crawl_ice import fetch_ice_prices, is_ice_symbol, new_ice_client
 from core.config import Settings
 from db import create_engine, build_sessionmaker
 from db.models import Instrument, Price, PriceCrawlSource
@@ -68,6 +73,10 @@ MIN_VALID_PRICE    = 0.01
 MAX_RESULTS_PER_SYMBOL = 30  # chỉ upsert tối đa 30 phiên gần nhất mỗi lần chạy
 MAX_FETCH_ATTEMPTS = 3       # số lần thử fetch+parse mỗi symbol trước khi bỏ cuộc
 RETRY_BACKOFF_SECONDS = 5    # chờ attempt * giá trị này giữa các lần thử
+# Phiên mới nhất cũ hơn ngày dữ liệu quá số ngày lịch này → nguồn đã ngừng cập nhật
+# (vd Barchart ITF*1 trả 200 nhưng dừng ở 2023-08-18): KHÔNG lưu, báo lỗi để admin đổi nguồn.
+# 5 ngày đủ phủ cuối tuần + 1-2 ngày lễ.
+STALE_PRICE_MAX_DAYS = 5
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -254,7 +263,7 @@ def _parse_historical_json(data: dict, spec: BarchartSpec, target_date: date) ->
 # DB upsert — theo đúng pattern crawl_eia.py
 # ---------------------------------------------------------------------------
 
-async def _upsert(results: list[dict], spec: BarchartSpec, session_factory) -> None:
+async def _upsert(results: list[dict], spec: BarchartSpec, session_factory, source_name: str = "Barchart") -> None:
     """
     Upsert instrument nếu chưa có, upsert price theo UNIQUE(instrument_id, price_date).
     Chạy lại trong ngày → chỉ update, không tạo bản ghi trùng.
@@ -295,7 +304,7 @@ async def _upsert(results: list[dict], spec: BarchartSpec, session_factory) -> N
                         day_change_pct=result["day_change_pct"],
                         week_change_pct=result["week_change_pct"],
                         volume=result["volume"],
-                        source_name="Barchart",
+                        source_name=source_name,
                     )
                     .on_conflict_do_update(
                         index_elements=["instrument_id", "price_date"],
@@ -308,6 +317,7 @@ async def _upsert(results: list[dict], spec: BarchartSpec, session_factory) -> N
                             "day_change_pct":  result["day_change_pct"],
                             "week_change_pct": result["week_change_pct"],
                             "volume":          result["volume"],
+                            "source_name":     source_name,
                         },
                     )
                 )
@@ -315,24 +325,42 @@ async def _upsert(results: list[dict], spec: BarchartSpec, session_factory) -> N
 
 
 async def _fetch_and_parse_with_retry(
-    context: BrowserContext, spec: BarchartSpec, target_date: date
+    context: BrowserContext, ice_client, spec: BarchartSpec, target_date: date
 ) -> list[dict]:
     """Fetch + parse 1 symbol, thử lại tối đa MAX_FETCH_ATTEMPTS lần (timeout/WAF/phiên
-    chưa có...) — tránh 1 lỗi tạm thời làm mất hẳn giá của mã đó trong báo cáo sáng."""
+    chưa có...) — tránh 1 lỗi tạm thời làm mất hẳn giá của mã đó trong báo cáo sáng.
+    Symbol "ICE:..." lấy từ ICE (crawl_ice.py), còn lại từ Barchart."""
     for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
         try:
+            if is_ice_symbol(spec.symbol):
+                return await fetch_ice_prices(
+                    ice_client, spec.symbol, spec.instrument_code, target_date, MAX_RESULTS_PER_SYMBOL,
+                )
             data = await _fetch_historical_json(context, spec)
             return _parse_historical_json(data, spec, target_date)
         except Exception as exc:
             if attempt == MAX_FETCH_ATTEMPTS:
                 raise
             logger.warning(
-                "Barchart %s lỗi lần %d/%d (%s: %s) — thử lại sau %ds",
+                "%s lỗi lần %d/%d (%s: %s) — thử lại sau %ds",
                 spec.symbol, attempt, MAX_FETCH_ATTEMPTS,
                 type(exc).__name__, exc, attempt * RETRY_BACKOFF_SECONDS,
             )
             await asyncio.sleep(attempt * RETRY_BACKOFF_SECONDS)
     raise RuntimeError("unreachable")
+
+
+def _stale_reason(results: list[dict], target_date: date) -> Optional[str]:
+    """Lý do coi kết quả là dữ liệu chết (phiên mới nhất quá cũ), None nếu bình thường."""
+    if not results:
+        return None
+    latest = date.fromisoformat(results[-1]["price_date"])
+    if (target_date - latest).days > STALE_PRICE_MAX_DAYS:
+        return (
+            f"phiên mới nhất {latest} cũ hơn ngày dữ liệu {target_date} quá {STALE_PRICE_MAX_DAYS} ngày "
+            "— nguồn đã ngừng cập nhật, cần đổi symbol/nguồn ở /admin/price-sources"
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +407,7 @@ class BarchartPriceCrawler(BaseCrawler):
                 user_agent=_UA,
                 locale="en-US",
             )
+            ice_client = new_ice_client()
             try:
                 # Xác định ngày hôm qua theo giờ Việt Nam (giống cho mọi symbol)
                 target_date = _yesterday_vn()
@@ -387,10 +416,19 @@ class BarchartPriceCrawler(BaseCrawler):
                 for spec in specs:
                     try:
                         # 1+2. Mở trang price-history, chặn response JSON và parse (có retry)
-                        results = await _fetch_and_parse_with_retry(context, spec, target_date)
+                        results = await _fetch_and_parse_with_retry(context, ice_client, spec, target_date)
+
+                        stale = _stale_reason(results, target_date)
+                        if stale:
+                            logger.error("Bỏ qua %s (%s): %s", spec.instrument_code, spec.symbol, stale)
+                            stats["errors"].append(spec.symbol)
+                            continue
 
                         # 3. Lưu DB
-                        await _upsert(results, spec, session_factory)
+                        await _upsert(
+                            results, spec, session_factory,
+                            source_name="ICE" if is_ice_symbol(spec.symbol) else "Barchart",
+                        )
 
                         stats["prices_saved"] += len(results)
                         if results:
@@ -413,9 +451,10 @@ class BarchartPriceCrawler(BaseCrawler):
                         )
                         stats["errors"].append(spec.symbol)
                     except Exception:
-                        logger.exception("Lỗi crawl Barchart symbol %s", spec.symbol)
+                        logger.exception("Lỗi crawl giá symbol %s", spec.symbol)
                         stats["errors"].append(spec.symbol)
             finally:
+                await ice_client.aclose()
                 await context.close()
                 await browser.close()
 

@@ -1,4 +1,4 @@
-# Danh sách instrument cần lấy giá — tất cả crawl từ Barchart.
+# Danh sách instrument cần lấy giá — crawl từ Barchart (riêng API2 lấy từ ICE).
 # Nguồn: crawl_prices/crawl_barchart.py  (BarchartPriceCrawler)
 # Chạy hàng ngày lúc 07:00 ICT — lấy giá đóng cửa ngày hôm qua (giờ VN).
 
@@ -63,10 +63,11 @@ instruments:
     unit: "USD/MT"
 
   # ── Coal ─────────────────────────────────────────────────────────────────
+  # Barchart ngừng cập nhật ITF* (API2) từ 2023-08-18 → lấy thẳng từ ICE (crawl_prices/crawl_ice.py)
   - name: "API2 Coal ARA"
     code: "API2"
-    symbol_barchart: "ITF*1"
-    provider: barchart
+    symbol_ice: "ICE:517:681:243"
+    provider: ice
     group: coal
     exchange: ICE
     unit: "USD/MT"

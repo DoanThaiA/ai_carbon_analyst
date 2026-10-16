@@ -269,7 +269,7 @@
     "title": "Price Sources",
     "subtitle": "Configure the contracts to crawl prices from Barchart",
     "add": "Add price source",
-    "phSymbol": "Symbol (e.g. NG*0)",
+    "phSymbol": "Symbol (e.g. NG*0 or ICE:517:681:243)",
     "phCode": "Internal code (e.g. NG)",
     "phName": "Display name",
     "phCategory": "Category (e.g. gas)",
@@ -430,6 +430,37 @@
     "exampleOffTitle": "Use this answer as a reference chat example (few-shot) for Quote Chat",
     "exampleAdded": "Added as reference",
     "exampleAdd": "Add as reference"
+  },
+  "cbamEstimate": {
+    "title": "CBAM price estimate {quarter}",
+    "signalLabel": "CBAM hedge",
+    "signal": {
+      "increase": "Increase",
+      "hold": "Hold",
+      "reduce": "Reduce"
+    },
+    "estimate": "Quarter price estimate",
+    "ci": "{level}% confidence interval: {low}–{high}",
+    "qtdVwap": "Auction VWAP to date",
+    "auctionsDone": "{done}/{total} auctions this quarter",
+    "spot": "Current EUA price",
+    "spotVsQtd": "{pct}% vs. VWAP to date",
+    "fixedShare": "{pct}% of quarterly volume fixed",
+    "volume": "{done}/{total} Mt",
+    "signalWhy": "Why",
+    "reason": {
+      "quarter_fixed": "All auctions of the quarter have taken place — the quarterly price is effectively fixed, pending EC publication.",
+      "quarter_not_started": "No auction has taken place this quarter yet — no benchmark to compare against; keep the current hedge ratio.",
+      "quarter_mostly_fixed": "More than {fixed}% of the quarterly volume is fixed — the open part is small; hold and shift focus to next quarter.",
+      "spot_below_qtd": "The current EUA price is {gap}% below the auction VWAP to date (threshold {threshold}%) — hedging the unfixed part now is cheaper than the level already fixed.",
+      "spot_above_qtd": "The current EUA price is {gap}% above the auction VWAP to date (threshold {threshold}%) — buying more now locks in above the fixed level; slow down hedge purchases.",
+      "spot_near_qtd": "The current EUA price deviates {gap}% from the auction VWAP to date (below the {threshold}% threshold) — keep the current hedging pace."
+    },
+    "lastAuction": "Latest auction {date} ({platform}): clearing price EUR {price}/t",
+    "cover": "cover ratio {ratio}",
+    "upcoming": "Next 7 days: {count} auctions ({from}–{to}), {volume} Mt in total",
+    "prevQuarter": "Method check — {quarter}: auction VWAP {vwap} ↔ EC published EUR {official}/t",
+    "method": "The EC's quarterly CBAM price = volume-weighted average (VWAP) of clearing prices of all primary EUA auctions on EEX in the quarter. Volumes not yet auctioned are assumed at the current EUA price; the confidence interval uses the EUA's realised daily volatility of {vol}% (random walk). This is an estimate, not the official price."
   },
   "chatLib": {
     "docNotSupported": "\"{name}\": .doc files are not supported — please re-save as .docx.",

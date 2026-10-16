@@ -286,7 +286,7 @@ async def _tool_market_prices_text(session: AsyncSession, target_date: str, requ
         date_note = ""
     return (
         f"{date_note}\n{prices_text}\n"
-        "LƯU Ý: hệ thống có dữ liệu giá thật cho EUA, TTF/gas, API2/than, Brent, WTI, DEBY1/điện Đức, "
+        f"LƯU Ý: hệ thống có dữ liệu giá thật cho {TRACKED_INSTRUMENTS_LABEL}, "
         "và giá tham chiếu CBAM Certificate (EUR/tCO2, chốt theo quý, KHÔNG có Δ ngày/Δ tuần — hỏi 'giá CBAM' "
         "thì trả lời đúng con số CBAM ở trên kèm ngày chốt/ghi chú, KHÔNG nói hệ thống không theo dõi CBAM, "
         "KHÔNG thay bằng giá EUA). Dùng ĐÚNG số này (Δ ngày/Δ tuần), TUYỆT ĐỐI KHÔNG tự bịa số hay "
@@ -1577,12 +1577,19 @@ _DATE_PARAM_SCHEMA = {
     ),
 }
 
+# Nhãn các mã có giá thật — PHẢI khớp price_crawl_sources/instruments.yaml (test_instrument_labels chặn
+# lệch nhãn: từng ghi "API2/than" khi dữ liệu thật chỉ có API4 Richards Bay).
+TRACKED_INSTRUMENTS_LABEL = (
+    "EUA, TTF (khí EU), Henry Hub (NG), Brent, WTI, Gasoil, than API2 (CIF ARA — chuẩn EU) và "
+    "API4 (Richards Bay — chuẩn châu Á), DEBY1 (điện Đức)"
+)
+
 CLIENT_TOOLS = [
     {
         "name": "get_market_prices",
         "description": (
-            "Lấy giá đóng cửa + Δ ngày + Δ tuần của 6 instrument hệ thống theo dõi (EUA, TTF/gas, "
-            "API2/than, Brent, WTI, DEBY1/điện Đức) + giá CBAM Certificate (EUR/tCO2, chốt theo quý, "
+            f"Lấy giá đóng cửa + Δ ngày + Δ tuần của các instrument hệ thống theo dõi ({TRACKED_INSTRUMENTS_LABEL}) "
+            "+ giá CBAM Certificate (EUR/tCO2, chốt theo quý, "
             "không có Δ) cho ngày báo cáo đang xem (hoặc ngày cụ thể truyền qua `date`). Gọi khi hỏi 'giá CBAM' hoặc khi câu trả lời cần SỐ LIỆU GIÁ CỤ THỂ chưa có sẵn trong đoạn "
             "trích/dữ liệu nền đã cung cấp."
         ),
