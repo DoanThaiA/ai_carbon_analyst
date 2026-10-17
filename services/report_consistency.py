@@ -189,6 +189,24 @@ def fix_range_claims(
     return text, problems
 
 
+# ── 2a. ATR ───────────────────────────────────────────────────────────────────
+ATR_SESSIONS = 14
+
+
+def atr_true_range(chart: List[Dict[str, Any]], n: int = ATR_SESSIONS) -> Optional[float]:
+    """ATR = TB True Range n phiên cuối của `chart`; TR = max(cao − thấp, |cao − đóng cửa trước|, |thấp − đóng cửa trước|).
+    Dùng chung bộ sinh + Jack + văn bản báo cáo (trước dùng TB cao − thấp → 1,67 thay vì 1,69 theo True Range)."""
+    rows = [c for c in chart if isinstance(c, dict) and all(isinstance(c.get(k), (int, float)) for k in ("high", "low"))]
+    if not rows:
+        return None
+    trs = []
+    for i in range(max(0, len(rows) - n), len(rows)):
+        h, l = float(rows[i]["high"]), float(rows[i]["low"])
+        pc = rows[i - 1].get("close") if i > 0 else None
+        trs.append(max(h - l, abs(h - pc), abs(l - pc)) if isinstance(pc, (int, float)) else h - l)
+    return sum(trs) / len(trs)
+
+
 # ── 2b. Chuỗi phiên tăng/giảm liên tiếp ───────────────────────────────────────
 def eua_streak(chart: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Số phiên liên tiếp cùng chiều (giá đóng cửa so phiên trước) tính tới phiên mới nhất.
@@ -250,6 +268,21 @@ def fix_streak_claims(text: str, streak: Optional[Dict[str, Any]]) -> Tuple[str,
 _DERIVED_RE = re.compile(rf"(?P<x>{_NUM})\s*\(\s*=?\s*(?P<y>{_NUM})\s*[×x\*]\s*(?P<f>\d+(?:[.,]\d+)?)\s*\)")
 
 
+_PCT_FROM_CLOSE_RE = re.compile(
+    rf"(?P<x>{_NUM})\s*\(\s*(?P<pct>[+\-−]\s*\d+(?:[.,]\d+)?)\s*%\s*so với\s+(?:giá\s+)?đóng cửa\s*(?P<ref>{_NUM})"
+)
+
+
+def _entry_level(sc: Dict[str, Any]) -> Optional[float]:
+    """Giá vào lệnh thực của kịch bản tăng/giảm: mức kích hoạt (lệnh phá vỡ) hoặc giữa vùng Entry."""
+    from services.strategy_levels import strategy_levels
+    lv = strategy_levels(sc)
+    if not lv:
+        return None
+    zone = lv["entry_buy"] if sc.get("direction") == "tăng" else lv["entry_sell"]
+    return sum(zone) / len(zone) if zone else None
+
+
 def derived_target_issues(sec3: Dict[str, Any], close: Optional[float], levels: List[float]) -> List[Dict[str, str]]:
     """Mức giá ghi kèm phép nhân "(Y × f)": (1) X phải ≈ Y × f; (2) cơ sở Y phải là giá đóng cửa hoặc 1 mốc có trong
     dữ liệu (`levels`) / chính kịch bản đó; (3) trong CÙNG 1 kịch bản, "price_zone" và "trading_strategy" không được
@@ -274,6 +307,14 @@ def derived_target_issues(sec3: Dict[str, Any], close: Optional[float], levels: 
                     out.append({"path": f"{path}.trading_strategy", "message":
                                 f"{sc.get('horizon')}: mục tiêu {m['x']} tính từ cơ sở {m['y']} — không phải giá đóng cửa"
                                 f"{' ' + vn_num(close) if close else ''} hay mốc nào trong dữ liệu/kịch bản"})
+        for m in _PCT_FROM_CLOSE_RE.finditer(str(sc.get("trading_strategy") or "")):
+            entry = _entry_level(sc)
+            ref = parse_num(m["ref"])
+            if entry and close and abs(ref - close) < 0.011 and abs(entry - close) > 0.01 * close:
+                x = parse_num(m["x"])
+                out.append({"path": f"{path}.trading_strategy", "message":
+                            f"{sc.get('horizon')}: mục tiêu {m['x']} ghi {m['pct']}% so với đóng cửa {m['ref']} nhưng Entry là "
+                            f"{vn_num(entry)} → kỳ vọng thực {vn_num((x / entry - 1) * 100, sign=True)}% từ Entry"})
         zone, strat = found.get("price_zone") or [], found.get("trading_strategy") or []
         if zone and strat and not any(abs(a - b) <= 0.011 for a in zone for b in strat):
             out.append({"path": f"{path}.trading_strategy", "message":
@@ -302,6 +343,7 @@ def normalize_presentation(text: str) -> str:
         return m["a"] if parse_num(m["a"]) == parse_num(m["b"]) else m.group(0)
 
     text = _DEGENERATE_RANGE_RE.sub(_range, text)
+    text = re.sub(r"\b[Vv]iệt nam\b|\bviệt Nam\b", "Việt Nam", text)
     text = _EN_DECIMAL_RE.sub(r"\1,\2", text)
     text = _EN_DATE_DMY_RE.sub(lambda m: f"{int(m[1]):02d}/{_MONTHS[m[2].lower()]:02d}/{m[3]}", text)
     text = _EN_DATE_MDY_RE.sub(lambda m: f"{int(m[2]):02d}/{_MONTHS[m[1].lower()]:02d}/{m[3]}", text)
@@ -313,7 +355,7 @@ def normalize_presentation(text: str) -> str:
 SKIP_KEYS = {
     "url", "source_url", "source_name", "source", "origin", "date", "time", "id", "code", "name", "price", "dday",
     "dweek", "chart_data", "cbam_estimate", "forecast_review", "trigger_rule", "price_timestamp", "heading",
-    "horizon", "direction", "probability", "impact", "tag", "region", "country", "9",
+    "horizon", "direction", "probability", "impact", "tag", "region", "country", "released_at", "9",
 }
 
 

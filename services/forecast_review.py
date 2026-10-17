@@ -34,11 +34,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import Instrument, Price, Report
 from services.strategy_levels import strategy_levels
 
-REVIEW_MAX_REPORTS = 3        # luôn hiện N báo cáo gần nhất có kịch bản ngắn hạn...
-REVIEW_MAX_ITEMS = 5          # ...cộng các báo cáo CŨ HƠN bị chấm SAI còn trong khung (không để dự báo sai rơi khỏi bảng)
+REVIEW_MAX_REPORTS = 3        # (giữ tên cho tương thích) — giờ hiện MỌI báo cáo còn trong khung ngắn hạn...
+REVIEW_MAX_ITEMS = 8          # ...tối đa N dòng: báo cáo nào cũng góp vào tỷ lệ đúng nên không được ẩn (bản 17/10 thiếu 09/10)
 REVIEW_MAX_SESSIONS = 10      # khung "ngắn hạn" 1–2 tuần
-DIRECTION_THRESHOLD_PCT = 0.5  # |%Δ luỹ kế| dưới mức này → chưa rõ chiều
-SIDEWAYS_MAX_PCT = 1.5         # dự báo "đi ngang" đúng khi |%Δ luỹ kế| dưới mức này
+# 1 ngưỡng chung (không chồng lấn): |%Δ| ≥ ngưỡng theo chiều dự báo → đúng chiều; < ngưỡng → "đi ngang" đúng,
+# dự báo tăng/giảm thì chưa rõ. Trước đây 0,5% / 1,5% chồng nhau: −0,8% vừa "đúng giảm" vừa "đúng đi ngang".
+DIRECTION_THRESHOLD_PCT = 1.0
+SIDEWAYS_MAX_PCT = DIRECTION_THRESHOLD_PCT
 ORDER_VALID_SESSIONS = 3       # lệnh chờ của thẻ chiến lược hết hiệu lực sau N phiên chưa khớp
 CALIBRATION_REPORTS = 60       # số báo cáo gần nhất dùng tính tỷ lệ đúng theo mức xác suất
 PROBABILITY_LEVELS = ("Cao", "Trung bình", "Thấp")
@@ -63,17 +65,20 @@ def simulate_trade(direction: str, levels: Optional[Dict[str, Any]], sessions: S
     lo, hi = min(zone), max(zone)
     limit_order = not levels.get("entry_breakout")
     trade: Dict[str, Any] = {
-        "side": "buy" if long else "sell", "entry_low": lo, "entry_high": hi, "stop": stop, "target": target,
+        "side": "buy" if long else "sell", "order_type": "limit" if limit_order else "stop",
+        "entry_low": lo, "entry_high": hi, "stop": stop, "target": target,
         "status": "not_filled", "filled_date": None, "fill_price": None, "exit_date": None, "exit_price": None,
     }
     waited = 0
+    prev_date = None
     for s in sessions:
         high, low, close = _hl(s)
         if trade["status"] == "not_filled":
             if waited >= ORDER_VALID_SESSIONS:
-                trade.update(status="expired", exit_date=s["date"])
+                trade.update(status="expired", exit_date=prev_date)
                 break
             waited += 1
+            prev_date = s["date"]
             touched = low <= hi and high >= lo
             # Giá đi qua hẳn vùng theo chiều có lợi (mua: cả phiên dưới vùng; bán: cả phiên trên vùng).
             gapped = limit_order and (high < lo if long else low > hi)
@@ -86,8 +91,13 @@ def simulate_trade(direction: str, levels: Optional[Dict[str, Any]], sessions: S
                     trade["fill_price"] = round(float(open_p), 2)
                 else:
                     trade["fill_price"] = hi if long else lo
-                hit_stop = close <= stop if long else close >= stop
-                hit_target = target is not None and (close >= target if long else close <= target)
+                if gapped:
+                    # Khớp ngay tại giá mở → mọi giá trong phiên đều SAU khi khớp: xét đáy/đỉnh phiên.
+                    hit_stop = low <= stop if long else high >= stop
+                    hit_target = target is not None and (high >= target if long else low <= target)
+                else:
+                    hit_stop = close <= stop if long else close >= stop
+                    hit_target = target is not None and (close >= target if long else close <= target)
             elif target is not None and (high >= target if long else low <= target):
                 # Giá đi tới mục tiêu mà chưa chạm vùng Entry → kịch bản đúng hướng nhưng lệnh huỷ (bản 09/10:
                 # EUA lên 88,82 vượt mục tiêu 88,50 ngày 12/10, lệnh mua 85,50–86,30 treo tới 15/10 mới khớp).
@@ -104,6 +114,10 @@ def simulate_trade(direction: str, levels: Optional[Dict[str, Any]], sessions: S
         if hit_target:
             trade.update(status="target_hit", exit_date=s["date"], exit_price=target)
             break
+    else:
+        # Đã qua đủ N phiên mà chưa khớp → hết hiệu lực ngay (không đợi phiên thứ N+1 mới ghi nhận).
+        if trade["status"] == "not_filled" and waited >= ORDER_VALID_SESSIONS:
+            trade.update(status="expired", exit_date=sessions[-1]["date"])
     return trade
 
 
@@ -214,7 +228,7 @@ async def build_forecast_review(session: AsyncSession, report_date: str, data_da
         if len(sessions) > REVIEW_MAX_SESSIONS:
             continue  # đã quá khung ngắn hạn
         item = evaluate_forecast(rdate, short, ref, sessions)
-        if not item or (idx >= REVIEW_MAX_REPORTS and item["verdict"] != "wrong"):
+        if not item:
             continue
         items.append(item)
         premises[rdate] = premise
@@ -289,6 +303,7 @@ def _dm(iso: Optional[str]) -> str:
     return date.fromisoformat(iso).strftime("%d/%m") if iso else "?"
 
 
+ORDER_TYPE_VI = {"limit": "lệnh giới hạn", "stop": "lệnh dừng (vào khi giá phá mức)"}
 TRADE_STATUS_VI = {
     "not_filled": "lệnh chưa khớp", "open": "lệnh đã khớp, đang mở",
     "stopped": "lệnh đã CHẠM CẮT LỖ", "target_hit": "lệnh đã chạm mục tiêu",
@@ -313,7 +328,7 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
         if t:
             side = "mua" if t["side"] == "buy" else "bán"
             trade_txt = (
-                f"; lệnh {side} {_zone(t['entry_low'], t['entry_high'])}, cắt lỗ {_vn(t['stop'])}"
+                f"; {ORDER_TYPE_VI.get(t.get('order_type'), 'lệnh')} {side} {_zone(t['entry_low'], t['entry_high'])}, cắt lỗ {_vn(t['stop'])}"
                 + (f", mục tiêu {_vn(t['target'])}" if t.get("target") is not None else "")
                 + f" → {TRADE_STATUS_VI[t['status']]}"
                 + (f" ngày {_dm(t['exit_date'])}" if t.get("exit_date") else "")

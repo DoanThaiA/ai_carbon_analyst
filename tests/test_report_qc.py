@@ -898,8 +898,10 @@ def test_section6_split_by_subject():
         {"url": "a", "region": "vietnam", "about_vietnam": False},  # cafef.vn đưa tin phí quỹ khí của Đức
         {"url": "b", "region": "vietnam", "about_vietnam": True},
         {"url": "c", "region": "international"},
+        # tin chính sách carbon VN luôn ở nhóm Việt Nam dù LLM trả false (bản 17/10: nhóm VN trống dù có 3 bài)
+        {"url": "d", "region": "vietnam", "about_vietnam": False, "topics": ["Chính sách carbon VN"]},
     ])
-    assert [a["url"] for a in intl] == ["a", "c"] and [a["url"] for a in vn] == ["b"]
+    assert [a["url"] for a in intl] == ["a", "c"] and [a["url"] for a in vn] == ["b", "d"]
     assert "about_vietnam" not in intl[0]
 
 
@@ -935,3 +937,39 @@ def test_streak_and_derived_targets_flagged():
     )
     text = msgs(report_qc.check_consistency(c))
     assert "thực tế giảm 4 phiên liên tiếp" in text and "cơ sở 82,05" in text and "2 mục tiêu khác nhau" in text
+
+
+# ── Bản chấm 17/10/2026 ───────────────────────────────────────────────
+
+SUMMARY_NEUTRAL = "**Tổng hợp:** [TRUNG LẬP] Năng lượng giữ mức cầu, chính sách trung lập; EUA giảm 4 phiên có xác nhận khối lượng."
+
+
+def _sc1710():
+    return [
+        {"horizon": "ngắn hạn", "probability": "Trung bình", "direction": "tăng", "condition": "Nếu giữ trên 83,25",
+         "price_zone": "83,25–85,41", "key_risk": "Thủng 81,50",
+         "trading_strategy": "**Entry:** Mua quanh 83,25–84,00\n**Mục tiêu:** 86,50\n**Quản trị rủi ro:** Cắt lỗ dưới 81,50"},
+        {"horizon": "trung hạn", "probability": "Trung bình", "direction": "giảm", "condition": "Nếu đóng cửa dưới 82,35",
+         "price_zone": "78,58–82,35", "key_risk": "Vượt 85,00",
+         "trading_strategy": "**Entry:** Bán khi đóng cửa dưới 82,35\n**Mục tiêu:** 78,58 (−8% so với đóng cửa 85,41)\n**Quản trị rủi ro:** Cắt lỗ trên 85,00"},
+    ]
+
+
+def test_1710_mid_term_without_basis_overlap_and_pct_from_entry():
+    from services.report_consistency import derived_target_issues
+
+    c = {"2": {"prices": [{"code": "EUA", "close": 85.41}]},
+         "3": {"analysis_blocks": [{"heading": "Phân tích", "content": SUMMARY_NEUTRAL}], "trading_scenarios": _sc1710()}}
+    basis = report_qc.check_scenario_basis(c)
+    assert len(basis) == 1 and "trung hạn" in basis[0]["message"] and report_qc._fmt(82.35) in basis[0]["message"]
+    overlap = report_qc.check_horizon_overlap(c)
+    assert len(overlap) == 1 and f"{report_qc._fmt(81.5)}–{report_qc._fmt(82.35)}" in overlap[0]["message"]
+    msgs_ = " | ".join(i["message"] for i in derived_target_issues(c["3"], 85.41, []))
+    assert "kỳ vọng thực -4,58% từ Entry" in msgs_, msgs_
+
+
+def test_1710_technical_levels_have_breakdown_target():
+    from services.report_generator import _eua_technical_levels_summary
+
+    chart = [{"high": 88.82, "low": 86.0, "close": 87.0}] + [{"high": 86.0, "low": 82.35, "close": 85.0}] * 29
+    assert "75.88" in _eua_technical_levels_summary(chart)

@@ -546,6 +546,8 @@
     "trade": {
       "buy": "Lệnh mua {zone}, cắt lỗ {stop}",
       "sell": "Lệnh bán {zone}, cắt lỗ {stop}",
+      "buyStop": "Lệnh dừng mua khi phá {zone}, cắt lỗ {stop}",
+      "sellStop": "Lệnh dừng bán khi thủng {zone}, cắt lỗ {stop}",
       "target": "mục tiêu {target}",
       "status": {
         "not_filled": "chưa khớp",
@@ -722,8 +724,8 @@
       "up": "tăng",
       "down": "giảm",
       "insight": "Nhận định thị trường",
-      "trend7Label": "Xu hướng 7 phiên:",
-      "trend7": "{dir} {abs} ({pct}%) so với 7 phiên trước.",
+      "trend7Label": "Xu hướng 1 tuần:",
+      "trend7": "{dir} {abs} ({pct}%) so với phiên cách đây 1 tuần.",
       "lastSessionLabel": "Phiên gần nhất:",
       "lastSession": "mở {open} — cao {high} — thấp {low} — đóng {close}; {dir} so với giá mở cửa, biên độ {range} (~{pct}%).",
       "eua30Label": "EUA 30 phiên:",

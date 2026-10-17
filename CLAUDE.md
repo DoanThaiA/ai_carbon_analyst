@@ -263,6 +263,14 @@ từng tin được chốt và đưa vào prompt 2/3 (`_dev_verdict_block`); đ�
 chênh khí − than, ĐỐI XỨNG — khi than đã rẻ hơn khí rõ rệt (> `FUEL_NEAR_BREAKEVEN`) cả "TTF tăng" lẫn "API2 tăng" đều
 trung lập; giả định mô hình hiển thị cho người đọc ở `content["3"].fuel_model_note`. Crack spread gasoil kèm mức tuyệt
 đối + TB 60 phiên (`_crack_spread_history`) để không suy "biên giảm → hạ công suất" khi biên vẫn rất cao.
+"Diễn biến chính" `impact` = chiều RÒNG lên EUA (không phải hợp đồng năng lượng), prompt nhận khối fuel switching; Jack báo
+tiền đề "chuyển sang than → EUA tăng" khi đã bão hòa. Prompt Mục 2/3 nhận kết quả đấu giá EEX gần nhất
+(`_latest_auction_summary`). ATR = TB True Range 14 phiên (`report_consistency.atr_true_range`, dùng chung bộ sinh + Jack).
+Mốc kỹ thuật có cả mục tiêu đo biên độ chiều xuống. Jack thêm `check_scenario_basis` (trung/dài hạn có chiều chỉ dựa ngưỡng
+chưa xảy ra khi Tổng hợp TRUNG LẬP) và `check_horizon_overlap` (kích hoạt trung hạn nằm trong cắt lỗ ngắn hạn) — cả 2 đi vào
+vòng tự sửa kịch bản; `derived_target_issues` báo nhãn % tính từ đóng cửa khi Entry là mức kích hoạt khác. Lịch Mục 8: sự
+kiện định kỳ mang `released_at` (giờ VN) — gắn kết quả nếu đã công bố trước lúc sinh báo cáo; giờ đấu giá EEX quy đổi giờ VN
+theo Europe/Berlin. `check_facts` chấp nhận số tự tính khi phép tính a/b, a×b hiện ngay trong câu.
 
 **Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
@@ -272,7 +280,10 @@ phiên khớp chỉ xét giá đóng cửa; 1 phiên chạm cả cắt lỗ lẫ
 ĐÚNG, còn lại theo chiều %Δ — chưa hết `REVIEW_MAX_SESSIONS` phiên thì chỉ là `on_track`/`diverging`. Lệnh chờ hết hiệu
 lực sau `ORDER_VALID_SESSIONS` phiên (`expired`); giá chạm mục tiêu trước khi khớp → `cancelled_target` (ĐÚNG hướng). Khối
 kèm `calibration` (tỷ lệ đúng theo mức xác suất, `CALIBRATION_REPORTS` báo cáo, chỉ kết luận cuối) và `rules` (ngưỡng chấm,
-hiển thị ở `ForecastReviewCard`). Jack
+hiển thị ở `ForecastReviewCard`). Ngưỡng chung `DIRECTION_THRESHOLD_PCT` = `SIDEWAYS_MAX_PCT` (1%, không chồng lấn). Lệnh
+dừng/giới hạn phân biệt bằng `strategy_levels.is_breakout_entry` (chỉ cụm có điều kiện "khi/nếu … trên/vượt", "phá đỉnh" —
+chữ "trên" lẻ không tính); lệnh giới hạn khớp do mở gap thì xét cắt lỗ theo đáy/đỉnh của chính phiên đó; đủ N phiên chưa
+khớp là `expired` ngay. Bảng hiện MỌI báo cáo còn trong khung (`REVIEW_MAX_ITEMS`). Jack
 `check_forecast_review`: có dự báo SAI mà `vs_previous` trống → error, không nhắc ngày báo cáo sai → warning.
 
 **Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,

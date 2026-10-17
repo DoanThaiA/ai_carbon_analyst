@@ -81,7 +81,7 @@ export function ForecastReviewCard({
                 </div>
                 {tr && (
                   <div className="tabular-nums text-muted-light">
-                    {t(`trade.${tr.side}`, { zone: zone(tr.entry_low, tr.entry_high, locale), stop: num(tr.stop, locale) })}
+                    {t(`trade.${tr.side}${tr.order_type === "stop" ? "Stop" : ""}`, { zone: zone(tr.entry_low, tr.entry_high, locale), stop: num(tr.stop, locale) })}
                     {tr.target !== null && ` · ${t("trade.target", { target: num(tr.target, locale) })}`}
                     {" → "}
                     <span className={clsx("font-semibold", tr.status === "stopped" ? "text-down" : tr.status === "target_hit" || tr.status === "cancelled_target" ? "text-up" : "text-label")}>

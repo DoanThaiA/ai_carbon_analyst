@@ -62,7 +62,9 @@ function formatShortDate(dateStr: string) {
 function formatCompactPriceNumber(numStr: string, locale?: string): string {
   const n = Number(numStr.replace(/,/g, ""));
   if (Number.isNaN(n)) return numStr;
-  return n.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Giá nhỏ (Henry Hub ~3,2 USD/MMBtu): 3 chữ số thập phân — 2 chữ số không đủ để người đọc tự kiểm Δ%.
+  const digits = Math.abs(n) < 10 ? 3 : 2;
+  return n.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 // Δ ngày/Δ tuần lưu dạng "+1.23% (+1.62)" → tiếng Việt "+1,23% (+1,62)".
@@ -257,6 +259,12 @@ function parseSignalLevels(
 // giao diện tiếng Anh → "84.80".
 function fmtPrice(n: number, locale?: string): string {
   const s = n.toFixed(2);
+  return locale === "en" ? s : s.replace(".", ",");
+}
+// Số trong biểu đồ/dashboard EUA theo ngôn ngữ — trước dùng toFixed() thô nên trang 3 bản PDF tiếng Việt
+// lẫn dấu chấm thập phân ("85.41", "6.0%") với dấu phẩy ở các trang khác.
+function fnum(n: number, digits: number, locale?: string): string {
+  const s = n.toFixed(digits);
   return locale === "en" ? s : s.replace(".", ",");
 }
 const fmtRange = (r: number[], locale?: string) => r.map(n => fmtPrice(n, locale)).join("–");
@@ -1183,6 +1191,7 @@ function formatVolume(v: number) {
 }
 
 function CandlestickChart({ report }: { report: Report }) {
+  const locale = useLocale();
   const t = useTranslations("reportDoc");
   const rawData = report?.content["2"]?.chart_data;
   const candles = rawData && rawData.length > 0 ? rawData : [];
@@ -1292,23 +1301,23 @@ function CandlestickChart({ report }: { report: Report }) {
         {(["open", "high", "low", "close"] as const).map((k, j) => (
           <span key={k} className="whitespace-nowrap">
             <span className="text-muted-light mr-1">{["O", "H", "L", "C"][j]}</span>
-            <span className={clsx("font-semibold", activeUp ? "text-up" : "text-down")}>{active[k].toFixed(2)}</span>
+            <span className={clsx("font-semibold", activeUp ? "text-up" : "text-down")}>{fnum(active[k], 2, locale)}</span>
           </span>
         ))}
         <span className={clsx("font-semibold whitespace-nowrap", chg >= 0 ? "text-up" : "text-down")}>
-          {chg >= 0 ? "+" : ""}{chg.toFixed(2)} ({chg >= 0 ? "+" : ""}{chgPct.toFixed(2)}%)
+          {chg >= 0 ? "+" : ""}{fnum(chg, 2, locale)} ({chg >= 0 ? "+" : ""}{fnum(chgPct, 2, locale)}%)
         </span>
         {hasVolume && active.volume !== undefined && (
           <span className="whitespace-nowrap">
             <span className="text-muted-light mr-1">Vol</span>
-            <span className="text-foreground">{active.volume.toLocaleString("en-US")}</span>
+            <span className="text-foreground">{active.volume.toLocaleString(locale === "en" ? "en-US" : "vi-VN")}</span>
           </span>
         )}
       </div>
 
       <svg
         width="100%" viewBox={`0 0 ${W} ${H}`} className="candle-chart block w-full h-auto cursor-crosshair select-none touch-pan-y"
-        role="img" aria-label={t("chart.aria", { count: candles.length, close: last.close.toFixed(2) })}
+        role="img" aria-label={t("chart.aria", { count: candles.length, close: fnum(last.close, 2, locale) })}
         onMouseMove={handlePointer}
         onMouseLeave={() => setHoverIndex(null)}
         onTouchStart={handlePointer}
@@ -1322,7 +1331,7 @@ function CandlestickChart({ report }: { report: Report }) {
             <g key={`grid-${v}`}>
               <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" strokeWidth="1" />
               <text x={W - padR + 8} y={y + 3.5} className="font-mono text-[10.5px] fill-muted-light tabular-nums">
-                {v.toFixed(tickDecimals)}
+                {fnum(v, tickDecimals, locale)}
               </text>
             </g>
           );
@@ -1390,7 +1399,7 @@ function CandlestickChart({ report }: { report: Report }) {
           <rect x={W - padR + 2} y={lastY - 9} width={padR - 4} height={18} rx={3}
             fill={lastUp ? "var(--color-up)" : "var(--color-down)"} />
           <text x={W - padR / 2} y={lastY + 3.8} textAnchor="middle" className="font-mono text-[10.5px] font-bold tabular-nums" fill="#fff">
-            {last.close.toFixed(2)}
+            {fnum(last.close, 2, locale)}
           </text>
         </g>
 
@@ -1403,7 +1412,7 @@ function CandlestickChart({ report }: { report: Report }) {
               stroke="var(--color-muted-light)" strokeWidth="1" strokeDasharray="3,3" />
             <rect x={W - padR + 2} y={hoverY - 9} width={padR - 4} height={18} rx={3} fill="var(--color-label)" />
             <text x={W - padR / 2} y={hoverY + 3.8} textAnchor="middle" className="font-mono text-[10.5px] font-bold tabular-nums" fill="#fff">
-              {active.close.toFixed(2)}
+              {fnum(active.close, 2, locale)}
             </text>
             <rect x={Math.min(Math.max(hoverX - dateTagW / 2, padL), W - padR - dateTagW)} y={H - padB + 3} width={dateTagW} height={18} rx={3} fill="var(--color-label)" />
             <text x={Math.min(Math.max(hoverX, padL + dateTagW / 2), W - padR - dateTagW / 2)} y={H - 7} textAnchor="middle"
@@ -1470,6 +1479,7 @@ function TrendDot({ up }: { up: boolean }) {
 }
 
 function EuaDashboardWidget({ report }: { report: Report }) {
+  const locale = useLocale();
   const t = useTranslations("reportDoc");
   const chartData = report.content["2"]?.chart_data || [];
   if (chartData.length === 0) return null;
@@ -1535,10 +1545,10 @@ function EuaDashboardWidget({ report }: { report: Report }) {
           </div>
           <div className="flex flex-col items-end gap-1 ml-auto">
             <div className="flex items-baseline gap-2.5">
-              <span className="text-[30px] sm:text-[34px] font-bold leading-none text-label tabular-nums">{lastClose.toFixed(2)}</span>
+              <span className="text-[30px] sm:text-[34px] font-bold leading-none text-label tabular-nums">{fnum(lastClose, 2, locale)}</span>
               <span className={clsx("inline-flex items-center gap-0.5 text-white text-[13px] font-bold px-2.5 py-1 rounded-full tabular-nums", dayChange >= 0 ? "bg-up" : "bg-down")}>
                 {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
-                {dayChange > 0 ? "+" : ""}{dayChange.toFixed(2)} ({dayChangePct > 0 ? "+" : ""}{dayChangePct.toFixed(2)}%)
+                {dayChange > 0 ? "+" : ""}{fnum(dayChange, 2, locale)} ({dayChangePct > 0 ? "+" : ""}{fnum(dayChangePct, 2, locale)}%)
               </span>
             </div>
             <div className="flex items-center text-[12px] text-muted-light gap-1.5 font-medium">
@@ -1553,22 +1563,22 @@ function EuaDashboardWidget({ report }: { report: Report }) {
       {/* Tầng 2 — Số liệu */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:break-inside-avoid">
         <StatTile icon={<RefreshCw size={14} />} label={t("dash.lastRange")}
-          value={`${dayLow.toFixed(2)} – ${dayHigh.toFixed(2)}`}
-          sub={t("dash.rangeSub", { range: dayRange.toFixed(2), pct: dayRangePct.toFixed(1) })} />
+          value={`${fnum(dayLow, 2, locale)} – ${fnum(dayHigh, 2, locale)}`}
+          sub={t("dash.rangeSub", { range: fnum(dayRange, 2, locale), pct: fnum(dayRangePct, 1, locale) })} />
         <StatTile
           icon={sevenDayChange >= 0 ? <TrendingUp size={14} className="text-up" /> : <TrendingDown size={14} className="text-down" />}
           label={sevenDayChange >= 0 ? t("dash.up7") : t("dash.down7")}
-          value={`${sevenDayChange > 0 ? "+" : ""}${sevenDayChange.toFixed(2)}`}
+          value={`${sevenDayChange > 0 ? "+" : ""}${fnum(sevenDayChange, 2, locale)}`}
           valueClass={sevenDayChange >= 0 ? "text-up" : "text-down"}
-          sub={t("dash.vsPrice", { pct: `${sevenDayChangePct > 0 ? "+" : ""}${sevenDayChangePct.toFixed(2)}`, price: sevenDaysAgo.toFixed(2) })} />
+          sub={t("dash.vsPrice", { pct: `${sevenDayChangePct > 0 ? "+" : ""}${fnum(sevenDayChangePct, 2, locale)}`, price: fnum(sevenDaysAgo, 2, locale) })} />
         <StatTile icon={<CalendarRange size={14} />} label={t("dash.range30")}
-          value={`${monthLow.toFixed(2)} – ${monthHigh.toFixed(2)}`}
+          value={`${fnum(monthLow, 2, locale)} – ${fnum(monthHigh, 2, locale)}`}
           sub={t("dash.lowHigh")} />
         <StatTile
           icon={monthChange >= 0 ? <TrendingUp size={14} className="text-up" /> : <TrendingDown size={14} className="text-down" />}
           label={t("dash.change30")}
-          value={`${firstClose.toFixed(2)} → ${lastClose.toFixed(2)}`}
-          sub={`${monthChangePct >= 0 ? t("dash.up") : t("dash.down")} ${Math.abs(monthChangePct).toFixed(1)}%`}
+          value={`${fnum(firstClose, 2, locale)} → ${fnum(lastClose, 2, locale)}`}
+          sub={`${monthChangePct >= 0 ? t("dash.up") : t("dash.down")} ${fnum(Math.abs(monthChangePct), 1, locale)}%`}
           subClass={monthChangePct >= 0 ? "text-up font-bold" : "text-down font-bold"} />
       </div>
 
@@ -1580,19 +1590,19 @@ function EuaDashboardWidget({ report }: { report: Report }) {
         <div className="grid md:grid-cols-2 gap-x-8 gap-y-3.5 text-[13px] text-body">
           <div className="flex items-start gap-2.5">
             <TrendDot up={sevenDayChange >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.trend7Label")}</strong> {t("dash.trend7", { dir: sevenDayChange >= 0 ? t("dash.up") : t("dash.down"), abs: Math.abs(sevenDayChange).toFixed(2), pct: `${sevenDayChangePct > 0 ? "+" : ""}${sevenDayChangePct.toFixed(2)}` })}</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.trend7Label")}</strong> {t("dash.trend7", { dir: sevenDayChange >= 0 ? t("dash.up") : t("dash.down"), abs: fnum(Math.abs(sevenDayChange), 2, locale), pct: `${sevenDayChangePct > 0 ? "+" : ""}${fnum(sevenDayChangePct, 2, locale)}` })}</div>
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={lastClose >= dayOpen} />
-            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.lastSessionLabel")}</strong> {t("dash.lastSession", { open: dayOpen.toFixed(2), high: dayHigh.toFixed(2), low: dayLow.toFixed(2), close: lastClose.toFixed(2), dir: lastClose >= dayOpen ? t("dash.up") : t("dash.down"), range: dayRange.toFixed(2), pct: dayRangePct.toFixed(1) })}</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.lastSessionLabel")}</strong> {t("dash.lastSession", { open: fnum(dayOpen, 2, locale), high: fnum(dayHigh, 2, locale), low: fnum(dayLow, 2, locale), close: fnum(lastClose, 2, locale), dir: lastClose >= dayOpen ? t("dash.up") : t("dash.down"), range: fnum(dayRange, 2, locale), pct: fnum(dayRangePct, 1, locale) })}</div>
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={monthChange >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.eua30Label")}</strong> {t("dash.eua30", { first: firstClose.toFixed(2), last: lastClose.toFixed(2), pct: `${monthChangePct > 0 ? "+" : ""}${monthChangePct.toFixed(1)}`, high: monthHigh.toFixed(2), low: monthLow.toFixed(2) })}</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.eua30Label")}</strong> {t("dash.eua30", { first: fnum(firstClose, 2, locale), last: fnum(lastClose, 2, locale), pct: `${monthChangePct > 0 ? "+" : ""}${fnum(monthChangePct, 1, locale)}`, high: fnum(monthHigh, 2, locale), low: fnum(monthLow, 2, locale) })}</div>
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={volChangePct >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.volumeLabel")}</strong> {t("dash.volume", { vol: vol.toLocaleString("en-US"), date: formatFullDate(lastDate) })}{avgVol > 0 ? t("dash.volVsAvg", { dir: volChangePct >= 0 ? t("dash.higher") : t("dash.lower"), n: priorVols.length, avg: Math.round(avgVol).toLocaleString("en-US"), pct: `${volChangePct > 0 ? "+" : ""}${volChangePct.toFixed(1)}` }) : "."}</div>
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.volumeLabel")}</strong> {t("dash.volume", { vol: vol.toLocaleString(locale === "en" ? "en-US" : "vi-VN"), date: formatFullDate(lastDate) })}{avgVol > 0 ? t("dash.volVsAvg", { dir: volChangePct >= 0 ? t("dash.higher") : t("dash.lower"), n: priorVols.length, avg: Math.round(avgVol).toLocaleString(locale === "en" ? "en-US" : "vi-VN"), pct: `${volChangePct > 0 ? "+" : ""}${fnum(volChangePct, 1, locale)}` }) : "."}</div>
           </div>
         </div>
       </div>

@@ -20,6 +20,7 @@ Bảng `report_qc_results` (bản QC dạng nút bấm trước đây) không c�
 không mất lịch sử / không phá chuỗi migration đã chạy.
 """
 import logging
+import math
 from collections import Counter
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -30,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Article, BizSuggestion, Instrument, Price, Report
 from services import biz_memory
-from services.report_consistency import consistency_issues
+from services.report_consistency import atr_true_range, consistency_issues
 from services.report_generator import (
     CBAM_CODE,
     SECTION_TOPICS,
@@ -325,16 +326,11 @@ _CONDITION_LEVEL_RE = re.compile(
 
 def _eua_last_session(content: Dict[str, Any]) -> Optional[Dict[str, float]]:
     """Nến phiên gần nhất của EUA (chart_data) — {"high", "low", "atr"} để kiểm khoảng cách cắt lỗ.
-    "atr" = biên độ cao-thấp TB 14 phiên (cùng công thức _eua_technical_levels_summary bên bộ sinh)."""
+    "atr" = TB True Range 14 phiên (report_consistency.atr_true_range — cùng công thức bên bộ sinh)."""
     chart = (content.get("2") or {}).get("chart_data") or []
     last = chart[-1] if chart and isinstance(chart[-1], dict) else None
     if last and isinstance(last.get("high"), (int, float)) and isinstance(last.get("low"), (int, float)):
-        recent = [
-            c for c in chart[-14:]
-            if isinstance(c, dict) and isinstance(c.get("high"), (int, float)) and isinstance(c.get("low"), (int, float))
-        ]
-        atr = sum(c["high"] - c["low"] for c in recent) / len(recent) if recent else None
-        return {"high": float(last["high"]), "low": float(last["low"]), "atr": atr}
+        return {"high": float(last["high"]), "low": float(last["low"]), "atr": atr_true_range(chart)}
     return None
 
 
@@ -545,7 +541,79 @@ def check_fuel_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
             elif side == "bullish" and saturated and _TTF_UP_RE.search(text) and not _SPREAD_RE.search(text):
                 _add(side, i, text, f"than đã rẻ hơn khí rõ rệt (chênh ≈ {state['spread']:+.0f} EUR/MWh, chuyển đổi bão hòa) — "
                                     "TTF tăng/rủi ro cung khí không còn nâng cầu EUA qua fuel switching")
+    if saturated:
+        for i, d in enumerate((content.get("2") or {}).get("key_developments") or []):
+            text = str(d.get("text") or "") if isinstance(d, dict) else ""
+            if d.get("impact") == "tăng" and _SWITCH_TO_COAL_RE.search(text):
+                issues.append(_issue(
+                    "scenario", "3", "error",
+                    f"Diễn biến chính #{i + 1} dùng tiền đề \"chuyển sang than → cầu EUA tăng\" trong khi than đã rẻ hơn khí "
+                    f"rõ rệt (chênh ≈ {state['spread']:+.0f} EUR/MWh, chuyển đổi bão hòa): \"{text[:110]}\"",
+                    f"2.key_developments[{i}].impact",
+                ))
     return issues
+
+
+_SWITCH_TO_COAL_RE = re.compile(r"(chuyển|dịch|dispatch)[^.;\n]{0,25}(sang|về)\s+(?:điện\s+)?than", re.IGNORECASE)
+
+
+_TRIGGER_RE = re.compile(r"(?:đóng cửa|giá|EUA)?[^.;\n]{0,15}?(trên|vượt|dưới|thủng)\s+(\d+(?:[.,]\d+)?)", re.IGNORECASE)
+
+
+def check_scenario_basis(content: Dict[str, Any], close: Optional[float] = None) -> List[Dict[str, str]]:
+    """Kịch bản trung/dài hạn có chiều (tăng/giảm) mà "Tổng hợp" của chính báo cáo TRUNG LẬP và điều kiện chỉ là 1 ngưỡng
+    giá CHƯA xảy ra → chiều không có luận cứ (bản 17/10: trung hạn "Nghiêng giảm" chỉ dựa vào "thủng 82,35" trong khi
+    phân tích kết luận năng lượng giữ mức cầu, chính sách trung lập)."""
+    sec3 = content.get("3") or {}
+    if close is None:
+        close = _eua_last_close(content)
+    summary = extract_eua_summary(content) or ""
+    m = EUA_SENTIMENT_RE.match(summary)
+    if not close or not m or m.group(1).upper() != "TRUNG LẬP":
+        return []
+    issues = []
+    for i, sc in enumerate(sec3.get("trading_scenarios") or []):
+        if not isinstance(sc, dict) or sc.get("horizon") not in ("trung hạn", "dài hạn") or sc.get("direction") not in ("tăng", "giảm"):
+            continue
+        t = _TRIGGER_RE.search(str(sc.get("condition") or ""))
+        if not t:
+            continue
+        level = float(t.group(2).replace(",", ".", 1))
+        below = t.group(1).lower() in ("dưới", "thủng")
+        if level >= 10 and ((below and close > level) or (not below and close < level)):
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Kịch bản {sc['horizon']} \"{sc['direction']}\" chỉ dựa vào ngưỡng {t.group(1)} {_fmt(level)} CHƯA xảy ra (giá "
+                f"{_fmt(close)}) trong khi Tổng hợp TRUNG LẬP — nên để \"đi ngang\" và ghi ngưỡng ở điều kiện chờ kích hoạt.",
+                f"3.trading_scenarios[{i}].direction",
+            ))
+    return issues
+
+
+def check_horizon_overlap(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Ngắn hạn giữ lệnh 1 chiều (cắt lỗ S) mà trung hạn ngược chiều kích hoạt TRƯỚC S → 2 khung chồng vùng hành động
+    (bản 17/10: ngắn hạn mua cắt lỗ 81,50, trung hạn bán khi đóng cửa dưới 82,35 → vùng 81,50–82,35 mâu thuẫn)."""
+    from services.strategy_levels import strategy_levels
+    scs = {sc.get("horizon"): sc for sc in (content.get("3") or {}).get("trading_scenarios") or [] if isinstance(sc, dict)}
+    short, mid = scs.get("ngắn hạn"), scs.get("trung hạn")
+    if not short or not mid or {short.get("direction"), mid.get("direction")} != {"tăng", "giảm"}:
+        return []
+    lv = strategy_levels(short)
+    t = _TRIGGER_RE.search(str(mid.get("condition") or ""))
+    if not lv or not t:
+        return []
+    level = float(t.group(2).replace(",", ".", 1))
+    stop = lv["stop_lower"] if short["direction"] == "tăng" else lv["stop_upper"]
+    if stop is None or level < 10:
+        return []
+    if (short["direction"] == "tăng" and level > stop) or (short["direction"] == "giảm" and level < stop):
+        return [_issue(
+            "scenario", "3", "warning",
+            f"Ngắn hạn {short['direction']} (cắt lỗ {_fmt(stop)}) và trung hạn {mid['direction']} (kích hoạt {t.group(1)} {_fmt(level)}) "
+            f"chồng vùng {_fmt(min(stop, level))}–{_fmt(max(stop, level))}: chưa có quy tắc ưu tiên — mức kích hoạt trung hạn nên nằm ngoài cắt lỗ ngắn hạn.",
+            "3.trading_scenarios",
+        )]
+    return []
 
 
 def check_dev_driver_consistency(content: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -1044,6 +1112,22 @@ def _supported(raw: str, pool: Set[float]) -> bool:
     return False
 
 
+def _shown_calculation(raw: str, text: str, pool: Set[float]) -> bool:
+    """Số tự tính có phép tính ghi ngay trong câu: bằng a / b hoặc a × b của 2 số khác trong CÙNG câu (cả 2 có trong bài
+    nguồn), bỏ qua bậc 10 do đơn vị triệu/nghìn — vd "≈ 559 USD/t (11,7 triệu USD / 20.932 t)" = 11,7e6 / 20.932."""
+    vals = [v for v in _number_candidates(raw) if v > 0]
+    operands = [o for tok in _TEXT_NUM_RE.findall(text) if tok != raw and _supported(tok, pool)
+                for o in _number_candidates(tok) if o > 0]
+    for v in vals:
+        for i, a in enumerate(operands):
+            for b in operands[i + 1:]:
+                for r in (a / b, b / a, a * b):
+                    d = math.log10(v) - math.log10(r)
+                    if abs(d - round(d)) < 0.0005:
+                        return True
+    return False
+
+
 def _checkable_number(raw: str) -> bool:
     vals = _number_candidates(raw)
     if not vals:
@@ -1157,6 +1241,7 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
         missing = [
             raw for raw in _TEXT_NUM_RE.findall(body)
             if _checkable_number(raw) and not _supported(raw, pool) and not _supported(raw, report_pool)
+            and not _shown_calculation(raw, body, pool)
         ]
         if missing:
             shown = ", ".join(dict.fromkeys(m.replace("−", "-") for m in missing))
@@ -1648,6 +1733,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
         "scenario": (
             check_scenarios(content) + check_forecast_review(content) + check_fuel_direction(content)
             + check_hedge_action(content) + check_consistency(content) + check_dev_driver_consistency(content)
+            + check_scenario_basis(content) + check_horizon_overlap(content)
         ),
         "source": check_sources(content, known_urls, article_meta, stale_before),
         "fact": check_facts(content, article_texts),

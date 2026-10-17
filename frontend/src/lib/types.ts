@@ -54,6 +54,7 @@ export interface ForecastReviewItem {
   high_confidence_miss: boolean;
   trade: {
     side: "buy" | "sell";
+    order_type?: "limit" | "stop";
     entry_low: number;
     entry_high: number;
     stop: number;

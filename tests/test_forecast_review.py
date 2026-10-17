@@ -81,8 +81,8 @@ def test_open_trades_and_merge_positions():
 
 
 @pytest.mark.parametrize("direction,chg,verdict", [
-    ("tăng", 0.3, "unclear"), ("tăng", -1.0, "wrong"), ("giảm", -0.6, "correct"),
-    ("đi ngang", 1.0, "correct"), ("đi ngang", -2.0, "wrong"),
+    ("tăng", 0.3, "unclear"), ("tăng", -1.0, "wrong"), ("giảm", -0.6, "unclear"), ("giảm", -1.2, "correct"),
+    ("đi ngang", 0.8, "correct"), ("đi ngang", 1.0, "wrong"), ("đi ngang", -2.0, "wrong"),
 ])
 def test_direction_verdict(direction, chg, verdict):
     assert fr.direction_verdict(direction, chg) == verdict
@@ -110,8 +110,8 @@ def test_jack_requires_acknowledging_wrong_forecast():
     assert report_qc.check_forecast_review({"2": {}, "3": {}}) == []
 
 
-def test_older_wrong_forecast_stays_in_table():
-    """Báo cáo 17/10: 3 bản gần nhất (16, 15, 14/10) + bản 13/10 sai vẫn phải hiện; bản cũ ĐÚNG thì không."""
+def test_every_report_in_horizon_stays_in_table():
+    """Báo cáo 17/10: mọi bản còn trong khung ngắn hạn đều hiện (cả bản cũ đúng — vd 09/10 góp vào tỷ lệ "Cao")."""
     import asyncio
     from types import SimpleNamespace
 
@@ -147,8 +147,8 @@ def test_older_wrong_forecast_stays_in_table():
         block, text = asyncio.run(fr.build_forecast_review(Sess(), "2026-10-17", "2026-10-16"))
     finally:
         fr._eua_sessions = orig
-    assert [it["report_date"] for it in block["items"]] == ["2026-10-16", "2026-10-15", "2026-10-14", "2026-10-13"]
-    assert block["items"][-1]["verdict"] == "wrong" and "13/10" in text
+    assert [it["report_date"] for it in block["items"]] == ["2026-10-16", "2026-10-15", "2026-10-14", "2026-10-13", "2026-10-12"]
+    assert block["items"][3]["verdict"] == "wrong" and "13/10" in text
 
 
 def _s(rows):
@@ -171,7 +171,31 @@ def test_order_expires_after_valid_sessions():
     sc = {"direction": "tăng", "trading_strategy": "**Entry:** Mua quanh 80\n**Mục tiêu:** 95\n**Quản trị rủi ro:** Cắt lỗ dưới 78"}
     rows = [(f"d{i}", 86, 87, 85, 86) for i in range(fr.ORDER_VALID_SESSIONS + 2)]
     t = fr.evaluate_forecast("d0", sc, 86, _s(rows))["trade"]
-    assert t["status"] == "expired" and t["exit_date"] == f"d{fr.ORDER_VALID_SESSIONS}"
+    assert t["status"] == "expired" and t["exit_date"] == f"d{fr.ORDER_VALID_SESSIONS - 1}"
+    # Vừa đủ N phiên (chưa có phiên N+1) cũng đã hết hiệu lực — bản 14/10: mua 88,82, đỉnh 14–16/10 chỉ 88,24.
+    t = fr.evaluate_forecast("d0", sc, 86, _s(rows[:fr.ORDER_VALID_SESSIONS]))["trade"]
+    assert t["status"] == "expired"
+
+
+@pytest.mark.parametrize("entry,breakout", [
+    ("Mua quanh 87,00–87,50 (trên hỗ trợ 86,90)", False),
+    ("Mua quanh 87,00–87,50, giữ trên 86,60", False),
+    ("Mua khi đóng cửa trên 88,82", True),
+    ("Mua khi phá đỉnh 88,82", True),
+])
+def test_breakout_detection(entry, breakout):
+    from services.strategy_levels import is_breakout_entry
+    assert is_breakout_entry("tăng", entry) is breakout
+
+
+def test_1510_gap_fill_uses_session_low_for_stop():
+    # Bản 15/10: "Mua quanh 87,00–87,50 (trên hỗ trợ ...)", cắt lỗ 86,60; phiên mở 86,87 dưới vùng → khớp 86,87,
+    # đáy 85,37 thủng cắt lỗ trong phiên → SAI (không phải "Đang lệch, chưa khớp").
+    sc = {"direction": "tăng", "probability": "Trung bình",
+          "trading_strategy": "**Entry:** Mua quanh 87,00–87,50 (trên hỗ trợ 86,90)\n**Mục tiêu:** 89,00\n**Quản trị rủi ro:** Cắt lỗ dưới 86,60"}
+    it = fr.evaluate_forecast("2026-10-15", sc, 87.14, _s([("2026-10-15", 86.87, 86.87, 85.37, 87.0)]))
+    t = it["trade"]
+    assert (t["order_type"], t["status"], t["fill_price"]) == ("limit", "stopped", 86.87) and it["verdict"] == "wrong"
 
 
 def test_calibration_counts_only_final_verdicts():

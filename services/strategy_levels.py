@@ -100,6 +100,16 @@ def parse_signal_levels(direction: str, entry_body: str, target_body: str, risk_
     }
 
 
+def is_breakout_entry(direction: str, entry: str) -> bool:
+    """Lệnh dừng (vào khi giá PHÁ mức) chứ không phải lệnh giới hạn. Chỉ nhận cụm có điều kiện kích hoạt
+    ("mua khi đóng cửa trên X", "bán nếu thủng X", "phá đỉnh", "breakout") — chữ "trên" đứng lẻ trong
+    "Mua quanh 87,00–87,50 (trên hỗ trợ 86,90)" KHÔNG làm lệnh thành lệnh phá vỡ (bản 15/10 từng bị chấm sai vì vậy)."""
+    word = r"trên|vượt|phá(?:\s+(?:lên|đỉnh))?" if direction == "tăng" else r"dưới|thủng|phá(?:\s+(?:xuống|đáy))?"
+    if re.search(rf"(?:khi|nếu|sau khi|lúc)\s+(?:giá\s+)?(?:EUA\s+)?(?:đóng cửa\s+)?(?:{word})", entry, re.I):
+        return True
+    return bool(re.search(r"breakout|break(?:s)?\s+(?:above|below)|buy stop|sell stop|lệnh dừng|phá (?:đỉnh|đáy)", entry, re.I))
+
+
 def strategy_levels(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Mức giá (entry/mục tiêu/cắt lỗ) của 1 kịch bản tăng/giảm — None nếu không tách được."""
     direction = sc.get("direction")
@@ -116,6 +126,5 @@ def strategy_levels(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     levels = parse_signal_levels(direction, entry, target or "", risk)
     # Lệnh chờ PHÁ VỠ ("mua khi đóng cửa trên X" / "bán khi thủng X") khác lệnh giới hạn ("mua quanh X"):
     # giá mở gap qua vùng Entry theo chiều có lợi chỉ khớp lệnh giới hạn (forecast_review.simulate_trade).
-    breakout = r"trên|vượt|phá lên|above|break" if direction == "tăng" else r"dưới|thủng|phá xuống|below|break"
-    levels["entry_breakout"] = bool(re.search(breakout, entry, re.I))
+    levels["entry_breakout"] = is_breakout_entry(direction, entry)
     return levels

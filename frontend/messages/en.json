@@ -546,6 +546,8 @@
     "trade": {
       "buy": "Buy {zone}, stop {stop}",
       "sell": "Sell {zone}, stop {stop}",
+      "buyStop": "Buy stop on break above {zone}, stop {stop}",
+      "sellStop": "Sell stop on break below {zone}, stop {stop}",
       "target": "target {target}",
       "status": {
         "not_filled": "not filled",
@@ -722,8 +724,8 @@
       "up": "up",
       "down": "down",
       "insight": "Market view",
-      "trend7Label": "7-session trend:",
-      "trend7": "{dir} {abs} ({pct}%) vs 7 sessions ago.",
+      "trend7Label": "1-week trend:",
+      "trend7": "{dir} {abs} ({pct}%) vs. the session one week earlier.",
       "lastSessionLabel": "Latest session:",
       "lastSession": "open {open} — high {high} — low {low} — close {close}; {dir} vs the open, range {range} (~{pct}%).",
       "eua30Label": "EUA 30 sessions:",

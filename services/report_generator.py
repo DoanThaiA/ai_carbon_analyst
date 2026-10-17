@@ -17,7 +17,7 @@ from services import biz_memory
 from services import cbam_estimate
 from services import forecast_review
 from services.report_consistency import (
-    apply_consistency_fixes, derived_target_issues, describe_range_position, eua_streak,
+    apply_consistency_fixes, atr_true_range, derived_target_issues, describe_range_position, eua_streak,
 )
 from services.title_similarity import is_similar_title, title_tokens
 from services import eua_causal_chains as chains
@@ -108,7 +108,9 @@ CONCISENESS_RULE = (
     "(21) MỨC TÁC ĐỘNG TƯƠNG XỨNG: kênh BIÊN lên tổng cầu EUA — crack spread → lọc dầu giảm/tăng công suất, hàng không, "
     "hàng hải, 1 nhà máy/1 doanh nghiệp — có cơ chế đúng (lọc dầu thuộc EU ETS) nhưng chỉ là phần nhỏ phát thải ETS và biến "
     "động công suất vài % không đổi đáng kể tổng cầu hạn ngạch → PHẢI ghi rõ 'tác động Thấp', KHÔNG xếp thành động lực "
-    "chính và KHÔNG dùng làm căn cứ chính cho kịch bản giao dịch."
+    "chính và KHÔNG dùng làm căn cứ chính cho kịch bản giao dịch. "
+    "SỐ TỰ TÍNH (chia/nhân từ số trong bài, vd giá/tấn = tổng giá trị / khối lượng) PHẢI ghi phép tính ngay trong câu, "
+    "vd '≈ 559 USD/t (11,7 triệu USD / 20.932 t)' — người đọc và hệ thống kiểm tra phải lần lại được."
 )
 
 # Văn bản đã luật hoá được phép dùng làm luận điểm chính sách dài hạn KÈM trích dẫn văn bản (ngoài tin trong ngày).
@@ -559,14 +561,15 @@ def _format_pct_with_abs(pct: Optional[float], close_price: float, base_close: O
     lưu làm tròn 3 số lẻ nên số suy ngược có thể lệch 0,01 (Gasoil 1.386,75 − 1.404,00 = −17,25 bị in −17,26)."""
     if pct is None:
         return "-"
+    digits = 3 if abs(close_price) < 10 else 2  # Henry Hub ~3,2: "−0,10" không đủ để tự kiểm "−3,23%"
     if base_close:
-        return f"{pct:+.2f}% ({close_price - base_close:+.2f})"
+        return f"{pct:+.2f}% ({close_price - base_close:+.{digits}f})"
     denom = 1 + pct / 100
     if denom == 0:
         return f"{pct:+.2f}%"
     prev_close = close_price / denom
     abs_change = close_price - prev_close
-    return f"{pct:+.2f}% ({abs_change:+.2f})"
+    return f"{pct:+.2f}% ({abs_change:+.{digits}f})"
 
 
 def _matching_base(close: float, pct: Optional[float], candidates: List[tuple]) -> Optional[float]:
@@ -1141,7 +1144,11 @@ def _split_section6_by_subject(articles: List[Dict]) -> tuple:
     international, vietnam = [], []
     for a in articles:
         flag = a.pop("about_vietnam", None)
-        is_vn = flag if isinstance(flag, bool) else a.get("region") == "vietnam"
+        topics = set(a.get("topics") or [])
+        if topics & {"vietnam_carbon_policy", TOPIC_DISPLAY_LABELS["vietnam_carbon_policy"]}:
+            is_vn = True  # tin đã phân loại chính sách carbon VN — không để LLM tóm tắt đẩy sang Quốc tế
+        else:
+            is_vn = flag if isinstance(flag, bool) else a.get("region") == "vietnam"
         (vietnam if is_vn else international).append(a)
     return international, vietnam
 
@@ -1173,7 +1180,7 @@ YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT, ĐÚNG 2 C
 - "about_vietnam": true CHỈ KHI chủ thể/sự kiện chính của bài diễn ra tại hoặc trực tiếp liên quan Việt Nam (chính sách, doanh nghiệp, thị trường Việt Nam; doanh nghiệp Việt chịu CBAM...). Xét theo NỘI DUNG, KHÔNG theo trang đăng: bài trên báo Việt Nam nói về phí quỹ khí của Đức → false.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"relevant": true, "summary": "...", "origin": null, "about_vietnam": false}}"""
+{{"relevant": true, "summary": "...", "origin": null, "about_vietnam": <true hoặc false theo quy tắc trên>}}"""
 
 
 SECTION6_SUMMARY_CONCURRENCY = 4
@@ -1332,15 +1339,14 @@ def _eua_session_shape(chart_data: List[Dict]) -> str:
     if None in (open_p, high, low, close) or high <= low:
         return ""
     parts = []
-    recent = chart_data[-15:-1]  # ATR của 14 phiên TRƯỚC phiên này (không lấy chính nó làm chuẩn)
-    if recent:
-        atr = sum(c["high"] - c["low"] for c in recent) / len(recent)
-        ratio = (high - low) / atr if atr else 1
+    atr = atr_true_range(chart_data[:-1])  # ATR của 14 phiên TRƯỚC phiên này (không lấy chính nó làm chuẩn)
+    if atr:
+        ratio = (high - low) / atr
         width = ("RỘNG hơn bình thường" if ratio >= SESSION_RANGE_WIDE_RATIO
                  else "HẸP hơn bình thường" if ratio <= SESSION_RANGE_NARROW_RATIO
                  else "xấp xỉ bình thường, nhỏ hơn ATR — KHÔNG được gọi là rộng" if ratio < 1
                  else "xấp xỉ bình thường — không phải đột biến")
-        parts.append(f"Biên độ {_vn_num(high - low)} so với ATR 14 phiên trước {_vn_num(atr)} → {width} (×{_vn_num(ratio)}).")
+        parts.append(f"Biên độ {_vn_num(high - low)} so với ATR 14 phiên trước (True Range) {_vn_num(atr)} → {width} (×{_vn_num(ratio)}).")
     prev_close = prev.get("close")
     if prev_close:
         gap = open_p - prev_close
@@ -1378,22 +1384,24 @@ def _eua_technical_levels_summary(chart_data: List[Dict]) -> str:
     support = min(c["low"] for c in chart_data)
     last_close = chart_data[-1]["close"]
     breakout_target = resistance + (resistance - support)
-    # ATR đơn giản = biên độ cao-thấp TB 14 phiên gần nhất — làm đệm tối thiểu cho
-    # mức cắt lỗ (0,5 × ATR) ở Mục 3, tránh cắt lỗ sát hỗ trợ đến mức nhiễu phiên cũng quét.
-    recent = chart_data[-14:]
-    atr = sum(c["high"] - c["low"] for c in recent) / len(recent)
+    breakdown_target = support - (resistance - support)
+    # ATR = TB True Range 14 phiên — làm đệm tối thiểu cho mức cắt lỗ (0,5 × ATR) ở Mục 3, tránh cắt lỗ
+    # sát hỗ trợ đến mức nhiễu phiên cũng quét.
+    atr = atr_true_range(chart_data) or 0.0
     # Mốc gần (10 phiên) cho kịch bản NGẮN HẠN — biên 30 phiên thường quá xa cho 1–2 tuần.
     near = chart_data[-10:]
     near_res, near_sup = max(c["high"] for c in near), min(c["low"] for c in near)
 
     return (
-        f"Biên độ TB phiên (ATR 14 phiên): ~{atr:.2f} EUR/tCO2 → đệm cắt lỗ tối thiểu ngoài hỗ trợ/kháng cự "
+        f"ATR 14 phiên (TB True Range = max(cao − thấp, |cao − đóng cửa trước|, |thấp − đóng cửa trước|)): ~{atr:.2f} EUR/tCO2 → đệm cắt lỗ tối thiểu ngoài hỗ trợ/kháng cự "
         f"~{0.5 * atr:.2f}. "
         f"Kháng cự/điểm chốt lời kỹ thuật (đỉnh 30 phiên gần nhất): ~{resistance:.2f} EUR/tCO2 — "
         f"nếu giá phá vỡ mốc này, mục tiêu kỹ thuật tham khảo (đo biên độ dao động 30 phiên) "
         f"~{breakout_target:.2f} EUR/tCO2. "
         f"Hỗ trợ/điểm giảm kỹ thuật (đáy 30 phiên gần nhất): ~{support:.2f} EUR/tCO2 — vùng thường "
-        f"xuất hiện lực mua bắt đáy về mặt kỹ thuật. "
+        f"xuất hiện lực mua bắt đáy về mặt kỹ thuật; nếu giá thủng mốc này, mục tiêu kỹ thuật chiều xuống (đo biên độ) "
+        f"~{breakdown_target:.2f} EUR/tCO2. Mục tiêu trung/dài hạn khi phá/thủng biên 30 phiên PHẢI dùng phép đo biên độ này "
+        f"(cùng phương pháp cho cả 2 chiều), không tự lấy % tròn. "
         f"Mốc gần cho kịch bản NGẮN HẠN (10 phiên gần nhất): kháng cự ~{near_res:.2f}, hỗ trợ ~{near_sup:.2f} EUR/tCO2. "
         f"Giá đóng cửa gần nhất: {last_close:.2f} EUR/tCO2."
     )
@@ -1997,6 +2005,12 @@ def _finalize_section8_events(
             kept.append(ev)
         # else: quá hạn chưa có outcome, hoặc vượt quá 7 ngày tới -> loại bỏ hẳn.
 
+    # LLM chép sự kiện định kỳ mà làm rơi kết quả đã công bố → lấy lại từ bản Python (không để nằm ở "sắp tới").
+    by_key = {(ev.get("date"), ev.get("event")): ev for ev in recurring_events or []}
+    for ev in kept:
+        src = by_key.get((ev.get("date"), ev.get("event")))
+        if src and src.get("outcome") and not ev.get("outcome"):
+            ev["outcome"] = src["outcome"]
     existing_keys = {(ev.get("date"), ev.get("event")) for ev in kept}
     for ev in recurring_events or []:
         key = (ev.get("date"), ev.get("event"))
@@ -2098,6 +2112,7 @@ def data_matches_event(event_name: str, event_vn_date: date, week_ending: Option
 _EIA_API_TZ = ZoneInfo("America/New_York")
 _BAKER_HUGHES_TZ = ZoneInfo("America/Chicago")
 _VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+_EEX_TZ = ZoneInfo("Europe/Berlin")
 _VN_WEEKDAYS = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
 
 
@@ -2134,6 +2149,9 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
                 "datetime_vn": vn_dt.strftime("%d/%m"),
                 "event": label,
                 "impact": impact,
+                # Giờ công bố thực (VN) — gắn kết quả khi đã công bố TRƯỚC lúc sinh báo cáo, kể cả khi rơi vào
+                # chính ngày phát hành (Baker Hughes 00:00 17/10 VN, báo cáo 17/10 sinh lúc 07:00).
+                "released_at": vn_dt.isoformat(),
             })
 
     # Quét dư 2 ngày trước cửa sổ VN vì mốc gốc tính theo lịch Mỹ (ET/CT) —
@@ -2157,6 +2175,43 @@ def _compute_recurring_calendar_events(target_date_str: str) -> List[Dict]:
 AUCTION_EVENT_RE = re.compile(r"Đấu giá EUA", re.IGNORECASE)
 
 
+
+AUCTION_COVER_STRONG = 2.0  # tỷ lệ đặt mua/chào bán ≥ 2 → cầu đấu giá mạnh
+AUCTION_COVER_WEAK = 1.5    # < 1,5 → cầu yếu
+
+
+async def _latest_auction_summary(session: AsyncSession, max_date: str, eua_close: Optional[float]) -> str:
+    """Kết quả các phiên đấu giá sơ cấp EUA gần nhất (≤ ngày dữ liệu) — để Mục 2/3 dùng làm tín hiệu cầu thật thay vì
+    viết "thiếu xác nhận từ đấu giá" khi DB đã có (bản 17/10: phiên DE 16/10 khớp 85,50 > đóng cửa 85,41, cover 2,09)."""
+    rows = (await session.execute(
+        select(EuaAuction)
+        .where(EuaAuction.auction_date <= date.fromisoformat(max_date), EuaAuction.status == "successful",
+               EuaAuction.auction_price.is_not(None))
+        .order_by(desc(EuaAuction.auction_date))
+        .limit(3)
+    )).scalars().all()
+    if not rows:
+        return "Chưa có kết quả đấu giá sơ cấp EUA trong dữ liệu — nếu nhắc phải ghi \"chưa có dữ liệu đấu giá\"."
+    lines = []
+    for r in rows:
+        cover = r.cover_ratio
+        demand = ("" if cover is None else " → cầu đấu giá MẠNH" if cover >= AUCTION_COVER_STRONG
+                  else " → cầu đấu giá YẾU" if cover < AUCTION_COVER_WEAK else " → cầu đấu giá bình thường")
+        vs_close = (f", {'cao hơn' if r.auction_price > eua_close else 'thấp hơn' if r.auction_price < eua_close else 'bằng'} "
+                    f"giá đóng cửa futures {_vn_num(eua_close)} ({_vn_num(r.auction_price - eua_close, sign=True)})"
+                    if eua_close and r.auction_date.isoformat() == max_date else "")
+        lines.append(
+            f"- {r.auction_date.strftime('%d/%m')} {r.auction_name}: khớp {_vn_num(r.auction_price)} EUR/t{vs_close}"
+            + (f", tỷ lệ đặt mua/chào bán {_vn_num(cover)}" if cover is not None else "")
+            + (f", {r.total_bidders} nhà thầu" if r.total_bidders else "") + demand
+        )
+    return (
+        "KẾT QUẢ ĐẤU GIÁ SƠ CẤP EUA GẦN NHẤT (EEX — dữ liệu thật, dùng làm tín hiệu cầu; KHÔNG viết \"thiếu xác nhận từ đấu giá\" "
+        "khi đã có số dưới đây; lưu ý giá đấu giá là giao ngay, giá đóng cửa là futures Dec — chênh nhỏ một phần do kỳ hạn):\n"
+        + "\n".join(lines)
+    )
+
+
 async def _auction_calendar_events(session: AsyncSession, target_date_str: str) -> List[Dict]:
     """1 sự kiện gộp các phiên đấu giá sơ cấp EUA trên EEX trong (target, target + 7 ngày] — từ lịch
     chính thức đã crawl (eua_auctions, crawl_prices/crawl_eex_auctions.py). Gộp thay vì 1 dòng/phiên vì
@@ -2176,12 +2231,15 @@ async def _auction_calendar_events(session: AsyncSession, target_date_str: str) 
         return []
     first, last = rows[0].auction_date, rows[-1].auction_date
     span = first.strftime("%d/%m") if first == last else f"{first.strftime('%d/%m')}–{last.strftime('%d/%m')}"
+    # Giờ đấu giá 09:00–11:00 giờ Frankfurt → giờ VN theo đúng ngày (CEST mùa hè = 14:00–16:00 VN, CET = 15:00–17:00).
+    vn_open = datetime.combine(first, dtime(9, 0), tzinfo=_EEX_TZ).astimezone(_VN_TZ)
+    vn_close = datetime.combine(first, dtime(11, 0), tzinfo=_EEX_TZ).astimezone(_VN_TZ)
     return [{
         "date": first.isoformat(),
         "datetime_vn": first.strftime("%d/%m"),
         "event": (
             f"Đấu giá EUA sơ cấp EEX: {len(rows)} phiên {span}, tổng {_vn_num(sum(r.volume for r in rows) / 1e6)} triệu tấn "
-            f"(09:00–11:00 giờ CET; giá khớp các phiên quyết định giá CBAM quý)"
+            f"({vn_open.strftime('%H:%M')}–{vn_close.strftime('%H:%M')} giờ VN; giá khớp các phiên quyết định giá CBAM quý)"
         ),
         # Nguồn cung EUA trực tiếp + quyết định giá CBAM → ưu tiên cao hơn số giàn khoan Baker Hughes ("Trung").
         "impact": "Cao",
@@ -2516,7 +2574,7 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 
 def _prompt_key_developments(
     news_text: str, target_date: str, topics_present: List[str],
-    overrides: Optional[Dict[str, str]] = None, news_only: bool = False,
+    overrides: Optional[Dict[str, str]] = None, news_only: bool = False, fuel_spread: str = "",
 ) -> tuple[str, str]:
     """ "Diễn biến chính" — hiển thị ngay dưới Bảng giá nhanh: CHỈ các SỰ KIỆN TIN TỨC
     nổi bật có tác động tới giá/cung/cầu của các hợp đồng theo dõi (EUA + năng lượng,
@@ -2532,6 +2590,10 @@ def _prompt_key_developments(
 TIN TỨC đã đánh số [N] — CHỈ trích dẫn số có thật:
 {news_text}
 
+SPREAD THAN–KHÍ (tính sẵn — tin về khí/than/điện PHẢI xếp chiều EUA theo đúng "KẾT LUẬN DÙNG CHUNG" này, KHÔNG dùng
+tiền đề chung chung "TTF tăng → chuyển sang than → cầu EUA tăng" khi kết luận nói chuyển đổi đã bão hòa):
+{fuel_spread or "Không có."}
+
 YÊU CẦU: Viết "key_developments" — DIỄN BIẾN CHÍNH: các tin tức nổi bật trong danh sách trên CÓ TÁC ĐỘNG ĐẾN GIÁ của các hợp đồng đang theo dõi (EUA, TTF, điện Đức, than, dầu, gasoil...) — trực tiếp hay gián tiếp đều được, miễn bài nêu được sự kiện/nguyên nhân cụ thể ảnh hưởng tới cung, cầu hoặc giá của ít nhất 1 hợp đồng. Gồm: chính sách EU ETS/MSR/cap/đấu giá/CBAM, số liệu phát thải, động thái thị trường carbon, gián đoạn nguồn cung năng lượng, địa chính trị, thời tiết, tồn kho, OPEC+, sản lượng điện tái tạo/hydrogen, dự báo của tổ chức... Không cần bắt buộc tác động thẳng lên EUA.
 
 QUY TẮC BẮT BUỘC — ĐÂY LÀ MỤC TIN TỨC, KHÔNG PHẢI MỤC GIÁ:
@@ -2541,7 +2603,7 @@ QUY TẮC BẮT BUỘC — ĐÂY LÀ MỤC TIN TỨC, KHÔNG PHẢI MỤC GIÁ:
 - Mỗi mục là object {{"title": "...", "summary": "...", "impact": "tăng" | "giảm" | "trung lập", "source_index": N}}:
   + "title": tiêu đề bài báo (dịch/rút gọn sang tiếng Việt nếu bài tiếng Anh, giữ đúng ý, không thêm thắt).
   + "summary": 1–2 câu NGẮN GỌN: nêu nội dung chính của tin, rồi tác động tới giá/cung/cầu của hợp đồng liên quan, nêu rõ hợp đồng nào (vd "... → hỗ trợ giá TTF, gián tiếp thúc đẩy nhu cầu EUA"). KHÔNG chép lại tiêu đề, KHÔNG ghi nguồn/ngày trong câu (hệ thống tự thêm).
-  + "impact": chiều tác động lên GIÁ của hợp đồng chính bị ảnh hưởng (theo đúng chuỗi nhân quả ở KHUNG PHÂN TÍCH khi liên quan EUA) — "tăng" = hỗ trợ giá, "giảm" = gây áp lực giảm giá, "trung lập" = chưa rõ chiều.
+  + "impact": chiều tác động RÒNG lên GIÁ EUA (giao diện hiển thị là "Hỗ trợ EUA"/"Áp lực EUA"/"Chờ xác nhận"; Mục 2/3 bắt buộc dùng lại đúng chiều này) — KHÔNG phải chiều của hợp đồng năng lượng: tin đẩy TTF tăng mà chuyển đổi nhiên liệu đã bão hòa → "trung lập" với EUA. "tăng" = hỗ trợ EUA, "giảm" = áp lực giảm EUA, "trung lập" = chưa rõ chiều / chỉ tác động hợp đồng khác.
   + "source_index": BẮT BUỘC là số [N] có thật của bài làm căn cứ — mục nào không gắn được với 1 bài cụ thể thì BỎ, TUYỆT ĐỐI KHÔNG bịa số.
 - Không có tin nào đạt yêu cầu → "key_developments": [].
 
@@ -2591,8 +2653,10 @@ def _dev_verdict_block(dev_impacts: Dict[str, str], index_lookup: Dict[int, Dict
     if not lines:
         return ""
     return (
-        "\n\nCHIỀU TÁC ĐỘNG ĐÃ CHỐT Ở \"DIỄN BIẾN CHÍNH\" (BẮT BUỘC — cùng 1 tin KHÔNG được đánh giá khác chiều ở mục này; "
-        "nhắc lại tin này thì dùng đúng chiều dưới đây):\n" + "\n".join(lines)
+        "\n\nCHIỀU TÁC ĐỘNG ĐÃ CHỐT Ở \"DIỄN BIẾN CHÍNH\" (BẮT BUỘC — cùng 1 tin KHÔNG được đánh giá khác chiều ở BẤT KỲ chỗ "
+        "nào của mục này: động lực thị trường, nhóm Phân tích, \"Cần theo dõi\"; nhắc lại tin này thì dùng đúng chiều dưới đây. "
+        "Watchpoint về tin này chỉ được nêu nhánh khác chiều khi là diễn biến MỚI chưa xảy ra và ghi rõ vì sao khác):\n"
+        + "\n".join(lines)
     )
 
 
@@ -2742,6 +2806,8 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      • Không dùng cụm "không phải khuyến nghị giao dịch" trong nội dung — giao diện đã có lưu ý riêng.
      • Mọi nhãn phần trăm "X (±p% so với đóng cửa Y)" PHẢI tính lại: p = (X / Y − 1) × 100 (vd 78,30 so với 85,84 là −8,78%, KHÔNG phải −5%; −5% từ 85,84 là 81,55) — hệ thống tự tính lại và sửa nhãn sai.
      • Mục tiêu tính theo % (dạng "X (Y × 0,95)" hoặc "−5% ≈ X") CHỈ được lấy cơ sở Y = giá đóng cửa hiện tại hoặc 1 mốc có trong "MỐC KỸ THUẬT EUA"; MỖI kịch bản CHỈ có 1 mục tiêu — "price_zone" và "**Mục tiêu:**" phải ghi CÙNG con số (bản 17/10 lỗi: Vùng giá 81,14 = 85,41 × 0,95 nhưng Chiến lược 77,95 = 82,05 × 0,95, mốc 82,05 không có trong dữ liệu).
+     • Nhãn % của mục tiêu tính từ ĐÚNG giá vào lệnh: Entry là mức kích hoạt (vd "bán khi đóng cửa dưới 82,35") thì ghi "(−4,6% từ Entry 82,35)", KHÔNG ghi "−8% so với đóng cửa 85,41" (phóng đại kỳ vọng thực).
+     • Ngắn hạn và trung hạn KHÔNG được chồng vùng hành động: nếu ngắn hạn giữ lệnh một chiều với cắt lỗ S, mức kích hoạt của kịch bản trung hạn ngược chiều phải nằm NGOÀI S (vd ngắn hạn mua cắt lỗ 81,50 → trung hạn bán chỉ khi đóng cửa dưới 81,50), và ghi rõ "trung hạn chỉ kích hoạt sau khi lệnh ngắn hạn đã cắt lỗ".
      • "direction" khác "đi ngang" (nhất là trung/dài hạn) PHẢI dựa trên ≥1 driver ĐÃ xảy ra/đang diễn ra cùng chiều trong dữ liệu/tin hôm nay. Nếu mọi điều kiện kích hoạt của chiều đó CHƯA xảy ra, hoặc số liệu hiện tại đang đi NGƯỢC điều kiện (vd điều kiện "chênh khí − than thu hẹp" trong khi chênh đang mở rộng; chính sách được đánh giá trung lập) → "direction" = "đi ngang", ghi điều kiện đó ở "condition" như ngưỡng chờ kích hoạt.
      • Lệnh trong "trading_strategy" là LỆNH CHỜ có hiệu lực {forecast_review.ORDER_VALID_SESSIONS} phiên kể từ ngày báo cáo và tự huỷ nếu giá chạm mục tiêu trước khi khớp (hệ thống chấm theo quy tắc này) → đặt vùng Entry trong tầm với của {forecast_review.ORDER_VALID_SESSIONS} phiên (≈ 1–1,5 × ATR quanh giá hiện tại), không đặt quá xa. Với "đi ngang", ghi rõ "đặt lệnh chờ (limit) mua quanh … / bán quanh …".
      • Mức vô hiệu/rủi ro của MỖI kịch bản (key_risk) PHẢI trùng mức cắt lỗ trong "Quản trị rủi ro" của CHÍNH kịch bản đó; "price_zone" và vùng nêu ở "Entry" phải là CÙNG một vùng (không để 82,35–85,84 ở chỗ này và 82,35–85,00 ở chỗ khác).
@@ -2954,14 +3020,16 @@ CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 def _scenario_math_issues(sec3: Dict[str, Any], chart_data: List[Dict], prices: List[Dict]) -> List[str]:
     """Lỗi số học của "trading_scenarios" (R:R, điều kiện ↔ Entry, cắt lỗ sát đáy/đỉnh phiên, sai
     phía) — dùng ĐÚNG bộ kiểm tra của Jack QC (services/report_qc.py) để bản sinh ra qua được QC."""
-    from services.report_qc import check_scenarios  # import muộn: report_qc import module này
+    from services.report_qc import check_horizon_overlap, check_scenario_basis, check_scenarios  # import muộn: report_qc import module này
 
     issues = check_scenarios({"2": {"chart_data": chart_data, "prices": prices}, "3": sec3})
     close = next((p.get("close") for p in prices if str(p.get("code", "")).upper() == "EUA"), None)
     return [
         it["message"] for it in issues
         if it["severity"] in ("error", "warning") and ".trading_strategy" in it.get("field_path", "")
-    ] + [it["message"] for it in derived_target_issues(sec3, close, _technical_level_values(chart_data))]
+    ] + [it["message"] for it in derived_target_issues(sec3, close, _technical_level_values(chart_data))] + [
+        it["message"] for it in check_scenario_basis({"3": sec3}, close) + check_horizon_overlap({"3": sec3})
+    ]
 
 
 def _technical_level_values(chart_data: List[Dict]) -> List[float]:
@@ -2970,7 +3038,7 @@ def _technical_level_values(chart_data: List[Dict]) -> List[float]:
         return []
     hi, lo = max(c["high"] for c in chart_data), min(c["low"] for c in chart_data)
     near = chart_data[-10:]
-    return [hi, lo, hi + (hi - lo), max(c["high"] for c in near), min(c["low"] for c in near)]
+    return [hi, lo, hi + (hi - lo), lo - (hi - lo), max(c["high"] for c in near), min(c["low"] for c in near)]
 
 
 async def _revise_scenarios_if_invalid(
@@ -3227,6 +3295,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     )
     # Ước tính giá CBAM quý đang chạy (VWAP đấu giá EEX + lịch còn lại) — báo cáo CN/T2 không có giá → bỏ.
     eua_close = next((p.get("close") for p in prices if p.get("code") == "EUA"), None)
+    auction_text = await _latest_auction_summary(session, max_price_date, eua_close) if max_price_date else ""
     cbam_est = (
         await cbam_estimate.build_cbam_estimate(session, max_price_date, eua_close, [c["close"] for c in chart_data])
         if prices and max_price_date else None
@@ -3271,7 +3340,11 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             ev_date = datetime.strptime(ev_date_str, "%Y-%m-%d").date()
         except ValueError:
             continue
-        if ev_date > target_dt:
+        released = ev.get("released_at")
+        if released:
+            if datetime.fromisoformat(released) > datetime.now(_VN_TZ):
+                continue  # chưa công bố tại thời điểm sinh báo cáo
+        elif ev_date > target_dt:
             continue  # Sự kiện tương lai — không inject outcome
 
         event_name = ev.get("event", "")
@@ -3325,6 +3398,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 f"Δ ngày: {direction} {abs(delta):.2f} ({delta_pct:+.1f}%) so với phiên trước đó ({prev_close:.2f}). "
                 f"Δ tuần: {week_change_str} so với 7 ngày trước. "
                 f"{eua_session_range} {eua_trend} {eua_volume}"
+                + (f"\n{auction_text}" if auction_text else "")
             )
         else:
             eua_key_facts = (
@@ -3441,11 +3515,12 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             )),
             ("dev", _prompt_key_developments(
                 dev_news_text, target_date, _topics_present(news_by_topic, "dev"),
-                overrides=eua_framework_overrides,
+                overrides=eua_framework_overrides, fuel_spread=fuel_spread,
             )),
             ("3", _prompt_section3(
                 section3_news_text + prev_digest,
-                prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
+                prices_text + (f"\n\n{auction_text}" if auction_text else ""),
+                eua_trend, eua_session_range, gasoil_crack_spread, target_date,
                 _topics_present(news_by_topic, "3"),
                 overrides=eua_framework_overrides,
                 eua_technical_levels=eua_technical_levels,
