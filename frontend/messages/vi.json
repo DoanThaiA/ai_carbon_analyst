@@ -461,15 +461,18 @@
     "upcoming": "7 ngày tới: {count} phiên ({from}–{to}), tổng {volume} triệu tấn",
     "prevQuarter": "Kiểm chứng phương pháp — {quarter}: VWAP đấu giá {vwap} ↔ EC công bố {official} EUR/t",
     "method": "Giá CBAM do EC công bố theo quý = trung bình gia quyền khối lượng (VWAP) giá khớp của mọi phiên đấu giá EUA sơ cấp trên EEX trong quý. Phần chưa đấu giá giả định bằng giá EUA hiện tại; khoảng tin cậy theo biến động ngày thực tế {vol}% của EUA (random walk). Đây là ước tính, không phải giá chính thức.",
-    "hedgeHow": "Cách khóa: {open}% khối lượng quý chưa chốt giá (thả nổi theo VWAP các phiên còn lại). Mua futures EUA Dec ngay cho phần lõi = {core}% khối lượng quý ({corePct}% phần chưa chốt), rồi bán rải theo tỷ trọng lịch đấu giá còn lại → lãi/lỗ futures ≈ VWAP − giá mua, chi phí ròng ≈ giá mua hôm nay. Mua EUA rải theo lịch không khóa được chi phí.",
+    "hedgeHow": "Cách khóa: {open}% nghĩa vụ CBAM quý (tCO₂, tỷ trọng theo khối lượng đấu giá còn lại) chưa chốt giá, thả nổi theo VWAP các phiên còn lại. Mua futures EUA Dec ngay cho phần lõi = {core}% nghĩa vụ CBAM quý ({corePct}% phần chưa chốt), rồi bán rải theo tỷ trọng lịch đấu giá còn lại → lãi/lỗ futures ≈ VWAP − giá mua, chi phí ròng ≈ giá mua hôm nay. Mua EUA rải theo lịch không khóa được chi phí.",
     "productTitle": "Chi phí CBAM / tấn sản phẩm (giả định — thay bằng số liệu phát thải thực đã thẩm định)",
-    "productRow": "{product} (CN {cn}): ({embedded} − {benchmark} × {factor}%) = {net} tCO₂/t → ≈ {cost} EUR/t",
+    "productRow": "{product} (CN {cn}): {embedded} − {factor}% × CSCF {cscf}% × {benchmark} = {net} tCO₂/t → ≈ {cost} EUR/t",
     "productRange": " (KTC: {low}–{high})",
     "product": {
       "aluminium_primary": "Nhôm thỏi nguyên sinh",
       "steel_bf_bof": "Thép lò cao (BF-BOF)"
     },
-    "productNote": "Chỉ tính phát thải trực tiếp (phạm vi CBAM của nhôm/thép); benchmark 2021–2025, cần đối chiếu benchmark 2026–2030 theo mã CN; hệ số phân bổ miễn phí còn lại {factor}% năm {year}."
+    "productNote": "Chỉ tính phát thải trực tiếp (phạm vi CBAM của nhôm/thép); hệ số phân bổ miễn phí còn lại {factor}% năm {year}. Cảnh báo: (1) benchmark dùng ở đây là giai đoạn 2021–2025 — benchmark 2026–2030 đã cập nhật và thường thấp hơn nên chi phí thực tế có thể cao hơn (chưa đối chiếu theo từng mã CN); (2) dùng giá trị mặc định của EC thay số liệu thực đã thẩm định thường làm chi phí cao hơn đáng kể — mỗi +0,1 tCO₂/t phát thải nhúng ≈ +{per01} EUR/t sản phẩm.",
+    "productDefaults": "Nếu dùng giá trị mặc định (+{markup}% markup): {list} EUR/t",
+    "productUnverified": " (số theo nguồn thứ cấp — cần đối chiếu Phụ lục văn bản gốc)",
+    "productNoteCbam": "Khấu trừ = hệ số CBAM {factor}% năm {year} × CSCF × benchmark CBAM theo mã CN ({source}{verified}). Chỉ tính phát thải trực tiếp (phạm vi CBAM của nhôm/thép); phát thải nộp là giả định. Mỗi +0,1 tCO₂/t ≈ +{per01} EUR/t sản phẩm — chênh lệch số thực ↔ giá trị mặc định là giá trị của việc thẩm định phát thải."
   },
   "chatLib": {
     "docNotSupported": "\"{name}\": chưa hỗ trợ file .doc — vui lòng lưu lại dưới dạng .docx.",
@@ -584,7 +587,15 @@
       "low_rr": "Lỗi thiết kế lệnh: R:R tại giá vào {entry} chỉ {rr} (tối thiểu {min})",
       "tight_stop": "Lỗi thiết kế lệnh: cắt lỗ cách giá vào {distance} = {mult} × ATR (tối thiểu {min} ATR)"
     },
-    "baseline": "Chuẩn so sánh ({total} báo cáo đã có kết luận): báo cáo đúng {model} · dự báo ngây thơ \"luôn đi ngang\" {sideways} · \"lặp chiều {n} phiên trước\" {momentum}"
+    "baseline": "Chuẩn so sánh ({total} báo cáo đã có kết luận): báo cáo đúng {model} · dự báo ngây thơ \"luôn đi ngang\" {sideways} · \"lặp chiều {n} phiên trước\" {momentum}",
+    "calibrationIncludes": "Tính trên các báo cáo {dates} — có báo cáo đã ra khỏi bảng trên vì quá khung chấm; các báo cáo còn \"Đang…\" trong bảng chưa được tính.",
+    "calibrationAll": "Tỷ lệ đúng lũy kế ({n} báo cáo đã có kết luận):",
+    "windowVerdict": {
+      "correct": "Đ",
+      "wrong": "S",
+      "direction_only": "không tính"
+    },
+    "calibrationDrift": "Độ tin cậy mức {probability} đang suy giảm: gần đây {recent} so với lũy kế {overall}."
   },
   "meta": {
     "title": "Carbon Analyst Dashboard",
@@ -681,7 +692,8 @@
         "move": "DỜI MỨC",
         "close": "ĐÓNG LỆNH",
         "none": "CHƯA ĐỐI CHIẾU"
-      }
+      },
+      "midAlt": "thay thế: {arrow} xác suất thấp"
     },
     "scenario": {
       "heading": "Kịch bản hành động",
@@ -695,7 +707,8 @@
       "hedge": "Sổ phòng hộ SIM (CBAM)",
       "indicator": "Chỉ tiêu",
       "noteLabel": "Lưu ý:",
-      "note": "Đây là các chiến lược dựa trên phân tích của Jenny, chỉ mang tính chất tham khảo. Người đọc cần xem xét kỹ, đối chiếu với bối cảnh thực tế và khẩu vị rủi ro của mình trước khi ra quyết định — đây không phải lời khuyên đầu tư cá nhân hóa."
+      "note": "Đây là các chiến lược dựa trên phân tích của Jenny, chỉ mang tính chất tham khảo. Người đọc cần xem xét kỹ, đối chiếu với bối cảnh thực tế và khẩu vị rủi ro của mình trước khi ra quyết định — đây không phải lời khuyên đầu tư cá nhân hóa.",
+      "alternative": "Kịch bản thay thế"
     },
     "events": {
       "outcome": "Kết quả: ",
@@ -810,19 +823,21 @@
       "noNewsVn": "Không có tin tức việt nam trong kỳ này.",
       "sourcesTitle": "Nguồn tham khảo",
       "noSources": "Không có nguồn tin tức trong 48h qua.",
-      "footer": "Báo cáo nội bộ, tổng hợp tự động có kiểm duyệt. Không phải khuyến nghị đầu tư."
+      "footer": "Báo cáo nội bộ, tổng hợp tự động có kiểm duyệt. Không phải khuyến nghị đầu tư.",
+      "noNewsVnFiltered": "Có {n} tin Việt Nam trong kỳ nhưng không bài nào đủ liên quan tới EUA/CBAM/chính sách carbon để đưa vào báo cáo."
     },
     "etsPolicy": {
       "title": "Theo dõi chính sách ETS/MSR (21 ngày)",
       "item": "Hồ sơ",
       "status": "Lập trường / tiến độ",
       "nextStep": "Bước tiếp theo",
-      "impact": "Nếu thông qua",
+      "impact": "Tác động lên nguồn cung",
       "impactLabel": {
         "up": "Siết cung",
         "down": "Nới cung",
         "neutral": "Chưa rõ"
-      }
+      },
+      "cbamEffect": "CBAM:"
     }
   },
   "shellHeader": {

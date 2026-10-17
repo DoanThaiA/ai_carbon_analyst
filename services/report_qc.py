@@ -582,6 +582,33 @@ _SPREAD_THRESHOLD_RE = re.compile(
 )
 
 
+# "TTF tăng → chi phí phát điện/phòng hộ tăng → đỡ giá EUA" (bản 17/10, Cần theo dõi #5/#6) trái kênh dùng chung khi
+# chuyển đổi đã bão hòa (report_generator: "KÊNH TTF → EUA DÙNG CHUNG").
+_HEDGE_SUPPORT_RE = re.compile(
+    r"(?:phòng hộ|hedge)[^.;\n]{0,60}?(?:đỡ|hỗ trợ|duy trì|tăng)[^.;\n]{0,25}?(?:giá\s+|cầu\s+|nhu cầu\s+)?(?:phòng hộ\s+)?EUA"
+    r"|(?:đỡ|hỗ trợ)\s+(?:giá\s+|cầu\s+)?EUA[^.;\n]{0,40}?(?:phòng hộ|hedge)",
+    re.IGNORECASE,
+)
+
+
+def check_ttf_channel(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    state = fuel_spread_state((content.get("2") or {}).get("prices") or [])
+    if not (state and state["spread"] > FUEL_NEAR_BREAKEVEN):
+        return []
+    issues = []
+    for section, path, text in _report_texts(content):
+        for line in text.split("\n"):
+            m = _HEDGE_SUPPORT_RE.search(line)
+            if m and re.search(r"TTF|khí|điện|DEBY", line, re.IGNORECASE):
+                issues.append(_issue(
+                    "scenario", section, "warning",
+                    f"Kênh TTF → EUA không thống nhất: \"{m.group(0)[:80]}\" — khi chuyển đổi đã bão hòa, chi phí/phòng hộ không "
+                    "đổi lượng cầu EUA; kênh duy nhất là công nghiệp cắt sản lượng (nghiêng giảm, cần tin xác nhận).", path,
+                ))
+                break
+    return issues
+
+
 def check_fuel_thresholds(content: Dict[str, Any], scenarios_only: bool = False) -> List[Dict[str, str]]:
     """Ngưỡng fuel switching dạng "chênh khí − than thu hẹp ±X EUR/MWh" trong khi giá hòa vốn ở ĐẦU THẤP của dải hiệu
     suất đội nhà máy còn xa giá EUA (fuel_threshold_far) → ngưỡng đó không đổi thứ tự huy động, mâu thuẫn chính mô hình
@@ -724,6 +751,10 @@ def check_horizon_overlap(content: Dict[str, Any]) -> List[Dict[str, str]]:
     return []
 
 
+# "**Mục tiêu:** 92,25 (+8% so với đóng cửa 85,41 ...)" — % nguyên tròn tính từ giá đóng cửa.
+LONG_TERM_ROUND_PCT_RE = re.compile(r"Mục tiêu:?\**[^\n]{0,40}?\(\s*[+\-−]\s*\d{1,2}\s*%\s*so với\s+(?:giá\s+)?đóng cửa", re.IGNORECASE)
+
+
 def check_long_term_basis(content: Dict[str, Any]) -> List[Dict[str, str]]:
     """Kịch bản DÀI HẠN (>3 tháng): (1) mục tiêu = phép đo biên độ 30 phiên là công cụ kỹ thuật ngắn hạn, không có cơ sở
     cho khung >3 tháng; (2) cận vùng giá = đúng giá đóng cửa hôm nay là mốc không có cơ sở (bản 17/10: "Tích lũy
@@ -750,6 +781,14 @@ def check_long_term_basis(content: Dict[str, Any]) -> List[Dict[str, str]]:
                     "cơ sở cho khung >3 tháng (dùng động lực cấu trúc: cap/LRF, MSR, phân bổ miễn phí, ETS2, rà soát ETS; "
                     "không suy ra mức thì bỏ mức giá cụ thể).", path,
                 ))
+        m_pct = LONG_TERM_ROUND_PCT_RE.search(str(sc.get("trading_strategy") or ""))
+        if m_pct:
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Kịch bản dài hạn: mục tiêu theo % tròn so với đóng cửa (\"{m_pct.group(0)[:60]}\") — không có phương pháp; neo vào "
+                "cân đối cung–cầu (cap, MSR, rà soát ETS) hoặc dự báo đồng thuận có nguồn, không có thì ghi \"chưa đủ cơ sở định lượng\".",
+                path,
+            ))
         zone_text = " ".join(str(sc.get(k) or "") for k in ("price_zone", "trading_strategy"))
         if close:
             for m in re.finditer(r"(\d+(?:[.,]\d+)?)\s*[–—-]\s*(\d+(?:[.,]\d+)?)", zone_text):
@@ -898,6 +937,20 @@ def check_hedge_action(content: Dict[str, Any]) -> List[Dict[str, str]]:
             f"Hành động phòng hộ \"{ha['action']}\" ngược tín hiệu thẻ CBAM \"{sig}\" mà không giải thích.",
             "3.hedge_action",
         ))
+    ha_text = str(ha.get("text") or "") if isinstance(ha, dict) else ""
+    if isinstance(ha, dict) and ha.get("action") == "hold" and re.search(r"\b(?:mua|khóa|khoá|gom)\b", ha_text.split(":", 1)[-1], re.I) \
+            and "không dùng" not in ha_text:
+        issues.append(_issue(
+            "scenario", "3", "error",
+            "Nhãn phòng hộ \"hold\" (thẻ CBAM: không dùng phần chiến thuật) nhưng ô phòng hộ lại khuyên mua/khóa phần chiến thuật.",
+            "3.hedge_action.text",
+        ))
+    if re.search(r"(?:dưới|thấp hơn|trên|cao hơn|so với)[^.;\n]{0,25}ước tính", ha_text, re.I):
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            "Phòng hộ so giá hiện tại với ƯỚC TÍNH giá CBAM/VWAP quý — lập luận vòng (ước tính đã gồm giá hiện tại); chỉ so với "
+            "VWAP đấu giá đã chốt.", "3.hedge_action.text",
+        ))
     if isinstance(ha, dict) and _SCHEDULE_BUY_RE.search(str(ha.get("text") or "")):
         issues.append(_issue(
             "scenario", "3", "warning",
@@ -1040,6 +1093,14 @@ def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
                 "scenario", "3", "error" if prob == "Cao" else "warning",
                 f"Tổng hợp [{sentiment}] nhưng kịch bản ngắn hạn = {direction} (xác suất {prob or '?'}).",
                 "3.trading_scenarios",
+            ))
+        elif sentiment in SENTIMENT_OPPOSITE_DIRECTION and direction == "đi ngang":
+            # Bản 17/10 (sau sửa): khung Nhận định đỏ "áp lực giảm chiếm ưu thế ngắn hạn" ngay cạnh thẻ "GIẰNG CO / ĐI NGANG".
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Tổng hợp [{sentiment}] nhưng kịch bản ngắn hạn \"đi ngang\" — chọn 1: nhãn [TRUNG LẬP] kèm \"rủi ro nghiêng "
+                f"về phía {'giảm' if sentiment == 'TIÊU CỰC' else 'tăng'}\", hoặc đổi kịch bản ngắn hạn.",
+                "3.trading_scenarios[0].trading_strategy",
             ))
         elif sentiment == "TRUNG LẬP" and direction in ("tăng", "giảm") and prob == "Cao":
             issues.append(_issue(
@@ -1808,9 +1869,21 @@ def check_biz(
         for pattern, why in BIZ_OFF_LENS:
             if re.search(pattern, text, re.IGNORECASE):
                 issues.append(_issue("biz", "biz", "warning", f"Gợi ý dài hạn #{i + 1}: {why}", path))
+        if re.search(r"≥\s*0\b|>=\s*0\b|lớn hơn 0\b|dương\b", str(it.get("kpi") or "")):
+            issues.append(_issue("biz", "biz", "info", f"Gợi ý dài hạn #{i + 1}: KPI \"≥ 0\" quá thấp — đặt theo biên lợi nhuận mục tiêu.",
+                                 f"{path}.kpi"))
+    from services.title_similarity import is_similar_title, title_tokens
+    long_tokens = [title_tokens(f"{it.get('opportunity') or ''} {it.get('solution') or ''}")
+                   for it in biz.get("long_term") or [] if isinstance(it, dict)]
     for i, it in enumerate(short_term):
         if not isinstance(it, dict):
             continue
+        if long_tokens and is_similar_title(title_tokens(f"{it.get('trigger') or ''} {it.get('action') or ''}"), long_tokens):
+            issues.append(_issue("biz", "biz", "warning",
+                                 f"Gợi ý ngắn hạn #{i + 1} trùng ý với 1 gợi ý dài hạn — gộp thành 1.", f"biz.short_term[{i}]"))
+        if re.search(r"≥\s*0\b|>=\s*0\b|lớn hơn 0\b|dương\b", str(it.get("kpi") or "")):
+            issues.append(_issue("biz", "biz", "info", f"Gợi ý ngắn hạn #{i + 1}: KPI \"≥ 0\" quá thấp — đặt theo biên lợi nhuận mục tiêu.",
+                                 f"biz.short_term[{i}].kpi"))
         if report_date and report_date >= BIZ_QUANTIFIED_SINCE and _blank(it.get("kpi")):
             issues.append(_issue("biz", "biz", "info", f"Gợi ý ngắn hạn #{i + 1}: thiếu KPI đo được.", f"biz.short_term[{i}].kpi"))
         text = " ".join(str(v) for v in it.values() if isinstance(v, str))
@@ -1856,6 +1929,8 @@ def check_biz_sources(content: Dict[str, Any], suggestions: Dict[int, Dict[str, 
                 continue
             label, path = f"Gợi ý {name} #{i + 1}", f"biz.{key}[{i}].source_url"
             url = it.get("source_url")
+            if not url and it.get("source_ref"):
+                continue  # hồ sơ chính sách admin xác nhận (ets_policy_dossiers.yaml) — kiểm chứng được qua bảng chính sách
             if not url:
                 if key == "short_term" and (
                     (suggestions.get(it.get("id")) or {}).get("trigger_rule")
@@ -2088,6 +2163,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             + check_scenario_basis(content) + check_horizon_overlap(content) + check_breakout_levels(content)
             + check_legislation_claims(content) + check_fact_tags(content)
             + check_fuel_thresholds(content) + check_long_term_basis(content) + check_technical_claims(content)
+            + check_ttf_channel(content)
         ),
         "source": check_sources(content, known_urls, article_meta, stale_before) + check_inline_attribution(content),
         "fact": check_facts(content, article_texts),

@@ -107,7 +107,10 @@ def test_auction_summary_compares_same_platform():
 
     latest = [SimpleNamespace(auction_date=date(2026, 10, 16), auction_name="DE", auction_price=85.50, cover_ratio=2.09,
                               total_bidders=26)]
-    hist = [("DE", 1.85), ("DE", 1.93), ("DE", 2.0), ("EU", 1.5), ("EU", 1.45), ("PL", 1.6)]
+    d = date(2026, 10, 9)
+    # Chính phiên 16/10 (2,09) có trong kết quả truy vấn nhưng KHÔNG được tính vào TB (bản chấm: loại phiên đang so).
+    hist = [("DE", d, 1.85), ("DE", d, 1.93), ("DE", d, 2.0), ("DE", date(2026, 10, 16), 2.09), ("EU", d, 1.5),
+            ("EU", d, 1.45), ("PL", d, 1.6), ("DE", date(2026, 6, 1), 9.0)]
 
     class _S:
         def __init__(self):
@@ -120,7 +123,7 @@ def test_auction_summary_compares_same_platform():
             return SimpleNamespace(all=lambda: hist)
 
     text = asyncio.run(rg._latest_auction_summary(_S(), "2026-10-16", 85.41))
-    assert "TB 90 ngày của phiên DE 1,93" in text and "xấp xỉ TB" in text
+    assert "TB 90 ngày trước đó của phiên DE 1,93 trên 3 phiên" in text and "xấp xỉ TB" in text
     assert "KHÁC thời điểm và kỳ hạn" in text and "cao hơn giá đóng cửa futures" not in text
 
 
@@ -150,11 +153,12 @@ def test_cbam_hedge_structure_and_product_exposure():
                                  date(2026, 10, 16))}
     assert est["open_share_pct"] == 77.1 and est["core_share_of_quarter_pct"] == 61.7  # ≥80% của 77,1% = 61,7% quý
     text = ce.hedge_structure_text(est)
-    assert "61,7% khối lượng quý" in text and "MUA futures EUA Dec" in text and "KHÔNG khóa được gì" in text
+    assert "61,7% nghĩa vụ CBAM quý" in text and "MUA EUA futures Dec-26" in text and "KHÔNG khóa được gì" in text
     rows = ce.product_exposure(85.39, None, None, 2026)
     alu = next(r for r in rows if r["key"] == "aluminium_primary")
-    assert alu["free_allocation_factor_pct"] == 97.5 and alu["net_tco2_per_t"] == round(1.7 - 1.464 * 0.975, 3)
-    assert alu["cost_eur_per_t"] == round((1.7 - 1.464 * 0.975) * 85.39, 2)
+    # Benchmark CBAM theo mã CN (7601: 1,423 — cbam_products.yaml), CSCF 2026 = 100%.
+    assert alu["free_allocation_factor_pct"] == 97.5 and alu["net_tco2_per_t"] == round(1.7 - 0.975 * 1.0 * 1.423, 3)
+    assert alu["cost_eur_per_t"] == round((1.7 - 0.975 * 1.423) * 85.39, 2)
     assert "nhôm thỏi nguyên sinh" in ce.describe_product_exposure({"product_exposure": rows})
 
 

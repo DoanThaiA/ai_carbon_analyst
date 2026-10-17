@@ -169,4 +169,4 @@ def test_describe_for_prompt():
     text = ce.describe_for_prompt(est)
     assert "VWAP" in text and "Q4 2026" in text and "82,32" in text and "KHÓA LÕI BẰNG FUTURES" in text
     # % lõi ghi theo khối lượng QUÝ, cách khóa = mua futures trước rồi bán rải theo lịch (không phải mua EUA rải theo lịch).
-    assert "% khối lượng quý" in text and "MUA futures EUA Dec" in text and "KHÔNG khóa được gì" in text
+    assert "% nghĩa vụ CBAM quý" in text and "MUA EUA futures Dec" in text and "KHÔNG khóa được gì" in text

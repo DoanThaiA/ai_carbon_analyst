@@ -55,7 +55,7 @@ DIRECTION_THRESHOLD_PCT = 1.0
 SIDEWAYS_MAX_PCT = DIRECTION_THRESHOLD_PCT
 ORDER_VALID_SESSIONS = 3       # lệnh chờ của thẻ chiến lược hết hiệu lực sau N phiên chưa khớp
 CALIBRATION_REPORTS = 7        # tỷ lệ đúng theo mức xác suất: N báo cáo gần nhất ĐÃ CÓ KẾT LUẬN (đúng/sai/đúng hướng không khớp)
-CALIBRATION_SCAN_REPORTS = 40  # số báo cáo tối đa quét lùi để gom đủ N báo cáo đã có kết luận
+CALIBRATION_SCAN_REPORTS = 250  # quét lùi tối đa N báo cáo: đủ cho cửa sổ CALIBRATION_REPORTS lẫn tỷ lệ LŨY KẾ
 PROBABILITY_LEVELS = ("Cao", "Trung bình", "Thấp")
 SIDEWAYS_PATH_MAX_PCT = 2.0    # "đi ngang": mọi giá đóng cửa trong khung phải nằm trong ±N% giá tham chiếu
 MIN_RR = 1.5                   # = report_qc.MIN_RISK_REWARD
@@ -311,11 +311,14 @@ async def build_forecast_review(session: AsyncSession, report_date: str, data_da
         if it["verdict"] != "wrong":
             break
         wrong_in_row += 1
-    calibration, baseline = await _calibration(session, report_date, data_date)
+    calibration, extra = await _calibration(session, report_date, data_date)
     block = {
         "items": items, "wrong_in_row": wrong_in_row,
         "calibration": calibration,
-        "baseline": baseline,
+        "calibration_window": extra.pop("window"),
+        "calibration_all": extra.pop("calibration_all"),
+        "calibration_all_reports": extra.pop("calibration_all_reports", 0),
+        "baseline": extra,
         "rules": {
             "horizon_sessions": REVIEW_MAX_SESSIONS, "direction_threshold_pct": DIRECTION_THRESHOLD_PCT,
             "sideways_max_pct": SIDEWAYS_MAX_PCT, "order_valid_sessions": ORDER_VALID_SESSIONS,
@@ -372,6 +375,12 @@ def baseline_from(evaluated: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def window_reports(evaluated: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Các báo cáo tạo nên tỷ lệ của cửa sổ — để người đọc kiểm lại được: bản chấm 17/10 tính "Cao 0/2" chỉ từ 3 dòng đã
+    kết luận trong bảng, trong khi cửa sổ gồm cả báo cáo cũ đã ra khỏi bảng (quá khung 10 phiên)."""
+    return [{"report_date": e["report_date"], "probability": e.get("probability"), "verdict": e["verdict"]} for e in evaluated]
+
+
 async def _calibration(session: AsyncSession, report_date: str, data_date: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     reports = (await session.execute(
         select(Report)
@@ -388,7 +397,7 @@ async def _calibration(session: AsyncSession, report_date: str, data_date: str) 
         if short and ref:
             candidates.append((r.report_date, short, ref))
     if not candidates:
-        return calibration_from([]), baseline_from([])
+        return calibration_from([]), {**baseline_from([]), "window": [], "calibration_all": calibration_from([])}
     all_sessions = await _eua_sessions(session, _sessions_lookback_start(min(c[0] for c in candidates)), data_date)
     evaluated = []
     for rdate, short, ref in candidates:  # mới → cũ
@@ -398,9 +407,14 @@ async def _calibration(session: AsyncSession, report_date: str, data_date: str) 
         if ev and ev["verdict"] in ("correct", "wrong", "direction_only"):
             ev["naive_momentum"] = naive_direction([s for s in all_sessions if s["date"] < rdate])
             evaluated.append(ev)
-            if len(evaluated) >= CALIBRATION_REPORTS:
-                break
-    return calibration_from(evaluated), baseline_from(evaluated)
+    window = evaluated[:CALIBRATION_REPORTS]
+    return calibration_from(window), {
+        **baseline_from(window),
+        "window": window_reports(window),
+        # Tỷ lệ LŨY KẾ mọi báo cáo đã có kết luận trong CALIBRATION_SCAN_REPORTS báo cáo gần nhất (bản cũ hiển thị số này).
+        "calibration_all": calibration_from(evaluated),
+        "calibration_all_reports": len(evaluated),
+    }
 
 
 def _vn(x: float, sign: bool = False) -> str:
@@ -444,6 +458,29 @@ VERDICT_VI = {
     "on_track": "ĐANG ĐÚNG HƯỚNG (chưa hết khung 1–2 tuần)",
     "direction_only": "ĐÚNG HƯỚNG, KHÔNG KHỚP LỆNH (Entry quá xa — không tính vào tỷ lệ đúng)", "diverging": "ĐANG LỆCH (chưa hết khung 1–2 tuần — chưa kết luận sai)",
 }
+
+
+WINDOW_VERDICT_VI = {"correct": "Đ", "wrong": "S", "direction_only": "không tính"}
+DRIFT_MIN_TOTAL = 5        # lũy kế phải có ≥ N báo cáo của mức đó mới so
+DRIFT_GAP_PCT = 20.0       # tỷ lệ gần đây thấp hơn lũy kế ≥ N điểm % → độ tin cậy mức đó đang suy giảm
+
+
+def calibration_drift(window: Sequence[Dict[str, Any]], cumulative: Sequence[Dict[str, Any]]) -> List[str]:
+    """"Cao 0/2 gần đây vs 9/13 lũy kế" → cảnh báo độ tin cậy mức Cao suy giảm (lý do có căn cứ để hạ mức xác suất)."""
+    out = []
+    by_level = {c["probability"]: c for c in cumulative}
+    for c in window:
+        a = by_level.get(c["probability"])
+        if not c.get("total") or not a or a.get("total", 0) < DRIFT_MIN_TOTAL:
+            continue
+        recent, overall = c["correct"] / c["total"] * 100, a["correct"] / a["total"] * 100
+        if overall - recent >= DRIFT_GAP_PCT:
+            out.append(
+                f"⚠ Độ tin cậy mức \"{c['probability']}\" đang suy giảm: gần đây {c['correct']}/{c['total']} so với lũy kế "
+                f"{a['correct']}/{a['total']} — lý do có căn cứ để KHÔNG dùng mức này (ngoài việc thiếu dữ liệu vị thế quỹ); "
+                "\"vs_previous\" nên nêu"
+            )
+    return out
 
 
 def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict[str, str]] = None) -> str:
@@ -492,11 +529,18 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
         )
     calib = [c for c in block.get("calibration") or [] if c.get("total") or c.get("direction_only")]
     if calib:
+        win = block.get("calibration_window") or []
         lines.append(
             f"TỶ LỆ ĐÚNG {CALIBRATION_REPORTS} BÁO CÁO GẦN NHẤT ĐÃ CÓ KẾT LUẬN, theo mức xác suất: "
             + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}"
                         + (f" (+{c['direction_only']} đúng hướng nhưng không khớp lệnh)" if c.get("direction_only") else "")
                         for c in calib)
+            + (f" — gồm báo cáo {', '.join(_dm(w['report_date']) + ' (' + WINDOW_VERDICT_VI.get(w['verdict'], w['verdict']) + ')' for w in win)}"
+               f" (có báo cáo đã ra khỏi bảng vì quá khung {REVIEW_MAX_SESSIONS} phiên; báo cáo trong bảng còn \"đang...\" chưa được "
+               "tính; KHÔNG suy lại tỷ lệ từ riêng các dòng trong bảng)" if win else "")
+            + ". LŨY KẾ: " + "; ".join(
+                f"{c['probability']} {c['correct']}/{c['total']}" for c in block.get("calibration_all") or [] if c.get("total"))
+            + "".join(f". {w}" for w in calibration_drift(block.get("calibration") or [], block.get("calibration_all") or []))
             + ". Mức nào tỷ lệ đúng < 50% (vd \"Cao\") thì KHÔNG dùng lại mức đó trừ khi có ≥2 yếu tố độc lập đã xác nhận; "
             "nguyên nhân dự báo sai phải nêu cả phần THỰC THI (Entry quá xa, lệnh treo/hết hiệu lực) chứ không chỉ tiền đề."
         )

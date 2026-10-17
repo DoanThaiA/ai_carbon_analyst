@@ -113,13 +113,12 @@ class ExtractedArticle:
 class ClassificationResult:
     """Kết quả phân loại từ LLM — 1–3 topic, kèm confidence trung bình.
 
-    is_relevant=False: LLM nhận định bài KHÔNG có tác động RÕ RÀNG (trực tiếp
-    hay gián tiếp, theo chuỗi nhân quả cụ thể) tới thị trường energy/carbon
-    châu Âu hay các yếu tố ảnh hưởng đến các thị trường đó — topics sẽ là []
-    và pipeline sẽ skip lưu DB (status='irrelevant'). Chỉ nhắc tên/đề cập
-    thoáng qua không có phân tích ảnh hưởng cụ thể KHÔNG tính là liên quan.
-    Tác động trực tiếp hoặc gián tiếp rõ ràng vẫn được coi là is_relevant=True
-    (kèm ít nhất 1 topic sát nhất).
+    is_relevant=False: bài KHÔNG tác động trực tiếp tới giá/cung/cầu EUA và cũng
+    không tác động trực tiếp lên 1 yếu tố dẫn dắt giá EUA (khí/than/điện châu Âu,
+    ngành thuộc EU ETS, cú sốc dầu lớn, địa chính trị cắt cung năng lượng EU, CBAM;
+    ngoại lệ hẹp: chính sách carbon VN cụ thể, carbon ngoài EU có liên kết EU ETS) —
+    topics sẽ là [] và pipeline skip lưu DB (status='irrelevant'). Model phải nêu
+    `eua_channel` hợp lệ, thiếu thì bị coi là không liên quan.
 
     is_hot_news=True: bài thuộc ĐÚNG 1 trong 4 nhóm tin nóng (chính trị gây sốc
     thị trường, cắt nguồn cung, đảo chiều giá, chính sách chưa từng có — xem
@@ -132,6 +131,8 @@ class ClassificationResult:
     is_relevant: bool = True
     is_hot_news: bool = False
     hot_news_reason: Optional[str] = None
+    # Kênh tác động tới EUA mà bài chỉ ra (crawl_news/classification.py::EUA_CHANNELS); None khi không liên quan.
+    eua_channel: Optional[str] = None
 
 
 PipelineStatus = Literal[

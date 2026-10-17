@@ -5,10 +5,13 @@
 #   end:    YYYY-MM-DD (tuỳ chọn, họp nhiều ngày)
 #   event:  tên sự kiện + nội dung ETS/MSR liên quan
 #   impact: Cao | Trung | Thấp
+#   outcome: (tuỳ chọn) kết quả đã xác nhận — có thì sự kiện hiện ở nhóm "Kết quả"
 #   source: URL xác nhận ngày họp
 events:
   - date: "2026-10-15"
     end: "2026-10-16"
     event: "Hội nghị thượng đỉnh EU (Hội đồng châu Âu) — có đề nghị tạm dừng chuyển ~190 triệu hạn ngạch vào MSR"
     impact: "Cao"
+    outcome: "Ngày 15/10 bế tắc, ETS không là mục nghị sự riêng, chưa có kết luận; văn bản dời sang Hội đồng châu Âu tháng 12/2026"
     source: "https://www.consilium.europa.eu/en/meetings/european-council/"
+  # Hội đồng châu Âu tháng 12/2026: thêm khi có ngày chính thức trên consilium.europa.eu.

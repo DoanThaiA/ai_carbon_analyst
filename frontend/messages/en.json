@@ -461,15 +461,18 @@
     "upcoming": "Next 7 days: {count} auctions ({from}–{to}), {volume} Mt in total",
     "prevQuarter": "Method check — {quarter}: auction VWAP {vwap} ↔ EC published EUR {official}/t",
     "method": "The EC's quarterly CBAM price = volume-weighted average (VWAP) of clearing prices of all primary EUA auctions on EEX in the quarter. Volumes not yet auctioned are assumed at the current EUA price; the confidence interval uses the EUA's realised daily volatility of {vol}% (random walk). This is an estimate, not the official price.",
-    "hedgeHow": "How to lock: {open}% of the quarterly volume is not yet priced (floats with the VWAP of the remaining auctions). Buy Dec EUA futures now for the core = {core}% of the quarterly volume ({corePct}% of the unfixed part), then sell them down in line with the remaining auction schedule → futures P&L ≈ VWAP − purchase price, net cost ≈ today's purchase price. Buying EUAs along the schedule does not lock the cost.",
+    "hedgeHow": "How to lock: {open}% of the quarter's CBAM obligation (tCO₂, weighted by remaining auction volume) is not yet priced and floats with the VWAP of the remaining auctions. Buy Dec EUA futures now for the core = {core}% of the quarterly CBAM obligation ({corePct}% of the unfixed part), then sell them down in line with the remaining auction schedule → futures P&L ≈ VWAP − purchase price, net cost ≈ today's purchase price. Buying EUAs along the schedule does not lock the cost.",
     "productTitle": "CBAM cost per tonne of product (assumed — replace with verified actual emissions)",
-    "productRow": "{product} (CN {cn}): ({embedded} − {benchmark} × {factor}%) = {net} tCO₂/t → ≈ EUR {cost}/t",
+    "productRow": "{product} (CN {cn}): {embedded} − {factor}% × CSCF {cscf}% × {benchmark} = {net} tCO₂/t → ≈ EUR {cost}/t",
     "productRange": " (CI: {low}–{high})",
     "product": {
       "aluminium_primary": "Unwrought primary aluminium",
       "steel_bf_bof": "Blast-furnace steel (BF-BOF)"
     },
-    "productNote": "Direct emissions only (CBAM scope for aluminium/steel); 2021–2025 benchmarks, to be checked against 2026–2030 benchmarks by CN code; remaining free-allocation factor {factor}% in {year}."
+    "productNote": "Direct emissions only (CBAM scope for aluminium/steel); remaining free-allocation factor {factor}% in {year}. Caveats: (1) these are 2021–2025 benchmarks — the 2026–2030 benchmarks have been updated and are usually lower, so the actual cost may be higher (not yet checked by CN code); (2) using EC default values instead of verified actual emissions usually raises the cost significantly — every +0.1 tCO₂/t of embedded emissions ≈ +EUR {per01}/t of product.",
+    "productDefaults": "With default values (+{markup}% mark-up): {list} EUR/t",
+    "productUnverified": " (secondary-source figures — check against the regulation's annex)",
+    "productNoteCbam": "Deduction = CBAM factor {factor}% in {year} × CSCF × CBAM benchmark by CN code ({source}{verified}). Direct emissions only (CBAM scope for aluminium/steel); reported emissions are assumed. Every +0.1 tCO₂/t ≈ +EUR {per01}/t of product — the gap between actual and default values is what emission verification is worth."
   },
   "chatLib": {
     "docNotSupported": "\"{name}\": .doc files are not supported — please re-save as .docx.",
@@ -584,7 +587,15 @@
       "low_rr": "Order design flaw: R:R at entry {entry} only {rr} (minimum {min})",
       "tight_stop": "Order design flaw: stop {distance} from entry = {mult} × ATR (minimum {min} ATR)"
     },
-    "baseline": "Benchmark ({total} concluded reports): report right {model} · naive \"always sideways\" {sideways} · \"repeat last {n} sessions' direction\" {momentum}"
+    "baseline": "Benchmark ({total} concluded reports): report right {model} · naive \"always sideways\" {sideways} · \"repeat last {n} sessions' direction\" {momentum}",
+    "calibrationIncludes": "Based on reports {dates} — some have left the table above (outside the grading window); reports still \"On track/Diverging\" in the table are not counted yet.",
+    "calibrationAll": "Cumulative hit rate ({n} concluded reports):",
+    "windowVerdict": {
+      "correct": "R",
+      "wrong": "W",
+      "direction_only": "excluded"
+    },
+    "calibrationDrift": "Reliability of the {probability} level is declining: {recent} recently vs {overall} cumulative."
   },
   "meta": {
     "title": "Carbon Analyst Dashboard",
@@ -681,7 +692,8 @@
         "move": "MOVE LEVELS",
         "close": "CLOSE",
         "none": "NOT REVIEWED"
-      }
+      },
+      "midAlt": "alternative: {arrow} low probability"
     },
     "scenario": {
       "heading": "Action scenarios",
@@ -695,7 +707,8 @@
       "hedge": "SIM hedge book (CBAM)",
       "indicator": "Item",
       "noteLabel": "Note:",
-      "note": "These strategies are based on Jenny's analysis and are for reference only. Readers should review them carefully against the actual market context and their own risk appetite before making any decision — this is not personalised investment advice."
+      "note": "These strategies are based on Jenny's analysis and are for reference only. Readers should review them carefully against the actual market context and their own risk appetite before making any decision — this is not personalised investment advice.",
+      "alternative": "Alternative scenario"
     },
     "events": {
       "outcome": "Outcome: ",
@@ -810,19 +823,21 @@
       "noNewsVn": "No Vietnam news this period.",
       "sourcesTitle": "References",
       "noSources": "No news sources in the past 48 hours.",
-      "footer": "Internal report, automatically compiled and reviewed. Not investment advice."
+      "footer": "Internal report, automatically compiled and reviewed. Not investment advice.",
+      "noNewsVnFiltered": "{n} Vietnam articles were reviewed this period, but none was relevant enough to EUA/CBAM/carbon policy to include."
     },
     "etsPolicy": {
       "title": "EU ETS/MSR policy tracker (21 days)",
       "item": "File",
       "status": "Position / progress",
       "nextStep": "Next step",
-      "impact": "If adopted",
+      "impact": "Supply impact",
       "impactLabel": {
         "up": "Tighter supply",
         "down": "Looser supply",
         "neutral": "Unclear"
-      }
+      },
+      "cbamEffect": "CBAM:"
     }
   },
   "shellHeader": {

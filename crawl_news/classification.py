@@ -30,19 +30,56 @@ HOT_NEWS_CATEGORIES = {
 _SYSTEM_PROMPT = """\
 Bạn là Chuyên gia Phân tích Thị trường Năng lượng & Carbon Châu Âu.
 
-Nhiệm vụ: đọc TITLE + ARTICLE CONTENT, xác định bài viết có liên quan hay không và gắn 1–3 topic phù hợp nhất.
+Nhiệm vụ: đọc TITLE + ARTICLE CONTENT, xác định bài có tác động tới giá/cung/cầu EUA (trực tiếp, hoặc qua 1 yếu tố dẫn dắt EUA) hay không, nêu kênh tác động và gắn 1–3 topic phù hợp nhất.
 
 XÁC ĐỊNH is_relevant (QUAN TRỌNG — quyết định bài có được lưu vào hệ thống hay không):
-NGUYÊN TẮC GỐC: CHỈ GIỮ tin LIÊN QUAN TRỰC TIẾP. Tin có tác động còn mơ hồ/phải suy đoán/phải đi qua nhiều bước mới nối được tới thị trường → is_relevant=false (thà bỏ sót tin mờ còn hơn giữ tin không rõ tác động).
-Bài được coi là LIÊN QUAN (is_relevant=true) CHỈ KHI có TÁC ĐỘNG RÕ RÀNG — TRỰC TIẾP, hoặc GIÁN TIẾP nhưng chính bài đã NÊU THẲNG tác động đó (theo chuẩn bên dưới) — đến thị trường carbon hoặc năng lượng châu Âu (EU ETS/EUA, CBAM, gas, điện, than, dầu, năng lượng tái tạo, hydrogen) hoặc các thị trường carbon liên quan (VCM, global carbon market, chính sách carbon Việt Nam). "Rõ ràng" nghĩa là bài phải nêu được MỘT CHUỖI NHÂN QUẢ CỤ THỂ, có thể lập luận được, dẫn tới ảnh hưởng cung/cầu, giá, chính sách, hay dòng vốn của các thị trường này — KHÔNG chỉ vì bài NHẮC TÊN hay ĐỀ CẬP THOÁNG QUA 1 từ khóa liên quan mà không phân tích ảnh hưởng thực chất nào.
-- Tác động TRỰC TIẾP: bài phân tích/đưa tin chính về diễn biến giá, cung cầu, chính sách, giao dịch... của 1 trong các thị trường trên.
-- Tác động GIÁN TIẾP (chuẩn RẤT SIẾT CHẶT — đây là nơi hay bị lọt bài mờ nhạt): bài về chủ đề khác (địa chính trị, kinh tế vĩ mô, thương mại, thời tiết, công nghệ...) CHỈ được tính khi ĐỦ CẢ 3 điều kiện sau, VÀ cả 3 đều do CHÍNH BÀI VIẾT nêu ra (không phải do bạn tự suy luận thêm); nếu phải tự suy đoán để nối được bài với thị trường → is_relevant=false:
-  (1) NÊU ĐÍCH DANH ít nhất 1 thị trường/công cụ cụ thể trong danh sách trên (vd "giá TTF", "sản lượng gió Đức", "EU ETS", "CBAM", "xuất khẩu than Nga sang châu Âu"...) — KHÔNG chỉ nói "năng lượng" hay "biến đổi khí hậu" chung chung không gắn với 1 thị trường cụ thể nào.
-  (2) NÊU ĐƯỢC CƠ CHẾ TRUYỀN DẪN cụ thể, có tên gọi/lập luận rõ (vd fuel switching, gián đoạn nguồn cung, carbon cost pass-through, utility hedging, CBAM certificate cost, MSR, cắt giảm sản lượng công nghiệp do chi phí năng lượng...) — KHÔNG chấp nhận lập luận mơ hồ kiểu "có thể tác động đến năng lượng nói chung" hay suy diễn xa vời qua nhiều bước không có căn cứ trong bài.
-  (3) CHIỀU TÁC ĐỘNG có thể suy ra được (tăng/giảm cung, cầu, hay giá) — không phải chỉ mô tả bối cảnh/xu hướng dài hạn định tính mà không có kết luận chiều nào (vd 1 bài chỉ nói "biến đổi khí hậu ngày càng nghiêm trọng" hoặc "EU cam kết net-zero" mà không gắn với 1 sự kiện/số liệu cụ thể tác động cung/cầu/giá trong ngắn-trung hạn → KHÔNG đạt, đánh is_relevant=false).
-  Ví dụ ĐẠT: "xung đột tại eo biển X đe dọa tuyến vận chuyển LNG sang châu Âu" (nêu đích danh LNG/châu Âu, cơ chế gián đoạn cung cụ thể, chiều tác động: cung↓ → giá gas có thể tăng). Ví dụ KHÔNG ĐẠT: "hội nghị thượng đỉnh khí hậu quốc tế kêu gọi các nước hành động mạnh mẽ hơn" (không nêu cơ chế truyền dẫn cụ thể, không có chiều tác động tới thị trường nào trong danh sách).
-Đánh dấu is_relevant=false khi bài KHÔNG liên quan trực tiếp, hoặc tác động tới các thị trường trên còn không rõ ràng/chỉ là khả năng xa/phải suy diễn (bài về nước/khu vực không thuộc EU ETS, kinh tế–chính trị chung, dự báo vĩ mô không nêu tác động cụ thể tới 1 thị trường đích danh...), kể cả khi bài có nhắc tên vài từ khóa liên quan mà không phân tích ảnh hưởng cụ thể (vd: tin thể thao, giải trí, đời sống, công nghệ tiêu dùng không liên quan năng lượng, tin ESG/phát triển bền vững chung chung không gắn cơ chế thị trường cụ thể...).
-Khi is_relevant=true: PHẢI gắn ít nhất 1 topic sát nhất trong danh sách bên dưới (không được để "topics": [] khi is_relevant=true).
+NGUYÊN TẮC GỐC: hệ thống phục vụ bàn giao dịch EUA. CHỈ GIỮ bài tác động TRỰC TIẾP tới GIÁ, CUNG hoặc CẦU EUA, hoặc tác động
+GIÁN TIẾP nhưng bài phải nêu tác động TRỰC TIẾP lên MỘT YẾU TỐ DẪN DẮT GIÁ EUA trong danh sách "KÊNH" bên dưới. Không chỉ ra
+được kênh nào → is_relevant=false (thà bỏ sót tin mờ còn hơn lưu tin không tác động tới EUA). "Liên quan năng lượng/khí hậu
+nói chung" KHÔNG đủ.
+
+KÊNH TÁC ĐỘNG TỚI EUA ("eua_channel" — BẮT BUỘC chọn đúng 1 mã khi is_relevant=true):
+- "eua_direct": bài nói thẳng về EUA/EU ETS — giá, giao dịch, futures/options, đấu giá (lịch, khối lượng, kết quả), MSR,
+  cap/hệ số giảm tuyến tính, phân bổ miễn phí, phát thải đã xác minh/nghĩa vụ tuân thủ, vị thế quỹ (COT), dòng vốn vào/ra
+  carbon EU, chính sách/sửa đổi EU ETS (rà soát ETS, ETS2, mở rộng phạm vi, loại bỏ carbon vào ETS, đề xuất nới/tạm dừng/áp
+  trần của nước thành viên hay doanh nghiệp, lập trường Hội đồng/Nghị viện/Ủy ban), liên kết EU ETS với hệ thống khác (UK,
+  Thụy Sĩ), tín chỉ quốc tế trong mục tiêu khí hậu EU.
+- "gas_eu": giá/cung khí cho CHÂU ÂU — TTF, LNG nhập vào châu Âu, đường ống tới châu Âu, tồn kho/lấp kho khí EU, quy định thị
+  trường khí EU (kênh fuel switching khí ↔ than của ngành điện).
+- "coal_eu": than cho điện châu Âu — API2, xuất khẩu than sang châu Âu, đóng/mở/huy động nhà máy điện than ở EU.
+- "power_eu": điện châu Âu — giá điện, nhu cầu điện, sản lượng gió/mặt trời/thủy điện/hạt nhân TẠI EU, sự cố/đóng nhà máy
+  điện lớn ở EU, thời tiết châu Âu (nhiệt độ, gió, nắng, mưa/hạn) làm đổi nhu cầu hoặc sản lượng điện (→ phát thải ngành điện).
+- "industry_eu": sản lượng/hoạt động của ngành THUỘC EU ETS tại EU (thép, xi măng, nhôm, hóa chất, phân bón, lọc dầu, giấy,
+  hàng không/hàng hải nội EU) — cắt giảm, đóng cửa, khởi động lại, đơn hàng; PMI/sản xuất công nghiệp khu vực euro khi bài nêu
+  đích danh tác động tới các ngành này.
+- "oil_shock": dầu CHỈ khi (a) quyết định/gián đoạn nguồn cung lớn có quy mô cụ thể (quyết định sản lượng OPEC+, cấm vận/trừng
+  phạt nước xuất khẩu lớn, đóng/đe dọa cụ thể tuyến vận tải chủ chốt như Hormuz/Biển Đỏ), hoặc (b) bài nêu thẳng tác động tới giá
+  khí/LNG/điện châu Âu hay lọc dầu EU. Bản tin giá dầu hằng ngày, tồn kho dầu Mỹ, chính trị nội bộ Mỹ về giấy phép nhiên liệu,
+  cước tàu dầu → KHÔNG đạt.
+- "geopolitics_energy_eu": xung đột/trừng phạt/ngoại giao làm GIÁN ĐOẠN hoặc ĐE DỌA CỤ THỂ nguồn cung khí/than/điện tới châu Âu
+  (Nga, Na Uy, Qatar, Bắc Phi, tuyến Baltic...) — phải nêu nguồn cung/tuyến cụ thể bị ảnh hưởng.
+- "cbam": CBAM của EU/UK — giá chứng chỉ, nghĩa vụ khai báo, phạm vi hàng hóa, lộ trình cắt phân bổ miễn phí, tác động tới nhà
+  xuất khẩu (kể cả doanh nghiệp Việt Nam). (Giữ vì CBAM quyết định cầu EUA qua phân bổ miễn phí và giá CBAM = VWAP đấu giá EUA.)
+- "vn_carbon": NGOẠI LỆ HẸP — chính sách/thị trường carbon VIỆT NAM có quyết định, văn bản hoặc số liệu cụ thể (Nghị định, sàn
+  VETS, phân bổ hạn ngạch, kiểm kê KNK bắt buộc, giao dịch/phát hành tín chỉ của dự án tại VN có số liệu). Hội thảo, định hướng,
+  hợp tác địa phương, kêu gọi đầu tư chung chung → KHÔNG đạt.
+- "carbon_link": NGOẠI LỆ HẸP — thị trường carbon tự nguyện (VCM) hoặc ETS ngoài EU (Trung Quốc, Hàn Quốc, California, CORSIA...)
+  CHỈ khi bài nêu thẳng liên kết sang EU ETS/EUA hoặc CBAM (vd công nhận tín chỉ trong hệ thống EU, ETS Trung Quốc dùng để khấu trừ
+  CBAM). Thương vụ mua bán tín chỉ/loại bỏ carbon tự nguyện, sổ tay/hướng dẫn Article 6, tài liệu MRV → KHÔNG đạt.
+
+ĐIỀU KIỆN CHO KÊNH GIÁN TIẾP (mọi mã trừ "eua_direct"/"cbam"/"vn_carbon"): CHÍNH BÀI phải nêu (1) đích danh yếu tố trong kênh
+(vd "giá TTF", "sản lượng gió Đức", "nhà máy thép ở Đức tạm dừng"), (2) diễn biến/sự kiện CỤ THỂ đã xảy ra hoặc đã công bố có
+quy mô/ngày (không phải dự báo dài hạn chung chung hay khả năng xa), và (3) chiều tác động lên yếu tố đó (tăng/giảm cung, cầu,
+giá). Phải tự suy luận thêm nhiều bước mới nối được tới EUA → is_relevant=false.
+Ví dụ ĐẠT: "Na Uy dừng mỏ Troll 5 ngày, TTF tăng 8%" (gas_eu); "ArcelorMittal tạm dừng 2 lò cao ở Pháp" (industry_eu); "Ý và
+Séc đề nghị tạm dừng chuyển hạn ngạch vào MSR" (eua_direct); "Estonia muốn đóng tuyến ống cấp khí Kaliningrad" chỉ đạt khi bài
+nêu tác động tới nguồn cung/giá khí EU.
+Ví dụ KHÔNG ĐẠT: dự án điện gió/hydrogen dự kiến vận hành sau nhiều năm; nhà máy lọc dầu đồng xử lý SAF; thỏa thuận mua tín chỉ
+loại bỏ carbon tự nguyện; sổ tay tài chính khí hậu trước COP; hợp tác công nghiệp xanh của 1 tỉnh Việt Nam; nghị sĩ Mỹ đòi thu hồi
+giấy phép diesel Nga; Mỹ cân nhắc gỡ trừng phạt tàu dầu để hạ cước; tin ESG/phát triển bền vững chung chung; kinh tế vĩ mô không nêu
+ngành ETS cụ thể; mọi tin chỉ NHẮC TÊN từ khóa mà không có sự kiện tác động.
+Khi is_relevant=true: PHẢI gắn ít nhất 1 topic sát nhất trong danh sách bên dưới VÀ đúng 1 "eua_channel". Khi is_relevant=false:
+"eua_channel" = null.
 
 NGUYÊN TẮC GẮN TOPIC (áp dụng SAU KHI đã xác định is_relevant=true)
 Phân loại theo trọng tâm được phân tích, không chỉ theo keyword xuất hiện.
@@ -88,15 +125,15 @@ PHÂN BIỆT BẮT BUỘC — CÁC TRƯỜNG HỢP DỄ NHẦM:
 6. TIN TỨC VIỆT NAM (áp dụng cho MỌI bài liên quan Việt Nam, kể cả từ nguồn báo VN) — chỉ vì bài đến từ nguồn tin Việt Nam KHÔNG có nghĩa bài đó liên quan (is_relevant KHÔNG phụ thuộc nguồn tin, chỉ phụ thuộc nội dung):
    - Bài về carbon market/chính sách carbon VN cụ thể (VETS, Nghị định 06, kiểm kê KNK, hạn ngạch phát thải, tín chỉ carbon VN) → "vietnam_carbon_policy".
    - Bài về CBAM tác động DN xuất khẩu VN (thép/nhôm/xi măng/phân bón) → "cbam" (KHÔNG phải "vietnam_carbon_policy").
-   - Bài chỉ về kinh tế vĩ mô/năng lượng nội địa/ngoại giao/đầu tư VN mà KHÔNG đề cập cơ chế carbon market hay tác động cung/cầu/giá 1 trong các thị trường ở trên → is_relevant=false, topics=[] — KHÔNG được gắn "vietnam_carbon_policy" hay bất kỳ topic nào chỉ vì bài nói về Việt Nam.
+   - Bài chỉ về kinh tế vĩ mô/năng lượng nội địa/ngoại giao/đầu tư VN, hoặc tin quốc tế đăng lại trên báo VN mà không có kênh tác động tới EUA → is_relevant=false, topics=[] — KHÔNG được gắn "vietnam_carbon_policy" hay bất kỳ topic nào chỉ vì bài nói về Việt Nam.
 
 QUY TẮC PHÂN LOẠI NGHIÊM NGẶT:
 1. ƯU TIÊN TRỌNG TÂM, KHÔNG LOẠI BỎ TÁC ĐỘNG GIÁN TIẾP RÕ RÀNG: Ưu tiên gắn topic mà bài dành ≥30% nội dung phân tích, xếp lên đầu; nhưng nếu bài có tác động GIÁN TIẾP mà CHÍNH BÀI NÊU RÕ (chuỗi nhân quả cụ thể, theo đúng định nghĩa is_relevant ở trên) tới 1 topic dù không đạt 30% nội dung → vẫn gắn topic sát nhất đó. Tác động không rõ ràng → KHÔNG gắn, đánh is_relevant=false.
 2. TỐI ĐA 3 TOPIC: Xếp topic quan trọng/sát nhất lên đầu.
-3. BÀI KHÔNG LIÊN QUAN: Trả về topics=[] và is_relevant=false khi bài KHÔNG có tác động rõ ràng (trực tiếp, hoặc gián tiếp có chuỗi nhân quả cụ thể do chính bài nêu) nào tới energy, carbon, climate, commodities, hay finance/policy/địa chính trị ảnh hưởng đến các thị trường trên — chỉ nhắc tên/đề cập thoáng qua không tính là liên quan.
+3. BÀI KHÔNG LIÊN QUAN: Trả về topics=[], eua_channel=null và is_relevant=false khi bài KHÔNG chỉ ra được 1 "eua_channel" hợp lệ theo đúng định nghĩa ở trên — liên quan năng lượng/khí hậu/hàng hóa nói chung, hay chỉ nhắc tên/đề cập thoáng qua, KHÔNG tính là liên quan.
 
 
-HOT NEWS — đánh giá ĐỘC LẬP với việc gắn topic ở trên. Tin nóng được GỬI EMAIL NGAY tới toàn bộ khách hàng nên MẶC ĐỊNH is_hot_news=false; chỉ đánh true khi bài đưa tin 1 sự kiện MỚI, CỤ THỂ, CÓ NGUỒN XÁC NHẬN thuộc ĐÚNG 1 trong 4 nhóm sau (thường chỉ 0–2 bài/ngày đạt — còn phân vân → false):
+HOT NEWS — CHỈ xét khi is_relevant=true (bài không liên quan EUA không được lưu nên cũng không là tin nóng). Tin nóng được GỬI EMAIL NGAY tới toàn bộ khách hàng nên MẶC ĐỊNH is_hot_news=false; chỉ đánh true khi bài đưa tin 1 sự kiện MỚI, CỤ THỂ, CÓ NGUỒN XÁC NHẬN thuộc ĐÚNG 1 trong 4 nhóm sau (thường chỉ 0–2 bài/ngày đạt — còn phân vân → false):
 1. political_shock — CHÍNH TRỊ GÂY SỐC THỊ TRƯỜNG: sự kiện chính trị/địa chính trị ĐÃ XẢY RA, bất ngờ, đủ sức làm giá năng lượng/carbon nhảy mạnh ngay: chiến tranh/tấn công quân sự nổ ra hoặc leo thang nhắm vào hạ tầng năng lượng hay tuyến vận tải năng lượng (Hormuz, Biển Đỏ, đường ống...); lệnh trừng phạt/cấm vận năng lượng MỚI; đảo chính/sụp đổ chính phủ ở nước cung ứng năng lượng lớn; nước lớn (G20, thành viên lớn EU, Mỹ, Trung Quốc) CHÍNH THỨC rút khỏi Thỏa thuận Paris/EU ETS/cam kết khí hậu.
    KHÔNG tính: đàm phán, phát biểu, đe doạ, cảnh báo "nguy cơ"/"tiềm ẩn" xung đột, bầu cử theo lịch, căng thẳng kéo dài không có diễn biến mới.
 2. supply_cut — CẮT/GIÁN ĐOẠN NGUỒN CUNG: nguồn cung dầu, khí/LNG, than, điện châu Âu hoặc EUA bị CẮT hay gián đoạn THỰC TẾ (đã xảy ra, hoặc đã công bố chính thức có ngày) ở quy mô đủ dịch chuyển giá khu vực/toàn cầu: dừng đường ống/nhà máy LNG lớn cấp châu Âu (Nauy, Nga, Qatar, Mỹ), OPEC+ cắt sản lượng NGOÀI dự kiến (cỡ ≥1 triệu thùng/ngày), đóng tuyến vận tải chủ chốt, nước xuất khẩu lớn cấm/hạn chế xuất khẩu than hoặc khí, hàng loạt lò hạt nhân/nhà máy điện lớn dừng đột ngột, cắt đột ngột lượng EUA đưa ra đấu giá.
@@ -111,8 +148,15 @@ Không thuộc 4 nhóm trên → is_hot_news=false, hot_news_category=null, hot_
 _JSON_INSTRUCTION = """
 
 Trả lời CHỈ bằng JSON hợp lệ, không có text ngoài JSON:
-{"topics": ["<topic1>", "<topic2_optional>", "<topic3_optional>"], "confidence": <0.0-1.0>, "is_relevant": <true/false>, "is_hot_news": <true/false>, "hot_news_category": <"political_shock"|"supply_cut"|"price_reversal"|"unprecedented_policy"|null>, "hot_news_reason": <string hoặc null>}
-Nếu bài không liên quan: {"topics": [], "confidence": 1.0, "is_relevant": false, "is_hot_news": false, "hot_news_category": null, "hot_news_reason": null}"""
+{"topics": ["<topic1>", "<topic2_optional>", "<topic3_optional>"], "confidence": <0.0-1.0>, "is_relevant": <true/false>, "eua_channel": <"eua_direct"|"gas_eu"|"coal_eu"|"power_eu"|"industry_eu"|"oil_shock"|"geopolitics_energy_eu"|"cbam"|"vn_carbon"|"carbon_link"|null>, "is_hot_news": <true/false>, "hot_news_category": <"political_shock"|"supply_cut"|"price_reversal"|"unprecedented_policy"|null>, "hot_news_reason": <string hoặc null>}
+Nếu bài không liên quan: {"topics": [], "confidence": 1.0, "is_relevant": false, "eua_channel": null, "is_hot_news": false, "hot_news_category": null, "hot_news_reason": null}"""
+
+# Kênh tác động tới EUA mà bài phải chỉ ra được để is_relevant=true (xem _SYSTEM_PROMPT). "vn_carbon"/"carbon_link" là ngoại
+# lệ hẹp giữ tin cho Mục 4 (Tín chỉ carbon & CBAM) và gợi ý kinh doanh SIM.
+EUA_CHANNELS = {
+    "eua_direct", "gas_eu", "coal_eu", "power_eu", "industry_eu", "oil_shock", "geopolitics_energy_eu", "cbam",
+    "vn_carbon", "carbon_link",
+}
 
 VALID_TOPICS = {t.value for t in NewsTopic}
 MAX_TOPICS_PER_ARTICLE = 3
@@ -219,6 +263,14 @@ def _parse_json_response(raw_text: str) -> ClassificationResult:
 
     # is_relevant: mặc định True (backward compat với bài không có field này)
     is_relevant: bool = bool(data.get("is_relevant", True))
+    # Chỉ lưu bài chỉ ra được KÊNH tác động tới EUA — model trả is_relevant=true mà không nêu kênh hợp lệ thì coi là
+    # không liên quan (kiểm cứng, không chỉ dựa vào prompt).
+    channel = str(data.get("eua_channel") or "").strip().lower() or None
+    if is_relevant and channel not in EUA_CHANNELS:
+        logger.info("[CLASSIFY] is_relevant=true nhưng không có kênh tác động EUA hợp lệ (%r) — coi là không liên quan.", channel)
+        is_relevant = False
+    if not is_relevant:
+        channel = None
 
     raw_topics = data.get("topics", [])
     if not isinstance(raw_topics, list):
@@ -246,15 +298,12 @@ def _parse_json_response(raw_text: str) -> ClassificationResult:
     confidence = float(data.get("confidence", 0.8))
     confidence = max(0.0, min(1.0, confidence))
 
-    # Hot news: ĐỘC LẬP với is_relevant/topics — 1 bài có thể không khớp bất kỳ
-    # topic thị trường nào (vd: 1 nước lớn tuyên bố rút khỏi decarbonization,
-    # không nhắc trực tiếp EUA/gas/CBAM) nhưng vẫn là hot news hợp lệ theo tiêu
-    # chí ở _SYSTEM_PROMPT. KHÔNG ép is_hot_news=false theo is_relevant ở đây —
-    # pipeline (crawl_pipeline.py) mới là nơi quyết định có lưu bài hay không.
+    # Hot news CHỈ cho bài liên quan EUA — bài không liên quan không được lưu (crawl_pipeline.py) nên không còn ngoại lệ
+    # "tin nóng nhưng không khớp topic nào vẫn lưu".
     # Tin nóng được gửi email cho mọi khách hàng → bắt buộc model chọn ĐÚNG 1 trong 4 nhóm; không có
     # nhóm hợp lệ (bỏ trống/bịa nhóm khác) thì KHÔNG coi là tin nóng. Nhãn nhóm đặt đầu lý do để email/
     # chuông thông báo hiện rõ vì sao bài được gửi.
-    is_hot_news = bool(data.get("is_hot_news", False))
+    is_hot_news = bool(data.get("is_hot_news", False)) and is_relevant
     category = str(data.get("hot_news_category") or "").strip().lower()
     if is_hot_news and category not in HOT_NEWS_CATEGORIES:
         logger.info("[CLASSIFY] is_hot_news=true nhưng nhóm '%s' không hợp lệ — bỏ cờ tin nóng.", category)
@@ -272,6 +321,7 @@ def _parse_json_response(raw_text: str) -> ClassificationResult:
         is_relevant=is_relevant,
         is_hot_news=is_hot_news,
         hot_news_reason=hot_news_reason,
+        eua_channel=channel,
     )
 
 

@@ -145,7 +145,7 @@ def test_reply_to_and_list_unsubscribe_only_when_configured(monkeypatch):
 def test_classifier_hot_news_requires_valid_category():
     from crawl_news.classification import _parse_json_response
 
-    base = '{"topics": ["energy_gas"], "confidence": 0.9, "is_relevant": true, "is_hot_news": true, '
+    base = '{"topics": ["energy_gas"], "confidence": 0.9, "is_relevant": true, "eua_channel": "gas_eu", "is_hot_news": true, '
     r = _parse_json_response(base + '"hot_news_category": "supply_cut", "hot_news_reason": "Nauy dừng đường ống Langeled"}')
     assert r.is_hot_news and r.hot_news_reason == "[Cắt nguồn cung] Nauy dừng đường ống Langeled"
     # thiếu nhóm / nhóm cũ không còn hợp lệ (vd "địa chính trị tiềm ẩn") → không phải tin nóng

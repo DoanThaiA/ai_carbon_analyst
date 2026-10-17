@@ -160,7 +160,8 @@ _HALF_CLAIM_RE = re.compile(
     rf"(?P<lo>{_NUM}){_DASH}(?P<hi>{_NUM})"
 )
 # "87,5 (giữa biên)" — biên là vùng A–B gần nhất trong cùng đoạn chứa số đó.
-_MID_LABEL_RE = re.compile(rf"(?P<price>{_NUM})(?P<pre>\s*\(\s*)(?P<label>giữa\s+(?:biên|vùng)(?:\s+độ)?)(?=\s*[),;])")
+# "(vùng giữa biên)" cũng tính — bản 17/10: "Mục tiêu: 87,00 (vùng giữa biên)" khi điểm giữa là 85,59.
+_MID_LABEL_RE = re.compile(rf"(?P<price>{_NUM})(?P<pre>\s*\(\s*)(?P<label>(?:vùng\s+)?giữa\s+(?:biên|vùng)(?:\s+độ)?)(?=\s*[),;])")
 _RANGE_RE = re.compile(rf"(?P<lo>{_NUM}){_DASH}(?P<hi>{_NUM})")
 
 
@@ -499,6 +500,27 @@ def fix_stray_quotes(text: str) -> str:
     return "".join(ch for i, ch in enumerate(text) if i not in stray_set) if stray_set else text
 
 
+# Truyền thông nhà nước ghi trong câu ("theo TASS ngày 16/10", "(TASS đưa tin 16/10)", "Theo TASS và Politico,") — không
+# phải nguồn sơ cấp; nhãn nguồn của bài đã do hệ thống gắn (report_generator.source_chain_label bỏ luôn khỏi chuỗi gốc).
+_STATE_MEDIA = r"(?:TASS|RIA(?:\s+Novosti)?|Sputnik|Xinhua|Tân Hoa Xã)"
+_STATE_MEDIA_PATTERNS = (
+    (re.compile(rf"\s*\((?:theo\s+)?{_STATE_MEDIA}\b[^)]*\)"), ""),
+    (re.compile(rf"\b{_STATE_MEDIA}\s+và\s+"), ""),
+    (re.compile(rf"\s+và\s+{_STATE_MEDIA}\b"), ""),
+    (re.compile(rf"(?:^|(?<=[.;]\s))\s*[Tt]heo\s+{_STATE_MEDIA}(?:\s+ngày\s+[\d/]+)?,\s*"), ""),
+    (re.compile(rf"(?:,\s*)?\b[Tt]heo\s+{_STATE_MEDIA}(?:\s+(?:đưa tin\s+)?(?:ngày\s+)?\d{{1,2}}/\d{{1,2}}(?:/\d{{4}})?)?(?=\s*[.,;)]|\s*$)"), ""),
+)
+
+
+def strip_state_media(text: str) -> str:
+    out = text
+    for pat, repl in _STATE_MEDIA_PATTERNS:
+        out = pat.sub(repl, out)
+    if out != text and out[:1].islower() and text[:1].isupper():
+        out = out[:1].upper() + out[1:]
+    return out
+
+
 def normalize_presentation(text: str) -> str:
     def _range(m: re.Match) -> str:
         return m["a"] if parse_num(m["a"]) == parse_num(m["b"]) else m.group(0)
@@ -578,6 +600,7 @@ def apply_consistency_fixes(content: Dict[str, Any]) -> List[Dict[str, str]]:
         text = fix_stray_quotes(text)
         if _ORIGINAL_TITLE_RE.match(path):
             return text
+        text = strip_state_media(text)
         text = normalize_presentation(text)
         text, p1 = fix_pct_labels(text, close if _is_eua_scenario(path) else None)
         text, p2 = fix_range_claims(text, close, rng)

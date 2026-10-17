@@ -50,6 +50,15 @@ export interface CbamEstimate {
     cost_eur_per_t: number;
     cost_low: number | null;
     cost_high: number | null;
+    per_0_1_tco2_eur?: number;
+    // Từ 18/10/2026: khấu trừ = hệ số CBAM × CSCF × benchmark CBAM theo mã CN; kịch bản giá trị mặc định.
+    route?: string | null;
+    cscf_pct?: number;
+    deduction_tco2_per_t?: number;
+    default_markup_pct?: number;
+    defaults?: { origin: string; default_value: number; with_markup: number; net_tco2_per_t: number; cost_eur_per_t: number }[];
+    benchmark_source?: string | null;
+    benchmark_verified?: boolean;
     assumed: boolean;
   }[];
   last_auction: { date: string; platform: string; price: number; cover_ratio: number | null } | null;
@@ -124,6 +133,10 @@ export interface ForecastReview {
     horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number;
     calibration_reports?: number; sideways_path_max_pct?: number; min_rr?: number; min_stop_atr?: number;
   };
+  // Báo cáo tạo nên tỷ lệ cửa sổ (có thể gồm báo cáo đã ra khỏi bảng) + tỷ lệ lũy kế — báo cáo từ 18/10/2026.
+  calibration_window?: { report_date: string; probability: string | null; verdict: string }[];
+  calibration_all?: { probability: string; correct: number; total: number; direction_only?: number }[];
+  calibration_all_reports?: number;
   // Dự báo ngây thơ trên cùng các báo cáo đã có kết luận (services/forecast_review.py::baseline_from).
   baseline?: {
     model: { correct: number; total: number };

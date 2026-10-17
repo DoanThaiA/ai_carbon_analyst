@@ -145,18 +145,31 @@ export function CbamEstimateCard({ estimate: e }: { estimate: CbamEstimate }) {
                   embedded: num(p.embedded, locale),
                   benchmark: num(p.benchmark, locale, 3),
                   factor: num(p.free_allocation_factor_pct, locale, 1),
+                  cscf: num(p.cscf_pct ?? 100, locale, 0),
                   net: num(p.net_tco2_per_t, locale, 3),
                   cost: num(p.cost_eur_per_t, locale),
                 })}
                 {p.cost_low !== null && p.cost_high !== null &&
                   t("productRange", { low: num(p.cost_low, locale), high: num(p.cost_high, locale) })}
+                {/* Kịch bản GIÁ TRỊ MẶC ĐỊNH (kèm markup) — so với số thực đã thẩm định. */}
+                {p.defaults && p.defaults.length > 0 && (
+                  <div className="text-[12px] text-muted-light">
+                    {t("productDefaults", {
+                      markup: p.default_markup_pct ?? 10,
+                      list: p.defaults.map((d) => `${d.origin} ${num(d.with_markup, locale, 3)} → ${num(d.cost_eur_per_t, locale)}`).join(" · "),
+                    })}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
           <p className="mt-1 text-[11px] leading-[1.45] text-muted-light">
-            {t("productNote", {
+            {t(e.product_exposure[0].benchmark_source ? "productNoteCbam" : "productNote", {
+              source: e.product_exposure[0].benchmark_source ?? "",
+              verified: e.product_exposure[0].benchmark_verified ? "" : t("productUnverified"),
               factor: num(e.product_exposure[0].free_allocation_factor_pct, locale, 1),
               year: e.quarter.split(" ").pop() ?? "",
+              per01: num(e.product_exposure[0].per_0_1_tco2_eur ?? 0.1 * e.estimate, locale),
             })}
           </p>
         </div>

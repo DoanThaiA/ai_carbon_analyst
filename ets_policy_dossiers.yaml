@@ -1,0 +1,56 @@
+# Hồ sơ chính sách EU ETS/MSR/CBAM ĐANG MỞ — admin cập nhật tay. Luôn hiện ở bảng "Theo dõi chính sách ETS/MSR" (Mục 3) và
+# đưa vào prompt Mục 3 + gợi ý kinh doanh, kể cả khi kho tin không có bài (nguồn không nằm trong danh sách crawl).
+# services/report_generator.py::_load_ets_dossiers. Hồ sơ đã kết thúc (thông qua/hủy) → đặt closed: true hoặc xoá.
+#   item:       tên hồ sơ ngắn
+#   stage:      đề xuất | đang đàm phán | đã thông qua | đang áp dụng
+#   status:     lập trường/tiến độ đã có nguồn xác nhận (chỉ ghi điều nguồn nêu)
+#   next_step:  bước kế tiếp + mốc (không rõ thì "Chưa có lịch xác nhận")
+#   impact:     chiều tác động lên NGUỒN CUNG → giá EUA: tăng (siết cung) | giảm (nới cung) | trung lập
+#   cbam_effect: (tuỳ chọn) tác động lên chi phí CBAM của nhà xuất khẩu (SIM/khách hàng)
+#   supply_mt:  quy mô nguồn cung liên quan (triệu hạn ngạch) nếu nguồn nêu — dùng để xếp thứ tự
+#   structural: true = hồ sơ cấu trúc ảnh hưởng lộ trình dài hạn (cap/MSR/phân bổ miễn phí) → kịch bản dài hạn phải chia 2 nhánh
+#   source_name / source_date / source_url: nguồn xác nhận (source_url để trống nếu chưa có link — NÊN bổ sung)
+#   updated:    ngày admin cập nhật dòng này (YYYY-MM-DD)
+dossiers:
+  - item: "Đề xuất rà soát EU ETS của Ủy ban châu Âu — COM(2026) 616"
+    stage: "đề xuất"
+    status: "EC đề xuất (07/2026) làm chậm lộ trình cắt phân bổ miễn phí cho các ngành CBAM, kéo dài tới 2038; thêm 6 tỷ EUR phân bổ miễn phí 2026–2030; cải tổ MSR. Hội đồng Môi trường đã thảo luận ngày 12/10/2026"
+    next_step: "Đàm phán tại Hội đồng và Nghị viện; chưa có lịch bỏ phiếu xác nhận"
+    impact: "giảm"
+    cbam_effect: "Hệ số CBAM giảm chậm hơn lộ trình hiện hành → chi phí CBAM/tấn của nhà xuất khẩu thấp hơn"
+    structural: true
+    source_name: "Ủy ban châu Âu, COM(2026) 616"
+    source_date: "07/2026"
+    source_url: ""
+    updated: "2026-10-18"
+  - item: "Văn bản chung Ý–Séc gửi Hội đồng châu Âu"
+    stage: "đề xuất"
+    status: "Văn bản 30/09/2026 nêu 5 đề nghị: dừng cắt phân bổ miễn phí cho ngành CBAM và rà soát benchmark; giảm/tạm dừng chuyển khoảng 190 triệu hạn ngạch vào MSR (09/2026–08/2027, ≈39% khối lượng đấu giá 1 năm); hạn chế truyền chi phí carbon vào giá điện; tăng minh bạch thị trường; hoãn ETS2"
+    next_step: "Chưa được Hội đồng châu Âu 15–16/10 kết luận; dời sang Hội đồng châu Âu tháng 12/2026"
+    impact: "giảm"
+    cbam_effect: "Nếu được chấp nhận: phân bổ miễn phí giữ lâu hơn → chi phí CBAM thấp hơn"
+    supply_mt: 190
+    structural: true
+    source_name: "S&P Global"
+    source_date: "05/10/2026"
+    source_url: ""
+    updated: "2026-10-18"
+  - item: "Hội đồng châu Âu 15–16/10/2026 — sức ép nới lỏng ETS"
+    stage: "đang đàm phán"
+    status: "Ngày 15/10 bế tắc, ETS không là mục nghị sự riêng, chưa có kết luận. Nhóm V4 cùng Ý, Síp, Hy Lạp đòi hoãn ETS2; Phần Lan, Thụy Điển, Đan Mạch phản đối nới lỏng. Chủ tịch Costa soạn văn bản cho Hội đồng châu Âu tháng 12"
+    next_step: "Hội đồng châu Âu tháng 12/2026 (ngày cụ thể cần xác nhận)"
+    impact: "giảm"
+    source_name: "Hội đồng châu Âu"
+    source_date: "15/10/2026"
+    source_url: ""
+    updated: "2026-10-18"
+  - item: "Sửa đổi MSR — lập trường đàm phán của Hội đồng EU"
+    stage: "đang đàm phán"
+    status: "Hội đồng EU thống nhất lập trường: nâng ngưỡng vô hiệu hóa hạn ngạch trong MSR lên 800 triệu từ 01/01/2031 (giữ thêm hạn ngạch trong kho dự trữ, ít bị hủy hơn)"
+    next_step: "Đàm phán ba bên với Nghị viện, mục tiêu kết thúc trước cuối năm 2026"
+    impact: "giảm"
+    structural: true
+    source_name: "Brussels Times"
+    source_date: ""
+    source_url: ""
+    updated: "2026-10-17"

@@ -89,8 +89,12 @@ duplicate never costs an API call:
    `client.messages.create`. Input text được cắt tại `MAX_TEXT_CHARS_FOR_CLASSIFICATION = 6000`
    ký tự (tăng từ 4000 — đủ bắt được phần phân tích của bài dài). LLM trả về JSON gồm
    `topics` (1–3 giá trị từ `NewsTopic`), `confidence` (0–1), và `is_relevant` (bool).
-   - `is_relevant=false`: LLM xác nhận bài không liên quan energy/carbon — pipeline
-     trả về `status="irrelevant"` và không lưu DB.
+   - `is_relevant=true` CHỈ khi bài tác động trực tiếp tới giá/cung/cầu EUA hoặc trực tiếp lên 1 yếu tố dẫn dắt EUA,
+     và LLM phải trả `eua_channel` thuộc `EUA_CHANNELS` (eua_direct, gas_eu, coal_eu, power_eu, industry_eu, oil_shock,
+     geopolitics_energy_eu, cbam; ngoại lệ hẹp vn_carbon / carbon_link cho Mục 4 + gợi ý SIM) — thiếu/sai kênh thì
+     `_parse_json_response` ép thành không liên quan.
+   - `is_relevant=false`: pipeline trả về `status="irrelevant"` và không lưu DB — kể cả tin nóng (không còn ngoại lệ lưu
+     tin nóng không liên quan; `is_hot_news` bị ép false khi không liên quan).
    - Parse JSON lenient: strip/lowercase từng topic trước validate — topic sai
      bị skip (log warning), không raise — tránh drop bài vì whitespace/casing.
    - Lỗi API sau retry: raise `ClassificationError`; pipeline log và skip storing
@@ -301,6 +305,21 @@ mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, khôn
   phiên/giá đóng cửa làm cận).
 - Gợi ý SIM: `METALS_LENS_RULE` + trường `kpi/owner` (ngắn hạn), `pilot/financials/kpi/owner` (dài hạn); Jack `BIZ_OFF_LENS`.
   Nguồn: Jack `check_inline_attribution` (tên hãng tin trong câu ≠ bài trích, truyền thông nhà nước).
+- Lần chấm 2 (test `tests/test_report_review_1710_v2.py`): `ets_policy_dossiers.yaml` = hồ sơ ETS/MSR admin xác nhận, luôn đứng
+  đầu bảng chính sách và trích bằng `[HSk]`; "Cần theo dõi" tối đa `WATCH_MAX_ITEMS`, bỏ watchpoint lặp cùng nguồn; lịch đấu giá
+  đã áp dụng không vào bảng chính sách. Nhãn "Tổng hợp" phải khớp kịch bản ngắn hạn (Jack + vòng tự sửa). Phần chiến thuật CBAM
+  do `hedge_tactical_text` chốt ("hold" = không dùng; cấm so với ước tính giá CBAM — vòng). "KÊNH TTF → EUA DÙNG CHUNG" khi bão
+  hòa (Jack `check_ttf_channel`). Dài hạn cấm mục tiêu % tròn so với đóng cửa (`LONG_TERM_ROUND_PCT_RE`, tự thay bằng "chưa đủ cơ
+  sở định lượng"). Bảng chấm hiện ngày các báo cáo trong cửa sổ (`calibration_window`) + tỷ lệ lũy kế (`calibration_all`).
+  Mục 6: bài đã trích ở mục khác chỉ hiện tiêu đề + link (`cited_elsewhere`); `vietnam_considered`. TASS/RIA... bị bỏ khỏi
+  câu (`strip_state_media`) và khỏi chuỗi nguồn gốc.
+- Lần chấm 3: `cbam_products.yaml` (benchmark CBAM theo mã CN — QĐ thực thi (EU) 2025/2620, CSCF, markup giá trị mặc định,
+  ví dụ giá trị mặc định theo xuất xứ; số đang từ nguồn thứ cấp, `benchmark_verified: false`) → `product_exposure` khấu trừ =
+  hệ số CBAM × CSCF × benchmark + kịch bản giá trị mặc định. Phòng hộ ghi "% nghĩa vụ CBAM quý", hợp đồng Dec-yy + phiên đấu giá
+  cuối quý (`last_auction_date`). Hồ sơ yaml có `cbam_effect`/`structural` (dài hạn phải 2 nhánh; gợi ý SIM nhận
+  `_biz_policy_block`, trích nguồn "HSk" → `source_ref`). `policy_calendar.yaml` hỗ trợ `outcome`; Mục 8 bỏ bản LLM trùng họp
+  đã có. TB cover ratio 90 ngày loại chính phiên đang so. Bảng chấm ghi Đ/S từng báo cáo + `calibration_drift`. Cắt cứng: Tóm
+  tắt ≤ `EXEC_SUMMARY_MAX_BULLETS`, Diễn biến chính ≤ `KEY_DEV_MAX_ITEMS`, Cần theo dõi ≤ `WATCH_MAX_ITEMS` (4).
 - `frontend/messages/parts/*.json` đang CŨ hơn `vi.json`/`en.json` (đã sửa thẳng file gộp) — KHÔNG chạy
   `scripts/merge-messages.mjs` khi chưa đồng bộ parts, sẽ mất key.
 

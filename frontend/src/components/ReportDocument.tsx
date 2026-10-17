@@ -371,7 +371,10 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
   const fp = (n: number) => fmtPrice(n, locale);
   const dir: Dir = (["tăng", "giảm", "đi ngang"] as const).includes(signal.direction) ? signal.direction : "đi ngang";
   const trendMeta = TREND_META[dir];
-  const midTrendMeta = midTermSignal ? TREND_META[midTermSignal.direction] : undefined;
+  // Trung hạn xác suất "Thấp" là kịch bản THAY THẾ (vd phá biên giảm) — cơ sở vẫn là giằng co, không gọi là "nghiêng".
+  const midIsAlt = midTermSignal?.probability === "Thấp" && midTermSignal?.direction !== "đi ngang";
+  const midTrendMeta = midTermSignal ? TREND_META[midIsAlt ? "đi ngang" : midTermSignal.direction] : undefined;
+  const midAltMeta = midIsAlt ? TREND_META[midTermSignal.direction] : undefined;
   const position = trendMeta ? t(`position.${trendMeta.labelKey}`) : undefined;
   const strategy = parseStrategy(signal.trading_strategy);
   const body = (re: RegExp) => {
@@ -415,15 +418,15 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
       if (reward > 0 && risk > 0) {
         ladder = { stop, entry, target };
         kpis = [
-          { label: "Risk / Reward", value: `1 : ${(reward / risk).toFixed(1)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
-          { label: t("signal.targetProfit"), value: `+${((reward / entry) * 100).toFixed(1)}%`, sub: `${fp(reward)} EUR/tCO₂`, className: "text-emerald-700" },
-          { label: t("signal.maxRisk"), value: `−${((risk / entry) * 100).toFixed(1)}%`, sub: `${fp(risk)} EUR/tCO₂`, className: "text-red-600" },
+          { label: "Risk / Reward", value: `1 : ${fnum(reward / risk, 1, locale)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
+          { label: t("signal.targetProfit"), value: `+${fnum((reward / entry) * 100, 1, locale)}%`, sub: `${fp(reward)} EUR/tCO₂`, className: "text-emerald-700" },
+          { label: t("signal.maxRisk"), value: `−${fnum((risk / entry) * 100, 1, locale)}%`, sub: `${fp(risk)} EUR/tCO₂`, className: "text-red-600" },
         ];
       }
     }
   } else if (dir === "đi ngang" && lv.entryBuy.length && lv.entrySell.length) {
     const lo = mid(lv.entryBuy), hi = mid(lv.entrySell);
-    if (hi > lo) kpis = [{ label: t("signal.tradingRange"), value: `${(((hi - lo) / lo) * 100).toFixed(1)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
+    if (hi > lo) kpis = [{ label: t("signal.tradingRange"), value: `${fnum(((hi - lo) / lo) * 100, 1, locale)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
   }
 
   // Dữ liệu cũ (chưa có trading_strategy) chỉ có action_plan dạng câu — vẫn hiển thị.
@@ -466,6 +469,9 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
                   <div className="flex flex-col items-center leading-tight">
                     <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.midTerm")}</span>
                     <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{midTrendMeta.arrow} {t(`trend.${midTrendMeta.labelKey}`)}</strong>
+                    {midAltMeta && (
+                      <span className="text-[9px] sm:text-[10px] text-white/70 font-medium">{t("signal.midAlt", { arrow: midAltMeta.arrow })}</span>
+                    )}
                   </div>
                 </>
               )}
@@ -675,6 +681,9 @@ function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: 
       <div role="tabpanel" className="p-3 flex flex-col gap-3 text-[14.5px] leading-[1.55] text-body break-words">
         {(dirMeta || sc.probability) && (
           <div className="flex flex-wrap items-center gap-2">
+            {sc.probability === "Thấp" && sc.direction !== "đi ngang" && (
+              <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-muted-light">{t("scenario.alternative")}</span>
+            )}
             {dirMeta && (
               <span className={clsx("inline-flex items-center gap-1 font-mono text-[12px] font-bold uppercase tracking-wider rounded px-2 py-1 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
                 <DirIcon size={13} className="shrink-0" /> {t("scenario.direction", { dir: enumLabel(sc.direction) })}
@@ -1079,14 +1088,25 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
               <tr key={i} className="align-top print:break-inside-avoid">
                 <td className="px-2 sm:px-3 py-2 font-semibold text-label break-words">
                   {it.item}
-                  {it.source_url && (
+                  {it.source_url ? (
                     <a href={it.source_url} target="_blank" rel="noopener noreferrer"
                        className="block mt-0.5 text-[11.5px] font-normal text-primary hover:underline break-words">
                       {it.source_name}{it.source_date ? ` · ${it.source_date}` : ""}
                     </a>
+                  ) : it.source_name && (
+                    // Hồ sơ admin xác nhận (ets_policy_dossiers.yaml) có thể chưa có link.
+                    <span className="block mt-0.5 text-[11.5px] font-normal text-muted-light break-words">
+                      {it.source_name}{it.source_date ? ` · ${it.source_date}` : ""}
+                    </span>
+                  )}
+                  {it.stage && <span className="block text-[11px] font-normal text-muted-light">{it.stage}</span>}
+                </td>
+                <td className="px-2 sm:px-3 py-2 text-body break-words">
+                  <RichText text={it.status || ""} />
+                  {it.cbam_effect && (
+                    <span className="block mt-0.5 text-[12px] text-primary-dark">{t("etsPolicy.cbamEffect")} {it.cbam_effect}</span>
                   )}
                 </td>
-                <td className="px-2 sm:px-3 py-2 text-body break-words"><RichText text={it.status || ""} /></td>
                 <td className="px-2 sm:px-3 py-2 text-body break-words"><RichText text={it.next_step || ""} /></td>
                 <td className="px-2 sm:px-3 py-2">
                   <span className={clsx("inline-block font-mono text-[10.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border",
@@ -2388,6 +2408,9 @@ export function ReportDocument({
                   const DirIcon = dirMeta?.icon;
                   return (
                     <div className="flex flex-col gap-1.5 items-start">
+                      {sc.probability === "Thấp" && sc.direction !== "đi ngang" && (
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted-light">{t("scenario.alternative")}</span>
+                      )}
                       {dirMeta && (
                         <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
                           <DirIcon size={11} className="shrink-0" /> {t("scenario.direction", { dir: enumLabel(sc.direction) })}
@@ -2679,6 +2702,9 @@ export function ReportDocument({
               { key: "vietnam", label: t("body.vn"), empty: t("body.noNewsVn") },
             ].map(({ key, label, empty }) => {
               const items = report.content["6"][key];
+              // Có tin Việt Nam trong kỳ nhưng không bài nào đủ liên quan → nói đúng như vậy, không ghi "không có tin".
+              const vnConsidered = key === "vietnam" ? report.content["6"].vietnam_considered : 0;
+              const emptyText = vnConsidered > 0 ? t("body.noNewsVnFiltered", { n: vnConsidered }) : empty;
               return (
                 <div key={key} className="mb-4 last:mb-0">
                   <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{label}</h4>
@@ -2702,7 +2728,8 @@ export function ReportDocument({
                           </div>
                           {/* Nguồn nằm liền sau nội dung tin (cùng đoạn), chỉ xuống dòng khi hết chỗ */}
                           <p className="mt-0.5 text-[14.5px] leading-[1.4] text-body">
-                            <RichText text={art.summary} />{" "}
+                            {/* Bài đã trích ở mục khác: chỉ giữ tiêu đề + link (không lặp lại tóm tắt). */}
+                            {!art.cited_elsewhere && <><RichText text={art.summary} />{" "}</>}
                             <a
                               href={art.url}
                               target="_blank"
@@ -2716,7 +2743,7 @@ export function ReportDocument({
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[14.5px] text-muted-light italic">{empty}</p>
+                    <p className="text-[14.5px] text-muted-light italic">{emptyText}</p>
                   )}
                 </div>
               );

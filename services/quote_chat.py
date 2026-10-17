@@ -629,6 +629,21 @@ def _format_forecast_review(block: Optional[dict]) -> str:
         lines.append(
             f"Tỷ lệ đúng {(rules or {}).get('calibration_reports', 'các')} báo cáo gần nhất đã có kết luận, theo mức xác suất: "
             + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in calib)
+            + (" — gồm báo cáo " + ", ".join(w["report_date"] for w in block["calibration_window"])
+               + " (có báo cáo đã ra khỏi bảng vì quá khung chấm)" if block.get("calibration_window") else "")
+        )
+    calib_all = [c for c in block.get("calibration_all") or [] if c.get("total")]
+    if calib_all:
+        lines.append(
+            f"Tỷ lệ đúng LŨY KẾ ({block.get('calibration_all_reports')} báo cáo đã có kết luận): "
+            + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in calib_all)
+        )
+    base = block.get("baseline") or {}
+    if (base.get("model") or {}).get("total"):
+        lines.append(
+            f"Chuẩn so sánh: báo cáo đúng {base['model']['correct']}/{base['model']['total']}; dự báo ngây thơ \"luôn đi ngang\" "
+            f"{base['always_sideways']['correct']}/{base['always_sideways']['total']}; \"lặp chiều "
+            f"{base['momentum'].get('sessions')} phiên trước\" {base['momentum']['correct']}/{base['momentum']['total']}"
         )
     if rules:
         lines.append(
