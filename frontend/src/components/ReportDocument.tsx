@@ -1485,7 +1485,11 @@ function EuaDashboardWidget({ report }: { report: Report }) {
   const dayRange = dayHigh - dayLow;
   const dayRangePct = lastClose ? (dayRange / lastClose) * 100 : 0;
   
-  const sevenDaysAgo = chartData.length > 7 ? chartData[chartData.length - 8].close : chartData[0].close;
+  // Δ 1 tuần: phiên gần nhất cách ≥ 7 ngày LỊCH — cùng định nghĩa với "Δ tuần" của bảng giá (crawler/backend),
+  // trước đây lấy lùi 7 PHIÊN (~9–11 ngày) nên có lúc ra chiều ngược với Δ tuần trong bài.
+  const weekCutoff = new Date(new Date(lastDate).getTime() - 7 * 86400000).toISOString().slice(0, 10);
+  const weekRow = [...chartData].reverse().find((c: { date: string }) => c.date <= weekCutoff);
+  const sevenDaysAgo = weekRow ? weekRow.close : chartData[0].close;
   const sevenDayChange = lastClose - sevenDaysAgo;
   const sevenDayChangePct = sevenDaysAgo ? (sevenDayChange / sevenDaysAgo) * 100 : 0;
 
@@ -2225,6 +2229,15 @@ export function ReportDocument({
                       </div>
                     </div>
                   ))}
+
+                  {/* Giả định mô hình chuyển đổi nhiên liệu — để người đọc kiểm chứng giá EUA hòa vốn
+                      (report_generator.fuel_model_note). Báo cáo cũ không có → ẩn. */}
+                  {report.content["3"].fuel_model_note && (
+                    <p className="mb-5 text-[12.5px] leading-[1.55] text-muted-light italic">
+                      <span className="not-italic font-semibold">{t("body.fuelModelNote")}</span>{" "}
+                      <HighlightNumbers text={report.content["3"].fuel_model_note} />
+                    </p>
+                  )}
 
                   {report.content["3"].correlation_analysis && (
                     <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg px-3 sm:px-4 py-3 my-5 space-y-2">

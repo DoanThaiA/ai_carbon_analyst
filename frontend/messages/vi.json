@@ -544,16 +544,21 @@
     "highConfidenceMiss": "Sai dù gắn xác suất cao.",
     "move": "EUA {from} → {to} ({pct}%, {sessions} phiên tới {date})",
     "trade": {
-      "buy": "Lệnh mua {low}–{high}, cắt lỗ {stop}",
-      "sell": "Lệnh bán {low}–{high}, cắt lỗ {stop}",
+      "buy": "Lệnh mua {zone}, cắt lỗ {stop}",
+      "sell": "Lệnh bán {zone}, cắt lỗ {stop}",
       "target": "mục tiêu {target}",
       "status": {
         "not_filled": "chưa khớp",
         "open": "đã khớp {date}, đang mở",
         "stopped": "chạm cắt lỗ {date}",
-        "target_hit": "chạm mục tiêu {date}"
+        "target_hit": "chạm mục tiêu {date}",
+        "expired": "hết hiệu lực {date}, không khớp",
+        "cancelled_target": "giá chạm mục tiêu {date} trước khi khớp — huỷ lệnh"
       }
     },
+    "calibration": "Tỷ lệ đúng lũy kế theo xác suất:",
+    "calibrationItem": "{probability} {correct}/{total}",
+    "rules": "Quy tắc chấm: kết luận Đúng/Sai khi lệnh chạm mục tiêu/cắt lỗ hoặc hết {horizon} phiên (khung 1–2 tuần); trước đó chỉ là Đang đúng hướng/Đang lệch. Chiều tính đúng khi |%Δ| ≥ {dir}%; \"đi ngang\" đúng khi |%Δ| < {side}%. Lệnh chờ hiệu lực {valid} phiên, huỷ nếu giá chạm mục tiêu trước khi khớp; lệnh giới hạn mở gap qua vùng Entry khớp tại giá mở. Báo cáo Chủ Nhật/Thứ Hai chỉ có tin tức nên không có dự báo để chấm.",
     "lesson": "Nguyên nhân & điều chỉnh"
   },
   "meta": {
@@ -596,7 +601,7 @@
     "position": {
       "up": "MUA (LONG) — theo xu hướng ngắn hạn",
       "down": "BÁN (SHORT) — theo xu hướng ngắn hạn",
-      "sideways": "CHỜ — không mở mới, không đóng vị thế đang có"
+      "sideways": "ĐI NGANG — đặt lệnh chờ (limit) tại vùng Entry bên dưới, chưa vào lệnh ngay"
     },
     "ladder": {
       "current": "Hiện tại {price}",
@@ -708,8 +713,8 @@
       "closeOf": "Đóng cửa phiên {date}",
       "lastRange": "Biên độ phiên gần nhất",
       "rangeSub": "biên độ {range} (~{pct}%)",
-      "up7": "Tăng 7 phiên",
-      "down7": "Giảm 7 phiên",
+      "up7": "Tăng 1 tuần",
+      "down7": "Giảm 1 tuần",
       "vsPrice": "{pct}% so với {price}",
       "range30": "Vùng giá 30 phiên",
       "lowHigh": "thấp nhất – cao nhất",
@@ -762,6 +767,7 @@
       "hideAnalysis": "Ẩn phân tích",
       "showAnalysis": "Hiện phân tích",
       "correlationTitle": "Chuỗi Logic: Gas + Coal + Power → EUA",
+      "fuelModelNote": "Giả định mô hình:",
       "gas": "Gas:",
       "coal": "Than:",
       "power": "Điện Đức:",

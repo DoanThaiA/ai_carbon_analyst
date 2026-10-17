@@ -13,6 +13,7 @@ Bắt từ bản chấm báo cáo 16/10/2026:
 """
 import copy
 import re
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Giá trị số kiểu vi-VN (1.386,75 / 85,84 / 85) hoặc kiểu Anh (85.84).
@@ -29,6 +30,8 @@ def parse_num(raw: str) -> float:
 
 
 def vn_num(x: float, digits: int = 2, sign: bool = False) -> str:
+    # Làm tròn nửa lên theo số thập phân như người đọc tính tay (85,585 → 85,59; float format cho 85,58).
+    x = float(Decimal(repr(x)).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP))
     s = f"{x:+,.{digits}f}" if sign else f"{x:,.{digits}f}"
     return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
@@ -144,7 +147,11 @@ _MID_LABEL_RE = re.compile(rf"(?P<price>{_NUM})(?P<pre>\s*\(\s*)(?P<label>giữa
 _RANGE_RE = re.compile(rf"(?P<lo>{_NUM}){_DASH}(?P<hi>{_NUM})")
 
 
-def fix_range_claims(text: str, price: Optional[float]) -> Tuple[str, List[str]]:
+def fix_range_claims(
+    text: str, price: Optional[float], default_range: Optional[Tuple[float, float]] = None,
+) -> Tuple[str, List[str]]:
+    """`default_range` (đáy, đỉnh 30 phiên) dùng cho "X (giữa biên)" khi câu không tự ghi biên A–B
+    (vd "Mục tiêu 87,0 (giữa biên)" — giữa biên 82,35–88,82 là 85,59)."""
     problems: List[str] = []
 
     def _half(m: re.Match) -> str:
@@ -163,6 +170,8 @@ def fix_range_claims(text: str, price: Optional[float]) -> Tuple[str, List[str]]
         n = parse_num(m["price"])
         ranges = [(parse_num(r["lo"]), parse_num(r["hi"])) for r in _RANGE_RE.finditer(text)]
         ranges = [(min(a, b), max(a, b)) for a, b in ranges if min(a, b) < n < max(a, b)]
+        if not ranges and default_range and default_range[0] < n < default_range[1]:
+            ranges = [default_range]
         if not ranges:
             return m.group(0)
         lo, hi = min(ranges, key=lambda r: r[1] - r[0])
@@ -178,6 +187,99 @@ def fix_range_claims(text: str, price: Optional[float]) -> Tuple[str, List[str]]
     text = _HALF_CLAIM_RE.sub(_half, text)
     text = _MID_LABEL_RE.sub(_mid, text)
     return text, problems
+
+
+# ── 2b. Chuỗi phiên tăng/giảm liên tiếp ───────────────────────────────────────
+def eua_streak(chart: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Số phiên liên tiếp cùng chiều (giá đóng cửa so phiên trước) tính tới phiên mới nhất.
+    -> {"direction": "tăng"|"giảm", "count", "closes": [(ngày, giá) từ phiên GỐC trước chuỗi → mới nhất]}."""
+    closes = [(c.get("date"), float(c["close"])) for c in chart if isinstance(c, dict) and c.get("close") is not None]
+    if len(closes) < 2 or closes[-1][1] == closes[-2][1]:
+        return None
+    up = closes[-1][1] > closes[-2][1]
+    n = 0
+    for i in range(len(closes) - 1, 0, -1):
+        if (closes[i][1] > closes[i - 1][1]) != up or closes[i][1] == closes[i - 1][1]:
+            break
+        n += 1
+    return {"direction": "tăng" if up else "giảm", "count": n, "closes": closes[-n - 1:]}
+
+
+_VI_NUM = {"một": 1, "hai": 2, "ba": 3, "bốn": 4, "tư": 4, "năm": 5, "sáu": 6, "bảy": 7, "tám": 8, "chín": 9, "mười": 10}
+_VI_ORD = {2: "hai", 3: "ba", 4: "tư", 5: "năm", 6: "sáu", 7: "bảy", 8: "tám", 9: "chín", 10: "mười"}
+_VI_CARD = {2: "hai", 3: "ba", 4: "bốn", 5: "năm", 6: "sáu", 7: "bảy", 8: "tám", 9: "chín", 10: "mười"}
+_NUM_WORD = r"\d+|" + "|".join(_VI_NUM)
+_STREAK_RE = re.compile(
+    rf"(?P<dir>tăng|giảm)(?P<sp>\s+)(?:(?P<ord>phiên\s+thứ\s+(?P<o>{_NUM_WORD}))|(?P<c>{_NUM_WORD})\s+phiên)\s+liên\s+tiếp",
+    re.IGNORECASE,
+)
+_OTHER_INSTRUMENT_RE = re.compile(r"TTF|Brent|WTI|API2|API4|NEWC|Gasoil|DEBY|điện|khí|than|dầu", re.IGNORECASE)
+
+
+def _word_num(w: str) -> Optional[int]:
+    return int(w) if w.isdigit() else _VI_NUM.get(w.lower())
+
+
+def fix_streak_claims(text: str, streak: Optional[Dict[str, Any]]) -> Tuple[str, List[str]]:
+    """"EUA giảm phiên thứ hai liên tiếp" khi thực tế giảm 4 phiên → sửa số phiên (chỉ câu nói về EUA)."""
+    problems: List[str] = []
+    if not streak:
+        return text, problems
+
+    def _sub(m: re.Match) -> str:
+        start = max(text.rfind(".", 0, m.start()), text.rfind("\n", 0, m.start())) + 1
+        subject = text[start:m.start()]
+        if "EUA" not in subject or _OTHER_INSTRUMENT_RE.search(subject.split("EUA")[-1]):
+            return m.group(0)
+        claimed = _word_num(m["o"] or m["c"])
+        if claimed is None or m["dir"].lower() != streak["direction"] or claimed == streak["count"]:
+            return m.group(0)
+        n = streak["count"]
+        path = " → ".join(vn_num(c) for _, c in streak["closes"])
+        problems.append(f"EUA {m['dir']} {claimed} phiên liên tiếp sai — thực tế {streak['direction']} {n} phiên liên tiếp ({path})")
+        if n < 2 or n > 10:
+            return m.group(0)
+        if m["ord"]:
+            return f"{m['dir']}{m['sp']}phiên thứ {_VI_ORD[n]} liên tiếp"
+        return f"{m['dir']}{m['sp']}{_VI_CARD[n]} phiên liên tiếp"
+
+    return _STREAK_RE.sub(_sub, text), problems
+
+
+# ── 2c. Mục tiêu suy từ phép nhân "X (Y × 0,95)" ──────────────────────────────
+_DERIVED_RE = re.compile(rf"(?P<x>{_NUM})\s*\(\s*=?\s*(?P<y>{_NUM})\s*[×x\*]\s*(?P<f>\d+(?:[.,]\d+)?)\s*\)")
+
+
+def derived_target_issues(sec3: Dict[str, Any], close: Optional[float], levels: List[float]) -> List[Dict[str, str]]:
+    """Mức giá ghi kèm phép nhân "(Y × f)": (1) X phải ≈ Y × f; (2) cơ sở Y phải là giá đóng cửa hoặc 1 mốc có trong
+    dữ liệu (`levels`) / chính kịch bản đó; (3) trong CÙNG 1 kịch bản, "price_zone" và "trading_strategy" không được
+    ra 2 mục tiêu khác nhau (bản 17/10: 81,14 = 85,41 × 0,95 ở Vùng giá nhưng 77,95 = 82,05 × 0,95 ở Chiến lược)."""
+    out: List[Dict[str, str]] = []
+    known = [v for v in [close, *levels] if v]
+    for i, sc in enumerate(sec3.get("trading_scenarios") or []):
+        if not isinstance(sc, dict):
+            continue
+        path = f"3.trading_scenarios[{i}]"
+        found: Dict[str, List[float]] = {}
+        own_text = " ".join(str(sc.get(k) or "") for k in ("condition", "price_zone", "key_risk", "trading_strategy"))
+        own_nums = [parse_num(n) for n in re.findall(_NUM, re.sub(_DERIVED_RE, "", own_text))]
+        for field in ("price_zone", "trading_strategy"):
+            for m in _DERIVED_RE.finditer(str(sc.get(field) or "")):
+                x, y, f = parse_num(m["x"]), parse_num(m["y"]), parse_num(m["f"])
+                found.setdefault(field, []).append(x)
+                if abs(x - y * f) > 0.02:
+                    out.append({"path": f"{path}.trading_strategy", "message":
+                                f"{sc.get('horizon')}: {m['x']} ≠ {m['y']} × {m['f']} (= {vn_num(y * f)})"})
+                if not any(abs(y - k) <= 0.011 for k in known + own_nums):
+                    out.append({"path": f"{path}.trading_strategy", "message":
+                                f"{sc.get('horizon')}: mục tiêu {m['x']} tính từ cơ sở {m['y']} — không phải giá đóng cửa"
+                                f"{' ' + vn_num(close) if close else ''} hay mốc nào trong dữ liệu/kịch bản"})
+        zone, strat = found.get("price_zone") or [], found.get("trading_strategy") or []
+        if zone and strat and not any(abs(a - b) <= 0.011 for a in zone for b in strat):
+            out.append({"path": f"{path}.trading_strategy", "message":
+                        f"{sc.get('horizon')}: 2 mục tiêu khác nhau — Vùng giá {', '.join(vn_num(v) for v in zone)} "
+                        f"vs Chiến lược {', '.join(vn_num(v) for v in strat)}"})
+    return out
 
 
 # ── 3. Trình bày ──────────────────────────────────────────────────────────────
@@ -253,16 +355,22 @@ def _is_eua_scenario(path: str) -> bool:
     return path.startswith(("3.trading_scenarios", "3.hedge_action"))
 
 
+def _chart(content: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [c for c in (content.get("2") or {}).get("chart_data") or [] if isinstance(c, dict)]
+
+
 def apply_consistency_fixes(content: Dict[str, Any]) -> List[Dict[str, str]]:
     """Sửa tại chỗ toàn bộ văn bản báo cáo. -> danh sách {"path", "message"} các lỗi số đã sửa (để log)."""
-    close, _ = eua_reference(content)
+    close, rng = eua_reference(content)
+    streak = eua_streak(_chart(content))
     fixed: List[Dict[str, str]] = []
 
     def _fn(text: str, path: str) -> str:
         text = normalize_presentation(text)
         text, p1 = fix_pct_labels(text, close if _is_eua_scenario(path) else None)
-        text, p2 = fix_range_claims(text, close)
-        fixed.extend({"path": path, "message": m} for m in p1 + p2)
+        text, p2 = fix_range_claims(text, close, rng)
+        text, p3 = fix_streak_claims(text, streak)
+        fixed.extend({"path": path, "message": m} for m in p1 + p2 + p3)
         return text
 
     walk_text(content, _fn)
@@ -271,16 +379,19 @@ def apply_consistency_fixes(content: Dict[str, Any]) -> List[Dict[str, str]]:
 
 def consistency_issues(content: Dict[str, Any]) -> List[Dict[str, str]]:
     """Như apply_consistency_fixes nhưng KHÔNG sửa (cho QC báo cáo đã lưu/đã sửa tay)."""
-    close, _ = eua_reference(content)
+    close, rng = eua_reference(content)
+    streak = eua_streak(_chart(content))
     found: List[Dict[str, str]] = []
 
     def _fn(text: str, path: str) -> str:
         _, p1 = fix_pct_labels(text, close if _is_eua_scenario(path) else None)
-        _, p2 = fix_range_claims(text, close)
-        found.extend({"path": path, "message": m} for m in p1 + p2)
+        _, p2 = fix_range_claims(text, close, rng)
+        _, p3 = fix_streak_claims(text, streak)
+        found.extend({"path": path, "message": m} for m in p1 + p2 + p3)
         if normalize_presentation(text) != text:
             found.append({"path": path, "message": "định dạng số/ngày/vùng giá chưa thống nhất kiểu vi-VN", "minor": "1"})
         return text
 
     walk_text(copy.deepcopy(content), _fn)
+    found.extend(derived_target_issues(content.get("3") or {}, close, list(rng or ())))
     return found

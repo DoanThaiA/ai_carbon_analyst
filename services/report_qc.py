@@ -37,7 +37,9 @@ from services.report_generator import (
     TOPIC_DISPLAY_LABELS,
     CALENDAR_WINDOW_DAYS,
     STALE_NEWS_MAX_AGE_DAYS,
+    FUEL_NEAR_BREAKEVEN,
     _compute_recurring_calendar_events,
+    fuel_spread_state,
     _parse_event_date,
     data_matches_event,
     news_source_label,
@@ -504,22 +506,66 @@ _API2_DOWN_RE = re.compile(r"(API ?2|giá than|than ARA)[^.;\n]{0,40}?(giảm|h�
 _GAS_MENTION_RE = re.compile(r"TTF|khí|chênh|spread", re.IGNORECASE)
 
 
+_TTF_UP_RE = re.compile(r"(TTF|giá khí|khí đốt|nguồn cung khí)[^.;\n]{0,50}?(tăng|leo|đẩy lên|cao hơn|rủi ro|gián đoạn)", re.IGNORECASE)
+_SPREAD_RE = re.compile(r"chênh|spread", re.IGNORECASE)
+
+
 def check_fuel_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
-    """Giá than API2 TĂNG tự thân làm than kém cạnh tranh → GIẢM cầu EUA. Xếp "API2 tăng" vào yếu tố hỗ trợ tăng giá
-    (hoặc "API2 giảm" vào áp lực giảm) là sai chiều — trừ khi câu so với khí/TTF (chênh khí − than mở rộng)."""
+    """Chiều tác động của nhiên liệu lên EUA xếp theo THAY ĐỔI RÒNG của chênh khí − than (fuel_spread_state, tính lại từ
+    bảng giá của chính báo cáo), ĐỐI XỨNG cho cả 2 nhiên liệu:
+      - "API2 tăng" không bao giờ là yếu tố hỗ trợ tăng; "API2 giảm" không bao giờ là áp lực giảm;
+      - than đã rẻ hơn khí rõ rệt (bão hòa): "TTF tăng / rủi ro cung khí" KHÔNG là động lực tăng, và "API2 tăng"
+        KHÔNG là áp lực giảm khi chênh còn MỞ RỘNG trong tuần (bản 17/10: chênh +54 → +64 mà vẫn viết "API2 tăng thu hẹp
+        lợi thế điện than")."""
     drivers = (content.get("2") or {}).get("market_drivers") or {}
     if not isinstance(drivers, dict):
         return []
+    state = fuel_spread_state((content.get("2") or {}).get("prices") or [])
+    saturated = bool(state and state["spread"] > FUEL_NEAR_BREAKEVEN)
+    widened = bool(state and state["delta"] is not None and state["delta"] >= 0)
     issues = []
-    for side, rx, wrong in (("bullish", _API2_UP_RE, "hỗ trợ tăng giá"), ("bearish", _API2_DOWN_RE, "gây áp lực giảm giá")):
+
+    def _add(side: str, i: int, text: str, why: str) -> None:
+        issues.append(_issue(
+            "scenario", "3", "error", f"Yếu tố {'hỗ trợ tăng giá' if side == 'bullish' else 'gây áp lực giảm giá'} #{i + 1} sai chiều: "
+            f"{why}: \"{text[:110]}\"", f"2.market_drivers.{side}[{i}].text",
+        ))
+
+    for side in ("bullish", "bearish"):
         for i, d in enumerate(drivers.get(side) or []):
             text = str(d.get("text") if isinstance(d, dict) else d or "")
-            if rx.search(text) and not _GAS_MENTION_RE.search(text):
+            if side == "bullish" and _API2_UP_RE.search(text) and not _GAS_MENTION_RE.search(text):
+                _add(side, i, text, "giá than API2 tăng tự thân không làm tăng cầu EUA (than kém cạnh tranh hơn) — chỉ "
+                                    "\"chênh khí − than mở rộng\" mới là yếu tố hỗ trợ")
+            elif side == "bearish" and _API2_DOWN_RE.search(text) and not _GAS_MENTION_RE.search(text):
+                _add(side, i, text, "giá than API2 giảm làm than cạnh tranh hơn — không phải áp lực giảm cầu EUA")
+            elif side == "bearish" and saturated and widened and _API2_UP_RE.search(text):
+                _add(side, i, text, f"chênh khí − than trong tuần MỞ RỘNG ({state['spread_prev']:+.0f} → {state['spread']:+.0f} "
+                                    "EUR/MWh) — lợi thế than được củng cố, \"API2 tăng\" không phải áp lực giảm")
+            elif side == "bullish" and saturated and _TTF_UP_RE.search(text) and not _SPREAD_RE.search(text):
+                _add(side, i, text, f"than đã rẻ hơn khí rõ rệt (chênh ≈ {state['spread']:+.0f} EUR/MWh, chuyển đổi bão hòa) — "
+                                    "TTF tăng/rủi ro cung khí không còn nâng cầu EUA qua fuel switching")
+    return issues
+
+
+def check_dev_driver_consistency(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Cùng 1 bài (source_url) không được nằm ở "Diễn biến chính" với 1 chiều và ở cột động lực Mục 2 chiều khác."""
+    sec2 = content.get("2") or {}
+    impacts = {
+        _norm_url(d["source_url"]): d.get("impact") for d in sec2.get("key_developments") or []
+        if isinstance(d, dict) and d.get("source_url")
+    }
+    drivers = sec2.get("market_drivers") or {}
+    issues = []
+    for side, want in (("bullish", "tăng"), ("bearish", "giảm")):
+        for i, d in enumerate(drivers.get(side) or [] if isinstance(drivers, dict) else []):
+            url = d.get("source_url") if isinstance(d, dict) else None
+            impact = impacts.get(_norm_url(url)) if url else None
+            if impact and impact != want:
                 issues.append(_issue(
                     "scenario", "3", "error",
-                    f"Yếu tố {wrong} #{i + 1} sai chiều: giá than API2 {'tăng' if side == 'bullish' else 'giảm'} tự thân "
-                    f"{'làm giảm' if side == 'bullish' else 'hỗ trợ'} cầu EUA (than {'kém' if side == 'bullish' else 'thêm'} cạnh "
-                    f"tranh so với khí) — chỉ \"chênh khí − than mở rộng\" mới là yếu tố hỗ trợ: \"{text[:110]}\"",
+                    f"Cùng 1 tin bị đánh giá 2 chiều: Diễn biến chính ghi \"{impact}\" nhưng Mục 2 xếp vào "
+                    f"{'động lực tăng' if side == 'bullish' else 'động lực giảm'}: \"{str(d.get('text'))[:100]}\"",
                     f"2.market_drivers.{side}[{i}].text",
                 ))
     return issues
@@ -1601,7 +1647,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
         "price": check_prices(content, db_prices, latest_price_date, report_date) + check_instrument_labels(content),
         "scenario": (
             check_scenarios(content) + check_forecast_review(content) + check_fuel_direction(content)
-            + check_hedge_action(content) + check_consistency(content)
+            + check_hedge_action(content) + check_consistency(content) + check_dev_driver_consistency(content)
         ),
         "source": check_sources(content, known_urls, article_meta, stale_before),
         "fact": check_facts(content, article_texts),

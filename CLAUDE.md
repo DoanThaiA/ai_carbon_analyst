@@ -253,13 +253,26 @@ mô phỏng đang mở (`forecast_review.open_trades`) + quyết định `keep|m
 (`_resolve_section3_citations`), nguồn đã trích vào `content["3"].sources` → Mục 9. Mục 6 chia VIỆT NAM/QUỐC TẾ theo
 `about_vietnam` của bản tóm tắt (chủ đề bài), không theo region nguồn. Δ tuyệt đối ở bảng giá tính từ giá đóng cửa kỳ
 so sánh trong DB (`_comparison_closes`), không suy ngược từ % đã làm tròn.
+Cũng tự sửa/kiểm: số phiên tăng/giảm liên tiếp của EUA (`eua_streak`/`fix_streak_claims`; prompt nhận khối "CHUỖI PHIÊN"
+kèm khối lượng TỪNG phiên trong nhịp so TB 20 phiên — không kết luận cả nhịp chỉ từ phiên cuối), mục tiêu dạng
+"X (Y × f)" (cơ sở Y phải là giá đóng cửa/mốc kỹ thuật; price_zone và Mục tiêu cùng kịch bản phải trùng —
+`derived_target_issues`, đi vào vòng `_revise_scenarios_if_invalid`). "Diễn biến chính" chạy TRƯỚC Mục 2/3, chiều của
+từng tin được chốt và đưa vào prompt 2/3 (`_dev_verdict_block`); động lực Mục 2 trái chiều cùng bài bị bỏ
+(`_drop_conflicting_drivers`) — Jack `check_dev_driver_consistency`.
+**Fuel switching** (`fuel_spread_state`, dùng chung prompt + Jack `check_fuel_direction`): chiều xếp theo THAY ĐỔI RÒNG
+chênh khí − than, ĐỐI XỨNG — khi than đã rẻ hơn khí rõ rệt (> `FUEL_NEAR_BREAKEVEN`) cả "TTF tăng" lẫn "API2 tăng" đều
+trung lập; giả định mô hình hiển thị cho người đọc ở `content["3"].fuel_model_note`. Crack spread gasoil kèm mức tuyệt
+đối + TB 60 phiên (`_crack_spread_history`) để không suy "biên giảm → hạ công suất" khi biên vẫn rất cao.
 
 **Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
 chấm `REVIEW_MAX_REPORTS` báo cáo gần nhất có kịch bản ngắn hạn (còn trong `REVIEW_MAX_SESSIONS` phiên): %Δ EUA luỹ kế từ giá
 báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi biên độ phiên chạm vùng Entry, lệnh giới hạn mở gap qua vùng khớp tại giá mở;
 phiên khớp chỉ xét giá đóng cửa; 1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ) → chạm cắt lỗ = SAI, chạm mục tiêu =
-ĐÚNG, còn lại theo chiều %Δ — chưa hết `REVIEW_MAX_SESSIONS` phiên thì chỉ là `on_track`/`diverging`. Jack
+ĐÚNG, còn lại theo chiều %Δ — chưa hết `REVIEW_MAX_SESSIONS` phiên thì chỉ là `on_track`/`diverging`. Lệnh chờ hết hiệu
+lực sau `ORDER_VALID_SESSIONS` phiên (`expired`); giá chạm mục tiêu trước khi khớp → `cancelled_target` (ĐÚNG hướng). Khối
+kèm `calibration` (tỷ lệ đúng theo mức xác suất, `CALIBRATION_REPORTS` báo cáo, chỉ kết luận cuối) và `rules` (ngưỡng chấm,
+hiển thị ở `ForecastReviewCard`). Jack
 `check_forecast_review`: có dự báo SAI mà `vs_previous` trống → error, không nhắc ngày báo cáo sai → warning.
 
 **Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,

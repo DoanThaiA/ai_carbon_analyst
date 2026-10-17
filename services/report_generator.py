@@ -16,7 +16,9 @@ from core.config import Settings
 from services import biz_memory
 from services import cbam_estimate
 from services import forecast_review
-from services.report_consistency import apply_consistency_fixes, describe_range_position
+from services.report_consistency import (
+    apply_consistency_fixes, derived_target_issues, describe_range_position, eua_streak,
+)
 from services.title_similarity import is_similar_title, title_tokens
 from services import eua_causal_chains as chains
 from services.eua_framework_admin import get_overrides_map
@@ -1291,7 +1293,8 @@ def _eua_trend_summary(chart_data: List[Dict]) -> str:
     return (
         f"EUA 30 ngày: mở {first:.2f} → đóng gần nhất {last:.2f} "
         f"({change_30:+.1f}%); 30-ngày-cao {high_30:.2f}, 30-ngày-thấp {low_30:.2f}. "
-        + describe_range_position(last, low_30, high_30, "biên 30 phiên")
+        + describe_range_position(last, low_30, high_30, "biên 30 phiên") + " "
+        + _eua_streak_summary(chart_data)
     ).strip()
 
 
@@ -1448,8 +1451,36 @@ def _eua_volume_summary(chart_data: List[Dict]) -> str:
     return (
         f"Khối lượng giao dịch EUA phiên liền trước ({latest['date']}): {latest_volume:,.0f} hợp đồng, "
         f"so với TB {len(prior)} phiên gần nhất ({avg_volume:,.0f} hợp đồng) — {level} ({pct_diff:+.1f}%). "
-        f"Giá phiên đó {price_direction} so với giá mở cửa cùng phiên."
-    )
+        f"Giá phiên đó {price_direction} so với giá mở cửa cùng phiên. "
+        + _eua_streak_summary(chart_data, avg_volume)
+    ).strip()
+
+
+def _eua_streak_summary(chart_data: List[Dict], avg_volume: Optional[float] = None) -> str:
+    """Số phiên tăng/giảm LIÊN TIẾP + khối lượng của TỪNG phiên trong nhịp so với TB 20 phiên — để LLM không
+    viết "giảm phiên thứ hai liên tiếp" khi đã giảm 4 phiên, và không kết luận "nhịp giảm thiếu xác nhận dòng
+    tiền" chỉ từ phiên cuối (bản 17/10: 3 phiên giảm chính 13–15/10 đều trên TB, chỉ 16/10 thấp)."""
+    streak = eua_streak(chart_data)
+    if not streak:
+        return ""
+    n, d = streak["count"], streak["direction"]
+    path = " → ".join(f"{_vn_num(c)} ({date.fromisoformat(dt).strftime('%d/%m')})" if dt else _vn_num(c) for dt, c in streak["closes"])
+    text = f"CHUỖI PHIÊN: EUA {d.upper()} {n} phiên liên tiếp: {path}. Nêu số phiên liên tiếp PHẢI dùng đúng số {n}."
+    if avg_volume and n >= 2:
+        by_date = {c.get("date"): c for c in chart_data}
+        vols = [(dt, by_date.get(dt, {}).get("volume")) for dt, _ in streak["closes"][1:]]
+        vols = [(dt, v) for dt, v in vols if isinstance(v, (int, float)) and v > 0]
+        if vols:
+            above = sum(1 for _, v in vols if v > avg_volume)
+            detail = "; ".join(f"{date.fromisoformat(dt).strftime('%d/%m')} {_vn_num(v, 0)}" for dt, v in vols)
+            confirmed = above * 2 > len(vols)
+            text += (
+                f" Khối lượng các phiên trong nhịp ({detail}) — {above}/{len(vols)} phiên TRÊN TB {_vn_num(avg_volume, 0)}"
+                + (f" → nhịp {d} CÓ xác nhận khối lượng; phiên cuối thấp (nếu có) chỉ là chững lại, KHÔNG được kết luận "
+                   f"cả nhịp \"thiếu xác nhận dòng tiền\"." if confirmed else
+                   f" → nhịp {d} THIẾU xác nhận khối lượng.")
+            )
+    return text
 
 
 # ── Ước tính spread chuyển đổi nhiên liệu than ↔ khí (tính sẵn bằng Python) ──
@@ -1462,107 +1493,144 @@ FUEL_COAL_MWH_PER_TONNE = 6.978  # than 6.000 kcal/kg ≈ 25,1 GJ/t
 FUEL_EURUSD = 1.15            # giả định tỷ giá EUR→USD (hệ thống không có giá EURUSD)
 
 
+FUEL_NEAR_BREAKEVEN = 10.0  # |chênh khí − than| dưới mức này (EUR/MWh điện) = sát điểm hòa vốn, dispatch nhạy với giá
+
+
+def _fuel_costs(ttf_p: float, api2_p: float, eua_p: float) -> tuple:
+    """-> (nhiên liệu khí, nhiên liệu than, tổng chi phí khí, tổng chi phí than) — EUR/MWh điện."""
+    gas_f = ttf_p / FUEL_GAS_EFF
+    coal_f = api2_p / FUEL_EURUSD / FUEL_COAL_MWH_PER_TONNE / FUEL_COAL_EFF
+    return (gas_f, coal_f, gas_f + eua_p * FUEL_GAS_EF / FUEL_GAS_EFF,
+            coal_f + eua_p * FUEL_COAL_EF / FUEL_COAL_EFF)
+
+
+def fuel_spread_state(prices: List[Dict]) -> Optional[Dict[str, Any]]:
+    """Chênh chi phí phát điện khí − than (dương = than rẻ hơn), giá EUA hòa vốn và thay đổi trong TUẦN (giá 1 tuần
+    trước suy từ Δ tuần). Dùng chung cho prompt (_fuel_switching_spread_summary) và Jack (check_fuel_direction)."""
+    rows = {p.get("code"): p for p in prices if isinstance(p, dict)}
+    close = {c: (rows.get(c) or {}).get("close") for c in ("TTF", "API2", "EUA")}
+    if not all(isinstance(v, (int, float)) and v > 0 for v in close.values()):
+        return None
+    gas_f, coal_f, gas_cost, coal_cost = _fuel_costs(close["TTF"], close["API2"], close["EUA"])
+    denom = FUEL_COAL_EF / FUEL_COAL_EFF - FUEL_GAS_EF / FUEL_GAS_EFF
+    state: Dict[str, Any] = {
+        **{c.lower(): v for c, v in close.items()}, "gas_cost": gas_cost, "coal_cost": coal_cost,
+        "spread": gas_cost - coal_cost, "switch": (gas_f - coal_f) / denom if denom else None,
+        "spread_prev": None, "delta": None,
+        "week_pct": {c: (rows.get(c) or {}).get("week_change_pct") for c in close},
+    }
+    wk = state["week_pct"]
+    if all(isinstance(v, (int, float)) and v > -100 for v in wk.values()):
+        prev = {c: close[c] / (1 + wk[c] / 100) for c in close}
+        g, c_ = _fuel_costs(prev["TTF"], prev["API2"], prev["EUA"])[2:]
+        state["spread_prev"] = g - c_
+        state["delta"] = state["spread"] - state["spread_prev"]
+    return state
+
+
+def fuel_model_note(state: Optional[Dict[str, Any]]) -> str:
+    """Chú thích giả định của mô hình (hiển thị cho người đọc dưới Phân tích) — giá EUA hòa vốn phụ thuộc mạnh vào
+    các giả định này (hiệu suất 50%/36% thay vì 55%/38% cho kết quả khác vài chục EUR/t), nên phải công bố để kiểm chứng."""
+    if not state:
+        return ""
+    sw = state.get("switch")
+    return (
+        "Giả định mô hình chuyển đổi nhiên liệu (chi phí biên): CCGT hiệu suất "
+        f"{FUEL_GAS_EFF:.0%}, nhà máy than {FUEL_COAL_EFF:.0%}; hệ số phát thải khí {_vn_num(FUEL_GAS_EF, 3)}, than "
+        f"{_vn_num(FUEL_COAL_EF, 2)} tCO2/MWh nhiệt; than API2 6.000 kcal/kg ({_vn_num(FUEL_COAL_MWH_PER_TONNE, 3)} MWh/t); "
+        f"1 EUR = {_vn_num(FUEL_EURUSD)} USD; TTF coi như giá nhiệt. Giá EUA hòa vốn = (chi phí nhiên liệu khí − than) / "
+        f"(cường độ phát thải than − khí)"
+        + (f" ≈ {_vn_num(sw, 0)} EUR/t" if isinstance(sw, (int, float)) and sw > 0 else "")
+        + " — kết quả thay đổi đáng kể theo hiệu suất nhà máy và tỷ giá giả định."
+    )
+
+
 def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
     """Chi phí phát điện biên (EUR/MWh điện) của than và khí gồm cả chi phí EUA, và giá EUA
     hòa vốn chuyển đổi (switching price) — tính từ TTF, API2, EUA có trong bảng giá.
     CHỈ dùng API2 (CIF ARA — giá than nhà máy điện EU thực mua); API4 (Richards Bay) là chuẩn
     châu Á/Ấn Độ nên KHÔNG dùng cho fuel switching tại EU.
     Mục đích: MỌI mục (1/2/3) dùng chung 1 kết luận ("KẾT LUẬN DÙNG CHUNG" ở cuối khối) để biết
-    than đã thắng khí chưa (chuyển đổi nhiên liệu đã bão hòa chưa), tránh mục này nói ngược mục kia."""
+    than đã thắng khí chưa (chuyển đổi nhiên liệu đã bão hòa chưa), tránh mục này nói ngược mục kia.
+    Chiều tác động xếp theo THAY ĐỔI RÒNG của chênh khí − than, ĐỐI XỨNG cho cả 2 nhiên liệu — bản 17/10 từng
+    coi "TTF tăng" là trung lập (đã bão hòa) nhưng "API2 tăng" là áp lực giảm, trong khi chênh còn mở rộng +54 → +64."""
     by_code = {p["code"]: p.get("close") for p in prices}
-    ttf, eua, api2 = by_code.get("TTF"), by_code.get("EUA"), by_code.get("API2")
-    api2_no_trade = any(p.get("no_trade") for p in prices if p.get("code") == "API2")
-    if not ttf or not eua:
+    if not by_code.get("TTF") or not by_code.get("EUA"):
         return "Thiếu giá TTF hoặc EUA — không tính được spread than–khí; KHÔNG tự suy ra."
-    if not api2:
+    if not by_code.get("API2"):
         return (
             "Thiếu giá than API2 (CIF ARA) — không tính được spread than–khí cho EU; KHÔNG dùng API4/NEWC "
             "(chuẩn châu Á) thay thế và KHÔNG tự suy ra. Chỉ nêu chiều tác động theo %Δ, ghi rõ \"chưa tính spread\"."
         )
-
-    gas_carbon_pw = FUEL_GAS_EF / FUEL_GAS_EFF  # tCO2/MWh điện
-    coal_carbon_pw = FUEL_COAL_EF / FUEL_COAL_EFF
-
-    def _costs(ttf_p: float, api2_p: float, eua_p: float) -> tuple:
-        gas_f = ttf_p / FUEL_GAS_EFF
-        coal_f = api2_p / FUEL_EURUSD / FUEL_COAL_MWH_PER_TONNE / FUEL_COAL_EFF
-        return gas_f, coal_f, gas_f + eua_p * gas_carbon_pw, coal_f + eua_p * coal_carbon_pw
-
-    gas_fuel_pw, coal_fuel_pw, gas_cost, coal_cost = _costs(ttf, api2, eua)
-    spread = gas_cost - coal_cost
-    denom = coal_carbon_pw - gas_carbon_pw
-    switch = (gas_fuel_pw - coal_fuel_pw) / denom if denom else None
+    st = fuel_spread_state(prices)
+    if not st:
+        return "Thiếu dữ liệu giá để tính spread than–khí; KHÔNG tự suy ra."
+    api2_no_trade = any(p.get("no_trade") for p in prices if p.get("code") == "API2")
+    spread, switch = st["spread"], st["switch"]
     switch_txt = (
         f"giá EUA hòa vốn chuyển đổi ≈ {switch:.0f} EUR/t" if switch is not None and switch > 0
         else "than rẻ hơn khí ở MỌI mức giá EUA hợp lý (không có điểm hòa vốn dương)"
     )
-    if spread > 0:
+    if spread > FUEL_NEAR_BREAKEVEN:
         conclusion = (
-            "chuyển đổi khí→than ĐÃ BÃO HÒA (than đã rẻ hơn khí) — điện than đang chạy gần tối đa, phát thải cao → "
-            "HỖ TRỢ MỨC cầu EUA hiện tại (đỡ giá, không phải yếu tố giảm); nhưng TTF tăng thêm KHÔNG còn nâng cầu EUA qua "
-            "kênh fuel switching, chỉ tác động qua chi phí/hedge và có kênh ngược (công nghiệp cắt sản lượng → "
-            "cầu EUA giảm). KHÔNG được viết \"TTF tăng → chuyển sang than → cầu EUA tăng\" và KHÔNG xếp \"TTF tăng\" "
-            "vào động lực tăng/bullish của EUA."
+            "chuyển đổi khí→than ĐÃ BÃO HÒA (than rẻ hơn khí rõ rệt) — điện than đang chạy gần tối đa → HỖ TRỢ MỨC cầu EUA "
+            "hiện tại. Biến động giá MỘT nhiên liệu chưa đủ đổi thứ tự huy động: \"TTF tăng\" KHÔNG phải động lực tăng VÀ "
+            "\"API2 tăng\" KHÔNG phải động lực giảm (cả 2 TRUNG LẬP qua kênh fuel switching — áp dụng ĐỐI XỨNG, không được "
+            "dùng lập luận bão hòa cho chiều này mà bỏ cho chiều kia). Chỉ khi chênh khí − than thu hẹp về sát 0 "
+            f"(< {FUEL_NEAR_BREAKEVEN:.0f} EUR/MWh) mới thành áp lực giảm. Tin làm TTF có rủi ro tăng (gián đoạn cung khí...) "
+            "KHÔNG xếp vào động lực tăng EUA qua kênh này; TTF tăng chỉ tác động qua chi phí/hedge và kênh ngược "
+            "(công nghiệp cắt sản lượng → cầu EUA giảm)."
+        )
+    elif spread >= -FUEL_NEAR_BREAKEVEN:
+        conclusion = (
+            "chênh khí − than SÁT điểm hòa vốn → dispatch NHẠY với giá: TTF tăng / API2 giảm (chênh mở rộng) → than cạnh tranh "
+            "hơn → cầu EUA tăng; TTF giảm / API2 tăng (chênh thu hẹp) → cầu EUA giảm."
         )
     else:
         conclusion = (
-            "khí vẫn rẻ hơn than → dispatch nghiêng về khí; TTF tăng thêm (hoặc API2 giảm) làm than cạnh tranh hơn "
-            "→ cầu EUA tăng; API2 tăng hoặc TTF giảm → cầu EUA giảm."
+            "khí rẻ hơn than rõ rệt → dispatch nghiêng về khí; chỉ khi chênh khí − than tiến về 0 (TTF tăng mạnh hoặc API2 "
+            "giảm mạnh) mới thành hỗ trợ cầu EUA; API2 tăng / TTF giảm thêm KHÔNG đổi thứ tự (trung lập)."
         )
-    return "\n".join([
-        f"Ước tính chi phí phát điện biên (EUR/MWh điện, gồm chi phí EUA {eua:.2f} EUR/t):",
-        f"  - Chạy khí (TTF {ttf:.2f} EUR/MWh, CCGT hiệu suất {FUEL_GAS_EFF:.0%}) ≈ {gas_cost:.0f}.",
-        f"  - Chạy than (API2 CIF ARA {api2:.1f} USD/t, hiệu suất {FUEL_COAL_EFF:.0%}) ≈ {coal_cost:.0f}"
+    lines = [
+        f"Ước tính chi phí phát điện biên (EUR/MWh điện, gồm chi phí EUA {st['eua']:.2f} EUR/t):",
+        f"  - Chạy khí (TTF {st['ttf']:.2f} EUR/MWh, CCGT hiệu suất {FUEL_GAS_EFF:.0%}) ≈ {st['gas_cost']:.0f}.",
+        f"  - Chạy than (API2 CIF ARA {st['api2']:.1f} USD/t, hiệu suất {FUEL_COAL_EFF:.0%}) ≈ {st['coal_cost']:.0f}"
         + (" (API2 phiên này KHÔNG có giao dịch — giá danh nghĩa; ảnh hưởng nhỏ tới kết luận)" if api2_no_trade else "") + ".",
         f"  - Chênh khí − than ≈ {spread:+.0f} EUR/MWh; {switch_txt}.",
-        f"Mô hình chi phí biên chuẩn ngành (than 6.000 kcal/kg, 1 EUR = {FUEL_EURUSD} USD, TTF coi như giá nhiệt) — "
-        f"khi trích dẫn ghi là \"ước tính theo mô hình chi phí biên\" (KHÔNG ghi \"ước tính thô\"/\"chưa kiểm chứng\"); "
-        f"KHÔNG tự tính lại; KHÔNG dùng API4/NEWC cho fuel switching EU.",
+        fuel_model_note(st) + " Khi nêu giá EUA hòa vốn PHẢI ghi \"ước tính theo mô hình chi phí biên, giả định ở chú thích\" "
+        "(giả định đã hiển thị cho người đọc) — KHÔNG tự tính lại; KHÔNG dùng API4/NEWC cho fuel switching EU.",
         f"KẾT LUẬN DÙNG CHUNG (Mục 1, 2, 3 PHẢI cùng kết luận này, không mục nào được nói ngược): {conclusion}",
-        *_fuel_spread_weekly_lines(prices, _costs, spread),
-    ])
-
-
-def _fuel_spread_weekly_lines(prices: List[Dict], costs, spread_now: float) -> List[str]:
-    """Thay đổi chênh khí − than trong TUẦN (giá 1 tuần trước suy từ Δ tuần) + quy tắc xếp chiều: giá than (API2)
-    TĂNG tự thân là yếu tố GIẢM cầu EUA (than kém cạnh tranh đi); chỉ "chênh khí − than MỞ RỘNG" (TTF tăng mạnh
-    hơn API2) mới là yếu tố hỗ trợ — tránh lỗi xếp "API2 tăng" vào động lực tăng giá EUA."""
-    rows = {p.get("code"): p for p in prices}
-    wk = {c: rows.get(c, {}).get("week_change_pct") for c in ("TTF", "API2", "EUA")}
-    closes = {c: rows.get(c, {}).get("close") for c in ("TTF", "API2", "EUA")}
-    rule = (
-        "QUY TẮC XẾP CHIỀU (BẮT BUỘC ở động lực thị trường/instrument_notes/Phân tích): giá than API2 TĂNG tự thân là yếu tố "
-        "GIẢM cầu EUA (lợi thế than so với khí thu hẹp → điện than giảm → phát thải giảm) → nếu nêu riêng \"API2 tăng\" chỉ được "
-        "xếp vào nhóm gây áp lực giảm hoặc trung lập, TUYỆT ĐỐI KHÔNG xếp vào hỗ trợ tăng giá; API2 GIẢM là yếu tố hỗ trợ. "
-        "Yếu tố được xếp hỗ trợ tăng là \"chênh khí − than mở rộng\" (TTF tăng mạnh hơn API2), KHÔNG phải \"giá than tăng\"."
-    )
-    if any(v is None for v in wk.values()) or any(not closes[c] for c in closes):
-        return [rule]
-    try:
-        prev = {c: closes[c] / (1 + wk[c] / 100) for c in closes}
-    except ZeroDivisionError:
-        return [rule]
-    spread_prev = costs(prev["TTF"], prev["API2"], prev["EUA"])[2] - costs(prev["TTF"], prev["API2"], prev["EUA"])[3]
-    delta = spread_now - spread_prev
-    saturated = spread_now > 0  # than đã rẻ hơn khí — điện than gần tối đa
-    also_api2_up = " dù API2 cũng tăng" if wk["API2"] > 0 else ""
-    if abs(delta) < 1:
-        verdict = "gần như không đổi → không có dịch chuyển tương đối đáng kể giữa than và khí"
-    elif delta > 0 and saturated:
-        verdict = (f"MỞ RỘNG → lợi thế của than được CỦNG CỐ{also_api2_up} → giữ MỨC cầu EUA (đỡ giá), KHÔNG tạo thêm "
-                   "lực tăng vì chuyển đổi đã bão hòa")
-    elif delta > 0:
-        verdict = f"MỞ RỘNG → dịch chuyển tương đối CÓ LỢI cho than{also_api2_up} (hỗ trợ cầu EUA)"
-    elif saturated:
-        verdict = "THU HẸP nhưng than vẫn rẻ hơn khí → lợi thế than giảm bớt (áp lực giảm nhẹ lên cầu EUA)"
-    else:
-        verdict = "THU HẸP → dịch chuyển tương đối CÓ LỢI cho khí (áp lực giảm cầu EUA)"
-    return [
-        f"Trong TUẦN: TTF {_vn_num(wk['TTF'], sign=True)}%, API2 {_vn_num(wk['API2'], sign=True)}%, EUA "
-        f"{_vn_num(wk['EUA'], sign=True)}% → chênh khí − than từ ≈ {spread_prev:+.0f} lên ≈ {spread_now:+.0f} EUR/MWh "
-        f"({delta:+.0f}): {verdict}. Tác động RÒNG của nhiên liệu lên EUA tuần này dùng ĐÚNG kết luận này.",
-        rule,
     ]
+    if st["delta"] is not None:
+        wk, delta = st["week_pct"], st["delta"]
+        sat = spread > FUEL_NEAR_BREAKEVEN
+        api2_note = (" → câu kiểu \"API2 tăng thu hẹp lợi thế điện than\" là SAI với số liệu này"
+                     if wk["API2"] > 0 and spread > 0 else "")
+        if abs(delta) < 1:
+            verdict = "gần như không đổi → không có dịch chuyển tương đối đáng kể giữa than và khí"
+        elif delta > 0 and spread > 0:
+            verdict = (f"MỞ RỘNG → lợi thế của than CỦNG CỐ{api2_note}; "
+                       + ("không tạo thêm lực tăng vì đã bão hòa, giữ mức cầu EUA" if sat else "hỗ trợ cầu EUA"))
+        elif delta > 0:
+            verdict = ("khoảng cách khí rẻ hơn than THU HẸP → than cạnh tranh hơn; "
+                       + ("hỗ trợ cầu EUA" if spread >= -FUEL_NEAR_BREAKEVEN else "khí vẫn rẻ hơn rõ rệt nên chưa đổi thứ tự (trung lập)"))
+        elif spread > 0:
+            verdict = ("THU HẸP → lợi thế than giảm bớt; " + ("than vẫn rẻ hơn khí rõ rệt nên chưa đổi thứ tự huy động (áp lực rất nhẹ)"
+                                                              if sat else "áp lực giảm cầu EUA"))
+        else:
+            verdict = ("khí càng rẻ hơn than; " + ("áp lực giảm cầu EUA" if spread >= -FUEL_NEAR_BREAKEVEN
+                                                   else "đã nghiêng hẳn về khí nên không đổi thứ tự (trung lập)"))
+        lines.append(
+            f"Trong TUẦN: TTF {_vn_num(wk['TTF'], sign=True)}%, API2 {_vn_num(wk['API2'], sign=True)}%, EUA "
+            f"{_vn_num(wk['EUA'], sign=True)}% → chênh khí − than từ ≈ {st['spread_prev']:+.0f} lên ≈ {spread:+.0f} EUR/MWh "
+            f"({delta:+.0f}): {verdict}. Tác động RÒNG của nhiên liệu lên EUA tuần này dùng ĐÚNG kết luận này."
+        )
+    lines.append(
+        "QUY TẮC XẾP CHIỀU (BẮT BUỘC ở động lực thị trường/instrument_notes/Diễn biến chính/Phân tích): xếp theo THAY ĐỔI RÒNG "
+        "của chênh khí − than ở trên, KHÔNG theo giá riêng 1 nhiên liệu. \"API2 tăng\" không bao giờ là yếu tố hỗ trợ tăng; "
+        "chỉ được xếp gây áp lực giảm khi chênh THU HẸP và đang sát/dưới điểm hòa vốn."
+    )
+    return "\n".join(lines)
 
 
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
@@ -1596,7 +1664,47 @@ def _dedupe_similar_articles(articles: List[Dict]) -> List[Dict]:
 GASOIL_BBL_PER_TONNE = 7.45
 
 
-def _gasoil_crack_spread_summary(prices: List[Dict], prev_report_close: Optional[Dict[str, float]] = None) -> Optional[str]:
+# Crack spread gasoil–Brent "bình thường" lịch sử ~15–25 USD/bbl; trên mức này biên lọc dầu vẫn dồi dào.
+CRACK_NORMAL_HIGH = 25.0
+CRACK_VERY_HIGH = 40.0
+
+
+async def _crack_spread_history(session: AsyncSession, max_date: str, sessions: int = 60) -> Optional[Dict[str, float]]:
+    """TB / thấp / cao của crack spread gasoil–Brent các phiên gần nhất có đủ 2 giá — để đặt mức hôm nay vào bối cảnh."""
+    rows = (await session.execute(
+        select(Instrument.code, Price.price_date, Price.close_price)
+        .join(Instrument, Price.instrument_id == Instrument.id)
+        .where(Instrument.code.in_(["GASOIL", "BRENT"]), Price.price_date <= max_date)
+        .order_by(desc(Price.price_date))
+        .limit(sessions * 3)
+    )).all()
+    by_date: Dict[str, Dict[str, float]] = {}
+    for code, d, c in rows:
+        by_date.setdefault(d, {})[code] = c
+    cracks = [v["GASOIL"] / GASOIL_BBL_PER_TONNE - v["BRENT"] for d, v in sorted(by_date.items(), reverse=True)
+              if v.get("GASOIL") and v.get("BRENT")][:sessions]
+    if len(cracks) < 5:
+        return None
+    return {"avg": sum(cracks) / len(cracks), "min": min(cracks), "max": max(cracks), "n": len(cracks)}
+
+
+def _gasoil_crack_level_text(spread_today: float, history: Optional[Dict[str, float]]) -> str:
+    level = ("RẤT CAO" if spread_today >= CRACK_VERY_HIGH else "CAO" if spread_today >= CRACK_NORMAL_HIGH else "bình thường/thấp")
+    hist = (f" TB {history['n']} phiên gần nhất {history['avg']:+.2f} (thấp {history['min']:+.2f}, cao {history['max']:+.2f})."
+            if history else "")
+    rule = (
+        " Biên lọc dầu vẫn dồi dào → thu hẹp từ mức này KHÔNG phải lý do nhà máy lọc dầu hạ công suất; KHÔNG suy luận "
+        "\"biên giảm → cắt công suất lọc dầu → giảm phát thải/cầu EUA\"."
+        if spread_today >= CRACK_NORMAL_HIGH else
+        " Chỉ khi crack spread ở mức thấp kéo dài mới có cơ sở nói tới hạ công suất lọc dầu."
+    )
+    return f" MỨC TUYỆT ĐỐI: {level} so với vùng thường gặp ~15–{CRACK_NORMAL_HIGH:.0f} USD/bbl.{hist}{rule}"
+
+
+def _gasoil_crack_spread_summary(
+    prices: List[Dict], prev_report_close: Optional[Dict[str, float]] = None,
+    history: Optional[Dict[str, float]] = None,
+) -> Optional[str]:
     """Ước tính crack spread Gasoil vs Brent — tính bằng Python (quy đổi đơn vị),
     thay vì để LLM tự suy luận từ 2 số liệu khác đơn vị (Gasoil USD/MT, Brent
     USD/bbl), việc rất dễ cho ra kết luận sai vì lệch đơn vị.
@@ -1639,7 +1747,7 @@ def _gasoil_crack_spread_summary(prices: List[Dict], prev_report_close: Optional
         f"Gasoil crack spread vs Brent (ƯỚC TÍNH, quy đổi {GASOIL_BBL_PER_TONNE} thùng/tấn — "
         f"KHÔNG phải số liệu chính thức từ sàn): {spread_today:+.2f} USD/bbl "
         f"(Gasoil {gasoil_bbl:.2f} USD/bbl từ {gasoil['close']:.2f} USD/MT; Brent {brent['close']:.2f} USD/bbl)."
-        f"{trend}"
+        f"{trend}{_gasoil_crack_level_text(spread_today, history)}"
     )
 
 
@@ -2470,6 +2578,41 @@ def _resolve_key_developments(items: Optional[List[Any]], index_lookup: Dict[int
     return resolved
 
 
+
+_DEV_IMPACT_LABEL = {"tăng": "HỖ TRỢ EUA (chỉ được ở cột tăng)", "giảm": "ÁP LỰC EUA (chỉ được ở cột giảm)",
+                     "trung lập": "CHỜ XÁC NHẬN (KHÔNG xếp vào cột tăng lẫn giảm)"}
+_DRIVER_SIDE_IMPACT = {"bullish": "tăng", "bearish": "giảm"}
+
+
+def _dev_verdict_block(dev_impacts: Dict[str, str], index_lookup: Dict[int, Dict]) -> str:
+    """Khối "chiều đã chốt" cho prompt Mục 2/3, đánh theo số [N] của CHÍNH mục đó."""
+    lines = [f"[{n}] {art['title'][:120]} → {_DEV_IMPACT_LABEL[dev_impacts[art['url']]]}"
+             for n, art in index_lookup.items() if art.get("url") in dev_impacts]
+    if not lines:
+        return ""
+    return (
+        "\n\nCHIỀU TÁC ĐỘNG ĐÃ CHỐT Ở \"DIỄN BIẾN CHÍNH\" (BẮT BUỘC — cùng 1 tin KHÔNG được đánh giá khác chiều ở mục này; "
+        "nhắc lại tin này thì dùng đúng chiều dưới đây):\n" + "\n".join(lines)
+    )
+
+
+def _drop_conflicting_drivers(drivers: Dict[str, Any], index_lookup: Dict[int, Dict], dev_impacts: Dict[str, str]) -> Dict[str, Any]:
+    """Bỏ động lực Mục 2 trích CÙNG bài với Diễn biến chính nhưng nằm khác chiều (lưới an toàn sau prompt)."""
+    out = {}
+    for side in ("bullish", "bearish"):
+        kept = []
+        for it in drivers.get(side) or []:
+            art = index_lookup.get(_first_source_index(it.get("source_index"))) if isinstance(it, dict) else None
+            impact = dev_impacts.get(art["url"]) if art else None
+            if impact and impact != _DRIVER_SIDE_IMPACT[side]:
+                logger.warning("[REPORT] Mục 2: bỏ động lực %s trái chiều Diễn biến chính (%s): %s",
+                               side, impact, str(it.get("text"))[:120])
+                continue
+            kept.append(it)
+        out[side] = kept
+    return out
+
+
 def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
     gasoil_crack_spread: str, target_date: str, topics_present: List[str],
@@ -2598,6 +2741,9 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      • Mỗi "Mục tiêu" ghi kèm cơ sở trong ngoặc ngắn (vd "(kháng cự 30 phiên)", "(đo biên độ)", "(+4% so với đóng cửa)"); mục tiêu không nêu được cơ sở → bỏ.
      • Không dùng cụm "không phải khuyến nghị giao dịch" trong nội dung — giao diện đã có lưu ý riêng.
      • Mọi nhãn phần trăm "X (±p% so với đóng cửa Y)" PHẢI tính lại: p = (X / Y − 1) × 100 (vd 78,30 so với 85,84 là −8,78%, KHÔNG phải −5%; −5% từ 85,84 là 81,55) — hệ thống tự tính lại và sửa nhãn sai.
+     • Mục tiêu tính theo % (dạng "X (Y × 0,95)" hoặc "−5% ≈ X") CHỈ được lấy cơ sở Y = giá đóng cửa hiện tại hoặc 1 mốc có trong "MỐC KỸ THUẬT EUA"; MỖI kịch bản CHỈ có 1 mục tiêu — "price_zone" và "**Mục tiêu:**" phải ghi CÙNG con số (bản 17/10 lỗi: Vùng giá 81,14 = 85,41 × 0,95 nhưng Chiến lược 77,95 = 82,05 × 0,95, mốc 82,05 không có trong dữ liệu).
+     • "direction" khác "đi ngang" (nhất là trung/dài hạn) PHẢI dựa trên ≥1 driver ĐÃ xảy ra/đang diễn ra cùng chiều trong dữ liệu/tin hôm nay. Nếu mọi điều kiện kích hoạt của chiều đó CHƯA xảy ra, hoặc số liệu hiện tại đang đi NGƯỢC điều kiện (vd điều kiện "chênh khí − than thu hẹp" trong khi chênh đang mở rộng; chính sách được đánh giá trung lập) → "direction" = "đi ngang", ghi điều kiện đó ở "condition" như ngưỡng chờ kích hoạt.
+     • Lệnh trong "trading_strategy" là LỆNH CHỜ có hiệu lực {forecast_review.ORDER_VALID_SESSIONS} phiên kể từ ngày báo cáo và tự huỷ nếu giá chạm mục tiêu trước khi khớp (hệ thống chấm theo quy tắc này) → đặt vùng Entry trong tầm với của {forecast_review.ORDER_VALID_SESSIONS} phiên (≈ 1–1,5 × ATR quanh giá hiện tại), không đặt quá xa. Với "đi ngang", ghi rõ "đặt lệnh chờ (limit) mua quanh … / bán quanh …".
      • Mức vô hiệu/rủi ro của MỖI kịch bản (key_risk) PHẢI trùng mức cắt lỗ trong "Quản trị rủi ro" của CHÍNH kịch bản đó; "price_zone" và vùng nêu ở "Entry" phải là CÙNG một vùng (không để 82,35–85,84 ở chỗ này và 82,35–85,00 ở chỗ khác).
 
 D. "hedge_action": hành động DUY NHẤT cho SỔ PHÒNG HỘ của SIM hôm nay (người vận hành sổ cần 1 lệnh, không phải 4 tín hiệu). SIM có nghĩa vụ CBAM → đang mang vị thế SHORT carbon tự nhiên → phòng hộ đúng chiều là MUA (long) EUA; TUYỆT ĐỐI KHÔNG khuyến nghị bán khống EUA cho sổ phòng hộ. Object gồm:
@@ -2811,10 +2957,20 @@ def _scenario_math_issues(sec3: Dict[str, Any], chart_data: List[Dict], prices: 
     from services.report_qc import check_scenarios  # import muộn: report_qc import module này
 
     issues = check_scenarios({"2": {"chart_data": chart_data, "prices": prices}, "3": sec3})
+    close = next((p.get("close") for p in prices if str(p.get("code", "")).upper() == "EUA"), None)
     return [
         it["message"] for it in issues
         if it["severity"] in ("error", "warning") and ".trading_strategy" in it.get("field_path", "")
-    ]
+    ] + [it["message"] for it in derived_target_issues(sec3, close, _technical_level_values(chart_data))]
+
+
+def _technical_level_values(chart_data: List[Dict]) -> List[float]:
+    """Các mốc giá có trong "MỐC KỸ THUẬT EUA" — cơ sở hợp lệ cho mục tiêu dạng "(Y × f)"."""
+    if not chart_data:
+        return []
+    hi, lo = max(c["high"] for c in chart_data), min(c["low"] for c in chart_data)
+    near = chart_data[-10:]
+    return [hi, lo, hi + (hi - lo), max(c["high"] for c in near), min(c["low"] for c in near)]
 
 
 async def _revise_scenarios_if_invalid(
@@ -3064,7 +3220,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     eua_volume = _eua_volume_summary(chart_data)
     eua_technical_levels = _eua_technical_levels_summary(chart_data)
     fuel_spread = _fuel_switching_spread_summary(prices)
-    gasoil_crack_spread = _gasoil_crack_spread_summary(prices, prev_report_close) or (
+    gasoil_crack_spread = _gasoil_crack_spread_summary(
+        prices, prev_report_close, await _crack_spread_history(session, max_date) if max_date else None,
+    ) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
     # Ước tính giá CBAM quý đang chạy (VWAP đấu giá EEX + lịch còn lại) — báo cáo CN/T2 không có giá → bỏ.
@@ -3378,8 +3536,19 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 sec_data = await _revise_scenarios_if_invalid(sec_data, system_prompt, user_prompt, chart_data, prices)
             return sec_key, sec_data
 
+    # "Diễn biến chính" chạy TRƯỚC để chốt chiều tác động của từng tin; Mục 2/3 phải dùng đúng chiều đó (bản 17/10:
+    # cùng tin kho khí EU được đánh giá 3 chiều — tăng ở Diễn biến chính, cột giảm ở Mục 2, "kênh ngược" ở Phân tích).
+    dev_entry = next((e for e in SECTIONS if e[0] == "dev"), None)
+    dev_result = await _process_section("dev", *dev_entry[1]) if dev_entry else None
+    dev_resolved = _resolve_key_developments((dev_result[1] if dev_result else {}).get("key_developments"), dev_index_lookup)
+    dev_impacts = {d["source_url"]: d["impact"] for d in dev_resolved}
+    lookups = {"2": section2_index_lookup, "3": section3_index_lookup}
+    SECTIONS = [
+        (k, (sys_p, usr_p + _dev_verdict_block(dev_impacts, lookups[k]) if k in lookups else usr_p))
+        for k, (sys_p, usr_p) in SECTIONS if k != "dev"
+    ]
     tasks = [_process_section(k, sys_p, usr_p) for k, (sys_p, usr_p) in SECTIONS]
-    results = await asyncio.gather(*tasks)
+    results = ([dev_result] if dev_result else []) + list(await asyncio.gather(*tasks))
 
     section2_data: dict = FALLBACKS["2"]
     key_developments: List[Dict] = []
@@ -3426,6 +3595,8 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 p["note"] = f"{p['note']} {llm_note}".strip() if p.get("note") else llm_note
             content["3"] = {k: v for k, v in section_data.items() if k != "instrument_notes"}
             content["3"]["sources"] = _resolve_section3_citations(content["3"], section3_index_lookup)
+            # Giả định mô hình fuel switching hiển thị cho người đọc (dưới Phân tích) để kiểm chứng giá EUA hòa vốn.
+            content["3"]["fuel_model_note"] = fuel_model_note(fuel_spread_state(prices)) if not no_price else ""
             if no_price:
                 # Kịch bản giao dịch cần vùng giá/Entry/Mục tiêu — không có ở ngày không có phiên.
                 content["3"]["trading_scenarios"] = []
@@ -3449,6 +3620,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         return resolved
 
     raw_drivers = section2_data.get("market_drivers") or {"bullish": [], "bearish": []}
+    raw_drivers = _drop_conflicting_drivers(raw_drivers, section2_index_lookup, dev_impacts)
     if no_price:
         # Giữ đủ khoá cũ (rỗng) để frontend/Jenny/Jack QC đọc an toàn; "no_price_data"
         # là cờ để ẩn bảng giá, biểu đồ, thanh giá và khối KHUYẾN NGHỊ VỊ THẾ.

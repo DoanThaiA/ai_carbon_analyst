@@ -15,6 +15,10 @@ function num(n: number | null | undefined, locale: string, sign = false): string
   return locale === "en" ? s : s.replace(".", ",");
 }
 
+function zone(lo: number, hi: number, locale: string): string {
+  return Math.abs(hi - lo) < 0.005 ? num(lo, locale) : `${num(lo, locale)}–${num(hi, locale)}`;
+}
+
 function dm(iso?: string | null): string {
   if (!iso) return "";
   const [, m, d] = iso.split("-");
@@ -75,10 +79,10 @@ export function ForecastReviewCard({
                 </div>
                 {tr && (
                   <div className="tabular-nums text-muted-light">
-                    {t(`trade.${tr.side}`, { low: num(tr.entry_low, locale), high: num(tr.entry_high, locale), stop: num(tr.stop, locale) })}
+                    {t(`trade.${tr.side}`, { zone: zone(tr.entry_low, tr.entry_high, locale), stop: num(tr.stop, locale) })}
                     {tr.target !== null && ` · ${t("trade.target", { target: num(tr.target, locale) })}`}
                     {" → "}
-                    <span className={clsx("font-semibold", tr.status === "stopped" ? "text-down" : tr.status === "target_hit" ? "text-up" : "text-label")}>
+                    <span className={clsx("font-semibold", tr.status === "stopped" ? "text-down" : tr.status === "target_hit" || tr.status === "cancelled_target" ? "text-up" : "text-label")}>
                       {t(`trade.status.${tr.status}`, { date: dm(tr.exit_date || tr.filled_date) })}
                     </span>
                   </div>
@@ -88,6 +92,27 @@ export function ForecastReviewCard({
           );
         })}
       </ul>
+
+      {review.calibration?.some((c) => c.total > 0) && (
+        <div className="px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
+          <span className="font-semibold text-label">{t("calibration")}</span>{" "}
+          {review.calibration
+            .filter((c) => c.total > 0)
+            .map((c) => t("calibrationItem", { probability: enumLabel(c.probability), correct: c.correct, total: c.total }))
+            .join(" · ")}
+        </div>
+      )}
+
+      {review.rules && (
+        <p className="px-3.5 py-2 border-t border-border text-[11.5px] leading-[1.5] text-muted-light">
+          {t("rules", {
+            horizon: review.rules.horizon_sessions,
+            dir: num(review.rules.direction_threshold_pct, locale),
+            side: num(review.rules.sideways_max_pct, locale),
+            valid: review.rules.order_valid_sessions,
+          })}
+        </p>
+      )}
 
       {children && (
         <div className="px-3.5 py-2.5 border-t border-border bg-surface/60">

@@ -149,3 +149,41 @@ def test_older_wrong_forecast_stays_in_table():
         fr._eua_sessions = orig
     assert [it["report_date"] for it in block["items"]] == ["2026-10-16", "2026-10-15", "2026-10-14", "2026-10-13"]
     assert block["items"][-1]["verdict"] == "wrong" and "13/10" in text
+
+
+def _s(rows):
+    return [dict(date=d, open=o, high=h, low=l, close=c) for d, o, h, l, c in rows]
+
+
+def test_0910_target_before_fill_cancels_order():
+    # Bản 09/10: mua 85,50–86,30, mục tiêu 88,50; EUA lên 88,82 ngày 12/10 trước khi chạm vùng mua.
+    sc = {"direction": "tăng", "probability": "Cao",
+          "trading_strategy": "**Entry:** Mua quanh 85,50–86,30\n**Mục tiêu:** 88,50\n**Quản trị rủi ro:** Cắt lỗ dưới 85,00"}
+    it = fr.evaluate_forecast("2026-10-09", sc, 86.5, _s([
+        ("2026-10-09", 86.4, 87.6, 86.9, 87.4), ("2026-10-12", 87.5, 88.82, 87.3, 88.34),
+        ("2026-10-15", 86.87, 86.87, 85.37, 85.84), ("2026-10-16", 85.8, 86.1, 84.9, 85.41),
+    ]))
+    assert it["trade"]["status"] == "cancelled_target" and it["trade"]["exit_date"] == "2026-10-12"
+    assert it["verdict"] == "correct" and fr.open_trades({"items": [it]}) == []
+
+
+def test_order_expires_after_valid_sessions():
+    sc = {"direction": "tăng", "trading_strategy": "**Entry:** Mua quanh 80\n**Mục tiêu:** 95\n**Quản trị rủi ro:** Cắt lỗ dưới 78"}
+    rows = [(f"d{i}", 86, 87, 85, 86) for i in range(fr.ORDER_VALID_SESSIONS + 2)]
+    t = fr.evaluate_forecast("d0", sc, 86, _s(rows))["trade"]
+    assert t["status"] == "expired" and t["exit_date"] == f"d{fr.ORDER_VALID_SESSIONS}"
+
+
+def test_calibration_counts_only_final_verdicts():
+    calib = fr.calibration_from([
+        {"probability": "Cao", "verdict": "wrong"}, {"probability": "Cao", "verdict": "wrong"},
+        {"probability": "Trung bình", "verdict": "correct"}, {"probability": "Trung bình", "verdict": "diverging"},
+    ])
+    assert calib[0] == {"probability": "Cao", "correct": 0, "total": 2}
+    assert calib[1] == {"probability": "Trung bình", "correct": 1, "total": 1}
+    text = fr.describe_for_prompt({"items": [], "calibration": calib})
+    assert "Cao 0/2" in text and "Thấp" not in text
+
+
+def test_degenerate_zone_printed_as_single_level():
+    assert fr._zone(88.82, 88.82) == "88,82" and fr._zone(87.0, 87.5) == "87,00–87,50"

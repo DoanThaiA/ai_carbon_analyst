@@ -115,6 +115,7 @@ def run_all(c, db_prices=DB_PRICES, latest=PRICE_DATE, known=None, suggestions=S
         + report_qc.check_instrument_labels(c)
         + report_qc.check_hedge_action(c)
         + report_qc.check_consistency(c)
+        + report_qc.check_dev_driver_consistency(c)
         + news_issues
     )
 
@@ -796,9 +797,33 @@ def test_fuel_spread_weekly_shift_and_direction_rule():
               {"code": "EUA", "close": 85.84, "week_change_pct": -1.20},
               {"code": "API2", "close": 149.2, "week_change_pct": 2.19}]
     text = rg._fuel_switching_spread_summary(prices)
-    assert "TTF +9,62%, API2 +2,19%" in text and "CỦNG CỐ dù API2 cũng tăng" in text
-    assert "KHÔNG tạo thêm lực tăng" in text  # đã bão hòa
-    assert "API2 TĂNG tự thân là yếu tố GIẢM cầu EUA" in text
+    assert "TTF +9,62%, API2 +2,19%" in text and "lợi thế của than CỦNG CỐ" in text
+    assert "\"API2 tăng thu hẹp lợi thế điện than\" là SAI" in text
+    assert "không tạo thêm lực tăng" in text  # đã bão hòa
+    # Bão hòa áp dụng ĐỐI XỨNG: TTF tăng không là động lực tăng, API2 tăng không là áp lực giảm.
+    assert "\"API2 tăng\" KHÔNG phải động lực giảm" in text and "\"TTF tăng\" KHÔNG phải động lực tăng" in text
+    assert "Giả định mô hình" in text and "1 EUR = 1,15 USD" in text
+
+
+def _fuel_content(bullish=(), bearish=()):
+    c = g()
+    c["2"]["prices"] = [
+        {"code": "TTF", "close": 86.43, "week_change_pct": 9.62},
+        {"code": "EUA", "close": 85.84, "week_change_pct": -1.20},
+        {"code": "API2", "close": 149.2, "week_change_pct": 2.19},
+    ]
+    c["2"]["market_drivers"] = {"bullish": [{"text": t} for t in bullish], "bearish": [{"text": t} for t in bearish]}
+    return c
+
+
+def test_jack_fuel_direction_symmetric_when_saturated():
+    issues = report_qc.check_fuel_direction(_fuel_content(
+        bullish=["Estonia: nguy cơ gián đoạn nguồn cung khí đẩy TTF tăng"],
+        bearish=["API2 tăng 2,19% trong tuần, thu hẹp lợi thế điện than"],
+    ))
+    assert len(issues) == 2, msgs(issues)
+    assert "MỞ RỘNG" in issues[1]["message"] and "bão hòa" in issues[0]["message"]
+    assert report_qc.check_fuel_direction(_fuel_content(bullish=["Chênh khí − than mở rộng, TTF tăng mạnh hơn API2"])) == []
 
 
 # ── Nhất quán số học / 1 hành động phòng hộ (bản chấm 16/10/2026) ─────
@@ -876,3 +901,37 @@ def test_section6_split_by_subject():
     ])
     assert [a["url"] for a in intl] == ["a", "c"] and [a["url"] for a in vn] == ["b"]
     assert "about_vietnam" not in intl[0]
+
+
+def test_same_news_cannot_have_two_directions():
+    c = g()  # GOLDEN: A2 ở Diễn biến chính "giảm"
+    c["2"]["market_drivers"]["bullish"].append({"tag": "FACT", "text": "Kho khí EU đầy → than", "source_url": A2})
+    issues = report_qc.check_dev_driver_consistency(c)
+    assert len(issues) == 1 and "2 chiều" in issues[0]["message"]
+
+
+def test_generator_drops_conflicting_driver_and_builds_verdict_block():
+    from services.report_generator import _dev_verdict_block, _drop_conflicting_drivers
+
+    lookup = {1: {"url": "u1", "title": "Kho khí EU"}, 2: {"url": "u2", "title": "Khác"}}
+    impacts = {"u1": "tăng"}
+    out = _drop_conflicting_drivers(
+        {"bullish": [{"text": "a", "source_index": 1}], "bearish": [{"text": "b", "source_index": 1}, {"text": "c", "source_index": 2}]},
+        lookup, impacts,
+    )
+    assert [d["text"] for d in out["bullish"]] == ["a"] and [d["text"] for d in out["bearish"]] == ["c"]
+    assert "[1] Kho khí EU → HỖ TRỢ EUA" in _dev_verdict_block(impacts, lookup)
+
+
+def test_streak_and_derived_targets_flagged():
+    c = g()
+    c["2"]["chart_data"] = [{"date": d, "close": v, "high": v + 0.5, "low": v - 0.5} for d, v in
+                            [("2026-10-12", 88.34), ("2026-10-13", 88.05), ("2026-10-14", 87.14),
+                             ("2026-10-15", 85.84), ("2026-10-16", 79.2)]]
+    c["2"]["market_drivers"]["bearish"][0]["text"] = "EUA giảm phiên thứ hai liên tiếp."
+    c["3"]["trading_scenarios"][1]["price_zone"] = "Mục tiêu 75,24 (79,20 × 0,95)"
+    c["3"]["trading_scenarios"][1]["trading_strategy"] = (
+        "**Entry:** Mua quanh 75, bán quanh 83\n**Mục tiêu:** 82 / 77,95 (82,05 × 0,95)\n**Quản trị rủi ro:** Cắt lỗ dưới 73 hoặc trên 85"
+    )
+    text = msgs(report_qc.check_consistency(c))
+    assert "thực tế giảm 4 phiên liên tiếp" in text and "cơ sở 82,05" in text and "2 mục tiêu khác nhau" in text

@@ -58,7 +58,7 @@ export interface ForecastReviewItem {
     entry_high: number;
     stop: number;
     target: number | null;
-    status: "not_filled" | "open" | "stopped" | "target_hit";
+    status: "not_filled" | "open" | "stopped" | "target_hit" | "expired" | "cancelled_target";
     filled_date: string | null;
     fill_price?: number | null;
     exit_date: string | null;
@@ -89,6 +89,9 @@ export interface OpenPosition {
 export interface ForecastReview {
   items: ForecastReviewItem[];
   wrong_in_row: number;
+  // Báo cáo cũ không có 2 trường dưới.
+  calibration?: { probability: string; correct: number; total: number }[];
+  rules?: { horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number };
 }
 
 export interface ReportSummary {
