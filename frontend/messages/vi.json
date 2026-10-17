@@ -601,7 +601,7 @@
     "position": {
       "up": "MUA (LONG) — theo xu hướng ngắn hạn",
       "down": "BÁN (SHORT) — theo xu hướng ngắn hạn",
-      "sideways": "ĐI NGANG — đặt lệnh chờ (limit) tại vùng Entry bên dưới, chưa vào lệnh ngay"
+      "sideways": "ĐI NGANG — chỉ đặt lệnh chờ (limit)"
     },
     "ladder": {
       "current": "Hiện tại {price}",

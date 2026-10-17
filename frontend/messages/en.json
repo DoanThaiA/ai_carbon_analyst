@@ -601,7 +601,7 @@
     "position": {
       "up": "BUY (LONG) — following the short-term trend",
       "down": "SELL (SHORT) — following the short-term trend",
-      "sideways": "RANGE — place pending (limit) orders at the Entry zone below, do not enter now"
+      "sideways": "RANGE — limit orders only"
     },
     "ladder": {
       "current": "Current {price}",

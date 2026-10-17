@@ -46,7 +46,9 @@ export function ForecastReviewCard({
   const locale = useLocale();
 
   return (
-    <div className="rounded-lg border border-border bg-white overflow-hidden print:break-inside-avoid [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+    // Khi in: KHÔNG giữ nguyên khối (bảng dài, có calibration/quy tắc chấm → không vừa phần còn lại của trang thì bị đẩy
+    // nguyên sang trang sau, để trống trang trước) — chỉ giữ không cắt đôi từng dòng/từng phần.
+    <div className="rounded-lg border border-border bg-white overflow-hidden print:overflow-visible [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-surface border-b border-border">
         <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label">{t("title")}</h3>
         {review.wrong_in_row >= 2 && (
@@ -58,7 +60,7 @@ export function ForecastReviewCard({
         {review.items.map((it) => {
           const tr = it.trade;
           return (
-            <li key={it.report_date} className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
+            <li key={it.report_date} className="print:break-inside-avoid px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
               <span className={clsx("self-start shrink-0 font-mono text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
                 {t(`verdict.${it.verdict}`)}
               </span>
@@ -94,7 +96,7 @@ export function ForecastReviewCard({
       </ul>
 
       {review.calibration?.some((c) => c.total > 0) && (
-        <div className="px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
+        <div className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
           <span className="font-semibold text-label">{t("calibration")}</span>{" "}
           {review.calibration
             .filter((c) => c.total > 0)
@@ -104,7 +106,7 @@ export function ForecastReviewCard({
       )}
 
       {review.rules && (
-        <p className="px-3.5 py-2 border-t border-border text-[11.5px] leading-[1.5] text-muted-light">
+        <p className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[11.5px] leading-[1.5] text-muted-light">
           {t("rules", {
             horizon: review.rules.horizon_sessions,
             dir: num(review.rules.direction_threshold_pct, locale),

@@ -467,17 +467,18 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
 
         {/* ═══ Vị thế khuyến nghị (theo chiều kịch bản ngắn hạn) + Vùng giá tham chiếu (price_zone) ═══ */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-2 px-4 sm:px-6 py-2.5 bg-tint border-b border-primary/10 text-[13px] sm:text-[14px] text-body [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+          {/* min-w-0 + xuống dòng: nhãn vị thế dài không được đẩy thẻ rộng quá khổ trang khi in/xuất PDF */}
           {position && (
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark">{t("signal.position")}</span>
-              <strong className={clsx("font-extrabold", trendMeta?.className)}>{position}</strong>
+            <div className="flex items-baseline gap-2 min-w-0 sm:max-w-[50%]">
+              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0">{t("signal.position")}</span>
+              <strong className={clsx("font-extrabold break-words", trendMeta?.className)}>{position}</strong>
             </div>
           )}
           {signal.price_zone && (
             <div className="flex items-start gap-2 min-w-0 sm:border-l sm:border-primary/15 sm:pl-6">
               <Compass size={15} strokeWidth={2.5} className="shrink-0 mt-0.5 text-primary-dark" aria-hidden="true" />
               <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0 mt-[3px]">{t("signal.priceZone")}</span>
-              <span><HighlightNumbers text={signal.price_zone} /></span>
+              <span className="min-w-0 break-words"><HighlightNumbers text={signal.price_zone} /></span>
             </div>
           )}
         </div>
@@ -1858,7 +1859,9 @@ export function ReportDocument({
           {euaVerdict && (
             <div
               className={clsx(
-                "report-heading rounded-lg px-3.5 py-3 shadow-sm [&_strong]:text-inherit [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+                // KHÔNG dùng "report-heading" (break-after: avoid khi in) — khung này dính vào bảng dự báo phía
+                // sau, bảng dài không vừa trang thì cả 2 bị đẩy sang trang mới, để trống gần hết 1 trang.
+                "print:break-inside-avoid rounded-lg px-3.5 py-3 shadow-sm [&_strong]:text-inherit [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
                 EUA_SENTIMENT_STYLE[euaVerdict.sentiment].box
               )}
             >
