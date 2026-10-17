@@ -241,11 +241,25 @@ hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cá
 phải sửa cả bên kia. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
 
+**Tự sửa số học/trình bày** (`services/report_consistency.py`, hàm thuần): cuối `generate_report_content` chạy
+`apply_consistency_fixes` trên toàn bộ văn xuôi (bỏ qua `SKIP_KEYS`): tính lại nhãn "X (±p% so với đóng cửa Y)" (và
+"±p% ≈ X" trong kịch bản EUA) → sửa nhãn, giữ mức giá; sửa "nửa trên/dưới biên độ A–B", "X (giữa biên)" theo vị trí thật;
+gộp vùng độ rộng 0, đổi "85.84"→"85,84", "5 October 2026"→"05/10/2026". Jack dùng lại qua `check_consistency`. Prompt
+nhận sẵn vị trí trong biên 30 phiên (`describe_range_position`) và hình dạng phiên (`_eua_session_shape`: biên độ so ATR,
+gap, một chiều vs đảo chiều). Mục 3 trả 1 `hedge_action` DUY NHẤT (`buy_now|buy_scheduled|hold|defer` + text, đối chiếu
+thẻ CBAM) thay cho `hedge_note` từng kịch bản (bị xoá khi sinh; báo cáo cũ vẫn hiển thị), và `open_positions` = lệnh
+mô phỏng đang mở (`forecast_review.open_trades`) + quyết định `keep|move|close` của LLM (`merge_open_positions`) — Jack
+`check_hedge_action`. Tin Mục 3 đánh số [N]; watchpoint "Cần theo dõi" không có `[N]`/`[giá]` bị xoá
+(`_resolve_section3_citations`), nguồn đã trích vào `content["3"].sources` → Mục 9. Mục 6 chia VIỆT NAM/QUỐC TẾ theo
+`about_vietnam` của bản tóm tắt (chủ đề bài), không theo region nguồn. Δ tuyệt đối ở bảng giá tính từ giá đóng cửa kỳ
+so sánh trong DB (`_comparison_closes`), không suy ngược từ % đã làm tròn.
+
 **Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
 chấm `REVIEW_MAX_REPORTS` báo cáo gần nhất có kịch bản ngắn hạn (còn trong `REVIEW_MAX_SESSIONS` phiên): %Δ EUA luỹ kế từ giá
-báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi biên độ phiên chạm vùng Entry; phiên khớp chỉ xét giá đóng cửa;
-1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ) → chạm cắt lỗ = SAI, chạm mục tiêu = ĐÚNG, còn lại theo chiều %Δ. Jack
+báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi biên độ phiên chạm vùng Entry, lệnh giới hạn mở gap qua vùng khớp tại giá mở;
+phiên khớp chỉ xét giá đóng cửa; 1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ) → chạm cắt lỗ = SAI, chạm mục tiêu =
+ĐÚNG, còn lại theo chiều %Δ — chưa hết `REVIEW_MAX_SESSIONS` phiên thì chỉ là `on_track`/`diverging`. Jack
 `check_forecast_review`: có dự báo SAI mà `vs_previous` trống → error, không nhắc ngày báo cáo sai → warning.
 
 **Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,

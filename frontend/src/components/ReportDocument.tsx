@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
-import type { Report } from "@/lib/types";
+import type { HedgeAction, OpenPosition, Report } from "@/lib/types";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
@@ -353,8 +353,9 @@ function KpiBox({ label, value, sub, className }: { label: string; value: string
 
 interface TechnicalLevels { support: number; resistance: number; target: number }
 
-function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: {
+function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, hedgeAction, openPositions }: {
   signal: any; midTermSignal?: any; technicalLevels: TechnicalLevels | null; lastClose?: number;
+  hedgeAction?: HedgeAction | null; openPositions?: OpenPosition[];
 }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
@@ -549,18 +550,53 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose }: 
           </div>
         </div>
 
-        {/* ═══ Sổ phòng hộ SIM — Entry/Mục tiêu ở trên là cho bàn giao dịch ═══ */}
-        {signal.hedge_note && (
+        {/* ═══ Sổ phòng hộ SIM — Entry/Mục tiêu ở trên là cho bàn giao dịch. 1 hành động duy nhất
+            (content["3"].hedge_action); báo cáo cũ chưa có → hedge_note của kịch bản ngắn hạn. ═══ */}
+        {(hedgeAction || signal.hedge_note) && (
           <div className="px-4 sm:px-6 py-3.5 flex items-start gap-2.5 border-t border-primary/10">
             <div className="mt-0.5 shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
               <ShieldCheck size={14} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
             </div>
             <div className="min-w-0">
-              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">{t("signal.hedge")}</h4>
+              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">
+                {t("signal.hedge")}
+                {hedgeAction && (
+                  <span className="ml-2 inline-block rounded border border-primary/30 bg-tint px-1.5 py-px text-[10px] sm:text-[11px] tracking-wider">
+                    {t(`signal.hedgeAction.${hedgeAction.action}`)}
+                  </span>
+                )}
+              </h4>
               <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
-                <HighlightNumbers text={signal.hedge_note} />
+                <HighlightNumbers text={hedgeAction?.text || signal.hedge_note} />
               </p>
             </div>
+          </div>
+        )}
+
+        {/* ═══ Đối chiếu lệnh đang mở của các báo cáo trước với mức giá mới ═══ */}
+        {openPositions && openPositions.length > 0 && (
+          <div className="px-4 sm:px-6 py-3.5 border-t border-primary/10 bg-[#f8faf9] [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+            <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-1.5">{t("signal.openPositions")}</h4>
+            <ul className="space-y-1.5 text-[13px] sm:text-[14px] leading-[1.6] text-body">
+              {openPositions.map(pos => (
+                <li key={pos.report_date}>
+                  <span className={clsx(
+                    "mr-2 inline-block rounded border px-1.5 py-px text-[10px] sm:text-[11px] font-bold tracking-wider",
+                    pos.decision ? "border-primary/30 text-primary-dark" : "border-down/30 text-down",
+                  )}>
+                    {t(`signal.decision.${pos.decision ?? "none"}`)}
+                  </span>
+                  <span className="font-semibold">
+                    {t("signal.openPosition", {
+                      side: t(pos.side === "buy" ? "signal.buy" : "signal.sell"),
+                      low: fp(pos.entry_low), high: fp(pos.entry_high), stop: fp(pos.stop),
+                      date: pos.report_date.split("-").reverse().slice(0, 2).join("/"),
+                    })}
+                  </span>
+                  {pos.text && <>{" — "}<HighlightNumbers text={pos.text} /></>}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
@@ -2048,6 +2084,8 @@ export function ReportDocument({
               midTermSignal={midTermSignal}
               technicalLevels={technicalLevels}
               lastClose={chartData.length ? chartData[chartData.length - 1].close : undefined}
+              hedgeAction={report.content["3"]?.hedge_action}
+              openPositions={report.content["3"]?.open_positions}
             />
           )}
 

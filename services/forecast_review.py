@@ -5,9 +5,13 @@ Tính bằng Python từ OHLC EUA (không để LLM tự chấm): với mỗi b�
 nhất có kịch bản ngắn hạn (còn trong khung ngắn hạn REVIEW_MAX_SESSIONS phiên):
   - %Δ luỹ kế từ giá EUA báo cáo đó in (giá tham chiếu) tới phiên mới nhất → chiều dự báo đúng/sai;
   - mô phỏng lệnh của thẻ chiến lược (services/strategy_levels.py): khớp khi biên độ phiên chạm vùng Entry;
-    sau đó chạm cắt lỗ / mục tiêu theo đáy-đỉnh phiên. Riêng PHIÊN KHỚP LỆNH chỉ xét giá ĐÓNG CỬA (nến ngày
-    không cho biết thứ tự trong phiên); 1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ (thận trọng);
-  - kết luận: chạm cắt lỗ → SAI, chạm mục tiêu → ĐÚNG, còn lại theo chiều %Δ luỹ kế.
+    lệnh GIỚI HẠN ("mua quanh 87,0–87,5") mà phiên mở gap qua hẳn vùng theo chiều có lợi (mở 86,87, cả phiên
+    dưới 87,0) vẫn khớp, tại giá mở; lệnh chờ phá vỡ ("mua khi đóng cửa trên X") thì không. Sau đó chạm cắt
+    lỗ / mục tiêu theo đáy-đỉnh phiên. Riêng PHIÊN KHỚP LỆNH chỉ xét giá ĐÓNG CỬA (nến ngày không cho biết
+    thứ tự trong phiên); 1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ (thận trọng);
+  - kết luận: chạm cắt lỗ → SAI, chạm mục tiêu → ĐÚNG; còn lại theo chiều %Δ luỹ kế — nhưng CHƯA hết khung
+    REVIEW_MAX_SESSIONS phiên thì chỉ là "ĐANG LỆCH"/"ĐANG ĐÚNG HƯỚNG" (dự báo 1–2 tuần không bị chấm SAI
+    sau 1 phiên).
 Bảng gồm REVIEW_MAX_REPORTS báo cáo gần nhất + báo cáo cũ hơn bị chấm SAI còn trong khung (tối đa REVIEW_MAX_ITEMS) —
 vd báo cáo 17/10 vẫn hiện bản 13/10 sai dù 3 bản gần nhất là 14, 15, 16/10.
 Kết quả là dữ liệu thuần (số + enum ASCII; direction/probability giữ giá trị gốc tiếng Việt — khoá được
@@ -52,15 +56,26 @@ def simulate_trade(direction: str, levels: Optional[Dict[str, Any]], sessions: S
     if not zone or stop is None:
         return None
     lo, hi = min(zone), max(zone)
+    limit_order = not levels.get("entry_breakout")
     trade: Dict[str, Any] = {
         "side": "buy" if long else "sell", "entry_low": lo, "entry_high": hi, "stop": stop, "target": target,
-        "status": "not_filled", "filled_date": None, "exit_date": None, "exit_price": None,
+        "status": "not_filled", "filled_date": None, "fill_price": None, "exit_date": None, "exit_price": None,
     }
     for s in sessions:
         high, low, close = _hl(s)
         if trade["status"] == "not_filled":
-            if low <= hi and high >= lo:
+            touched = low <= hi and high >= lo
+            # Giá đi qua hẳn vùng theo chiều có lợi (mua: cả phiên dưới vùng; bán: cả phiên trên vùng).
+            gapped = limit_order and (high < lo if long else low > hi)
+            if touched or gapped:
+                open_p = s.get("open")
                 trade["status"], trade["filled_date"] = "open", s["date"]
+                if gapped:
+                    trade["fill_price"] = round(float(open_p if open_p is not None else (high if long else low)), 2)
+                elif open_p is not None and (lo <= open_p <= hi):
+                    trade["fill_price"] = round(float(open_p), 2)
+                else:
+                    trade["fill_price"] = hi if long else lo
                 hit_stop = close <= stop if long else close >= stop
                 hit_target = target is not None and (close >= target if long else close <= target)
             else:
@@ -77,7 +92,15 @@ def simulate_trade(direction: str, levels: Optional[Dict[str, Any]], sessions: S
     return trade
 
 
-def direction_verdict(direction: str, change_pct: float) -> str:
+def direction_verdict(direction: str, change_pct: float, final: bool = True) -> str:
+    """`final=False` (chưa hết khung ngắn hạn) → "on_track"/"diverging" thay cho "correct"/"wrong"."""
+    verdict = _direction_verdict(direction, change_pct)
+    if not final:
+        return {"correct": "on_track", "wrong": "diverging"}.get(verdict, verdict)
+    return verdict
+
+
+def _direction_verdict(direction: str, change_pct: float) -> str:
     if direction == "đi ngang":
         return "correct" if abs(change_pct) < SIDEWAYS_MAX_PCT else "wrong"
     sign = 1 if direction == "tăng" else -1 if direction == "giảm" else 0
@@ -105,7 +128,7 @@ def evaluate_forecast(
     elif trade and trade["status"] == "target_hit":
         verdict = "correct"
     else:
-        verdict = direction_verdict(direction, change_pct)
+        verdict = direction_verdict(direction, change_pct, final=len(sessions) >= REVIEW_MAX_SESSIONS)
     return {
         "report_date": report_date,
         "direction": direction,
@@ -144,7 +167,10 @@ async def _eua_sessions(session: AsyncSession, start: str, end: str) -> List[Dic
         .where(Instrument.code == "EUA", Price.price_date >= start, Price.price_date <= end)
         .order_by(Price.price_date)
     )).scalars().all()
-    return [{"date": p.price_date, "high": p.high_price, "low": p.low_price, "close": p.close_price} for p in rows]
+    return [
+        {"date": p.price_date, "open": p.open_price, "high": p.high_price, "low": p.low_price, "close": p.close_price}
+        for p in rows
+    ]
 
 
 async def build_forecast_review(session: AsyncSession, report_date: str, data_date: str) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -204,7 +230,10 @@ TRADE_STATUS_VI = {
     "not_filled": "lệnh chưa khớp", "open": "lệnh đã khớp, đang mở",
     "stopped": "lệnh đã CHẠM CẮT LỖ", "target_hit": "lệnh đã chạm mục tiêu",
 }
-VERDICT_VI = {"correct": "ĐÚNG", "wrong": "SAI", "unclear": "chưa rõ"}
+VERDICT_VI = {
+    "correct": "ĐÚNG", "wrong": "SAI", "unclear": "chưa rõ",
+    "on_track": "ĐANG ĐÚNG HƯỚNG (chưa hết khung 1–2 tuần)", "diverging": "ĐANG LỆCH (chưa hết khung 1–2 tuần — chưa kết luận sai)",
+}
 
 
 def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict[str, str]] = None) -> str:
@@ -222,7 +251,9 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
                 f"; lệnh {side} {_vn(t['entry_low'])}–{_vn(t['entry_high'])}, cắt lỗ {_vn(t['stop'])}"
                 + (f", mục tiêu {_vn(t['target'])}" if t.get("target") is not None else "")
                 + f" → {TRADE_STATUS_VI[t['status']]}"
-                + (f" ngày {_dm(t['exit_date'])}" if t.get("exit_date") else f" (khớp {_dm(t['filled_date'])})" if t.get("filled_date") else "")
+                + (f" ngày {_dm(t['exit_date'])}" if t.get("exit_date") else "")
+                + (f" (khớp {_dm(t['filled_date'])}" + (f" tại {_vn(t['fill_price'])}" if t.get("fill_price") is not None else "") + ")"
+                   if t.get("filled_date") else "")
             )
         lines.append(
             f"- Báo cáo {_dm(it['report_date'])}: dự báo ngắn hạn \"{it['direction']}\" (xác suất {it['probability']}); EUA "
@@ -234,3 +265,44 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
     if block.get("wrong_in_row", 0) >= 2:
         lines.append(f"⚠ {block['wrong_in_row']} báo cáo LIÊN TIẾP dự báo sai.")
     return "\n".join(lines)
+
+
+def open_trades(block: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Lệnh mô phỏng đã khớp và CHƯA chạm cắt lỗ/mục tiêu — báo cáo mới phải nói giữ/dời/đóng (Mục 3 open_positions)."""
+    return [
+        {**it["trade"], "report_date": it["report_date"]}
+        for it in (block or {}).get("items") or []
+        if isinstance(it.get("trade"), dict) and it["trade"].get("status") == "open"
+    ]
+
+
+def describe_open_trades(trades: List[Dict[str, Any]]) -> str:
+    lines = []
+    for t in trades:
+        side = "Mua" if t["side"] == "buy" else "Bán"
+        lines.append(
+            f"- report_date {t['report_date']}: {side} {_vn(t['entry_low'])}–{_vn(t['entry_high'])}, khớp {_dm(t['filled_date'])}"
+            + (f" tại {_vn(t['fill_price'])}" if t.get("fill_price") is not None else "")
+            + f", cắt lỗ {_vn(t['stop'])}" + (f", mục tiêu {_vn(t['target'])}" if t.get("target") is not None else "")
+        )
+    return "\n".join(lines)
+
+
+OPEN_POSITION_DECISIONS = ("keep", "move", "close")
+
+
+def merge_open_positions(trades: List[Dict[str, Any]], llm_items: Any) -> List[Dict[str, Any]]:
+    """Ghép số liệu lệnh (Python) với quyết định LLM theo report_date. Lệnh LLM bỏ sót → decision None (Jack QC báo)."""
+    by_date = {
+        str(it.get("report_date")): it for it in (llm_items if isinstance(llm_items, list) else [])
+        if isinstance(it, dict) and it.get("decision") in OPEN_POSITION_DECISIONS and str(it.get("text") or "").strip()
+    }
+    out = []
+    for t in trades:
+        d = by_date.get(t["report_date"])
+        out.append({
+            "report_date": t["report_date"], "side": t["side"], "entry_low": t["entry_low"], "entry_high": t["entry_high"],
+            "filled_date": t["filled_date"], "fill_price": t.get("fill_price"), "stop": t["stop"], "target": t.get("target"),
+            "decision": d["decision"] if d else None, "text": str(d["text"]).strip() if d else "",
+        })
+    return out

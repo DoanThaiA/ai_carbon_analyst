@@ -59,6 +59,8 @@ GOLDEN = {
              "price_zone": "75–90", "key_risk": "...",
              "trading_strategy": "**Entry:** Mua quanh 75–76\n**Mục tiêu:** 85 (kháng cự 30 phiên)\n**Quản trị rủi ro:** Cắt lỗ dưới 72"},
         ],
+        "hedge_action": {"action": "defer", "text": "Hoãn mua phòng hộ, chờ vùng 75,5–76 (hỗ trợ 30 phiên)."},
+        "open_positions": [],
     },
     "4": {"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": [{"text": "**VCM:** ...", "source_name": None, "source_url": None}]},
     "6": {"title": "Chi tiết các tin tức chính",
@@ -111,6 +113,8 @@ def run_all(c, db_prices=DB_PRICES, latest=PRICE_DATE, known=None, suggestions=S
         + report_qc.check_biz(c, suggestions, CODES, c["2"]["prices"], REPORT_DATE)
         + report_qc.check_facts(c, ARTICLE_TEXTS)
         + report_qc.check_instrument_labels(c)
+        + report_qc.check_hedge_action(c)
+        + report_qc.check_consistency(c)
         + news_issues
     )
 
@@ -573,7 +577,8 @@ def test_prompts_render():
     _, biz = rg._prompt_biz_recommendation("[1] tin", "giá", "xu hướng", "2026-10-15", valid_codes="EUA")
     assert "97,5%" in biz and "phát thải TRỰC TIẾP" in biz and "qtd_avg" in biz
     _, s3 = rg._prompt_section3("[1] tin", "giá", "xu hướng", "biên độ", "crack", "2026-10-15", [])
-    assert "hedge_note" in s3 and "vs_previous" in s3 and "Chỉ thị (EU) 2023/959" in s3
+    assert "hedge_action" in s3 and "open_positions" in s3 and "vs_previous" in s3 and "Chỉ thị (EU) 2023/959" in s3
+    assert '"hedge_note": "..."' not in s3
     _, s1 = rg._prompt_section1("[1] tin", "giá", "xu hướng", "biên độ", "2026-10-15", fuel_spread="KẾT LUẬN DÙNG CHUNG: x")
     assert "KẾT LUẬN DÙNG CHUNG" in s1
 
@@ -794,3 +799,80 @@ def test_fuel_spread_weekly_shift_and_direction_rule():
     assert "TTF +9,62%, API2 +2,19%" in text and "CỦNG CỐ dù API2 cũng tăng" in text
     assert "KHÔNG tạo thêm lực tăng" in text  # đã bão hòa
     assert "API2 TĂNG tự thân là yếu tố GIẢM cầu EUA" in text
+
+
+# ── Nhất quán số học / 1 hành động phòng hộ (bản chấm 16/10/2026) ─────
+
+
+def test_wrong_pct_label_is_flagged_and_auto_fixed():
+    from services.report_consistency import apply_consistency_fixes
+
+    c = g()
+    c["3"]["trading_scenarios"][1]["trading_strategy"] = (
+        "**Entry:** Bán quanh 79,0\n**Mục tiêu:** 72,26 (-5% so với đóng cửa 79,20)\n**Quản trị rủi ro:** Cắt lỗ trên 81,0"
+    )
+    issues = report_qc.check_consistency(c)
+    assert any(i["severity"] == "error" and "-8,8%" in i["message"] and "75,24" in i["message"] for i in issues), msgs(issues)
+    fixed = apply_consistency_fixes(c)
+    assert fixed and "72,26 (-8,8% so với đóng cửa 79,20)" in c["3"]["trading_scenarios"][1]["trading_strategy"]
+    assert report_qc.check_consistency(c) == []
+
+
+def test_range_half_claim_is_recomputed():
+    c = g()
+    c["2"]["chart_data"] = [{"date": "d", "high": 84.0, "low": 76.0, "close": 79.2}]
+    c["1"]["bullets"][0]["text"] = "**EUA:** giá hồi về nửa trên biên độ 76,00–84,00."
+    issues = report_qc.check_consistency(c)
+    assert any("nửa dưới" in i["message"] and "40,0%" in i["message"] for i in issues), msgs(issues)
+
+
+def test_presentation_normalized():
+    from services.report_consistency import normalize_presentation
+
+    assert normalize_presentation("Kháng cự 88,82–88,82, giá 85.84 ngày 5 October 2026") == "Kháng cự 88,82, giá 85,84 ngày 05/10/2026"
+    assert normalize_presentation("1.386,75 và 16.10.2026") == "1.386,75 và 16.10.2026"
+
+
+def test_hedge_action_required_and_open_trade_must_be_reconciled():
+    c = g()
+    del c["3"]["hedge_action"]
+    assert any("hedge_action" in i["field_path"] for i in report_qc.check_hedge_action(c))
+    c = g()
+    c["2"]["forecast_review"] = {"items": [{
+        "report_date": "2026-10-02", "verdict": "on_track",
+        "trade": {"status": "open", "side": "buy", "stop": 77.0},
+    }]}
+    issues = report_qc.check_hedge_action(c)
+    assert len(issues) == 1 and "02/10" in issues[0]["message"]
+    c["3"]["open_positions"] = [{"report_date": "2026-10-02", "decision": "keep", "text": "Giữ cắt lỗ 77,0."}]
+    assert report_qc.check_hedge_action(c) == []
+
+
+def test_hedge_action_conflicting_cbam_signal_needs_reason():
+    c = g()
+    c["2"]["cbam_estimate"] = {"signal": "increase"}
+    assert report_qc.check_hedge_action(c)[0]["severity"] == "warning"
+    c["3"]["hedge_action"]["text"] += " Khác tín hiệu CBAM vì quý đã cố định 80%."
+    assert report_qc.check_hedge_action(c) == []
+
+
+def test_session_shape_not_called_reversal():
+    from services.report_generator import _eua_session_shape
+
+    chart = [{"open": 86, "high": 86 + 0.8, "low": 86 - 0.9, "close": 86} for _ in range(14)]
+    chart += [{"open": 87.0, "high": 87.5, "low": 86.6, "close": 87.14},
+              {"open": 86.87, "high": 86.87, "low": 85.37, "close": 85.84}]
+    text = _eua_session_shape(chart)
+    assert "KHÔNG được gọi là rộng" in text and "GAP GIẢM 0,27" in text and "KHÔNG gọi là \"đảo chiều\"" in text
+
+
+def test_section6_split_by_subject():
+    from services.report_generator import _split_section6_by_subject
+
+    intl, vn = _split_section6_by_subject([
+        {"url": "a", "region": "vietnam", "about_vietnam": False},  # cafef.vn đưa tin phí quỹ khí của Đức
+        {"url": "b", "region": "vietnam", "about_vietnam": True},
+        {"url": "c", "region": "international"},
+    ])
+    assert [a["url"] for a in intl] == ["a", "c"] and [a["url"] for a in vn] == ["b"]
+    assert "about_vietnam" not in intl[0]

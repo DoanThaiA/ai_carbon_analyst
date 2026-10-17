@@ -535,7 +535,9 @@
     "verdict": {
       "correct": "Đúng",
       "wrong": "Sai",
-      "unclear": "Chưa rõ"
+      "unclear": "Chưa rõ",
+      "on_track": "Đang đúng hướng",
+      "diverging": "Đang lệch"
     },
     "report": "Báo cáo {date}:",
     "forecast": "dự báo ngắn hạn {direction}, xác suất {probability}.",
@@ -631,7 +633,23 @@
       "techTargetSub": "nếu phá kháng cự",
       "basis": "Cơ sở",
       "keyRisk": "Rủi ro chính",
-      "hedge": "Sổ phòng hộ SIM (CBAM)"
+      "hedge": "Sổ phòng hộ SIM (CBAM)",
+      "hedgeAction": {
+        "buy_now": "MUA NGAY",
+        "buy_scheduled": "MUA TRẢI ĐỀU",
+        "hold": "GIỮ TỶ LỆ",
+        "defer": "HOÃN MUA"
+      },
+      "openPositions": "Lệnh đang mở",
+      "openPosition": "{side} {low}–{high} (báo cáo {date}), cắt lỗ {stop}",
+      "buy": "Mua",
+      "sell": "Bán",
+      "decision": {
+        "keep": "GIỮ MỨC CŨ",
+        "move": "DỜI MỨC",
+        "close": "ĐÓNG LỆNH",
+        "none": "CHƯA ĐỐI CHIẾU"
+      }
     },
     "scenario": {
       "heading": "Kịch bản hành động",

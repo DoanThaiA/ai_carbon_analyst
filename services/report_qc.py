@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Article, BizSuggestion, Instrument, Price, Report
 from services import biz_memory
+from services.report_consistency import consistency_issues
 from services.report_generator import (
     CBAM_CODE,
     SECTION_TOPICS,
@@ -550,6 +551,69 @@ def check_forecast_review(content: Dict[str, Any]) -> List[Dict[str, str]]:
                 + " nhưng đoạn \"So với báo cáo trước\" không nhắc tới báo cáo này.",
                 "3.vs_previous",
             ))
+    return issues
+
+
+HEDGE_ACTIONS = ("buy_now", "buy_scheduled", "hold", "defer")
+# Tín hiệu thẻ CBAM (services/cbam_estimate.py) ↔ hành động phòng hộ trái chiều hẳn.
+CBAM_SIGNAL_CONFLICT = {"increase": ("defer",), "reduce": ("buy_now",)}
+
+
+def check_hedge_action(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Mỗi báo cáo có giá phải có ĐÚNG 1 hành động phòng hộ ("3".hedge_action) và đối chiếu mọi lệnh đang mở
+    ("3".open_positions). Bản 16/10/2026 từng ra 4 tín hiệu trái nhau (CHỜ / mua trải đều 83–86 / hoãn /
+    đẩy nhanh) + thẻ CBAM "GIỮ", và bỏ quên lệnh mua 09/10 đang mở."""
+    sec3 = content.get("3") or {}
+    if not sec3.get("trading_scenarios"):
+        return []
+    issues: List[Dict[str, str]] = []
+    ha = sec3.get("hedge_action")
+    if not isinstance(ha, dict) or ha.get("action") not in HEDGE_ACTIONS or _blank(ha.get("text")):
+        issues.append(_issue("scenario", "3", "error",
+                             "Thiếu hành động phòng hộ duy nhất cho sổ SIM (hedge_action).", "3.hedge_action"))
+    else:
+        cbam = (content.get("2") or {}).get("cbam_estimate") or {}
+        sig = cbam.get("signal")
+        if ha["action"] in CBAM_SIGNAL_CONFLICT.get(sig, ()) and "CBAM" not in str(ha.get("text")):
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Hành động phòng hộ \"{ha['action']}\" ngược tín hiệu thẻ CBAM \"{sig}\" mà không giải thích.",
+                "3.hedge_action",
+            ))
+    notes = [i for i, sc in enumerate(sec3.get("trading_scenarios") or []) if isinstance(sc, dict) and not _blank(sc.get("hedge_note"))]
+    if notes and isinstance(ha, dict):
+        issues.append(_issue("scenario", "3", "warning",
+                             "Kịch bản vẫn có hedge_note riêng bên cạnh hedge_action — nhiều tín hiệu phòng hộ.",
+                             f"3.trading_scenarios[{notes[0]}].hedge_note"))
+    review = (content.get("2") or {}).get("forecast_review") or {}
+    covered = {
+        p.get("report_date") for p in sec3.get("open_positions") or []
+        if isinstance(p, dict) and p.get("decision") and not _blank(p.get("text"))
+    }
+    for it in review.get("items") or []:
+        t = it.get("trade") if isinstance(it, dict) else None
+        if isinstance(t, dict) and t.get("status") == "open" and it.get("report_date") not in covered:
+            issues.append(_issue(
+                "scenario", "3", "error",
+                f"Lệnh {'mua' if t.get('side') == 'buy' else 'bán'} của báo cáo {_dm_label(it['report_date'])} đang mở "
+                f"(cắt lỗ {_fmt(t['stop'])}) nhưng báo cáo không nói giữ mức cũ, dời mức hay đóng lệnh.",
+                "3.open_positions",
+            ))
+    return issues
+
+
+def check_consistency(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Nhãn "x% so với y" sai phép tính, mô tả vị trí trong biên độ sai, định dạng số/ngày lẫn kiểu Anh
+    (services/report_consistency.py — bộ sinh đã tự sửa, check này bắt bản admin sửa tay)."""
+    issues = []
+    minor_paths: Set[str] = set()
+    for f in consistency_issues(content):
+        if f.get("minor"):
+            if f["path"] not in minor_paths:
+                minor_paths.add(f["path"])
+                issues.append(_issue("scenario", f["path"].split(".")[0], "info", f["message"], f["path"]))
+        else:
+            issues.append(_issue("scenario", f["path"].split(".")[0], "error", f["message"], f["path"]))
     return issues
 
 
@@ -1535,7 +1599,10 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
 
     issues_by_check = {
         "price": check_prices(content, db_prices, latest_price_date, report_date) + check_instrument_labels(content),
-        "scenario": check_scenarios(content) + check_forecast_review(content) + check_fuel_direction(content),
+        "scenario": (
+            check_scenarios(content) + check_forecast_review(content) + check_fuel_direction(content)
+            + check_hedge_action(content) + check_consistency(content)
+        ),
         "source": check_sources(content, known_urls, article_meta, stale_before),
         "fact": check_facts(content, article_texts),
         "calendar": check_calendar(content, report_date),

@@ -535,7 +535,9 @@
     "verdict": {
       "correct": "Right",
       "wrong": "Wrong",
-      "unclear": "Unclear"
+      "unclear": "Unclear",
+      "on_track": "On track",
+      "diverging": "Diverging"
     },
     "report": "Report {date}:",
     "forecast": "short-term forecast {direction}, probability {probability}.",
@@ -631,7 +633,23 @@
       "techTargetSub": "on a resistance breakout",
       "basis": "Basis",
       "keyRisk": "Key risk",
-      "hedge": "SIM hedge book (CBAM)"
+      "hedge": "SIM hedge book (CBAM)",
+      "hedgeAction": {
+        "buy_now": "BUY NOW",
+        "buy_scheduled": "BUY ON SCHEDULE",
+        "hold": "HOLD RATIO",
+        "defer": "DEFER BUYING"
+      },
+      "openPositions": "Open positions",
+      "openPosition": "{side} {low}–{high} (report {date}), stop {stop}",
+      "buy": "Buy",
+      "sell": "Sell",
+      "decision": {
+        "keep": "KEEP LEVELS",
+        "move": "MOVE LEVELS",
+        "close": "CLOSE",
+        "none": "NOT REVIEWED"
+      }
     },
     "scenario": {
       "heading": "Action scenarios",

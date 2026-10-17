@@ -16,6 +16,7 @@ from core.config import Settings
 from services import biz_memory
 from services import cbam_estimate
 from services import forecast_review
+from services.report_consistency import apply_consistency_fixes, describe_range_position
 from services.title_similarity import is_similar_title, title_tokens
 from services import eua_causal_chains as chains
 from services.eua_framework_admin import get_overrides_map
@@ -550,17 +551,45 @@ async def _get_stored_cbam_price(session: AsyncSession, target_date_str: str) ->
     }
 
 
-def _format_pct_with_abs(pct: Optional[float], close_price: float) -> str:
-    """Format % kèm số tuyệt đối tăng/giảm, vd '+2.34% (+1.05)' — suy ngược giá
-    kỳ trước từ close_price và pct (không lưu giá kỳ trước riêng trong DB)."""
+def _format_pct_with_abs(pct: Optional[float], close_price: float, base_close: Optional[float] = None) -> str:
+    """Format % kèm số tuyệt đối tăng/giảm, vd '+2.34% (+1.05)'. `base_close` = giá đóng cửa kỳ so sánh
+    lấy thẳng từ DB (xem _comparison_closes) → số tuyệt đối chính xác; thiếu thì suy ngược từ pct — pct
+    lưu làm tròn 3 số lẻ nên số suy ngược có thể lệch 0,01 (Gasoil 1.386,75 − 1.404,00 = −17,25 bị in −17,26)."""
     if pct is None:
         return "-"
+    if base_close:
+        return f"{pct:+.2f}% ({close_price - base_close:+.2f})"
     denom = 1 + pct / 100
     if denom == 0:
         return f"{pct:+.2f}%"
     prev_close = close_price / denom
     abs_change = close_price - prev_close
     return f"{pct:+.2f}% ({abs_change:+.2f})"
+
+
+def _matching_base(close: float, pct: Optional[float], candidates: List[tuple]) -> Optional[float]:
+    """Giá kỳ so sánh trong `candidates` [(ngày, giá)] khớp đúng pct đã lưu (crawler tính pct từ chính giá này) —
+    không khớp (nguồn điều chỉnh hồi tố, thiếu phiên) thì None để lùi về suy ngược từ pct."""
+    if pct is None:
+        return None
+    for _, base in candidates:
+        if base and abs((close / base - 1) * 100 - pct) < 0.002:
+            return base
+    return None
+
+
+async def _comparison_closes(session: AsyncSession, instrument_ids: List[int], max_date: str) -> Dict[int, List[tuple]]:
+    """{instrument_id: [(ngày, giá đóng cửa)] mới → cũ} của 21 ngày trước `max_date` — để tính Δ tuyệt đối."""
+    start = (date.fromisoformat(max_date) - timedelta(days=21)).isoformat()
+    rows = (await session.execute(
+        select(Price.instrument_id, Price.price_date, Price.close_price)
+        .where(Price.instrument_id.in_(instrument_ids), Price.price_date < max_date, Price.price_date >= start)
+        .order_by(desc(Price.price_date))
+    )).all()
+    out: Dict[int, List[tuple]] = {}
+    for iid, d, c in rows:
+        out.setdefault(iid, []).append((d, c))
+    return out
 
 
 def report_data_date(report_date_str: str) -> str:
@@ -616,9 +645,15 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
     rows = result.all()
 
     barchart_symbols = await _get_barchart_symbols(session)
+    base_closes = await _comparison_closes(session, [instrument.id for _, instrument in rows], max_date)
 
     prices = []
     for price, instrument in rows:
+        history = base_closes.get(instrument.id, [])
+        day_base = _matching_base(price.close_price, price.day_change_pct, history[:1])
+        week_base = _matching_base(price.close_price, price.week_change_pct, [
+            (d, c) for d, c in history if (date.fromisoformat(max_date) - date.fromisoformat(d)).days >= 7
+        ][:1])
         is_up = price.day_change_pct is not None and price.day_change_pct > 0
         # Ghi chú bất thường: volume đột biến hoặc note thủ công
         note = price.note or ""
@@ -627,8 +662,8 @@ async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> 
             "name": instrument.name,
             "code": instrument.code,
             "price": f"{price.close_price:,.4f} {instrument.unit}",
-            "dday": _format_pct_with_abs(price.day_change_pct, price.close_price),
-            "dweek": _format_pct_with_abs(price.week_change_pct, price.close_price),
+            "dday": _format_pct_with_abs(price.day_change_pct, price.close_price, day_base),
+            "dweek": _format_pct_with_abs(price.week_change_pct, price.close_price, week_base),
             "up": is_up,
             "note": note,
             "close": price.close_price,
@@ -929,7 +964,7 @@ def _filter_news_for_section(news_by_topic: Dict[str, List[Dict]], section_key: 
 
 
 def _filter_news_with_index(
-    news_by_topic: Dict[str, List[Dict]], section_key: str, max_articles: int = 10
+    news_by_topic: Dict[str, List[Dict]], section_key: str, max_articles: int = 10, per_topic: Optional[int] = None,
 ) -> tuple[str, Dict[int, Dict]]:
     """Giống _filter_news_for_section nhưng đánh số [N] cho từng bài (dedup theo
     url) và trả kèm bảng tra N -> bài viết gốc — dùng cho các mục cần trích dẫn
@@ -940,11 +975,15 @@ def _filter_news_with_index(
     seen_urls: set = set()
     numbered: List[Dict] = []
     for topic in relevant_topics:
+        taken = 0
         for art in news_by_topic.get(topic, []):
+            if per_topic is not None and taken >= per_topic:
+                break
             if art["url"] in seen_urls:
                 continue
             seen_urls.add(art["url"])
             numbered.append(art)
+            taken += 1
             if len(numbered) >= max_articles:
                 break
         if len(numbered) >= max_articles:
@@ -959,6 +998,79 @@ def _filter_news_with_index(
         for i, art in index_lookup.items()
     ]
     return "\n".join(lines), index_lookup
+
+
+
+_CITE_RE = re.compile(r"\s*\[(\d{1,2}|giá)\]")
+_WATCH_LINE_RE = re.compile(r"^\s*\d+[.)]\s*")
+WATCH_HEADING = "Cần theo dõi"
+
+
+def _resolve_section3_citations(sec3: Dict[str, Any], index_lookup: Dict[int, Dict]) -> List[Dict[str, str]]:
+    """Đổi dấu trích "[N]" trong văn bản Mục 3 thành "(Nguồn: <nhà xuất bản>)", trả danh sách nguồn đã dùng
+    (để có mặt ở Mục 9). Watchpoint "Cần theo dõi" không có [N] hợp lệ hay [giá] bị XOÁ và đánh số lại."""
+    used: Dict[str, Dict[str, str]] = {}
+
+    def _sub(text: str) -> tuple:
+        cited = False
+
+        def _one(m: re.Match) -> str:
+            nonlocal cited
+            if m.group(1) == "giá":
+                cited = True
+                return ""
+            art = index_lookup.get(int(m.group(1)))
+            if not art:
+                return ""
+            cited = True
+            used[art["url"]] = {"source_name": art["source"], "source_url": art["url"]}
+            return f" (Nguồn: {art['source']})"
+
+        out = _CITE_RE.sub(_one, text)
+        out = re.sub(r"(\(Nguồn: [^)]+\))(\s*\(Nguồn: ([^)]+)\))+", lambda m: m.group(0).replace(") (Nguồn: ", "; ").replace(")(Nguồn: ", "; "), out)
+        return out, cited
+
+    for blk in sec3.get("analysis_blocks") or []:
+        if not isinstance(blk, dict) or not isinstance(blk.get("content"), str):
+            continue
+        if str(blk.get("heading") or "").strip() != WATCH_HEADING:
+            blk["content"] = _sub(blk["content"])[0]
+            continue
+        kept: List[str] = []
+        n = 0
+        for line in blk["content"].split("\n"):
+            new, cited = _sub(line)
+            if _WATCH_LINE_RE.match(line):
+                if not cited:
+                    logger.warning("[REPORT] Mục 3: bỏ watchpoint không có nguồn — %s", line.strip()[:160])
+                    continue
+                n += 1
+                new = _WATCH_LINE_RE.sub(f"{n}. ", new, count=1)
+            kept.append(new)
+        blk["content"] = "\n".join(kept).strip()
+    if isinstance(sec3.get("vs_previous"), str):
+        sec3["vs_previous"] = _sub(sec3["vs_previous"])[0]
+    return list(used.values())
+
+
+HEDGE_ACTIONS = ("buy_now", "buy_scheduled", "hold", "defer")
+
+
+def _finalize_hedge_fields(sec3: Dict[str, Any], open_trade_list: List[Dict[str, Any]]) -> None:
+    """1 hành động phòng hộ duy nhất ("hedge_action") + đối chiếu lệnh đang mở ("open_positions")."""
+    for sc in sec3.get("trading_scenarios") or []:
+        if isinstance(sc, dict):
+            sc.pop("hedge_note", None)  # hàm ý phòng hộ theo từng khung từng tạo 4 tín hiệu trái nhau
+    ha = sec3.get("hedge_action")
+    if isinstance(ha, dict) and ha.get("action") in HEDGE_ACTIONS and str(ha.get("text") or "").strip():
+        sec3["hedge_action"] = {"action": ha["action"], "text": str(ha["text"]).strip()}
+    else:
+        logger.warning("[REPORT] Mục 3: hedge_action thiếu/không hợp lệ: %r", ha)
+        sec3.pop("hedge_action", None)
+    sec3["open_positions"] = forecast_review.merge_open_positions(open_trade_list, sec3.get("open_positions"))
+    for pos in sec3["open_positions"]:
+        if pos["decision"] is None:
+            logger.warning("[REPORT] Mục 3: lệnh đang mở của báo cáo %s chưa được đối chiếu.", pos["report_date"])
 
 
 def _first_source_index(raw: Any) -> Optional[int]:
@@ -1020,6 +1132,18 @@ def _build_section6_news(news_by_topic: Dict[str, List[Dict]], limit_per_region:
     return {"international": international, "vietnam": vietnam}
 
 
+def _split_section6_by_subject(articles: List[Dict]) -> tuple:
+    """Nhóm VIỆT NAM / QUỐC TẾ của Mục 6 theo quốc gia của CHỦ ĐỀ bài (LLM tóm tắt trả "about_vietnam"), không
+    theo region của nguồn crawl — tin phí quỹ khí của Đức đăng trên cafef.vn từng bị xếp vào "VIỆT NAM".
+    LLM không trả cờ → giữ region của nguồn."""
+    international, vietnam = [], []
+    for a in articles:
+        flag = a.pop("about_vietnam", None)
+        is_vn = flag if isinstance(flag, bool) else a.get("region") == "vietnam"
+        (vietnam if is_vn else international).append(a)
+    return international, vietnam
+
+
 def _prompt_section6_summary(article: Dict, target_date: str) -> str:
     return f"""Bạn là chuyên gia phân tích thị trường carbon & năng lượng châu Âu.
 Ngày báo cáo: {target_date}
@@ -1044,8 +1168,10 @@ YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT, ĐÚNG 2 C
 
 - "origin": hãng tin/cơ quan GỐC của thông tin chính khi bài DẪN LẠI rõ ràng từ nơi khác (vd bài Politico viết "Zelenskyy told the Financial Times" → "Financial Times"; "according to a Reuters report" → "Reuters"; số liệu từ thông cáo IEA → "IEA"); trong "summary" cũng ghi theo chuỗi đó ("theo phỏng vấn với Financial Times..."). Bài tự đưa tin/phỏng vấn trực tiếp hoặc chỉ trích dẫn ngắn nhiều nguồn → null. KHÔNG đoán.
 
+- "about_vietnam": true CHỈ KHI chủ thể/sự kiện chính của bài diễn ra tại hoặc trực tiếp liên quan Việt Nam (chính sách, doanh nghiệp, thị trường Việt Nam; doanh nghiệp Việt chịu CBAM...). Xét theo NỘI DUNG, KHÔNG theo trang đăng: bài trên báo Việt Nam nói về phí quỹ khí của Đức → false.
+
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"relevant": true, "summary": "...", "origin": null}}"""
+{{"relevant": true, "summary": "...", "origin": null, "about_vietnam": false}}"""
 
 
 SECTION6_SUMMARY_CONCURRENCY = 4
@@ -1103,7 +1229,8 @@ async def _summarize_section6_articles(
                 summary = art["summary"]
 
             origin = parsed.get("origin") if parsed and isinstance(parsed.get("origin"), str) else None
-            return {**art, "summary": summary, "origin": (origin or "").strip() or None}
+            about_vn = parsed.get("about_vietnam") if parsed and isinstance(parsed.get("about_vietnam"), bool) else None
+            return {**art, "summary": summary, "origin": (origin or "").strip() or None, "about_vietnam": about_vn}
 
     summarized = await asyncio.gather(*[_summarize_one(art) for art in articles])
     return [a for a in summarized if a is not None]
@@ -1163,8 +1290,9 @@ def _eua_trend_summary(chart_data: List[Dict]) -> str:
     change_30 = ((last - first) / first * 100) if first else 0
     return (
         f"EUA 30 ngày: mở {first:.2f} → đóng gần nhất {last:.2f} "
-        f"({change_30:+.1f}%); 30-ngày-cao {high_30:.2f}, 30-ngày-thấp {low_30:.2f}."
-    )
+        f"({change_30:+.1f}%); 30-ngày-cao {high_30:.2f}, 30-ngày-thấp {low_30:.2f}. "
+        + describe_range_position(last, low_30, high_30, "biên 30 phiên")
+    ).strip()
 
 
 def _eua_session_range_summary(chart_data: List[Dict]) -> str:
@@ -1179,10 +1307,53 @@ def _eua_session_range_summary(chart_data: List[Dict]) -> str:
     latest = chart_data[-1]
     open_p, high, low, close = latest["open"], latest["high"], latest["low"], latest["close"]
     range_pct = ((high - low) / close * 100) if close else 0
-    return (
+    text = (
         f"Biên độ phiên liền trước ({latest['date']}): mở {open_p:.2f} — cao {high:.2f} — thấp {low:.2f} "
         f"— đóng cửa {close:.2f} EUR/tCO2 (biên độ {high - low:.2f}, ~{range_pct:.1f}% so với giá đóng cửa)."
     )
+    return f"{text} {_eua_session_shape(chart_data)}".strip()
+
+
+SESSION_RANGE_WIDE_RATIO = 1.2    # biên độ phiên ≥ 1,2 × ATR 14 phiên → "rộng hơn bình thường"
+SESSION_RANGE_NARROW_RATIO = 0.8  # ≤ 0,8 × ATR → "hẹp hơn bình thường"
+
+
+def _eua_session_shape(chart_data: List[Dict]) -> str:
+    """Nhận định HÌNH DẠNG phiên tính sẵn (so ATR, gap mở cửa, đảo chiều hay đi 1 chiều) — LLM từng viết
+    "biên độ rộng hơn thường thấy" khi biên độ 1,50 < ATR 1,67, và "đảo chiều giảm trong phiên" khi phiên mở
+    gap giảm, mở = cao rồi đi 1 chiều xuống."""
+    if len(chart_data) < 2:
+        return ""
+    latest, prev = chart_data[-1], chart_data[-2]
+    open_p, high, low, close = latest["open"], latest["high"], latest["low"], latest["close"]
+    if None in (open_p, high, low, close) or high <= low:
+        return ""
+    parts = []
+    recent = chart_data[-15:-1]  # ATR của 14 phiên TRƯỚC phiên này (không lấy chính nó làm chuẩn)
+    if recent:
+        atr = sum(c["high"] - c["low"] for c in recent) / len(recent)
+        ratio = (high - low) / atr if atr else 1
+        width = ("RỘNG hơn bình thường" if ratio >= SESSION_RANGE_WIDE_RATIO
+                 else "HẸP hơn bình thường" if ratio <= SESSION_RANGE_NARROW_RATIO
+                 else "xấp xỉ bình thường, nhỏ hơn ATR — KHÔNG được gọi là rộng" if ratio < 1
+                 else "xấp xỉ bình thường — không phải đột biến")
+        parts.append(f"Biên độ {_vn_num(high - low)} so với ATR 14 phiên trước {_vn_num(atr)} → {width} (×{_vn_num(ratio)}).")
+    prev_close = prev.get("close")
+    if prev_close:
+        gap = open_p - prev_close
+        if abs(gap) >= 0.1:
+            parts.append(f"Phiên mở GAP {'TĂNG' if gap > 0 else 'GIẢM'} {_vn_num(abs(gap))} (đóng cửa trước {_vn_num(prev_close)} → mở {_vn_num(open_p)}).")
+    tick = 0.05 * (high - low)
+    if abs(open_p - high) <= tick and close < open_p:
+        parts.append("Mở cửa ≈ giá cao nhất rồi đi xuống: giảm MỘT CHIỀU trong phiên — KHÔNG gọi là \"đảo chiều\".")
+    elif abs(open_p - low) <= tick and close > open_p:
+        parts.append("Mở cửa ≈ giá thấp nhất rồi đi lên: tăng MỘT CHIỀU trong phiên — KHÔNG gọi là \"đảo chiều\".")
+    elif close < open_p and high - max(open_p, prev_close or open_p) > 0.3 * (high - low):
+        parts.append("Phiên tăng lên đỉnh rồi quay xuống đóng dưới giá mở: ĐẢO CHIỀU GIẢM trong phiên.")
+    elif close > open_p and min(open_p, prev_close or open_p) - low > 0.3 * (high - low):
+        parts.append("Phiên giảm xuống đáy rồi hồi lên đóng trên giá mở: ĐẢO CHIỀU TĂNG trong phiên.")
+    parts.append("Mô tả biên độ/hình dạng phiên PHẢI theo đúng nhận định trên.")
+    return " ".join(parts)
 
 
 def _eua_technical_levels_summary(chart_data: List[Dict]) -> str:
@@ -1904,7 +2075,8 @@ async def _auction_calendar_events(session: AsyncSession, target_date_str: str) 
             f"Đấu giá EUA sơ cấp EEX: {len(rows)} phiên {span}, tổng {_vn_num(sum(r.volume for r in rows) / 1e6)} triệu tấn "
             f"(09:00–11:00 giờ CET; giá khớp các phiên quyết định giá CBAM quý)"
         ),
-        "impact": "Thấp",
+        # Nguồn cung EUA trực tiếp + quyết định giá CBAM → ưu tiên cao hơn số giàn khoan Baker Hughes ("Trung").
+        "impact": "Cao",
     }]
 
 
@@ -2302,7 +2474,7 @@ def _prompt_section3(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str,
     gasoil_crack_spread: str, target_date: str, topics_present: List[str],
     overrides: Optional[Dict[str, str]] = None, eua_technical_levels: str = "", fuel_spread: str = "",
-    prev_scenarios: str = "",
+    prev_scenarios: str = "", cbam_signal: str = "", open_orders: str = "",
 ) -> tuple[str, str]:
     framework = _eua_framework(topics_present, full=True, overrides=overrides)
     system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}\n\n{framework}"
@@ -2328,6 +2500,12 @@ MỐC KỸ THUẬT EUA (tính sẵn từ OHLC thật — nguồn DUY NHẤT cho 
 
 KỊCH BẢN CỦA BÁO CÁO TRƯỚC (đối chiếu — người đọc so sánh các ngày với nhau):
 {prev_scenarios or "Không có."}
+
+LỆNH ĐANG MỞ (mô phỏng từ thẻ chiến lược các báo cáo trước — đã khớp, chưa chạm cắt lỗ/mục tiêu; đối chiếu ở "open_positions"):
+{open_orders or "Không có lệnh nào đang mở."}
+
+TÍN HIỆU PHÒNG VỆ CBAM (tính sẵn, hiển thị ở thẻ CBAM — đối chiếu khi viết "hedge_action"):
+{cbam_signal or "Không có."}
 NHẤT QUÁN VỚI BÁO CÁO TRƯỚC (BẮT BUỘC khi có kịch bản trước): nếu hôm nay đổi "direction"/xác suất của 1 horizon, hoặc dời Mục tiêu/cắt lỗ đáng kể, thì đoạn "**Tổng hợp:**" PHẢI có 1 câu ngắn nêu rõ điều chỉnh (cũ → mới) và lý do bằng dữ liệu; nếu kịch bản ngắn hạn trước đã đi NGƯỢC thực tế (giá đi ngược chiều dự báo) thì thừa nhận thẳng và hạ xác suất hoặc giải thích vì sao vẫn giữ — TUYỆT ĐỐI KHÔNG lặng lẽ đổi số.
 KHUNG "SO VỚI BÁO CÁO TRƯỚC" (BẮT BUỘC khi có kịch bản/đối chiếu ở trên): thêm trường "vs_previous" (3–4 câu, tối đa ~90 từ) ở cấp mục 3 — hiển thị ở TRANG ĐẦU ngay dưới bảng "Dự báo trước: đúng hay sai" (bảng đã có số liệu, KHÔNG chép lại từng dòng), gồm: (1) THỪA NHẬN THẲNG mọi dự báo "SAI" trong "ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY" — nêu ngày báo cáo, chiều đã dự báo, kết quả (chạm cắt lỗ ngày nào hoặc %Δ); dự báo SAI dù gắn xác suất CAO thì phải nói rõ và nêu vì sao độ tin cậy đó không có cơ sở (vd thiếu spread than–khí/dữ liệu vị thế khi chốt "Cao"); NGUYÊN NHÂN sai là tiền đề nào không đúng — KHÔNG né, KHÔNG đổ cho "biến động ngẫu nhiên"; không có dự báo sai → 1 câu ngắn xác nhận; (2) hôm nay GIỮ hay ĐỔI hướng (cũ → mới) và lý do bằng dữ liệu; (3) TIỀN ĐỀ nào của báo cáo trước đã thay đổi/không còn đúng (vd trước coi "TTF tăng → chuyển sang than → cầu EUA tăng" nhưng spread nay cho thấy chuyển đổi đã bão hòa) — nêu thẳng, không né. Không có báo cáo trước → "vs_previous" = "".
 
@@ -2384,6 +2562,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
         (b) NẾU XẢY RA THEO HƯỚNG 1 — bắt đầu bằng "Nếu [diễn biến cụ thể theo hướng 1]..." → nêu rõ tác động tới cung/cầu và chiều giá EUA tương ứng.
         (c) NẾU XẢY RA THEO HƯỚNG NGƯỢC LẠI (hoặc không xảy ra) — bắt đầu bằng "Nếu [diễn biến ngược lại/không xác nhận]..." → nêu rõ tác động khác hoặc EUA đi ngang/giữ tín hiệu hỗn hợp.
         PHÉP THỬ TRUNG LẬP (BẮT BUỘC): 2 nhánh (b)/(c) của MỖI watchpoint phải dẫn tới 2 kết cục KHÁC NHAU cho EUA — TUYỆT ĐỐI KHÔNG để cả 2 nhánh cùng ra "đi ngang/giảm" (hoặc cùng "tăng"); watchpoint không có nhánh nào xác nhận được chiều ngược lại thì không còn là phép kiểm tra. Toàn bộ danh sách phải có ít nhất 1 nhánh xác nhận chiều TĂNG và 1 nhánh xác nhận chiều GIẢM của EUA. Vd watchpoint spread than–khí: "Nếu than vẫn rẻ hơn khí rõ rệt → điện than chạy gần tối đa, giữ mức cầu EUA (đỡ giá)" vs "Nếu khí rẻ đi tới mức tranh được với than → dispatch sang khí, phát thải giảm → áp lực giảm EUA".
+      NGUỒN (BẮT BUỘC): mỗi watchpoint dựa trên tin tức PHẢI kết thúc bằng số tin đã đánh số ở "TIN TỨC LIÊN QUAN", dạng "[N]" (vd "... → áp lực giảm EUA. [3]"); watchpoint chỉ dựa trên dữ liệu giá/spread đã tính sẵn thì kết thúc bằng "[giá]". Watchpoint không có [N] hợp lệ hoặc [giá] sẽ bị hệ thống XOÁ — TUYỆT ĐỐI KHÔNG nêu sự kiện/phát ngôn (vd "CEO X kêu gọi tạm ngưng ETS") không có trong tin đã đánh số.
       MỖI watchpoint là 1 DÒNG RIÊNG, đánh số "1.", "2.", "3."... — PHẢI chèn ký tự xuống dòng thật (\\n) giữa các dòng, TUYỆT ĐỐI KHÔNG viết liền các watchpoint thành 1 đoạn văn dài không xuống dòng. Số lượng watchpoint bám theo đúng số điểm còn chưa chắc chắn thực sự tồn tại ở "Phân tích"/tin tức — KHÔNG bịa thêm watchpoint không có căn cứ chỉ để đủ số lượng.
 
 C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn". Đây là phần người đọc xem để RA QUYẾT ĐỊNH nên phải NGẮN, TRỰC DIỆN, đi thẳng vào giá trị: chỉ nêu điều kiện, mức giá và hành động — KHÔNG giải thích cơ chế, KHÔNG lặp lại mục B, KHÔNG câu đệm/mở đầu/sáo rỗng. Mỗi trường là 1 mệnh đề cô đọng, ưu tiên số liệu cụ thể hơn lời văn. Mỗi kịch bản gồm:
@@ -2402,7 +2581,7 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
        "**Entry:** Mua quanh A1–A2, bán quanh B1–B2" / "**Mục tiêu:** T_mua / T_bán" (2 số, chân mua trước) / "**Quản trị rủi ro:** Cắt lỗ dưới S_mua hoặc trên S_bán".
        TUYỆT ĐỐI KHÔNG để chân bán (hoặc chân mua) không có cắt lỗ/mục tiêu — 1 lệnh không có cắt lỗ là lỗi nghiêm trọng (hệ thống tự kiểm tra từng chân).
      "trading_strategy" là chiến lược cho BÀN GIAO DỊCH (vị thế đầu cơ độc lập) — KHÔNG phải cho sổ phòng hộ của SIM.
-   - "hedge_note" (1 câu, tối đa ~25 từ): hàm ý của kịch bản này cho SỔ PHÒNG HỘ của SIM. SIM có nghĩa vụ CBAM → đang mang vị thế SHORT carbon tự nhiên → phòng hộ đúng chiều là MUA (long) EUA; TUYỆT ĐỐI KHÔNG khuyến nghị bán khống EUA cho sổ phòng hộ (làm tăng rủi ro tổng). Theo "direction": "giảm" → "Hoãn/giảm tốc độ mua phòng hộ, chờ vùng <X–Y lấy từ Mục tiêu/price_zone>"; "tăng" → "Đẩy nhanh/tăng tỷ lệ mua phòng hộ trước khi giá vượt <mức>"; "đi ngang" → "Mua phòng hộ trải đều theo lịch trong vùng <X–Y>". Mức giá dùng ĐÚNG số đã có trong kịch bản, không thêm số mới.
+   KHÔNG có trường "hedge_note" trong từng kịch bản — hàm ý cho sổ phòng hộ gom về 1 trường DUY NHẤT "hedge_action" (mục D).
    QUY TẮC SỐ HỌC CHO MỨC GIÁ (BẮT BUỘC, kiểm tra lại phép tính trước khi viết):
      • Mọi mức giá (Entry/Mục tiêu/cắt lỗ/price_zone) CHỈ được lấy từ "MỐC KỸ THUẬT EUA" bên trên (đỉnh/đáy 30 phiên, mục tiêu đo biên độ, ATR) hoặc từ giá đóng cửa/biên độ phiên đã cho; KHÔNG tự đặt số tròn (vd 92,0 hay 95,0) không có phép tính nào dẫn tới. Kịch bản trung/dài hạn không có mốc từ dữ liệu → nêu mức theo % so với giá đóng cửa kèm phép tính ngắn (vd "+5% ≈ x.xx"), hoặc dùng vùng đo biên độ.
      • R:R (|Mục tiêu − Entry| / |Entry − cắt lỗ|) PHẢI ≥ 1:1,5; nếu mốc dữ liệu không cho R:R đạt mức này → đổi hướng "đi ngang"/chờ xác nhận, KHÔNG ép số.
@@ -2418,9 +2597,21 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
        {LEGISLATED_POLICY_FACTS}
      • Mỗi "Mục tiêu" ghi kèm cơ sở trong ngoặc ngắn (vd "(kháng cự 30 phiên)", "(đo biên độ)", "(+4% so với đóng cửa)"); mục tiêu không nêu được cơ sở → bỏ.
      • Không dùng cụm "không phải khuyến nghị giao dịch" trong nội dung — giao diện đã có lưu ý riêng.
+     • Mọi nhãn phần trăm "X (±p% so với đóng cửa Y)" PHẢI tính lại: p = (X / Y − 1) × 100 (vd 78,30 so với 85,84 là −8,78%, KHÔNG phải −5%; −5% từ 85,84 là 81,55) — hệ thống tự tính lại và sửa nhãn sai.
+     • Mức vô hiệu/rủi ro của MỖI kịch bản (key_risk) PHẢI trùng mức cắt lỗ trong "Quản trị rủi ro" của CHÍNH kịch bản đó; "price_zone" và vùng nêu ở "Entry" phải là CÙNG một vùng (không để 82,35–85,84 ở chỗ này và 82,35–85,00 ở chỗ khác).
+
+D. "hedge_action": hành động DUY NHẤT cho SỔ PHÒNG HỘ của SIM hôm nay (người vận hành sổ cần 1 lệnh, không phải 4 tín hiệu). SIM có nghĩa vụ CBAM → đang mang vị thế SHORT carbon tự nhiên → phòng hộ đúng chiều là MUA (long) EUA; TUYỆT ĐỐI KHÔNG khuyến nghị bán khống EUA cho sổ phòng hộ. Object gồm:
+   - "action": ĐÚNG 1 trong "buy_now" (mua ngay phần phòng hộ dự kiến), "buy_scheduled" (mua trải đều theo lịch trong 1 vùng giá), "hold" (giữ nguyên tỷ lệ đã phòng hộ, không mua thêm hôm nay), "defer" (hoãn mua, chờ giá về vùng thấp hơn).
+   - "text" (1–2 câu, tối đa ~45 từ): hành động cụ thể + vùng/mức giá (lấy ĐÚNG số đã có trong kịch bản) + lý do. PHẢI tự đối chiếu với giá đóng cửa hiện tại: vùng "mua trải đều" mà đang CHỨA giá hiện tại nghĩa là MUA NGAY → khi đó chọn "buy_now" hoặc đặt vùng thấp hơn giá hiện tại.
+   ĐỒNG BỘ (BẮT BUỘC): đây là kết luận gộp — đã cân 3 kịch bản (ngắn/trung/dài hạn) và "TÍN HIỆU PHÒNG VỆ CBAM" bên dưới. Nếu khác tín hiệu CBAM (vd CBAM "GIỮ" mà hôm nay "buy_now") thì "text" PHẢI nêu 1 vế ngắn vì sao. Kịch bản trung/dài hạn chỉ là bối cảnh — KHÔNG viết thêm hành động phòng hộ riêng cho từng khung ở bất kỳ trường nào khác.
+
+E. "open_positions": đối chiếu BẮT BUỘC từng lệnh trong "LỆNH ĐANG MỞ" bên dưới (rỗng [] nếu không có lệnh nào). Mỗi phần tử:
+   - "report_date": ngày báo cáo đã ra lệnh, ĐÚNG dạng YYYY-MM-DD như trong danh sách;
+   - "decision": "keep" (giữ cắt lỗ/mục tiêu cũ), "move" (chuyển sang mức mới — nêu mức trong "text"), "close" (đóng lệnh ở phiên tới);
+   - "text" (1 câu, tối đa ~30 từ): mức cắt lỗ/mục tiêu áp dụng từ hôm nay và lý do, nhất quán với kịch bản ngắn hạn hôm nay (vd trung hạn nghiêng giảm mà vẫn giữ lệnh mua thì phải nói rõ vì sao).
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "instrument_notes": {{"EUA": "..."}}, "vs_previous": "...", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "key_risk": "...", "trading_strategy": "...", "hedge_note": "..."}}]}}}}"""
+{{"3": {{"title": "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA", "instrument_notes": {{"EUA": "..."}}, "vs_previous": "...", "analysis_blocks": [{{"heading": "...", "content": "..."}}], "trading_scenarios": [{{"horizon": "...", "probability": "Cao/Trung bình/Thấp", "direction": "tăng/giảm/đi ngang", "condition": "...", "price_zone": "...", "key_risk": "...", "trading_strategy": "..."}}], "hedge_action": {{"action": "buy_now|buy_scheduled|hold|defer", "text": "..."}}, "open_positions": [{{"report_date": "YYYY-MM-DD", "decision": "keep|move|close", "text": "..."}}]}}}}"""
     return system, user
 
 
@@ -2450,7 +2641,7 @@ YÊU CẦU: Viết MỤC 3 — PHÂN TÍCH TÁC ĐỘNG CỦA TIN TỨC TỚI CU
    - Dòng CUỐI CÙNG của "content": "**Tổng hợp:** [NHÃN] ..." — NHÃN là 1 trong "[TÍCH CỰC]" (tin tức nghiêng về hỗ trợ EUA), "[TRUNG LẬP]" (tín hiệu hỗn hợp/không đáng kể), "[TIÊU CỰC]" (tin tức nghiêng về gây áp lực lên EUA); nội dung sau nhãn 40–45 chữ, tổng hợp kết luận các nhóm thành 1 nhận định dứt khoát về tác động của TIN TỨC trong ngày lên EUA — KHÔNG nêu bất kỳ con số giá nào, KHÔNG nêu Δ ngày/Δ tuần.
    - Không có tin nào tác động thực lên EUA: "content" = "Không có thông tin mới liên quan trực tiếp đến giá EUA." (bỏ dòng "**Tổng hợp:**").
 2. heading="Quan điểm thị trường" (TÙY CHỌN) — CHỈ khi tin tức THỰC SỰ nêu quan điểm/nhận định từ nguồn xác định: nêu consensus; contrarian (nếu có, kèm tên nguồn, luận điểm, điều kiện đúng); kết thúc bằng câu "**Kết luận:** ..." đối chiếu với "**Tổng hợp:**". Không có → KHÔNG thêm block này. Dự báo giá của tổ chức được nêu ở dạng định tính (không chép con số giá).
-3. heading="Cần theo dõi" (BẮT BUỘC) — các WATCHPOINT rút ra TRỰC TIẾP từ tin/phân tích ở trên, ưu tiên điều còn chưa chắc chắn (sự kiện chính sách đang chờ quyết định, rủi ro nguồn cung chờ giá phiên tới xác nhận...). Mỗi watchpoint 1 dòng đánh số "1.", "2."... (xuống dòng thật \\n giữa các dòng), gồm: (a) cần theo dõi gì (kèm ngày giờ Việt Nam CHỈ khi tin nêu rõ); (b) "Nếu [diễn biến hướng 1]..." → tác động cung/cầu EUA; (c) "Nếu [ngược lại/không xảy ra]..." → tác động khác. 2 nhánh (b)/(c) PHẢI dẫn tới 2 kết cục KHÁC NHAU cho EUA (không để cả 2 cùng "đi ngang/giảm"); cả danh sách có ít nhất 1 nhánh xác nhận chiều tăng và 1 nhánh xác nhận chiều giảm. KHÔNG nêu mức giá/ngưỡng giá. Không bịa watchpoint cho đủ số.
+3. heading="Cần theo dõi" (BẮT BUỘC) — các WATCHPOINT rút ra TRỰC TIẾP từ tin/phân tích ở trên, ưu tiên điều còn chưa chắc chắn (sự kiện chính sách đang chờ quyết định, rủi ro nguồn cung chờ giá phiên tới xác nhận...). Mỗi watchpoint 1 dòng đánh số "1.", "2."... (xuống dòng thật \\n giữa các dòng), gồm: (a) cần theo dõi gì (kèm ngày giờ Việt Nam CHỈ khi tin nêu rõ); (b) "Nếu [diễn biến hướng 1]..." → tác động cung/cầu EUA; (c) "Nếu [ngược lại/không xảy ra]..." → tác động khác. 2 nhánh (b)/(c) PHẢI dẫn tới 2 kết cục KHÁC NHAU cho EUA (không để cả 2 cùng "đi ngang/giảm"); cả danh sách có ít nhất 1 nhánh xác nhận chiều tăng và 1 nhánh xác nhận chiều giảm. KHÔNG nêu mức giá/ngưỡng giá. Không bịa watchpoint cho đủ số. Mỗi watchpoint PHẢI kết thúc bằng số tin đã đánh số dạng "[N]" — watchpoint không có [N] hợp lệ sẽ bị hệ thống xoá; KHÔNG nêu sự kiện/phát ngôn không có trong tin đã đánh số.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
 {{"3": {{"title": "Phân tích tác động của tin tức tới EUA (không có phiên giao dịch)", "analysis_blocks": [{{"heading": "Phân tích", "content": "..."}}, {{"heading": "Cần theo dõi", "content": "..."}}]}}}}"""
@@ -2997,6 +3188,10 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     section4_news_text, section4_index_lookup = _filter_news_with_index(news_by_topic, "4")
     # "Diễn biến chính" (dưới Bảng giá nhanh): mỗi tin bắt buộc có nguồn — cùng cơ chế [N].
     dev_news_text, dev_index_lookup = _filter_news_with_index(news_by_topic, "dev", max_articles=15)
+    # Mục 3: đánh số [N] để mỗi watchpoint "Cần theo dõi" bắt buộc gắn 1 tin có thật (vd nhận định "CEO Eni
+    # kêu gọi tạm ngưng ETS" từng xuất hiện mà không có trong tin tức lẫn Nguồn tham khảo).
+    section3_news_text, section3_index_lookup = _filter_news_with_index(news_by_topic, "3", max_articles=60, per_topic=4)
+    open_trade_list = forecast_review.open_trades(forecast_review_block)
 
     # ── Bộ nhớ gợi ý kinh doanh (services/biz_memory.py) ──
     # Gợi ý ngắn hạn các báo cáo trước (trong 10 ngày) — kiểm tra tình huống kích
@@ -3057,7 +3252,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 overrides=eua_framework_overrides, news_only=True,
             )),
             ("3", _prompt_section3_news_only(
-                _filter_news_for_section(news_by_topic, "3"), target_date,
+                section3_news_text, target_date,
                 _topics_present(news_by_topic, "3"), overrides=eua_framework_overrides,
             )),
             ("4", _prompt_section4(section4_news_text, target_date, cbam_est_text)),
@@ -3091,7 +3286,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 overrides=eua_framework_overrides,
             )),
             ("3", _prompt_section3(
-                _filter_news_for_section(news_by_topic, "3") + prev_digest,
+                section3_news_text + prev_digest,
                 prices_text, eua_trend, eua_session_range, gasoil_crack_spread, target_date,
                 _topics_present(news_by_topic, "3"),
                 overrides=eua_framework_overrides,
@@ -3104,6 +3299,8 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                     ),
                     forecast_review_text,
                 ])),
+                cbam_signal=cbam_est_text,
+                open_orders=forecast_review.describe_open_trades(open_trade_list),
             )),
             ("4", _prompt_section4(
                 section4_news_text,
@@ -3228,9 +3425,14 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                     continue
                 p["note"] = f"{p['note']} {llm_note}".strip() if p.get("note") else llm_note
             content["3"] = {k: v for k, v in section_data.items() if k != "instrument_notes"}
+            content["3"]["sources"] = _resolve_section3_citations(content["3"], section3_index_lookup)
             if no_price:
                 # Kịch bản giao dịch cần vùng giá/Entry/Mục tiêu — không có ở ngày không có phiên.
                 content["3"]["trading_scenarios"] = []
+                content["3"].pop("hedge_action", None)
+                content["3"].pop("open_positions", None)
+            else:
+                _finalize_hedge_fields(content["3"], open_trade_list)
         else:
             content[section_key] = section_data
 
@@ -3280,8 +3482,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         }
 
     section6_news = _build_section6_news(news_by_topic)
-    section6_international = await _summarize_section6_articles(section6_news["international"], target_date)
-    section6_vietnam = await _summarize_section6_articles(section6_news["vietnam"], target_date)
+    section6_international, section6_vietnam = _split_section6_by_subject(
+        await _summarize_section6_articles(section6_news["international"] + section6_news["vietnam"], target_date)
+    )
     content["6"] = {
         "title": "Chi tiết các tin tức chính",
         "international": section6_international,
@@ -3358,6 +3561,10 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         "reminders": reminders,
         "tracking": tracking,
     }
+
+    # Nhãn % sai, mô tả vị trí trong biên độ sai, vùng giá độ rộng 0, số/ngày kiểu tiếng Anh — sửa bằng Python.
+    for fix in apply_consistency_fixes(content):
+        logger.warning("[REPORT] %s: tự sửa %s — %s", report_date, fix["path"], fix["message"])
 
     cited_articles = _collect_cited_articles(news_by_topic, limit=1000)
     # Liệt kê nguồn THỰC SỰ xuất hiện trong báo cáo: source_url của bullet/driver/diễn biến/gợi ý nhắc lại và

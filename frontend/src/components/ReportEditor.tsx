@@ -572,13 +572,30 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
                     { key: "price_zone", label: "Vùng giá tham chiếu" },
                     { key: "key_risk", label: "Rủi ro chính", type: "textarea" },
                     { key: "trading_strategy", label: "Chiến lược bàn giao dịch", type: "textarea" },
-                    { key: "hedge_note", label: "Sổ phòng hộ SIM (CBAM)", type: "textarea" },
+                    // Báo cáo mới gom phòng hộ về 1 hedge_action (bên dưới) — chỉ báo cáo cũ còn hedge_note từng kịch bản.
+                    ...(sec3.hedge_action ? [] : [{ key: "hedge_note", label: "Sổ phòng hộ SIM (CBAM)", type: "textarea" as const }]),
                   ]}
                   rows={sec3.trading_scenarios}
                   onChange={(rows) => patchSection("3", { trading_scenarios: rows })}
                   addLabel="Thêm kịch bản"
                 />
               </div>
+              )}
+
+              {!noPriceData && sec3.hedge_action && (
+                <div className="space-y-2">
+                  <FieldLabel>Sổ phòng hộ SIM — hành động duy nhất (buy_now / buy_scheduled / hold / defer)</FieldLabel>
+                  <Select
+                    value={sec3.hedge_action.action}
+                    options={["buy_now", "buy_scheduled", "hold", "defer"]}
+                    onChange={(v) => patchSection("3", { hedge_action: { ...sec3.hedge_action, action: v } })}
+                  />
+                  <TextArea
+                    rows={2}
+                    value={sec3.hedge_action.text}
+                    onChange={(v) => patchSection("3", { hedge_action: { ...sec3.hedge_action, text: v } })}
+                  />
+                </div>
               )}
             </SectionShell>
           )}

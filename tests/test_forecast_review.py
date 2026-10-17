@@ -44,11 +44,40 @@ def test_same_session_stop_and_target_counts_as_stop():
     assert fr.evaluate_forecast("d1", sc, 85.3, sessions)["trade"]["status"] == "stopped"
 
 
-def test_not_filled_falls_back_to_direction():
-    sc = {"direction": "tăng", "trading_strategy": "**Entry:** Mua quanh 80–81\n**Mục tiêu:** 86\n**Quản trị rủi ro:** Cắt lỗ dưới 78"}
+def test_not_filled_falls_back_to_direction_interim_until_horizon_ends():
+    sc = {"direction": "tăng", "trading_strategy": "**Entry:** Mua khi đóng cửa trên 88\n**Mục tiêu:** 92\n**Quản trị rủi ro:** Cắt lỗ dưới 86"}
     sessions = [{"date": "d1", "high": 86.0, "low": 84.5, "close": 85.8}]
     it = fr.evaluate_forecast("d1", sc, 84.0, sessions)
-    assert it["trade"]["status"] == "not_filled" and it["verdict"] == "correct"
+    # Khung 1–2 tuần mới qua 1 phiên → chưa kết luận
+    assert it["trade"]["status"] == "not_filled" and it["verdict"] == "on_track"
+    it = fr.evaluate_forecast("d1", sc, 84.0, sessions * fr.REVIEW_MAX_SESSIONS)
+    assert it["verdict"] == "correct"
+
+
+def test_wrong_direction_before_horizon_is_diverging_not_wrong():
+    sc = {"direction": "tăng", "trading_strategy": "**Entry:** Mua khi đóng cửa trên 88\n**Mục tiêu:** 92\n**Quản trị rủi ro:** Cắt lỗ dưới 80"}
+    it = fr.evaluate_forecast("d1", sc, 87.14, [{"date": "d1", "open": 86.87, "high": 86.87, "low": 85.37, "close": 85.84}])
+    assert it["trade"]["status"] == "not_filled" and it["verdict"] == "diverging"
+    assert report_qc.check_forecast_review({"2": {"forecast_review": {"items": [it]}}, "3": {}}) == []
+
+
+def test_limit_buy_fills_at_open_on_gap_down():
+    # Bản 15/10: mua quanh 87,00–87,50, cắt lỗ 86,60; phiên 16/10 mở gap xuống 86,87 (= giá cao) rồi đóng 85,84.
+    sc = {"direction": "tăng", "trading_strategy": "**Entry:** Mua quanh 87,00–87,50\n**Mục tiêu:** 89,00\n**Quản trị rủi ro:** Cắt lỗ dưới 86,60"}
+    it = fr.evaluate_forecast("2026-10-15", sc, 87.14, [{"date": "2026-10-15", "open": 86.87, "high": 86.87, "low": 85.37, "close": 85.84}])
+    t = it["trade"]
+    assert (t["status"], t["fill_price"], t["exit_price"]) == ("stopped", 86.87, 85.84) and it["verdict"] == "wrong"
+
+
+def test_open_trades_and_merge_positions():
+    sc = {"direction": "tăng", "trading_strategy": "**Entry:** Mua quanh 87,2–88,0\n**Mục tiêu:** 88,5\n**Quản trị rủi ro:** Cắt lỗ dưới 85,00"}
+    it = fr.evaluate_forecast("2026-10-09", sc, 88.5, [{"date": "2026-10-15", "open": 88.2, "high": 88.2, "low": 87.4, "close": 87.6}])
+    trades = fr.open_trades({"items": [it]})
+    assert [t["report_date"] for t in trades] == ["2026-10-09"]
+    assert "Mua 87,20–88,00" in fr.describe_open_trades(trades)
+    merged = fr.merge_open_positions(trades, [{"report_date": "2026-10-09", "decision": "move", "text": "Dời cắt lỗ về 81,50."}])
+    assert merged[0]["decision"] == "move" and merged[0]["stop"] == 85.0
+    assert fr.merge_open_positions(trades, [])[0]["decision"] is None
 
 
 @pytest.mark.parametrize("direction,chg,verdict", [

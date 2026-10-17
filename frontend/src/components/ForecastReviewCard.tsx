@@ -25,6 +25,8 @@ const VERDICT_TONE: Record<ForecastReviewItem["verdict"], string> = {
   correct: "bg-up/10 text-up border-up/30",
   wrong: "bg-down/10 text-down border-down/30",
   unclear: "bg-surface text-muted-light border-border",
+  on_track: "bg-up/5 text-up border-up/20 border-dashed",
+  diverging: "bg-down/5 text-down border-down/20 border-dashed",
 };
 
 export function ForecastReviewCard({

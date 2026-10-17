@@ -49,7 +49,8 @@ export interface ForecastReviewItem {
   last_close: number;
   change_pct: number;
   sessions: number;
-  verdict: "correct" | "wrong" | "unclear";
+  // on_track/diverging: chiều %Δ đúng/ngược nhưng chưa hết khung ngắn hạn — chưa kết luận.
+  verdict: "correct" | "wrong" | "unclear" | "on_track" | "diverging";
   high_confidence_miss: boolean;
   trade: {
     side: "buy" | "sell";
@@ -59,9 +60,30 @@ export interface ForecastReviewItem {
     target: number | null;
     status: "not_filled" | "open" | "stopped" | "target_hit";
     filled_date: string | null;
+    fill_price?: number | null;
     exit_date: string | null;
     exit_price: number | null;
   } | null;
+}
+
+// Mục 3: 1 hành động duy nhất cho sổ phòng hộ SIM + đối chiếu lệnh đang mở (services/report_generator.py
+// _finalize_hedge_fields). Báo cáo cũ không có → thẻ vị thế dùng hedge_note của kịch bản ngắn hạn.
+export interface HedgeAction {
+  action: "buy_now" | "buy_scheduled" | "hold" | "defer";
+  text: string;
+}
+
+export interface OpenPosition {
+  report_date: string;
+  side: "buy" | "sell";
+  entry_low: number;
+  entry_high: number;
+  filled_date: string | null;
+  fill_price: number | null;
+  stop: number;
+  target: number | null;
+  decision: "keep" | "move" | "close" | null;
+  text: string;
 }
 
 export interface ForecastReview {

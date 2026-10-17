@@ -113,4 +113,9 @@ def strategy_levels(sc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     entry, target, risk = _body("entry"), _body("mục tiêu|target"), _body("quản trị rủi ro|cắt lỗ|stop|risk")
     if entry is None or risk is None:
         return None
-    return parse_signal_levels(direction, entry, target or "", risk)
+    levels = parse_signal_levels(direction, entry, target or "", risk)
+    # Lệnh chờ PHÁ VỠ ("mua khi đóng cửa trên X" / "bán khi thủng X") khác lệnh giới hạn ("mua quanh X"):
+    # giá mở gap qua vùng Entry theo chiều có lợi chỉ khớp lệnh giới hạn (forecast_review.simulate_trade).
+    breakout = r"trên|vượt|phá lên|above|break" if direction == "tăng" else r"dưới|thủng|phá xuống|below|break"
+    levels["entry_breakout"] = bool(re.search(breakout, entry, re.I))
+    return levels
