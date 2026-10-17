@@ -3221,7 +3221,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     eua_technical_levels = _eua_technical_levels_summary(chart_data)
     fuel_spread = _fuel_switching_spread_summary(prices)
     gasoil_crack_spread = _gasoil_crack_spread_summary(
-        prices, prev_report_close, await _crack_spread_history(session, max_date) if max_date else None,
+        prices, prev_report_close, await _crack_spread_history(session, max_price_date) if max_price_date else None,
     ) or (
         "Không có dữ liệu Gasoil hoặc Brent trong phiên này — không tính được crack spread."
     )
