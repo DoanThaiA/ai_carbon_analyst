@@ -560,6 +560,7 @@
       }
     },
     "calibration": "Cumulative hit rate by probability:",
+    "calibrationRecent": "Hit rate, last {n} scored reports (by probability):",
     "calibrationItem": "{probability} {correct}/{total}",
     "rules": "Scoring rules: Right/Wrong is final when the order hits its target/stop or after {horizon} sessions (1–2 week horizon); before that it is only On track/Diverging. Direction counts when |%Δ| ≥ {dir}%; \"sideways\" is right when |%Δ| < {side}%. Pending orders are valid for {valid} sessions and cancelled if price reaches the target before filling; a limit order gapped through fills at the open. Target reached before fill → \"Right direction, not filled\", excluded from the hit rate. Sunday/Monday reports are news-only, so there is no forecast to score.",
     "lesson": "Cause & adjustment",

@@ -62,8 +62,9 @@ export function ForecastReviewCard({
           const tr = it.trade;
           return (
             <li key={it.report_date} className="print:break-inside-avoid px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
-              {/* Nhãn rộng cố định (vừa nhãn dài nhất "Đang đúng hướng") để cột nội dung các dòng thẳng hàng. */}
-              <span className={clsx("self-start shrink-0 sm:w-[8.75rem] text-center whitespace-nowrap font-mono text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
+              {/* Nhãn rộng cố định để cột nội dung các dòng thẳng hàng; nhãn dài ("Đúng hướng, không khớp lệnh")
+                  xuống dòng TRONG nhãn thay vì tràn ra ngoài. */}
+              <span className={clsx("self-start shrink-0 max-w-full sm:w-[9.5rem] text-center break-words font-mono text-[11px] leading-snug font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
                 {t(`verdict.${it.verdict}`)}
               </span>
               <div className="text-[13.5px] leading-[1.55] text-body min-w-0">
@@ -99,7 +100,10 @@ export function ForecastReviewCard({
 
       {review.calibration?.some((c) => c.total > 0 || (c.direction_only ?? 0) > 0) && (
         <div className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
-          <span className="font-semibold text-label">{t("calibration")}</span>{" "}
+          <span className="font-semibold text-label">
+            {/* Báo cáo cũ (tính trên 60 báo cáo) không có calibration_reports → giữ nhãn "lũy kế". */}
+            {review.rules?.calibration_reports ? t("calibrationRecent", { n: review.rules.calibration_reports }) : t("calibration")}
+          </span>{" "}
           {review.calibration
             .filter((c) => c.total > 0 || (c.direction_only ?? 0) > 0)
             .map((c) =>

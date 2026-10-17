@@ -288,7 +288,7 @@ báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi b
 phiên khớp chỉ xét giá đóng cửa; 1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ) → chạm cắt lỗ = SAI, chạm mục tiêu =
 ĐÚNG, còn lại theo chiều %Δ — chưa hết `REVIEW_MAX_SESSIONS` phiên thì chỉ là `on_track`/`diverging`. Lệnh chờ hết hiệu
 lực sau `ORDER_VALID_SESSIONS` phiên (`expired`); giá chạm mục tiêu trước khi khớp → `cancelled_target` (ĐÚNG hướng). Khối
-kèm `calibration` (tỷ lệ đúng theo mức xác suất, `CALIBRATION_REPORTS` báo cáo, chỉ kết luận cuối) và `rules` (ngưỡng chấm,
+kèm `calibration` (tỷ lệ đúng theo mức xác suất của `CALIBRATION_REPORTS`=7 báo cáo gần nhất ĐÃ CÓ KẾT LUẬN — báo cáo còn trong khung không chiếm suất) và `rules` (ngưỡng chấm,
 hiển thị ở `ForecastReviewCard`). Ngưỡng chung `DIRECTION_THRESHOLD_PCT` = `SIDEWAYS_MAX_PCT` (1%, không chồng lấn). Lệnh
 dừng/giới hạn phân biệt bằng `strategy_levels.is_breakout_entry` (chỉ cụm có điều kiện "khi/nếu … trên/vượt", "phá đỉnh" —
 chữ "trên" lẻ không tính); lệnh giới hạn khớp do mở gap thì xét cắt lỗ theo đáy/đỉnh của chính phiên đó; đủ N phiên chưa

@@ -43,7 +43,8 @@ REVIEW_MAX_SESSIONS = 10      # khung "ngắn hạn" 1–2 tuần
 DIRECTION_THRESHOLD_PCT = 1.0
 SIDEWAYS_MAX_PCT = DIRECTION_THRESHOLD_PCT
 ORDER_VALID_SESSIONS = 3       # lệnh chờ của thẻ chiến lược hết hiệu lực sau N phiên chưa khớp
-CALIBRATION_REPORTS = 60       # số báo cáo gần nhất dùng tính tỷ lệ đúng theo mức xác suất
+CALIBRATION_REPORTS = 7        # tỷ lệ đúng theo mức xác suất: N báo cáo gần nhất ĐÃ CÓ KẾT LUẬN (đúng/sai/đúng hướng không khớp)
+CALIBRATION_SCAN_REPORTS = 40  # số báo cáo tối đa quét lùi để gom đủ N báo cáo đã có kết luận
 PROBABILITY_LEVELS = ("Cao", "Trung bình", "Thấp")
 _SUMMARY_LINE_RE = re.compile(r"\*\*Tổng hợp:?\*\*\s*(.*)")
 
@@ -258,6 +259,7 @@ async def build_forecast_review(session: AsyncSession, report_date: str, data_da
         "rules": {
             "horizon_sessions": REVIEW_MAX_SESSIONS, "direction_threshold_pct": DIRECTION_THRESHOLD_PCT,
             "sideways_max_pct": SIDEWAYS_MAX_PCT, "order_valid_sessions": ORDER_VALID_SESSIONS,
+            "calibration_reports": CALIBRATION_REPORTS,
         },
     }
     return block, describe_for_prompt(block, premises)
@@ -280,7 +282,7 @@ async def _calibration(session: AsyncSession, report_date: str, data_date: str) 
         select(Report)
         .where(Report.report_date < report_date, Report.status.in_(["draft", "published"]))
         .order_by(desc(Report.report_date))
-        .limit(CALIBRATION_REPORTS)
+        .limit(CALIBRATION_SCAN_REPORTS)
     )).scalars().all()
     candidates = []
     for r in reports:
@@ -294,11 +296,14 @@ async def _calibration(session: AsyncSession, report_date: str, data_date: str) 
         return calibration_from([])
     all_sessions = await _eua_sessions(session, min(c[0] for c in candidates), data_date)
     evaluated = []
-    for rdate, short, ref in candidates:
+    for rdate, short, ref in candidates:  # mới → cũ
         sessions = [s for s in all_sessions if s["date"] >= rdate][:REVIEW_MAX_SESSIONS]
         ev = evaluate_forecast(rdate, short, ref, sessions)
-        if ev:
+        # Chỉ lấy báo cáo đã có kết luận — báo cáo còn trong khung (đang đúng hướng/đang lệch) không chiếm suất.
+        if ev and ev["verdict"] in ("correct", "wrong", "direction_only"):
             evaluated.append(ev)
+            if len(evaluated) >= CALIBRATION_REPORTS:
+                break
     return calibration_from(evaluated)
 
 
@@ -361,7 +366,7 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
     calib = [c for c in block.get("calibration") or [] if c.get("total") or c.get("direction_only")]
     if calib:
         lines.append(
-            "TỶ LỆ ĐÚNG LŨY KẾ theo mức xác suất (dự báo đã có kết luận cuối): "
+            f"TỶ LỆ ĐÚNG {CALIBRATION_REPORTS} BÁO CÁO GẦN NHẤT ĐÃ CÓ KẾT LUẬN, theo mức xác suất: "
             + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}"
                         + (f" (+{c['direction_only']} đúng hướng nhưng không khớp lệnh)" if c.get("direction_only") else "")
                         for c in calib)

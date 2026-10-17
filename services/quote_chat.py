@@ -620,13 +620,13 @@ def _format_forecast_review(block: Optional[dict]) -> str:
     lines += [_format_forecast_item(it) for it in block["items"]]
     if block.get("wrong_in_row", 0) >= 2:
         lines.append(f"- {block['wrong_in_row']} báo cáo LIÊN TIẾP dự báo sai.")
+    rules = block.get("rules")
     calib = [c for c in block.get("calibration") or [] if c.get("total")]
     if calib:
         lines.append(
-            "Tỷ lệ đúng lũy kế theo mức xác suất (chỉ dự báo đã có kết luận cuối): "
+            f"Tỷ lệ đúng {(rules or {}).get('calibration_reports', 'các')} báo cáo gần nhất đã có kết luận, theo mức xác suất: "
             + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in calib)
         )
-    rules = block.get("rules")
     if rules:
         lines.append(
             f"Quy tắc chấm: khung ngắn hạn {rules.get('horizon_sessions')} phiên; tăng/giảm đúng khi %Δ cùng chiều ≥ "

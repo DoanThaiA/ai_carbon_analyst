@@ -95,7 +95,7 @@ export interface ForecastReview {
   wrong_in_row: number;
   // Báo cáo cũ không có 2 trường dưới.
   calibration?: { probability: string; correct: number; total: number; direction_only?: number }[];
-  rules?: { horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number };
+  rules?: { horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number; calibration_reports?: number };
 }
 
 export interface ReportSummary {

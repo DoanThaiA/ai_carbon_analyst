@@ -226,3 +226,37 @@ def test_stop_entry_already_reached_at_issue_is_limit():
     # Bản 14/10: mua khi phá 88,82 khi EUA đang 88,05 → lệnh dừng thật, giữ nguyên.
     sc14 = {**sc, "trading_strategy": "**Entry:** Mua khi phá đỉnh 88,82\n**Mục tiêu:** 91,30\n**Quản trị rủi ro:** Cắt lỗ dưới 87,15"}
     assert fr.evaluate_forecast("2026-10-14", sc14, 88.05, _s([("2026-10-15", 86.87, 86.87, 85.37, 85.84)]))["trade"]["order_type"] == "stop"
+
+
+def test_calibration_uses_last_n_scored_reports_only():
+    """Tỷ lệ đúng chỉ tính CALIBRATION_REPORTS báo cáo gần nhất ĐÃ CÓ KẾT LUẬN — báo cáo còn trong khung không chiếm suất."""
+    import asyncio
+    from types import SimpleNamespace
+
+    sc = {"horizon": "ngắn hạn", "direction": "tăng", "probability": "Cao",
+          "trading_strategy": "**Entry:** Mua quanh 87,2–88,0\n**Mục tiêu:** 95,0\n**Quản trị rủi ro:** Cắt lỗ dưới 86,30"}
+    # 12 báo cáo 01/09 → 12/09 (mới → cũ); giá rơi thủng cắt lỗ ngày 13/09 → báo cáo nào cũng SAI, trừ báo cáo
+    # không còn phiên nào sau nó (13/09 trở đi chưa có báo cáo) — tất cả đều có kết luận.
+    reports = [SimpleNamespace(report_date=f"2026-09-{d:02d}", content={
+        "2": {"prices": [{"code": "EUA", "close": 87.5}]}, "3": {"trading_scenarios": [sc]}}) for d in range(12, 0, -1)]
+    prices = [SimpleNamespace(price_date=f"2026-09-{d:02d}", open_price=87.5, high_price=87.8, low_price=87.3, close_price=87.5)
+              for d in range(1, 13)]
+    prices.append(SimpleNamespace(price_date="2026-09-13", open_price=86.0, high_price=86.2, low_price=85.0, close_price=85.2))
+
+    class _R:
+        def __init__(self, v):
+            self.v = v
+
+        def scalars(self):
+            return SimpleNamespace(all=lambda: self.v)
+
+    class _S:
+        def __init__(self, *rs):
+            self.rs = list(rs)
+
+        async def execute(self, _stmt):
+            return _R(self.rs.pop(0))
+
+    calib = asyncio.run(fr._calibration(_S(reports, prices), "2026-09-14", "2026-09-13"))
+    cao = next(c for c in calib if c["probability"] == "Cao")
+    assert cao["total"] == fr.CALIBRATION_REPORTS == 7 and cao["correct"] == 0
