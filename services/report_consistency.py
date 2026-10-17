@@ -127,19 +127,36 @@ def range_position(price: float, low: float, high: float) -> Optional[Dict[str, 
     return {"pct": pct, "mid": mid, "half": "nửa trên" if pct >= 50 else "nửa dưới", "label": label}
 
 
+# 40–60% biên độ = quanh điểm giữa: "nửa dưới biên" khi giá chỉ thấp hơn điểm giữa 0,18 (47%, bản 17/10) là thổi phồng.
+MIDDLE_BAND_PCT = (40.0, 60.0)
+MIDDLE_PHRASE = "vùng giữa"
+
+
+def in_middle_band(pct: float) -> bool:
+    pct = round(pct, 1)  # 40,000000001% (sai số float) vẫn là mép "nửa dưới"
+    return MIDDLE_BAND_PCT[0] < pct < MIDDLE_BAND_PCT[1]
+
+
 def describe_range_position(price: float, low: float, high: float, what: str) -> str:
     pos = range_position(price, low, high)
     if not pos:
         return ""
-    return (
+    head = (
         f"Vị trí giá đóng cửa {vn_num(price)} trong {what} {vn_num(low)}–{vn_num(high)}: {vn_num(pos['pct'], 1)}% tính từ đáy "
-        f"(điểm giữa {vn_num(pos['mid'])}) → {pos['half'].upper()} biên độ. Nhắc vị trí PHẢI dùng đúng cụm \"{pos['half']}\"."
+        f"(điểm giữa {vn_num(pos['mid'])}, lệch {vn_num(price - pos['mid'], sign=True)})"
     )
+    if in_middle_band(pos["pct"]):
+        return (
+            f"{head} → QUANH ĐIỂM GIỮA biên độ. Nhắc vị trí PHẢI dùng cụm \"{MIDDLE_PHRASE} biên\" — KHÔNG gọi là "
+            "\"nửa trên/nửa dưới\" và KHÔNG dùng vị trí này làm tín hiệu tăng/giảm."
+        )
+    return f"{head} → {pos['half'].upper()} biên độ. Nhắc vị trí PHẢI dùng đúng cụm \"{pos['half']}\"."
 
 
 # "nửa dưới biên độ 82,35–88,82" / "nửa trên của vùng 82,35 – 88,82"
 _HALF_CLAIM_RE = re.compile(
-    rf"(?P<half>nửa\s+(?:trên|dưới))(?P<mid>\s+(?:của\s+)?(?:biên(?:\s+độ)?|vùng|kênh)(?:\s+[^\d\n]{{0,25}}?)?\s*)"
+    rf"(?P<half>nửa\s+(?:trên|dưới))(?P<mid>\s+(?:của\s+)?(?:biên(?:\s+độ)?|vùng|kênh)(?:\s+\d+\s+(?:phiên|ngày))?"
+    rf"(?:\s+[^\d\n]{{0,25}}?)?\s*)"
     rf"(?P<lo>{_NUM}){_DASH}(?P<hi>{_NUM})"
 )
 # "87,5 (giữa biên)" — biên là vùng A–B gần nhất trong cùng đoạn chứa số đó.
@@ -158,7 +175,15 @@ def fix_range_claims(
         lo, hi = parse_num(m["lo"]), parse_num(m["hi"])
         pos = range_position(price, min(lo, hi), max(lo, hi)) if price else None
         claim = re.sub(r"\s+", " ", m["half"])
-        if not pos or not (0 <= pos["pct"] <= 100) or claim == pos["half"] or 47 <= pos["pct"] <= 53:
+        if not pos or not (0 <= pos["pct"] <= 100):
+            return m.group(0)
+        if in_middle_band(pos["pct"]):
+            problems.append(
+                f"\"{claim} {m['lo']}–{m['hi']}\" thổi phồng: giá {vn_num(price)} ở {vn_num(pos['pct'], 1)}% biên độ, chỉ lệch điểm "
+                f"giữa {vn_num(pos['mid'])} {vn_num(price - pos['mid'], sign=True)} → {MIDDLE_PHRASE}"
+            )
+            return f"{MIDDLE_PHRASE}{m['mid']}{m['lo']}–{m['hi']}"
+        if claim == pos["half"]:
             return m.group(0)
         problems.append(
             f"\"{claim} {m['lo']}–{m['hi']}\" sai: giá {vn_num(price)} ở {vn_num(pos['pct'], 1)}% biên độ "
@@ -264,6 +289,119 @@ def fix_streak_claims(text: str, streak: Optional[Dict[str, Any]]) -> Tuple[str,
     return _STREAK_RE.sub(_sub, text), problems
 
 
+# ── 2b'. Nhịp tăng/giảm đang thu hẹp hay mở rộng ──────────────────────────────
+def streak_momentum(streak: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Mức thay đổi TỪNG phiên trong chuỗi liên tiếp → mẫu hình. Bản 17/10 viết "mức giảm thu hẹp dần" trong khi
+    −0,29 → −0,91 → −1,30 → −0,43: mở rộng 3 phiên, chỉ thu hẹp ở phiên cuối.
+    -> {"changes", "pcts", "pattern": "thu hẹp dần"|"mở rộng dần"|"mở rộng rồi thu hẹp ở phiên cuối"|"không đều", "text"}."""
+    if not streak or streak.get("count", 0) < 2:
+        return None
+    closes = [c for _, c in streak["closes"]]
+    changes = [b - a for a, b in zip(closes, closes[1:])]
+    pcts = [(b / a - 1) * 100 for a, b in zip(closes, closes[1:]) if a]
+    mags = [abs(c) for c in changes]
+    if all(b < a for a, b in zip(mags, mags[1:])):
+        pattern = "thu hẹp dần"
+    elif all(b > a for a, b in zip(mags, mags[1:])):
+        pattern = "mở rộng dần"
+    elif len(mags) >= 3 and all(b > a for a, b in zip(mags[:-1], mags[1:-1])) and mags[-1] < mags[-2]:
+        pattern = "mở rộng rồi thu hẹp ở phiên cuối"
+    else:
+        pattern = "không đều"
+    path = " → ".join(vn_num(c, sign=True) for c in changes)
+    pct_path = " → ".join(vn_num(p, sign=True) + "%" for p in pcts)
+    return {
+        "changes": changes, "pcts": pcts, "pattern": pattern, "direction": streak["direction"],
+        "text": f"Mức {streak['direction']} từng phiên trong nhịp: {path} ({pct_path}) → {pattern}.",
+    }
+
+
+_MOMENTUM_RE = re.compile(
+    r"(?P<lead>(?:mức|đà|nhịp|biên độ)\s+(?P<dir>giảm|tăng))(?P<sp>\s+(?:đang\s+)?)(?P<claim>thu hẹp|chậm lại|yếu đi|mở rộng|nới rộng|tăng tốc)\s+dần",
+    re.IGNORECASE,
+)
+
+
+def fix_momentum_claims(text: str, momentum: Optional[Dict[str, Any]]) -> Tuple[str, List[str]]:
+    """"mức giảm thu hẹp dần" / "đà tăng mở rộng dần" phải khớp mẫu hình thật của nhịp (streak_momentum)."""
+    problems: List[str] = []
+    if not momentum:
+        return text, problems
+
+    def _sub(m: re.Match) -> str:
+        if m["dir"].lower() != momentum["direction"]:
+            return m.group(0)
+        narrowing = m["claim"].lower() in ("thu hẹp", "chậm lại", "yếu đi")
+        want = "thu hẹp dần" if narrowing else "mở rộng dần"
+        if momentum["pattern"] == want:
+            return m.group(0)
+        problems.append(f"\"{m.group(0)}\" sai — {momentum['text']}")
+        last_narrowed = abs(momentum["changes"][-1]) < abs(momentum["changes"][-2])
+        return f"{m['lead']}{m['sp']}{'thu hẹp ở phiên cuối' if last_narrowed else 'mở rộng ở phiên cuối'}"
+
+    return _MOMENTUM_RE.sub(_sub, text), problems
+
+
+# ── 2b''. Dấu hiệu cạn lực của phiên cuối ─────────────────────────────────────
+EXHAUSTION_RANGE_RATIO = 0.8   # biên độ phiên ≤ 0,8 × ATR 14 phiên trước
+EXHAUSTION_VOLUME_PCT = -20.0  # khối lượng ≤ −20% so với TB 20 phiên trước
+GAP_MIN_ATR = 0.25             # gap mở cửa < 0,25 × ATR = nhiễu, không phải tín hiệu
+
+
+def session_signals(chart: List[Dict[str, Any]], vol_sessions: int = 20) -> Optional[Dict[str, Any]]:
+    """Các tín hiệu kỹ thuật của phiên mới nhất, tính 1 lần dùng chung prompt + Jack: biên độ/ATR, khối lượng/TB,
+    gap/ATR, cạn lực (biên độ HẸP VÀ khối lượng THẤP — đúng quy tắc prompt ghi), chiều của nhịp."""
+    rows = [c for c in chart if isinstance(c, dict) and all(isinstance(c.get(k), (int, float)) for k in ("open", "high", "low", "close"))]
+    if len(rows) < 3:
+        return None
+    last, prev = rows[-1], rows[-2]
+    atr = atr_true_range(rows[:-1])
+    if not atr:
+        return None
+    vols = [c["volume"] for c in rows[:-1] if isinstance(c.get("volume"), (int, float)) and c["volume"] > 0][-vol_sessions:]
+    v = last.get("volume")
+    vol_pct = ((v / (sum(vols) / len(vols)) - 1) * 100) if vols and isinstance(v, (int, float)) and v > 0 else None
+    ratio = (last["high"] - last["low"]) / atr
+    gap = last["open"] - prev["close"]
+    streak = eua_streak(rows)
+    return {
+        "atr": atr, "range_ratio": ratio, "vol_pct": vol_pct, "gap": gap, "gap_atr": abs(gap) / atr,
+        "gap_significant": abs(gap) >= GAP_MIN_ATR * atr,
+        "exhausted": ratio <= EXHAUSTION_RANGE_RATIO and vol_pct is not None and vol_pct <= EXHAUSTION_VOLUME_PCT,
+        "trend": streak["direction"] if streak and streak["count"] >= 2 else None,
+    }
+
+
+_NO_EXHAUSTION_RE = re.compile(
+    r"chưa\s+(?:có\s+)?(?:bằng chứng|dấu hiệu|tín hiệu)\s+(?:nào\s+)?(?:cho thấy\s+)?(?:lực\s+(?:bán|mua)\s+)?(?:cạn|suy yếu|yếu đi)"
+    r"|lực\s+(?:bán|mua)\s+vẫn\s+(?:chiếm\s+)?(?:ưu thế|áp đảo)",
+    re.IGNORECASE,
+)
+_GAP_SIGNAL_RE = re.compile(r"(?:gap|khoảng trống)\s+(?:giảm|tăng)[^.;\n]{0,60}?(?:tín hiệu|lực\s+(?:bán|mua))|(?:tín hiệu|lực\s+(?:bán|mua))[^.;\n]{0,40}?gap", re.IGNORECASE)
+
+
+def technical_claim_issues(text: str, sig: Optional[Dict[str, Any]]) -> List[str]:
+    """Câu kỹ thuật mâu thuẫn số liệu phiên: "chưa có bằng chứng cạn lực" khi phiên cuối đủ 2 điều kiện cạn lực; gap
+    nhỏ hơn GAP_MIN_ATR × ATR bị dùng làm tín hiệu (bản 17/10: gap 0,11 = 0,06 ATR gắn FACT tín hiệu bán)."""
+    if not sig:
+        return []
+    out = []
+    m = _NO_EXHAUSTION_RE.search(text)
+    if sig["exhausted"] and m:
+        out.append(
+            f"\"{m.group(0)}\" mâu thuẫn số liệu: phiên cuối đủ 2 điều kiện cạn lực (biên độ ×{vn_num(sig['range_ratio'])} ATR, "
+            f"khối lượng {vn_num(sig['vol_pct'], 1, sign=True)}% so TB) — viết \"lực {'bán' if sig['trend'] != 'tăng' else 'mua'} "
+            "chững lại ở phiên cuối, cần phiên xác nhận\""
+        )
+    g = _GAP_SIGNAL_RE.search(text)
+    if g and not sig["gap_significant"]:
+        out.append(
+            f"\"{g.group(0)[:60]}\" thổi phồng: gap {vn_num(abs(sig['gap']))} chỉ = ×{vn_num(sig['gap_atr'])} ATR "
+            f"(< {vn_num(GAP_MIN_ATR)} ATR) — nhiễu, không phải tín hiệu"
+        )
+    return out
+
+
 # ── 2c. Mục tiêu suy từ phép nhân "X (Y × 0,95)" ──────────────────────────────
 _DERIVED_RE = re.compile(rf"(?P<x>{_NUM})\s*\(\s*=?\s*(?P<y>{_NUM})\s*[×x\*]\s*(?P<f>\d+(?:[.,]\d+)?)\s*\)")
 
@@ -338,6 +476,29 @@ _EN_DATE_DMY_RE = re.compile(rf"\b(\d{{1,2}})\s+({_MONTH_ALT})\s*,?\s+(\d{{4}})\
 _EN_DATE_MDY_RE = re.compile(rf"\b({_MONTH_ALT})\s+(\d{{1,2}})\s*,\s*(\d{{4}})\b")
 
 
+# Dấu nháy đơn không có cặp ("...tách rời của Nga', nằm giữa..." — tiêu đề bài cafef 17/10). Nháy giữa 2 chữ/số
+# (Europe's, 44.01’s) là dấu sở hữu, không tính.
+_QUOTE_CHARS = "'‘’"
+
+
+def fix_stray_quotes(text: str) -> str:
+    marks = [i for i, ch in enumerate(text) if ch in _QUOTE_CHARS
+             and not (0 < i < len(text) - 1 and text[i - 1].isalnum() and text[i + 1].isalnum())]
+    stray, opened = [], []
+    for i in marks:
+        prev_ch = text[i - 1] if i > 0 else " "
+        next_ch = text[i + 1] if i < len(text) - 1 else " "
+        if not prev_ch.isalnum() and next_ch.isalnum():
+            opened.append(i)          # nháy mở
+        elif prev_ch.isalnum() and not next_ch.isalnum():
+            if opened:
+                opened.pop()          # nháy đóng có cặp
+            elif not (prev_ch.lower() == "s" and next_ch == " "):
+                stray.append(i)       # nháy đóng lẻ (không phải sở hữu số nhiều "players' ")
+    stray_set = set(stray + opened)
+    return "".join(ch for i, ch in enumerate(text) if i not in stray_set) if stray_set else text
+
+
 def normalize_presentation(text: str) -> str:
     def _range(m: re.Match) -> str:
         return m["a"] if parse_num(m["a"]) == parse_num(m["b"]) else m.group(0)
@@ -401,18 +562,28 @@ def _chart(content: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [c for c in (content.get("2") or {}).get("chart_data") or [] if isinstance(c, dict)]
 
 
+# Tiêu đề GỐC của bài (Mục 6 giữ nguyên ngôn ngữ bài) — không đổi dấu thập phân/ngày ("44.01's", "$11.7M" là tên/số tiếng
+# Anh; bản 17/10 thành "44,01’s", "$11,7M"), chỉ sửa nháy lẻ.
+_ORIGINAL_TITLE_RE = re.compile(r"^6\.(?:international|vietnam)\[\d+\]\.title$")
+
+
 def apply_consistency_fixes(content: Dict[str, Any]) -> List[Dict[str, str]]:
     """Sửa tại chỗ toàn bộ văn bản báo cáo. -> danh sách {"path", "message"} các lỗi số đã sửa (để log)."""
     close, rng = eua_reference(content)
     streak = eua_streak(_chart(content))
+    momentum = streak_momentum(streak)
     fixed: List[Dict[str, str]] = []
 
     def _fn(text: str, path: str) -> str:
+        text = fix_stray_quotes(text)
+        if _ORIGINAL_TITLE_RE.match(path):
+            return text
         text = normalize_presentation(text)
         text, p1 = fix_pct_labels(text, close if _is_eua_scenario(path) else None)
         text, p2 = fix_range_claims(text, close, rng)
         text, p3 = fix_streak_claims(text, streak)
-        fixed.extend({"path": path, "message": m} for m in p1 + p2 + p3)
+        text, p4 = fix_momentum_claims(text, momentum)
+        fixed.extend({"path": path, "message": m} for m in p1 + p2 + p3 + p4)
         return text
 
     walk_text(content, _fn)
@@ -423,14 +594,18 @@ def consistency_issues(content: Dict[str, Any]) -> List[Dict[str, str]]:
     """Như apply_consistency_fixes nhưng KHÔNG sửa (cho QC báo cáo đã lưu/đã sửa tay)."""
     close, rng = eua_reference(content)
     streak = eua_streak(_chart(content))
+    momentum = streak_momentum(streak)
     found: List[Dict[str, str]] = []
 
     def _fn(text: str, path: str) -> str:
         _, p1 = fix_pct_labels(text, close if _is_eua_scenario(path) else None)
         _, p2 = fix_range_claims(text, close, rng)
         _, p3 = fix_streak_claims(text, streak)
-        found.extend({"path": path, "message": m} for m in p1 + p2 + p3)
-        if normalize_presentation(text) != text:
+        _, p4 = fix_momentum_claims(text, momentum)
+        found.extend({"path": path, "message": m} for m in p1 + p2 + p3 + p4)
+        if fix_stray_quotes(text) != text:
+            found.append({"path": path, "message": "dấu nháy đơn lẻ (không có cặp)", "minor": "1"})
+        if not _ORIGINAL_TITLE_RE.match(path) and normalize_presentation(text) != text:
             found.append({"path": path, "message": "định dạng số/ngày/vùng giá chưa thống nhất kiểu vi-VN", "minor": "1"})
         return text
 

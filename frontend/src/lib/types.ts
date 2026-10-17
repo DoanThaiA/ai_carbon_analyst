@@ -34,6 +34,24 @@ export interface CbamEstimate {
   signal_reason: "quarter_fixed" | "quarter_not_started" | "quarter_mostly_fixed" | "spot_below_qtd" | "spot_above_qtd" | "spot_near_qtd";
   hedge_gap_pct: number;
   hedge_fixed_share_pct: number;
+  tactical_max_pct?: number;
+  // % theo KHỐI LƯỢNG QUÝ (báo cáo từ 18/10/2026; bản cũ không có)
+  open_share_pct?: number;
+  core_share_of_quarter_pct?: number;
+  tactical_share_of_quarter_pct?: number;
+  // Chi phí CBAM / tấn sản phẩm theo GIẢ ĐỊNH phát thải & benchmark (services/cbam_estimate.py::product_exposure)
+  product_exposure?: {
+    key: string;
+    cn: string;
+    embedded: number;
+    benchmark: number;
+    free_allocation_factor_pct: number;
+    net_tco2_per_t: number;
+    cost_eur_per_t: number;
+    cost_low: number | null;
+    cost_high: number | null;
+    assumed: boolean;
+  }[];
   last_auction: { date: string; platform: string; price: number; cover_ratio: number | null } | null;
   upcoming: { count: number; volume_mt: number; first_date: string | null; last_date: string | null } | null;
   prev_quarter: { quarter: string; vwap: number | null; official: number | null } | null;
@@ -65,6 +83,13 @@ export interface ForecastReviewItem {
     exit_date: string | null;
     exit_price: number | null;
   } | null;
+  // Báo cáo từ 18/10/2026: cách chấm, lệch xa nhất trong khung, lỗi thiết kế lệnh.
+  graded_by?: "trade" | "direction" | "path";
+  max_excursion_pct?: number;
+  design_flaws?: (
+    | { kind: "low_rr"; rr: number; entry: number; risk: number; reward: number }
+    | { kind: "tight_stop"; distance: number; atr: number; atr_multiple: number; entry: number }
+  )[];
 }
 
 // Mục 3: 1 hành động duy nhất cho sổ phòng hộ SIM + đối chiếu lệnh đang mở (services/report_generator.py
@@ -95,7 +120,16 @@ export interface ForecastReview {
   wrong_in_row: number;
   // Báo cáo cũ không có 2 trường dưới.
   calibration?: { probability: string; correct: number; total: number; direction_only?: number }[];
-  rules?: { horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number; calibration_reports?: number };
+  rules?: {
+    horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number;
+    calibration_reports?: number; sideways_path_max_pct?: number; min_rr?: number; min_stop_atr?: number;
+  };
+  // Dự báo ngây thơ trên cùng các báo cáo đã có kết luận (services/forecast_review.py::baseline_from).
+  baseline?: {
+    model: { correct: number; total: number };
+    always_sideways: { correct: number; total: number };
+    momentum: { correct: number; total: number; sessions: number };
+  };
 }
 
 export interface ReportSummary {

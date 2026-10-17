@@ -22,6 +22,16 @@ report_translation bảo vệ) — frontend dựng câu theo ngôn ngữ.
 
 Vd báo cáo 13/10/2026: "Tăng, xác suất Cao", mua 87,2–88,0, cắt lỗ 86,30, EUA tham chiếu 88,34 → khớp 13/10,
 đóng cửa 15/10 85,84 thủng cắt lỗ → SAI, −2,83%.
+
+Bổ sung sau bản chấm báo cáo 17/10/2026:
+  - "đi ngang" chấm cả HÀNH TRÌNH: giá đóng cửa lệch tham chiếu ≥ SIDEWAYS_PATH_MAX_PCT ở bất kỳ phiên nào trong khung
+    → không còn là đi ngang (bản 08/10 được ghi "đúng hướng" dù EUA đã lên 88,34, +3,6% giữa kỳ);
+  - "graded_by": "trade" (kết luận theo lệnh: chạm cắt lỗ/mục tiêu/huỷ) hay "direction" (theo %Δ) — dòng 10/10 "ĐÚNG"
+    mà hiển thị −1,76% làm người đọc nghi ngờ khi không ghi rõ chấm theo lệnh;
+  - "design_flaws": lỗi THIẾT KẾ lệnh (R:R tại giá khớp < MIN_RR, cắt lỗ cách giá khớp < MIN_STOP_ATR × ATR) — bản 13/10
+    R:R 0,48, bản 15/10 cắt lỗ cách giá khớp 0,27 khi ATR 1,70 mà "Nguyên nhân & điều chỉnh" không nhắc;
+  - "baseline": tỷ lệ đúng của dự báo ngây thơ (luôn "đi ngang"; lặp chiều 5 phiên trước) trên CÙNG các báo cáo đã có
+    kết luận — 16/29 (55%) ở mức Trung bình chỉ có ý nghĩa khi so với chuẩn này.
 """
 from __future__ import annotations
 
@@ -33,6 +43,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Instrument, Price, Report
+from services.report_consistency import atr_true_range
 from services.strategy_levels import strategy_levels
 
 REVIEW_MAX_REPORTS = 3        # (giữ tên cho tương thích) — giờ hiện MỌI báo cáo còn trong khung ngắn hạn...
@@ -46,6 +57,10 @@ ORDER_VALID_SESSIONS = 3       # lệnh chờ của thẻ chiến lược hết 
 CALIBRATION_REPORTS = 7        # tỷ lệ đúng theo mức xác suất: N báo cáo gần nhất ĐÃ CÓ KẾT LUẬN (đúng/sai/đúng hướng không khớp)
 CALIBRATION_SCAN_REPORTS = 40  # số báo cáo tối đa quét lùi để gom đủ N báo cáo đã có kết luận
 PROBABILITY_LEVELS = ("Cao", "Trung bình", "Thấp")
+SIDEWAYS_PATH_MAX_PCT = 2.0    # "đi ngang": mọi giá đóng cửa trong khung phải nằm trong ±N% giá tham chiếu
+MIN_RR = 1.5                   # = report_qc.MIN_RISK_REWARD
+MIN_STOP_ATR = 0.5             # cắt lỗ cách giá vào ≥ 0,5 × ATR (quy tắc prompt Mục 3)
+MOMENTUM_SESSIONS = 5          # dự báo ngây thơ "lặp chiều N phiên trước"
 _SUMMARY_LINE_RE = re.compile(r"\*\*Tổng hợp:?\*\*\s*(.*)")
 
 
@@ -150,16 +165,42 @@ def _direction_verdict(direction: str, change_pct: float) -> str:
     return "unclear"
 
 
+def trade_design_flaws(trade: Optional[Dict[str, Any]], atr: Optional[float]) -> List[Dict[str, Any]]:
+    """Lỗi thiết kế lệnh tính tại giá KHỚP thật (hoặc giữa vùng Entry nếu chưa khớp)."""
+    if not trade or trade.get("stop") is None:
+        return []
+    entry = trade.get("fill_price")
+    if entry is None:
+        entry = (trade["entry_low"] + trade["entry_high"]) / 2
+    risk = abs(entry - trade["stop"])
+    flaws: List[Dict[str, Any]] = []
+    if trade.get("target") is not None and risk > 0:
+        rr = abs(trade["target"] - entry) / risk
+        if rr < MIN_RR:
+            flaws.append({"kind": "low_rr", "rr": round(rr, 2), "entry": round(entry, 2), "risk": round(risk, 2),
+                          "reward": round(abs(trade["target"] - entry), 2)})
+    if atr and risk < MIN_STOP_ATR * atr:
+        flaws.append({"kind": "tight_stop", "distance": round(risk, 2), "atr": round(atr, 2),
+                      "atr_multiple": round(risk / atr, 2), "entry": round(entry, 2)})
+    return flaws
+
+
 def evaluate_forecast(
     report_date: str, scenario: Dict[str, Any], ref_close: float, sessions: Sequence[Dict[str, Any]],
+    atr: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    """`sessions`: phiên EUA từ ngày phát hành (`report_date`, dữ liệu báo cáo là phiên hôm trước) trở đi."""
+    """`sessions`: phiên EUA từ ngày phát hành (`report_date`, dữ liệu báo cáo là phiên hôm trước) trở đi.
+    `atr`: ATR 14 phiên tính tới phiên tham chiếu — để chấm lỗi thiết kế lệnh (None = bỏ qua phần cắt lỗ/ATR)."""
     if not sessions or not ref_close:
         return None
     direction = scenario.get("direction") or ""
     last = sessions[-1]
     change_pct = (float(last["close"]) / ref_close - 1) * 100
+    excursions = [(float(x["close"]) / ref_close - 1) * 100 for x in sessions]
+    max_excursion = max(excursions, key=abs)
     trade = simulate_trade(direction, strategy_levels(scenario), sessions, ref_close)
+    graded_by = "trade"
+    final = len(sessions) >= REVIEW_MAX_SESSIONS
     if trade and trade["status"] == "stopped":
         verdict = "wrong"
     elif trade and trade["status"] == "target_hit":
@@ -167,8 +208,12 @@ def evaluate_forecast(
     elif trade and trade["status"] == "cancelled_target":
         # Đúng hướng nhưng lệnh không khớp (bản 09/10) — tách riêng, KHÔNG tính vào tỷ lệ đúng (không thổi phồng).
         verdict = "direction_only"
+    elif direction == "đi ngang" and abs(max_excursion) >= SIDEWAYS_PATH_MAX_PCT:
+        graded_by = "path"
+        verdict = "wrong" if final else "diverging"
     else:
-        verdict = direction_verdict(direction, change_pct, final=len(sessions) >= REVIEW_MAX_SESSIONS)
+        graded_by = "direction"
+        verdict = direction_verdict(direction, change_pct, final=final)
     return {
         "report_date": report_date,
         "direction": direction,
@@ -181,6 +226,9 @@ def evaluate_forecast(
         "verdict": verdict,
         "high_confidence_miss": verdict == "wrong" and scenario.get("probability") == "Cao",
         "trade": trade,
+        "graded_by": graded_by,
+        "max_excursion_pct": round(max_excursion, 2),
+        "design_flaws": trade_design_flaws(trade, atr),
     }
 
 
@@ -213,6 +261,16 @@ async def _eua_sessions(session: AsyncSession, start: str, end: str) -> List[Dic
     ]
 
 
+def _atr_before(all_sessions: Sequence[Dict[str, Any]], report_date: str) -> Optional[float]:
+    return atr_true_range([s for s in all_sessions if s["date"] < report_date])
+
+
+def _sessions_lookback_start(earliest: str) -> str:
+    """Lùi ~1,5 tháng để đủ 14 phiên tính ATR / 5 phiên cho dự báo ngây thơ trước báo cáo cũ nhất."""
+    d = date.fromisoformat(earliest)
+    return date.fromordinal(d.toordinal() - 45).isoformat()
+
+
 async def build_forecast_review(session: AsyncSession, report_date: str, data_date: str) -> Tuple[Optional[Dict[str, Any]], str]:
     """-> (khối content["2"].forecast_review hoặc None, văn bản cho prompt vs_previous)."""
     reports = (await session.execute(
@@ -232,13 +290,13 @@ async def build_forecast_review(session: AsyncSession, report_date: str, data_da
     if not candidates:
         return None, ""
 
-    all_sessions = await _eua_sessions(session, min(c[0] for c in candidates), data_date)
+    all_sessions = await _eua_sessions(session, _sessions_lookback_start(min(c[0] for c in candidates)), data_date)
     items, premises = [], {}
     for idx, (rdate, short, ref, premise) in enumerate(candidates):
         sessions = [s for s in all_sessions if s["date"] >= rdate]
         if len(sessions) > REVIEW_MAX_SESSIONS:
             continue  # đã quá khung ngắn hạn
-        item = evaluate_forecast(rdate, short, ref, sessions)
+        item = evaluate_forecast(rdate, short, ref, sessions, _atr_before(all_sessions, rdate))
         if not item:
             continue
         items.append(item)
@@ -253,13 +311,16 @@ async def build_forecast_review(session: AsyncSession, report_date: str, data_da
         if it["verdict"] != "wrong":
             break
         wrong_in_row += 1
+    calibration, baseline = await _calibration(session, report_date, data_date)
     block = {
         "items": items, "wrong_in_row": wrong_in_row,
-        "calibration": await _calibration(session, report_date, data_date),
+        "calibration": calibration,
+        "baseline": baseline,
         "rules": {
             "horizon_sessions": REVIEW_MAX_SESSIONS, "direction_threshold_pct": DIRECTION_THRESHOLD_PCT,
             "sideways_max_pct": SIDEWAYS_MAX_PCT, "order_valid_sessions": ORDER_VALID_SESSIONS,
-            "calibration_reports": CALIBRATION_REPORTS,
+            "calibration_reports": CALIBRATION_REPORTS, "sideways_path_max_pct": SIDEWAYS_PATH_MAX_PCT,
+            "min_rr": MIN_RR, "min_stop_atr": MIN_STOP_ATR,
         },
     }
     return block, describe_for_prompt(block, premises)
@@ -277,7 +338,41 @@ def calibration_from(evaluated: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
     return out
 
 
-async def _calibration(session: AsyncSession, report_date: str, data_date: str) -> List[Dict[str, Any]]:
+def naive_direction(prior: Sequence[Dict[str, Any]], n: int = MOMENTUM_SESSIONS) -> str:
+    """Dự báo ngây thơ "lặp chiều N phiên trước": %Δ đóng cửa N phiên tới phiên tham chiếu, cùng ngưỡng chấm."""
+    closes = [float(s["close"]) for s in prior if s.get("close") is not None]
+    if len(closes) <= n:
+        return "đi ngang"
+    pct = (closes[-1] / closes[-1 - n] - 1) * 100
+    return "tăng" if pct >= DIRECTION_THRESHOLD_PCT else "giảm" if pct <= -DIRECTION_THRESHOLD_PCT else "đi ngang"
+
+
+def baseline_from(evaluated: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """So tỷ lệ đúng của báo cáo với 2 dự báo ngây thơ trên CÙNG các báo cáo đã có kết luận đúng/sai. Dự báo ngây thơ
+    chấm theo %Δ cuối khung + hành trình (như "đi ngang" của báo cáo), không có lệnh."""
+    final = [e for e in evaluated if e.get("verdict") in ("correct", "wrong")]
+
+    def _score(direction_of) -> Dict[str, int]:
+        ok = total = 0
+        for e in final:
+            d = direction_of(e)
+            if d == "đi ngang" and abs(e.get("max_excursion_pct") or 0) >= SIDEWAYS_PATH_MAX_PCT:
+                v = "wrong"
+            else:
+                v = _direction_verdict(d, e["change_pct"])
+            if v in ("correct", "wrong"):
+                total += 1
+                ok += v == "correct"
+        return {"correct": ok, "total": total}
+
+    return {
+        "model": {"correct": sum(e["verdict"] == "correct" for e in final), "total": len(final)},
+        "always_sideways": _score(lambda e: "đi ngang"),
+        "momentum": {**_score(lambda e: e.get("naive_momentum") or "đi ngang"), "sessions": MOMENTUM_SESSIONS},
+    }
+
+
+async def _calibration(session: AsyncSession, report_date: str, data_date: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     reports = (await session.execute(
         select(Report)
         .where(Report.report_date < report_date, Report.status.in_(["draft", "published"]))
@@ -293,18 +388,19 @@ async def _calibration(session: AsyncSession, report_date: str, data_date: str) 
         if short and ref:
             candidates.append((r.report_date, short, ref))
     if not candidates:
-        return calibration_from([])
-    all_sessions = await _eua_sessions(session, min(c[0] for c in candidates), data_date)
+        return calibration_from([]), baseline_from([])
+    all_sessions = await _eua_sessions(session, _sessions_lookback_start(min(c[0] for c in candidates)), data_date)
     evaluated = []
     for rdate, short, ref in candidates:  # mới → cũ
         sessions = [s for s in all_sessions if s["date"] >= rdate][:REVIEW_MAX_SESSIONS]
         ev = evaluate_forecast(rdate, short, ref, sessions)
         # Chỉ lấy báo cáo đã có kết luận — báo cáo còn trong khung (đang đúng hướng/đang lệch) không chiếm suất.
         if ev and ev["verdict"] in ("correct", "wrong", "direction_only"):
+            ev["naive_momentum"] = naive_direction([s for s in all_sessions if s["date"] < rdate])
             evaluated.append(ev)
             if len(evaluated) >= CALIBRATION_REPORTS:
                 break
-    return calibration_from(evaluated)
+    return calibration_from(evaluated), baseline_from(evaluated)
 
 
 def _vn(x: float, sign: bool = False) -> str:
@@ -328,6 +424,21 @@ TRADE_STATUS_VI = {
     "expired": f"lệnh HẾT HIỆU LỰC sau {ORDER_VALID_SESSIONS} phiên không khớp",
     "cancelled_target": "giá chạm mục tiêu TRƯỚC khi khớp — lệnh huỷ (đúng hướng nhưng Entry đặt quá xa)",
 }
+GRADED_BY_VI = {"trade": "chấm theo LỆNH", "direction": "chấm theo %Δ cuối khung", "path": "chấm theo HÀNH TRÌNH giá"}
+
+
+def describe_design_flaws(flaws: Sequence[Dict[str, Any]]) -> str:
+    parts = []
+    for f in flaws or []:
+        if f["kind"] == "low_rr":
+            parts.append(f"R:R tại giá vào {_vn(f['entry'])} chỉ {_vn(f['rr'])} (rủi ro {_vn(f['risk'])}, lợi nhuận "
+                         f"{_vn(f['reward'])}; tối thiểu {_vn(MIN_RR)})")
+        elif f["kind"] == "tight_stop":
+            parts.append(f"cắt lỗ cách giá vào {_vn(f['entry'])} chỉ {_vn(f['distance'])} = {_vn(f['atr_multiple'])} × ATR "
+                         f"{_vn(f['atr'])} (tối thiểu {_vn(MIN_STOP_ATR)} ATR — nằm trong nhiễu phiên)")
+    return "; ".join(parts)
+
+
 VERDICT_VI = {
     "correct": "ĐÚNG", "wrong": "SAI", "unclear": "chưa rõ",
     "on_track": "ĐANG ĐÚNG HƯỚNG (chưa hết khung 1–2 tuần)",
@@ -354,15 +465,31 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
                 + (f" (khớp {_dm(t['filled_date'])}" + (f" tại {_vn(t['fill_price'])}" if t.get("fill_price") is not None else "") + ")"
                    if t.get("filled_date") else "")
             )
+        flaws = describe_design_flaws(it.get("design_flaws") or [])
         lines.append(
             f"- Báo cáo {_dm(it['report_date'])}: dự báo ngắn hạn \"{it['direction']}\" (xác suất {it['probability']}); EUA "
             f"{_vn(it['ref_close'])} → {_vn(it['last_close'])} ({_vn(it['change_pct'], sign=True)}%, {it['sessions']} phiên tới "
-            f"{_dm(it['last_date'])}){trade_txt} → {VERDICT_VI[it['verdict']]}"
+            f"{_dm(it['last_date'])}"
+            + (f"; lệch xa nhất {_vn(it['max_excursion_pct'], sign=True)}%" if it.get("max_excursion_pct") is not None else "")
+            + f"){trade_txt} → {VERDICT_VI[it['verdict']]}"
+            + (f" ({GRADED_BY_VI[it['graded_by']]})" if it.get("graded_by") in GRADED_BY_VI else "")
             + (" — SAI dù gắn xác suất CAO" if it.get("high_confidence_miss") else "")
+            + (f". LỖI THIẾT KẾ LỆNH: {flaws}" if flaws else "")
             + (f". Tiền đề khi đó: {premises[it['report_date']][:300]}" if premises.get(it["report_date"]) else "")
         )
     if block.get("wrong_in_row", 0) >= 2:
         lines.append(f"⚠ {block['wrong_in_row']} báo cáo LIÊN TIẾP dự báo sai.")
+    if any(it.get("design_flaws") and it["verdict"] in ("wrong", "diverging") for it in block["items"]):
+        lines.append("Dự báo sai/đang lệch có LỖI THIẾT KẾ LỆNH ở trên → \"vs_previous\" PHẢI nêu lỗi đó (R:R/cắt lỗ so ATR) "
+                     "như 1 nguyên nhân, không chỉ tiền đề phân tích.")
+    base = block.get("baseline") or {}
+    if (base.get("model") or {}).get("total"):
+        m, s_, mo = base["model"], base.get("always_sideways") or {}, base.get("momentum") or {}
+        lines.append(
+            f"CHUẨN SO SÁNH (cùng {m['total']} báo cáo đã có kết luận): báo cáo đúng {m['correct']}/{m['total']}; dự báo ngây thơ "
+            f"\"luôn đi ngang\" đúng {s_.get('correct', 0)}/{s_.get('total', 0)}; \"lặp chiều {mo.get('sessions')} phiên trước\" đúng "
+            f"{mo.get('correct', 0)}/{mo.get('total', 0)}. Báo cáo KHÔNG hơn chuẩn ngây thơ thì không được gọi độ tin cậy là cao."
+        )
     calib = [c for c in block.get("calibration") or [] if c.get("total") or c.get("direction_only")]
     if calib:
         lines.append(

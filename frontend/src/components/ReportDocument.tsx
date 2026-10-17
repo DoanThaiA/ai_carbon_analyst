@@ -327,16 +327,16 @@ function LevelTile({ icon: Icon, title, tone, rows }: {
   rows: { label: string; value: string; className: string }[];
 }) {
   return (
-    <div className="p-4 sm:p-5 flex flex-col">
-      <div className={clsx("flex items-center gap-2 mb-3", tone)}>
+    <div className="p-4 sm:p-5 flex flex-col print:break-inside-avoid">
+      <div className={clsx("flex items-center gap-2 mb-3 print:break-after-avoid", tone)}>
         <Icon size={16} strokeWidth={2.5} aria-hidden="true" />
         <h3 className="text-[12px] sm:text-[13px] font-extrabold uppercase tracking-wider">{title}</h3>
       </div>
       {rows.length ? (
         <div className="flex flex-col gap-2.5">
           {rows.map(r => (
-            <div key={r.label}>
-              <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light">{r.label}</div>
+            <div key={r.label} className="print:break-inside-avoid">
+              <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light print:break-after-avoid">{r.label}</div>
               <p className={clsx("font-black tabular-nums tracking-tight leading-none text-[30px] sm:text-[36px]", r.className)}>{r.value}</p>
             </div>
           ))}
@@ -393,7 +393,7 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
   ];
   const targetRows = [
     ...(lv.targetBuy !== undefined ? [{ label: t("signal.takeLong"), value: fp(lv.targetBuy), className: "text-emerald-700" }] : []),
-    ...(lv.targetSell !== undefined ? [{ label: t("signal.takeShort"), value: fp(lv.targetSell), className: "text-red-600" }] : []),
+    ...(lv.targetSell !== undefined ? [{ label: t("signal.takeShort"), value: fp(lv.targetSell), className: "text-emerald-700" }] : []),
   ];
   const stopRows = [
     ...(lv.stopLower !== undefined ? [{ label: t("signal.stopBelow"), value: fp(lv.stopLower), className: "text-red-600" }] : []),
@@ -494,7 +494,7 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
         {hasLevels ? (
           <>
             {/* ═══ 3 ô số liệu lớn: Entry · Mục tiêu · Cắt lỗ ═══ */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10">
+            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10 print:break-inside-avoid">
               <LevelTile icon={Crosshair} title={t("signal.tileEntry")} tone="text-primary-dark" rows={entryRows} />
               <LevelTile icon={Target} title={t("signal.tileTarget")} tone="text-emerald-700" rows={targetRows} />
               <LevelTile icon={ShieldCheck} title={t("signal.tileStop")} tone="text-red-600" rows={stopRows} />
@@ -1051,6 +1051,58 @@ function DismissButton({ onClick, className }: { onClick: () => void; className?
   );
 }
 
+const POLICY_IMPACT_TONE: Record<string, string> = {
+  "tăng": "text-up border-up/30 bg-up/10",
+  "giảm": "text-down border-down/30 bg-red-50",
+  "trung lập": "text-muted-light border-border bg-surface",
+};
+
+function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
+  const t = useTranslations("reportDoc");
+  return (
+    <div className="mb-5 print:break-inside-avoid">
+      <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{t("etsPolicy.title")}</h4>
+      <div className="overflow-x-auto border border-border rounded-lg">
+        <table className="w-full table-fixed border-collapse text-[13.5px]">
+          <thead>
+            <tr className="bg-tint">
+              {["item", "status", "nextStep", "impact"].map((k) => (
+                <th key={k} className={clsx(
+                  "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 border-b-2 border-primary/30",
+                  k === "impact" ? "w-[96px]" : k === "item" ? "w-[26%]" : "",
+                )}>{t(`etsPolicy.${k}`)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.map((it, i) => (
+              <tr key={i} className="align-top print:break-inside-avoid">
+                <td className="px-2 sm:px-3 py-2 font-semibold text-label break-words">
+                  {it.item}
+                  {it.source_url && (
+                    <a href={it.source_url} target="_blank" rel="noopener noreferrer"
+                       className="block mt-0.5 text-[11.5px] font-normal text-primary hover:underline break-words">
+                      {it.source_name}{it.source_date ? ` · ${it.source_date}` : ""}
+                    </a>
+                  )}
+                </td>
+                <td className="px-2 sm:px-3 py-2 text-body break-words"><RichText text={it.status || ""} /></td>
+                <td className="px-2 sm:px-3 py-2 text-body break-words"><RichText text={it.next_step || ""} /></td>
+                <td className="px-2 sm:px-3 py-2">
+                  <span className={clsx("inline-block font-mono text-[10.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border",
+                    POLICY_IMPACT_TONE[it.impact] || POLICY_IMPACT_TONE["trung lập"])}>
+                    {t(`etsPolicy.impactLabel.${it.impact === "tăng" ? "up" : it.impact === "giảm" ? "down" : "neutral"}`)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function BizRecommendationTable({
   heading,
   accent,
@@ -1058,6 +1110,7 @@ function BizRecommendationTable({
   columns,
   infoKey,
   infoLabel,
+  extras,
   onDismiss,
 }: {
   heading: string;
@@ -1068,6 +1121,8 @@ function BizRecommendationTable({
   // ra thành 1 dòng phụ ngay dưới hàng đó — bảng gọn hơn. Khi in luôn hiện.
   infoKey?: string;
   infoLabel?: string;
+  // Trường phụ hiện cùng dòng "i" (KPI, quy mô thí điểm, đơn vị phụ trách...) — báo cáo cũ không có thì bỏ qua.
+  extras?: { key: string; label: string }[];
   // Chỉ truyền ở màn hình admin: nút gỡ gợi ý (hàng phải có "id" — gợi ý ngắn hạn
   // lưu trong bộ nhớ biz_suggestions).
   onDismiss?: (id: number) => void;
@@ -1116,7 +1171,8 @@ function BizRecommendationTable({
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row, ri) => {
-                const info = infoKey ? row[infoKey] : "";
+                const extraRows = (extras || []).filter((x) => typeof row[x.key] === "string" && row[x.key].trim());
+                const info = (infoKey ? row[infoKey] : "") || (extraRows.length ? " " : "");
                 const isOpen = openInfo.has(ri);
                 return (
                   <Fragment key={ri}>
@@ -1164,8 +1220,18 @@ function BizRecommendationTable({
                       <tr className={clsx(isOpen ? "table-row" : "hidden print:table-row")}>
                         <td className="border-r border-border bg-surface" />
                         <td colSpan={columns.length} className="px-2 sm:px-3 py-2 bg-tint/50 text-[14.5px] leading-[1.5] text-body">
-                          <span className="font-bold text-primary-dark mr-1">{infoLabel || t("biz.details")}:</span>
-                          <RichText text={info} />
+                          {infoKey && row[infoKey] && (
+                            <div>
+                              <span className="font-bold text-primary-dark mr-1">{infoLabel || t("biz.details")}:</span>
+                              <RichText text={row[infoKey]} />
+                            </div>
+                          )}
+                          {extraRows.map((x) => (
+                            <div key={x.key}>
+                              <span className="font-bold text-primary-dark mr-1">{x.label}:</span>
+                              <RichText text={row[x.key]} />
+                            </div>
+                          ))}
                         </td>
                       </tr>
                     )}
@@ -2259,6 +2325,12 @@ export function ReportDocument({
                     </p>
                   )}
 
+                  {/* Theo dõi chính sách ETS/MSR — khối cố định (report_generator._resolve_ets_policy, tin chính sách
+                      21 ngày). Báo cáo cũ không có → ẩn. */}
+                  {Array.isArray(report.content["3"].ets_policy) && report.content["3"].ets_policy.length > 0 && (
+                    <EtsPolicyTable items={report.content["3"].ets_policy} />
+                  )}
+
                   {report.content["3"].correlation_analysis && (
                     <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg px-3 sm:px-4 py-3 my-5 space-y-2">
                       <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">{t("body.correlationTitle")}</h4>
@@ -2520,6 +2592,10 @@ export function ReportDocument({
                     ]}
                     infoKey="reason"
                     infoLabel={t("biz.reason")}
+                    extras={[
+                      { key: "kpi", label: t("biz.kpi") },
+                      { key: "owner", label: t("biz.owner") },
+                    ]}
                     onDismiss={onDismissBizSuggestion}
                   />
                 </div>
@@ -2535,6 +2611,12 @@ export function ReportDocument({
                   // trên mobile làm mỗi ô chỉ 2–3 chữ/dòng, rất khó đọc.
                   infoKey="expectation"
                   infoLabel={t("biz.expectation")}
+                  extras={[
+                    { key: "pilot", label: t("biz.pilot") },
+                    { key: "financials", label: t("biz.financials") },
+                    { key: "kpi", label: t("biz.kpi") },
+                    { key: "owner", label: t("biz.owner") },
+                  ]}
                   onDismiss={onDismissBizSuggestion}
                 />
               </div>

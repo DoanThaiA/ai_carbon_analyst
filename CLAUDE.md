@@ -281,6 +281,29 @@ suy luận MÔ HÌNH (không có dữ liệu sản lượng điện) + độ nh�
 tỷ lệ đặt mua/chào bán đấu giá chỉ so với lịch sử của chính hệ thống. Mục 6 luôn giữ bài đã trích ở mục khác. Chấm dự báo:
 mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, không vào tỷ lệ đúng).
 
+**Sửa theo bản chấm 17/10/2026** (test: `tests/test_report_review_1710.py`):
+- Fuel switching: `fuel_fleet_thresholds` — dải giá EUA hòa vốn theo hiệu suất đội nhà máy (`FUEL_FLEET_GAS_EFF`/`_COAL_EFF`) +
+  NGƯỠNG THẬT (mức TTF/API2 làm đầu thấp dải = giá EUA). Còn xa (`fuel_threshold_far`) thì cấm điều kiện/watchpoint
+  "chênh ±X EUR/MWh" — Jack `check_fuel_thresholds` (phần kịch bản đi vào vòng tự sửa).
+- Kỹ thuật (`report_consistency`): `streak_momentum` + `fix_momentum_claims` (sửa "mức giảm thu hẹp dần" sai mẫu hình),
+  `session_signals` (cạn lực = biên ≤0,8 ATR VÀ KL ≤−20%; gap < `GAP_MIN_ATR` ATR là nhiễu) — Jack `check_technical_claims`;
+  40–60% biên = "vùng giữa", không gọi nửa trên/dưới; `fix_stray_quotes`; tiêu đề gốc Mục 6 không đổi dấu thập phân.
+- Khối "Theo dõi chính sách ETS/MSR": `get_ets_policy_news` quét tin chính sách `ETS_POLICY_LOOKBACK_DAYS` (21) ngày, tiếp
+  số [N] của Mục 3, LLM trả `content["3"].ets_policy` (frontend `EtsPolicyTable`; Jack không báo "tin cũ" cho nguồn khối này).
+- Mục 8: COT EUA ICE Endex (Thứ Tư) + `policy_calendar.yaml` (admin ghi ngày họp chính sách ĐÃ xác nhận); sự kiện đã tới giờ
+  công bố mà không lấy được số → `RELEASED_NO_DATA_OUTCOME` (không còn nằm ở "sắp tới").
+- Đấu giá: tỷ lệ đặt mua/chào bán so TB 90 ngày của CÙNG nền tảng; không suy cầu từ chênh giá khớp spot ↔ futures Dec.
+- Phòng hộ CBAM: lõi = MUA futures Dec ngay rồi BÁN rải theo lịch đấu giá còn lại (`hedge_structure_text`; mua EUA rải theo
+  lịch KHÔNG khóa được gì — Jack `_SCHEDULE_BUY_RE`); % lõi ghi theo khối lượng quý (`core_share_of_quarter_pct`);
+  `product_exposure` = chi phí CBAM/tấn sản phẩm theo GIẢ ĐỊNH `CBAM_PRODUCT_ASSUMPTIONS` × `CBAM_FREE_ALLOCATION_FACTOR`.
+- Kịch bản: `_enforce_scenario_rules` (đi ngang + lệnh phá biên → đổi chiều, xác suất Thấp; chưa có dữ liệu vị thế quỹ
+  `POSITIONING_DATA_AVAILABLE=False` → tối đa "Trung bình"); Jack `check_long_term_basis` (dài hạn không dùng đo biên độ 30
+  phiên/giá đóng cửa làm cận).
+- Gợi ý SIM: `METALS_LENS_RULE` + trường `kpi/owner` (ngắn hạn), `pilot/financials/kpi/owner` (dài hạn); Jack `BIZ_OFF_LENS`.
+  Nguồn: Jack `check_inline_attribution` (tên hãng tin trong câu ≠ bài trích, truyền thông nhà nước).
+- `frontend/messages/parts/*.json` đang CŨ hơn `vi.json`/`en.json` (đã sửa thẳng file gộp) — KHÔNG chạy
+  `scripts/merge-messages.mjs` khi chưa đồng bộ parts, sẽ mất key.
+
 **Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
 chấm `REVIEW_MAX_REPORTS` báo cáo gần nhất có kịch bản ngắn hạn (còn trong `REVIEW_MAX_SESSIONS` phiên): %Δ EUA luỹ kế từ giá
@@ -294,6 +317,9 @@ dừng/giới hạn phân biệt bằng `strategy_levels.is_breakout_entry` (ch�
 chữ "trên" lẻ không tính); lệnh giới hạn khớp do mở gap thì xét cắt lỗ theo đáy/đỉnh của chính phiên đó; đủ N phiên chưa
 khớp là `expired` ngay. Bảng hiện MỌI báo cáo còn trong khung (`REVIEW_MAX_ITEMS`). Jack
 `check_forecast_review`: có dự báo SAI mà `vs_previous` trống → error, không nhắc ngày báo cáo sai → warning.
+Từ 18/10/2026: "đi ngang" chấm cả hành trình (`SIDEWAYS_PATH_MAX_PCT`), mỗi dòng có `graded_by` (trade/direction/path),
+`design_flaws` (R:R tại giá khớp < `MIN_RR`, cắt lỗ < `MIN_STOP_ATR` ATR — Jack đòi `vs_previous` nêu) và khối `baseline`
+(dự báo ngây thơ "luôn đi ngang"/"lặp chiều 5 phiên" trên cùng các báo cáo đã có kết luận; `_calibration` trả tuple).
 Tool chat/MCP: `get_forecast_scorecard` đọc nguyên khối này từ báo cáo published; `review_past_forecast` chấm 1 báo cáo bằng
 CHÍNH `forecast_review.evaluate_forecast` (khung `REVIEW_MAX_SESSIONS`) — không tự chấm riêng, để không trái với bảng trang đầu.
 

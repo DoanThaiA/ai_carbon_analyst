@@ -904,7 +904,8 @@ def test_session_shape_not_called_reversal():
     chart += [{"open": 87.0, "high": 87.5, "low": 86.6, "close": 87.14},
               {"open": 86.87, "high": 86.87, "low": 85.37, "close": 85.84}]
     text = _eua_session_shape(chart)
-    assert "KHÔNG được gọi là rộng" in text and "GAP GIẢM 0,27" in text and "KHÔNG gọi là \"đảo chiều\"" in text
+    # Gap 0,27 = 0,16 × ATR 1,69 (< 0,25 ATR) → nhiễu, không gọi là tín hiệu (bản chấm 17/10).
+    assert "KHÔNG được gọi là rộng" in text and "gap NHỎ" in text and "KHÔNG gọi là \"đảo chiều\"" in text
 
 
 def test_section6_split_by_subject():

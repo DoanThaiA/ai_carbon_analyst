@@ -13,13 +13,19 @@ Q2 75,2766 / Q3 82,3185 ↔ EC 75,36 / 75,28 / 82,32 (trung bình cộng thườ
     phiên gần nhau tương quan mạnh, không coi là độc lập.
 
 Phòng vệ CBAM — 1 nhãn DUY NHẤT cho cả báo cáo (thẻ CBAM + ô phòng hộ Mục 3 dùng chung, report_generator.
-_finalize_hedge_fields): giá CBAM quý = VWAP mọi phiên đấu giá, nên phần LÕI (≥ 100 − TACTICAL_MAX_PCT % phần chưa
-chốt) luôn BÁM LỊCH ĐẤU GIÁ (mua theo tỷ trọng khối lượng từng phiên → chi phí bám VWAP), KHÔNG chờ vùng giá. Chỉ phần
-CHIẾN THUẬT (≤ TACTICAL_MAX_PCT %) là quan điểm giá — "signal" là hướng nghiêng của riêng phần này:
-  - quý đã chốt ≥ HEDGE_FIXED_SHARE_HOLD khối lượng / chưa có phiên → "hold" (chỉ bám lịch);
-  - giá hiện tại thấp hơn VWAP đã chốt ≥ HEDGE_GAP_PCT → "increase" (mua sớm phần chiến thuật);
-  - cao hơn ≥ HEDGE_GAP_PCT → "reduce" (phần chiến thuật chờ giá thấp hơn — phần lõi vẫn mua theo lịch);
+_finalize_hedge_fields). RỦI RO cần phòng: chi phí CBAM của quý = VWAP các phiên đấu giá → phần khối lượng CHƯA chốt giá
+thả nổi theo VWAP các phiên còn lại. Không làm gì thì chi phí tự bằng VWAP (không có rủi ro "lệch VWAP", chỉ có rủi ro
+GIÁ). Mua EUA rải theo lịch đấu giá KHÔNG phòng được gì — chỉ tạo thêm 1 kho EUA giá vốn ≈ VWAP, không nộp thay chứng chỉ
+CBAM và vẫn chịu rủi ro giá tới khi bán (bản 17/10 khuyến nghị đúng cách đó). Cách KHÓA chi phí: MUA futures EUA
+(Dec của năm) NGAY cho phần muốn khóa, rồi BÁN rải theo tỷ trọng lịch đấu giá còn lại → lãi/lỗ futures ≈ VWAP − giá mua,
+chi phí ròng ≈ giá mua hôm nay (sai số: chênh spot–Dec, lệch tỷ trọng). Phần LÕI (≥ 100 − TACTICAL_MAX_PCT % phần chưa
+chốt) khóa theo kế hoạch; chỉ phần CHIẾN THUẬT (≤ TACTICAL_MAX_PCT %) là quan điểm giá — "signal" là hướng của riêng phần này:
+  - quý đã chốt ≥ HEDGE_FIXED_SHARE_HOLD khối lượng / chưa có phiên → "hold" (chỉ phần lõi);
+  - giá hiện tại thấp hơn VWAP đã chốt ≥ HEDGE_GAP_PCT → "increase" (khóa thêm phần chiến thuật ngay);
+  - cao hơn ≥ HEDGE_GAP_PCT → "reduce" (phần chiến thuật chưa khóa, chờ giá thấp hơn — phần lõi vẫn khóa);
   - còn lại → "hold".
+Chi phí theo TẤN SẢN PHẨM (product_exposure): (phát thải nhúng − benchmark × hệ số phân bổ miễn phí còn lại của năm) ×
+giá CBAM ước tính — để BLĐ thấy khoản phòng hộ có đáng làm không (2026: hệ số 97,5%).
 Bản 17/10/2026 từng có thẻ CBAM "GIỮ" + Mục 3 "MUA TRẢI ĐỀU" nhưng thực chất là lệnh giới hạn "chỉ gom ở 82,35–84,00"
 → thiếu phòng hộ nếu giá không về vùng đó trong khi 77,1% khối lượng quý chưa chốt.
 Kết quả là DỮ LIỆU THUẦN (số + enum ASCII) — frontend tự dựng nhãn/câu theo ngôn ngữ, nên bản dịch
@@ -43,6 +49,19 @@ CI_LEVEL = 90
 CI_Z = 1.645
 MIN_RETURNS_FOR_VOL = 10
 UPCOMING_DAYS = 7
+
+# Tỷ lệ phân bổ miễn phí CÒN LẠI theo năm cho ngành CBAM (Chỉ thị (EU) 2023/959, Điều 10a(1a)) — nghĩa vụ CBAM được
+# khấu trừ phần phân bổ miễn phí này.
+CBAM_FREE_ALLOCATION_FACTOR = {
+    2026: 0.975, 2027: 0.95, 2028: 0.90, 2029: 0.775, 2030: 0.515, 2031: 0.39, 2032: 0.265, 2033: 0.14, 2034: 0.0,
+}
+# GIẢ ĐỊNH minh hoạ (tCO2/t sản phẩm, CHỈ phát thải trực tiếp — phạm vi CBAM của nhôm/thép) — thay bằng số liệu thực
+# đã thẩm định của SIM/khách hàng khi có. Benchmark = giá trị 2021–2025 (Quy định (EU) 2021/447), cần đối chiếu
+# benchmark 2026–2030 theo mã CN cụ thể. Phát thải nhúng của thép đã gồm tiền chất (gang lỏng) phía thượng nguồn.
+CBAM_PRODUCT_ASSUMPTIONS = (
+    {"key": "aluminium_primary", "cn": "7601", "embedded": 1.7, "benchmark": 1.464},
+    {"key": "steel_bf_bof", "cn": "7208", "embedded": 1.8, "benchmark": 1.288},
+)
 
 
 def quarter_of(d: date) -> Tuple[int, int]:
@@ -148,7 +167,31 @@ def estimate_quarter(
         "hedge_gap_pct": HEDGE_GAP_PCT,
         "hedge_fixed_share_pct": round(HEDGE_FIXED_SHARE_HOLD * 100),
         "tactical_max_pct": TACTICAL_MAX_PCT,
+        # Lõi tính theo % KHỐI LƯỢNG QUÝ (không phải % phần chưa chốt) — "≥80% phần chưa chốt — 77,1% khối lượng" từng khó hiểu.
+        "open_share_pct": round((1 - fixed_share) * 100, 1),
+        "core_share_of_quarter_pct": round((1 - fixed_share) * (100 - TACTICAL_MAX_PCT), 1),
+        "tactical_share_of_quarter_pct": round((1 - fixed_share) * TACTICAL_MAX_PCT, 1),
     }
+
+
+def product_exposure(estimate: Optional[float], ci_low: Optional[float], ci_high: Optional[float], year: int) -> List[Dict[str, Any]]:
+    """Chi phí CBAM / tấn sản phẩm ở giá CBAM ước tính (và 2 đầu khoảng tin cậy) cho các sản phẩm giả định."""
+    factor = CBAM_FREE_ALLOCATION_FACTOR.get(year)
+    if estimate is None or factor is None:
+        return []
+    out = []
+    for p in CBAM_PRODUCT_ASSUMPTIONS:
+        net = max(0.0, p["embedded"] - p["benchmark"] * factor)
+        out.append({
+            "key": p["key"], "cn": p["cn"], "embedded": p["embedded"], "benchmark": p["benchmark"],
+            "free_allocation_factor_pct": round(factor * 100, 1),
+            "net_tco2_per_t": round(net, 3),
+            "cost_eur_per_t": round(net * estimate, 2),
+            "cost_low": round(net * ci_low, 2) if ci_low is not None else None,
+            "cost_high": round(net * ci_high, 2) if ci_high is not None else None,
+            "assumed": True,
+        })
+    return out
 
 
 async def _auctions_between(session: AsyncSession, start: date, end: date) -> List[EuaAuction]:
@@ -198,6 +241,8 @@ async def build_cbam_estimate(
     }
 
     last = next((a for a in reversed(rows) if a.status == "successful" and a.auction_date <= as_of), None)
+    out["product_exposure"] = product_exposure(out["estimate"], out.get("ci_low"), out.get("ci_high"), year)
+
     out["last_auction"] = {
         "date": last.auction_date.isoformat(), "platform": last.auction_name, "price": last.auction_price,
         "cover_ratio": last.cover_ratio,
@@ -226,10 +271,44 @@ async def build_cbam_estimate(
 
 
 HEDGE_LABEL_VI = {
-    "increase": "BÁM LỊCH ĐẤU GIÁ + mua sớm phần chiến thuật",
-    "hold": "BÁM LỊCH ĐẤU GIÁ",
-    "reduce": "BÁM LỊCH ĐẤU GIÁ + phần chiến thuật chờ giá thấp hơn",
+    "increase": "KHÓA LÕI BẰNG FUTURES + khóa thêm phần chiến thuật",
+    "hold": "KHÓA LÕI BẰNG FUTURES",
+    "reduce": "KHÓA LÕI BẰNG FUTURES, phần chiến thuật chưa khóa",
 }
+
+
+def _n(x: Optional[float], d: int = 2) -> str:
+    return f"{x:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".") if x is not None else "?"
+
+
+def hedge_structure_text(est: Dict[str, Any]) -> str:
+    """Câu mô tả rủi ro + cấu trúc khóa chi phí (dùng chung prompt, ô phòng hộ Mục 3, tool chat)."""
+    up = est.get("upcoming") or {}
+    nxt = f" (7 ngày tới {up['count']} phiên / {_n(up.get('volume_mt'))} triệu t)" if up.get("count") else ""
+    return (
+        f"Rủi ro: {_n(est.get('open_share_pct'), 1)}% khối lượng {est.get('quarter', 'quý')} chưa chốt giá — chi phí phần này thả "
+        f"nổi theo VWAP các phiên còn lại (ước tính {_n(est.get('estimate'))} EUR/t"
+        + (f", KTC {est.get('ci_level')}%: {_n(est.get('ci_low'))}–{_n(est.get('ci_high'))}" if est.get("ci_low") is not None else "")
+        + f"). Khóa chi phí: MUA futures EUA Dec ngay cho phần lõi = {_n(est.get('core_share_of_quarter_pct'), 1)}% khối lượng "
+        f"quý ({100 - int(est.get('tactical_max_pct') or TACTICAL_MAX_PCT)}% phần chưa chốt), rồi BÁN rải theo tỷ trọng lịch đấu "
+        f"giá còn lại{nxt} → lãi/lỗ futures ≈ VWAP − giá mua, chi phí ròng ≈ giá mua hôm nay. Mua EUA rải theo lịch KHÔNG "
+        "khóa được gì (chỉ tạo kho EUA giá vốn ≈ VWAP, không nộp thay chứng chỉ CBAM)."
+    )
+
+
+PRODUCT_NAMES_VI = {"aluminium_primary": "nhôm thỏi nguyên sinh", "steel_bf_bof": "thép lò cao"}
+
+
+def describe_product_exposure(est: Dict[str, Any]) -> str:
+    rows = est.get("product_exposure") or []
+    if not rows:
+        return ""
+    return "- Chi phí CBAM / tấn sản phẩm (GIẢ ĐỊNH phát thải & benchmark — cần thay bằng số thật): " + "; ".join(
+        f"{PRODUCT_NAMES_VI.get(r['key'], r['key'])} (CN {r['cn']}): ({_n(r['embedded'])} − {_n(r['benchmark'], 3)} × "
+        f"{_n(r['free_allocation_factor_pct'], 1)}%) = {_n(r['net_tco2_per_t'], 3)} tCO2/t → ≈ {_n(r['cost_eur_per_t'])} EUR/t"
+        + (f" ({_n(r['cost_low'])}–{_n(r['cost_high'])})" if r.get("cost_low") is not None else "")
+        for r in rows
+    ) + "."
 
 
 def describe_for_prompt(est: Optional[Dict[str, Any]]) -> str:
@@ -250,11 +329,14 @@ def describe_for_prompt(est: Optional[Dict[str, Any]]) -> str:
         f"- Ước tính giá CBAM {est['quarter']}: {n(est['estimate'])} EUR/t"
         + (f", khoảng tin cậy {est['ci_level']}%: {n(est['ci_low'])}–{n(est['ci_high'])}" if est.get("ci_low") is not None else "")
         + ".",
-        f"- PHÒNG VỆ CBAM (nhãn DUY NHẤT của báo cáo, Python quyết định — KHÔNG tự đặt nhãn khác): {signal_vi}. Lõi "
-        f"≥{100 - est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% phần chưa chốt ({n(100 - est['fixed_share_pct'])}% khối lượng quý) mua theo tỷ "
-        "trọng lịch đấu giá để chi phí bám VWAP (= giá CBAM), KHÔNG chờ vùng giá; lệnh giới hạn/vùng giá CHỈ áp cho phần "
-        f"chiến thuật ≤{est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% và phải ghi là quan điểm giao dịch.",
+        f"- PHÒNG VỆ CBAM (nhãn DUY NHẤT của báo cáo, Python quyết định — KHÔNG tự đặt nhãn khác): {signal_vi}. "
+        + hedge_structure_text(est)
+        + f" Lệnh giới hạn/vùng giá CHỈ áp cho phần chiến thuật ≤{est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% phần chưa chốt "
+        f"(= {_n(est.get('tactical_share_of_quarter_pct'), 1)}% khối lượng quý) và phải ghi là quan điểm giao dịch. Khi nêu % PHẢI "
+        "ghi rõ \"% khối lượng quý\" hay \"% phần chưa chốt\".",
     ]
+    if describe_product_exposure(est):
+        lines.append(describe_product_exposure(est))
     prev = est.get("prev_quarter")
     if prev and prev.get("official") is not None:
         lines.append(f"- {prev['quarter']}: VWAP đấu giá {n(prev['vwap'])} ↔ EC công bố {n(prev['official'])} EUR/t.")

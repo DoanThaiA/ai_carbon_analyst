@@ -565,10 +565,13 @@ def _format_cbam_estimate(est: Optional[dict]) -> str:
         + (f" ({est['spot_vs_qtd_pct']:+.2f}% so với VWAP)" if isinstance(est.get("spot_vs_qtd_pct"), (int, float)) else "")
         + (f"; biến động ngày {_num(est.get('daily_vol_pct'))}%" if est.get("daily_vol_pct") is not None else ""),
         f"- Tín hiệu phòng vệ CBAM: {_HEDGE_ACTION_VI.get(est.get('signal'), est.get('signal'))}"
-        + (f" — lý do: {reason}" if reason else "")
-        + f" (phần lõi ≥{100 - int(est.get('tactical_max_pct') or cbam_estimate.TACTICAL_MAX_PCT)}% phần chưa chốt mua theo "
-        "lịch đấu giá; chỉ phần chiến thuật mới theo quan điểm giá)",
+        + (f" — lý do: {reason}" if reason else ""),
+        "- " + (cbam_estimate.hedge_structure_text(est) if est.get("open_share_pct") is not None else
+                f"Phần lõi ≥{100 - int(est.get('tactical_max_pct') or cbam_estimate.TACTICAL_MAX_PCT)}% phần chưa chốt; chỉ "
+                "phần chiến thuật mới theo quan điểm giá."),
     ]
+    if cbam_estimate.describe_product_exposure(est):
+        lines.append(cbam_estimate.describe_product_exposure(est))
     last = est.get("last_auction")
     if last:
         lines.append(
@@ -649,6 +652,14 @@ def _format_section3(sec: dict) -> str:
     parts = [f"{sec.get('title', 'Phân tích chuyên sâu')}\n{blocks}"]
     if sec.get("fuel_model_note"):
         parts.append(f"Giả định mô hình fuel switching: {sec['fuel_model_note']}")
+    policy = [p for p in sec.get("ets_policy") or [] if isinstance(p, dict)]
+    if policy:
+        impact_vi = {"tăng": "siết cung → hỗ trợ EUA", "giảm": "nới cung → áp lực EUA", "trung lập": "chưa rõ chiều"}
+        parts.append("Theo dõi chính sách ETS/MSR:\n" + "\n".join(
+            f"- {p.get('item')}: {p.get('status')} | Bước tiếp: {p.get('next_step')} | "
+            f"{impact_vi.get(p.get('impact'), p.get('impact'))} ({p.get('source_name')}, {p.get('source_date')}: {p.get('source_url')})"
+            for p in policy
+        ))
     if sec.get("vs_previous"):
         parts.append(f"So với báo cáo trước (nguyên nhân & điều chỉnh): {sec['vs_previous']}")
     parts.append(f"Kịch bản giao dịch:\n{scenarios or '(không có)'}")

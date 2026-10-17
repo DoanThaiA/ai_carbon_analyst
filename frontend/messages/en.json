@@ -435,9 +435,9 @@
     "title": "CBAM price estimate {quarter}",
     "signalLabel": "CBAM hedge",
     "signal": {
-      "increase": "Track + buy early ≤20%",
-      "hold": "Track auction schedule",
-      "reduce": "Track + wait ≤20%"
+      "increase": "Lock core + extra",
+      "hold": "Lock core with futures",
+      "reduce": "Lock core, hold off extra"
     },
     "estimate": "Quarter price estimate",
     "ci": "{level}% confidence interval: {low}–{high}",
@@ -450,17 +450,26 @@
     "signalWhy": "Why",
     "reason": {
       "quarter_fixed": "All auctions of the quarter are done — the quarterly price is effectively fixed, awaiting EC publication.",
-      "quarter_not_started": "No auction yet this quarter — the core follows the auction schedule; no reference for the tactical part yet.",
-      "quarter_mostly_fixed": "Over {fixed}% of the quarter's volume is fixed — the open part is small, just track the auction schedule and focus on next quarter.",
-      "spot_below_qtd": "Core buys along the auction schedule (cost tracks VWAP = CBAM price). EUA is {gap}% below the fixed VWAP (threshold {threshold}%) → the tactical part (≤20%) buys early — a trading view.",
-      "spot_above_qtd": "Core buys along the auction schedule (cost tracks VWAP = CBAM price). EUA is {gap}% above the fixed VWAP (threshold {threshold}%) → the tactical part (≤20%) waits for lower prices — a trading view.",
-      "spot_near_qtd": "EUA is {gap}% from the fixed VWAP (below the {threshold}% threshold) — buy along the auction schedule only, no tactical part."
+      "quarter_not_started": "No auction yet this quarter — no reference to compare against; lock the core share only, as planned.",
+      "quarter_mostly_fixed": "Over {fixed}% of the quarter's volume is fixed — the open part is small; lock the core share only and focus on next quarter.",
+      "spot_below_qtd": "EUA is {gap}% below the fixed VWAP (threshold {threshold}%) → lock the tactical part (≤20% of the unfixed volume) with futures now — a trading view.",
+      "spot_above_qtd": "EUA is {gap}% above the fixed VWAP (threshold {threshold}%) → leave the tactical part (≤20% of the unfixed volume) unlocked until the price nears the VWAP; the core is still locked as planned.",
+      "spot_near_qtd": "EUA is {gap}% from the fixed VWAP (below the {threshold}% threshold) — lock the core share as planned; no tactical part."
     },
     "lastAuction": "Latest auction {date} ({platform}): clearing price EUR {price}/t",
     "cover": "cover ratio {ratio}",
     "upcoming": "Next 7 days: {count} auctions ({from}–{to}), {volume} Mt in total",
     "prevQuarter": "Method check — {quarter}: auction VWAP {vwap} ↔ EC published EUR {official}/t",
-    "method": "The EC's quarterly CBAM price = volume-weighted average (VWAP) of clearing prices of all primary EUA auctions on EEX in the quarter. Volumes not yet auctioned are assumed at the current EUA price; the confidence interval uses the EUA's realised daily volatility of {vol}% (random walk). This is an estimate, not the official price."
+    "method": "The EC's quarterly CBAM price = volume-weighted average (VWAP) of clearing prices of all primary EUA auctions on EEX in the quarter. Volumes not yet auctioned are assumed at the current EUA price; the confidence interval uses the EUA's realised daily volatility of {vol}% (random walk). This is an estimate, not the official price.",
+    "hedgeHow": "How to lock: {open}% of the quarterly volume is not yet priced (floats with the VWAP of the remaining auctions). Buy Dec EUA futures now for the core = {core}% of the quarterly volume ({corePct}% of the unfixed part), then sell them down in line with the remaining auction schedule → futures P&L ≈ VWAP − purchase price, net cost ≈ today's purchase price. Buying EUAs along the schedule does not lock the cost.",
+    "productTitle": "CBAM cost per tonne of product (assumed — replace with verified actual emissions)",
+    "productRow": "{product} (CN {cn}): ({embedded} − {benchmark} × {factor}%) = {net} tCO₂/t → ≈ EUR {cost}/t",
+    "productRange": " (CI: {low}–{high})",
+    "product": {
+      "aluminium_primary": "Unwrought primary aluminium",
+      "steel_bf_bof": "Blast-furnace steel (BF-BOF)"
+    },
+    "productNote": "Direct emissions only (CBAM scope for aluminium/steel); 2021–2025 benchmarks, to be checked against 2026–2030 benchmarks by CN code; remaining free-allocation factor {factor}% in {year}."
   },
   "chatLib": {
     "docNotSupported": "\"{name}\": .doc files are not supported — please re-save as .docx.",
@@ -562,9 +571,20 @@
     "calibration": "Cumulative hit rate by probability:",
     "calibrationRecent": "Hit rate, last {n} scored reports (by probability):",
     "calibrationItem": "{probability} {correct}/{total}",
-    "rules": "Scoring rules: Right/Wrong is final when the order hits its target/stop or after {horizon} sessions (1–2 week horizon); before that it is only On track/Diverging. Direction counts when |%Δ| ≥ {dir}%; \"sideways\" is right when |%Δ| < {side}%. Pending orders are valid for {valid} sessions and cancelled if price reaches the target before filling; a limit order gapped through fills at the open. Target reached before fill → \"Right direction, not filled\", excluded from the hit rate. Sunday/Monday reports are news-only, so there is no forecast to score.",
+    "rules": "Grading rules: Right/Wrong once the order hits its target/stop or after {horizon} sessions (1–2 week window); before that only On track/Diverging. Direction counts as right when |%Δ| ≥ {dir}%; \"sideways\" is right when |%Δ| < {side}% AND every close in the window stays within {path}% of the reference. Pending orders are valid for {valid} sessions and cancelled if the price hits the target before filling; a limit order gapped through at the open fills at the open. Target reached before filling → \"Right direction, not filled\", excluded from the hit rate. Sunday/Monday reports are news-only, so there is no forecast to grade.",
     "lesson": "Cause & adjustment",
-    "calibrationUnfilled": "(+{n} right direction, not filled — excluded)"
+    "calibrationUnfilled": "(+{n} right direction, not filled — excluded)",
+    "gradedBy": {
+      "trade": "graded on the order",
+      "direction": "graded on end-of-window %Δ",
+      "path": "graded on the price path"
+    },
+    "maxExcursion": "max deviation {pct}%",
+    "designFlaw": {
+      "low_rr": "Order design flaw: R:R at entry {entry} only {rr} (minimum {min})",
+      "tight_stop": "Order design flaw: stop {distance} from entry = {mult} × ATR (minimum {min} ATR)"
+    },
+    "baseline": "Benchmark ({total} concluded reports): report right {model} · naive \"always sideways\" {sideways} · \"repeat last {n} sessions' direction\" {momentum}"
   },
   "meta": {
     "title": "Carbon Analyst Dashboard",
@@ -647,10 +667,10 @@
       "hedgeAction": {
         "buy_now": "BUY NOW",
         "buy_scheduled": "BUY ON SCHEDULE",
-        "hold": "TRACK AUCTION SCHEDULE",
+        "hold": "LOCK CORE WITH FUTURES",
         "defer": "DEFER BUYING",
-        "increase": "TRACK AUCTIONS + BUY EARLY ≤20%",
-        "reduce": "TRACK AUCTIONS + WAIT ≤20%"
+        "increase": "LOCK CORE + EXTRA ≤20%",
+        "reduce": "LOCK CORE, HOLD OFF EXTRA"
       },
       "openPositions": "Open positions",
       "openPosition": "{side} {low}–{high} (report {date}), stop {stop}",
@@ -708,7 +728,11 @@
       "reason": "Rationale",
       "colOpportunity": "Opportunity",
       "colSolution": "Proposed solution",
-      "expectation": "Expectation"
+      "expectation": "Expectation",
+      "kpi": "KPI",
+      "owner": "Owner",
+      "pilot": "Pilot",
+      "financials": "Estimated cost / revenue"
     },
     "chart": {
       "updating": "Updating data...",
@@ -787,6 +811,18 @@
       "sourcesTitle": "References",
       "noSources": "No news sources in the past 48 hours.",
       "footer": "Internal report, automatically compiled and reviewed. Not investment advice."
+    },
+    "etsPolicy": {
+      "title": "EU ETS/MSR policy tracker (21 days)",
+      "item": "File",
+      "status": "Position / progress",
+      "nextStep": "Next step",
+      "impact": "If adopted",
+      "impactLabel": {
+        "up": "Tighter supply",
+        "down": "Looser supply",
+        "neutral": "Unclear"
+      }
     }
   },
   "shellHeader": {

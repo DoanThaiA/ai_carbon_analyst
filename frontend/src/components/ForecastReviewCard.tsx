@@ -81,6 +81,9 @@ export function ForecastReviewCard({
                     sessions: it.sessions,
                     date: dm(it.last_date),
                   })}
+                  {it.max_excursion_pct !== undefined && Math.abs(it.max_excursion_pct - it.change_pct) >= 0.5 &&
+                    ` · ${t("maxExcursion", { pct: num(it.max_excursion_pct, locale, true) })}`}
+                  {it.graded_by && <span className="text-muted-light"> · {t(`gradedBy.${it.graded_by}`)}</span>}
                 </div>
                 {tr && (
                   <div className="tabular-nums text-muted-light">
@@ -92,6 +95,13 @@ export function ForecastReviewCard({
                     </span>
                   </div>
                 )}
+                {(it.design_flaws || []).map((f, fi) => (
+                  <div key={fi} className="tabular-nums text-[12.5px] font-semibold text-down">
+                    {f.kind === "low_rr"
+                      ? t("designFlaw.low_rr", { entry: num(f.entry, locale), rr: num(f.rr, locale), min: num(review.rules?.min_rr ?? 1.5, locale) })
+                      : t("designFlaw.tight_stop", { distance: num(f.distance, locale), mult: num(f.atr_multiple, locale), min: num(review.rules?.min_stop_atr ?? 0.5, locale) })}
+                  </div>
+                ))}
               </div>
             </li>
           );
@@ -114,12 +124,25 @@ export function ForecastReviewCard({
         </div>
       )}
 
+      {review.baseline && review.baseline.model.total > 0 && (
+        <div className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
+          {t("baseline", {
+            total: review.baseline.model.total,
+            model: `${review.baseline.model.correct}/${review.baseline.model.total}`,
+            sideways: `${review.baseline.always_sideways.correct}/${review.baseline.always_sideways.total}`,
+            n: review.baseline.momentum.sessions,
+            momentum: `${review.baseline.momentum.correct}/${review.baseline.momentum.total}`,
+          })}
+        </div>
+      )}
+
       {review.rules && (
         <p className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[11.5px] leading-[1.5] text-muted-light">
           {t("rules", {
             horizon: review.rules.horizon_sessions,
             dir: num(review.rules.direction_threshold_pct, locale),
             side: num(review.rules.sideways_max_pct, locale),
+            path: num(review.rules.sideways_path_max_pct ?? 2, locale),
             valid: review.rules.order_valid_sessions,
           })}
         </p>

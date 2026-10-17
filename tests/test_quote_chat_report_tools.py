@@ -120,7 +120,7 @@ def test_forecast_scorecard_unpublished():
 
 def test_cbam_estimate_tool_and_hedge_label():
     text = asyncio.run(qc._tool_cbam_estimate_text(_Session(CONTENT), "2026-10-16"))
-    assert "Q4 2026" in text and "phần chiến thuật chờ giá thấp hơn" in text
+    assert "Q4 2026" in text and "phần chiến thuật chưa khóa" in text
     assert "cao hơn VWAP đã chốt ≥ 2.00%" in text and "Ô phòng hộ Mục 3" in text
     assert "Q3 2026: VWAP đấu giá 82.32 ↔ EC công bố 82.32" in text
 
