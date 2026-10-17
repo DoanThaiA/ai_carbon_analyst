@@ -435,9 +435,9 @@
     "title": "CBAM price estimate {quarter}",
     "signalLabel": "CBAM hedge",
     "signal": {
-      "increase": "Increase",
-      "hold": "Hold",
-      "reduce": "Reduce"
+      "increase": "Track + buy early ≤20%",
+      "hold": "Track auction schedule",
+      "reduce": "Track + wait ≤20%"
     },
     "estimate": "Quarter price estimate",
     "ci": "{level}% confidence interval: {low}–{high}",
@@ -449,12 +449,12 @@
     "volume": "{done}/{total} Mt",
     "signalWhy": "Why",
     "reason": {
-      "quarter_fixed": "All auctions of the quarter have taken place — the quarterly price is effectively fixed, pending EC publication.",
-      "quarter_not_started": "No auction has taken place this quarter yet — no benchmark to compare against; keep the current hedge ratio.",
-      "quarter_mostly_fixed": "More than {fixed}% of the quarterly volume is fixed — the open part is small; hold and shift focus to next quarter.",
-      "spot_below_qtd": "The current EUA price is {gap}% below the auction VWAP to date (threshold {threshold}%) — hedging the unfixed part now is cheaper than the level already fixed.",
-      "spot_above_qtd": "The current EUA price is {gap}% above the auction VWAP to date (threshold {threshold}%) — buying more now locks in above the fixed level; slow down hedge purchases.",
-      "spot_near_qtd": "The current EUA price deviates {gap}% from the auction VWAP to date (below the {threshold}% threshold) — keep the current hedging pace."
+      "quarter_fixed": "All auctions of the quarter are done — the quarterly price is effectively fixed, awaiting EC publication.",
+      "quarter_not_started": "No auction yet this quarter — the core follows the auction schedule; no reference for the tactical part yet.",
+      "quarter_mostly_fixed": "Over {fixed}% of the quarter's volume is fixed — the open part is small, just track the auction schedule and focus on next quarter.",
+      "spot_below_qtd": "Core buys along the auction schedule (cost tracks VWAP = CBAM price). EUA is {gap}% below the fixed VWAP (threshold {threshold}%) → the tactical part (≤20%) buys early — a trading view.",
+      "spot_above_qtd": "Core buys along the auction schedule (cost tracks VWAP = CBAM price). EUA is {gap}% above the fixed VWAP (threshold {threshold}%) → the tactical part (≤20%) waits for lower prices — a trading view.",
+      "spot_near_qtd": "EUA is {gap}% from the fixed VWAP (below the {threshold}% threshold) — buy along the auction schedule only, no tactical part."
     },
     "lastAuction": "Latest auction {date} ({platform}): clearing price EUR {price}/t",
     "cover": "cover ratio {ratio}",
@@ -537,7 +537,8 @@
       "wrong": "Wrong",
       "unclear": "Unclear",
       "on_track": "On track",
-      "diverging": "Diverging"
+      "diverging": "Diverging",
+      "direction_only": "Right direction, not filled"
     },
     "report": "Report {date}:",
     "forecast": "short-term forecast {direction}, probability {probability}.",
@@ -560,8 +561,9 @@
     },
     "calibration": "Cumulative hit rate by probability:",
     "calibrationItem": "{probability} {correct}/{total}",
-    "rules": "Scoring rules: Right/Wrong is final when the order hits its target/stop or after {horizon} sessions (1–2 week horizon); before that it is only On track/Diverging. Direction counts when |%Δ| ≥ {dir}%; \"sideways\" is right when |%Δ| < {side}%. Pending orders are valid for {valid} sessions and cancelled if price reaches the target before filling; a limit order gapped through fills at the open. Sunday/Monday reports are news-only, so there is no forecast to score.",
-    "lesson": "Cause & adjustment"
+    "rules": "Scoring rules: Right/Wrong is final when the order hits its target/stop or after {horizon} sessions (1–2 week horizon); before that it is only On track/Diverging. Direction counts when |%Δ| ≥ {dir}%; \"sideways\" is right when |%Δ| < {side}%. Pending orders are valid for {valid} sessions and cancelled if price reaches the target before filling; a limit order gapped through fills at the open. Target reached before fill → \"Right direction, not filled\", excluded from the hit rate. Sunday/Monday reports are news-only, so there is no forecast to score.",
+    "lesson": "Cause & adjustment",
+    "calibrationUnfilled": "(+{n} right direction, not filled — excluded)"
   },
   "meta": {
     "title": "Carbon Analyst Dashboard",
@@ -644,8 +646,10 @@
       "hedgeAction": {
         "buy_now": "BUY NOW",
         "buy_scheduled": "BUY ON SCHEDULE",
-        "hold": "HOLD RATIO",
-        "defer": "DEFER BUYING"
+        "hold": "TRACK AUCTION SCHEDULE",
+        "defer": "DEFER BUYING",
+        "increase": "TRACK AUCTIONS + BUY EARLY ≤20%",
+        "reduce": "TRACK AUCTIONS + WAIT ≤20%"
       },
       "openPositions": "Open positions",
       "openPosition": "{side} {low}–{high} (report {date}), stop {stop}",

@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Article, BizSuggestion, Instrument, Price, Report
 from services import biz_memory
+from services.strategy_levels import is_breakout_entry
 from services.report_consistency import atr_true_range, consistency_issues
 from services.report_generator import (
     CBAM_CODE,
@@ -420,6 +421,19 @@ def _check_strategy(
 
     direction = sc.get("direction")
     issues += _check_two_sided_legs(sc, label, path, bodies)
+    if direction == "đi ngang":
+        # "Đi ngang" mà chiến lược chỉ 1 chiều phá vỡ (bản 17/10 trung hạn: "bán khi thủng 81,50") → tự mâu thuẫn và
+        # trước đây lọt hết kiểm tra số học (R:R 1,37). Báo + kiểm số học theo chiều thực của lệnh.
+        e_buy, e_sell, _ = _split_buy_sell(bodies["Entry"])
+        side = "giảm" if e_sell and not e_buy else "tăng" if e_buy and not e_sell else None
+        if side and is_breakout_entry(side, bodies["Entry"]):
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"{label}: nhãn \"đi ngang\" nhưng chiến lược là lệnh {'bán khi thủng' if side == 'giảm' else 'mua khi phá'} 1 chiều "
+                "— tách \"Cơ sở: đi ngang\" (mua biên dưới/bán biên trên) và \"Thay thế: phá biên\" (đổi direction, xác suất thấp).",
+                f"{path}.trading_strategy",
+            ))
+            direction = side
     if direction not in ("tăng", "giảm"):
         return issues
     lv = parse_signal_levels(direction, bodies["Entry"], bodies["Mục tiêu"], bodies["Quản trị rủi ro"])
@@ -504,6 +518,7 @@ _GAS_MENTION_RE = re.compile(r"TTF|khí|chênh|spread", re.IGNORECASE)
 
 _TTF_UP_RE = re.compile(r"(TTF|giá khí|khí đốt|nguồn cung khí)[^.;\n]{0,50}?(tăng|leo|đẩy lên|cao hơn|rủi ro|gián đoạn)", re.IGNORECASE)
 _SPREAD_RE = re.compile(r"chênh|spread", re.IGNORECASE)
+_WIDEN_RE = re.compile(r"mở rộng|nới rộng|tăng lên|widen", re.IGNORECASE)
 
 
 def check_fuel_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -538,6 +553,9 @@ def check_fuel_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
             elif side == "bearish" and saturated and widened and _API2_UP_RE.search(text):
                 _add(side, i, text, f"chênh khí − than trong tuần MỞ RỘNG ({state['spread_prev']:+.0f} → {state['spread']:+.0f} "
                                     "EUR/MWh) — lợi thế than được củng cố, \"API2 tăng\" không phải áp lực giảm")
+            elif side == "bullish" and saturated and _SPREAD_RE.search(text) and _WIDEN_RE.search(text):
+                _add(side, i, text, f"chuyển đổi đã bão hòa (chênh ≈ {state['spread']:+.0f} EUR/MWh) — chênh khí − than mở rộng chỉ "
+                                    "GIỮ MỨC cầu EUA, không tạo lực tăng (Phân tích cùng báo cáo kết luận như vậy)")
             elif side == "bullish" and saturated and _TTF_UP_RE.search(text) and not _SPREAD_RE.search(text):
                 _add(side, i, text, f"than đã rẻ hơn khí rõ rệt (chênh ≈ {state['spread']:+.0f} EUR/MWh, chuyển đổi bão hòa) — "
                                     "TTF tăng/rủi ro cung khí không còn nâng cầu EUA qua fuel switching")
@@ -558,6 +576,58 @@ _SWITCH_TO_COAL_RE = re.compile(r"(chuyển|dịch|dispatch)[^.;\n]{0,25}(sang|v
 
 
 _TRIGGER_RE = re.compile(r"(?:đóng cửa|giá|EUA)?[^.;\n]{0,15}?(trên|vượt|dưới|thủng)\s+(\d+(?:[.,]\d+)?)", re.IGNORECASE)
+
+
+def check_breakout_levels(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Lệnh PHÁ biên 30 phiên (mua trên đỉnh / bán dưới đáy): mục tiêu = phép đo biên độ (đỉnh/đáy ± biên độ 30 phiên,
+    cùng phương pháp cả 2 chiều — bản 17/10 trung hạn lấy −4,5% tròn = 77,80 thay vì 75,88), cắt lỗ cách mức phá
+    0,5–1,5 × ATR (cắt lỗ 84,20 cho lệnh bán thủng 81,50 là 1,6 ATR, không có cơ sở)."""
+    chart = [c for c in (content.get("2") or {}).get("chart_data") or []
+             if isinstance(c, dict) and isinstance(c.get("high"), (int, float)) and isinstance(c.get("low"), (int, float))]
+    atr = atr_true_range(chart)
+    if not chart or not atr:
+        return []
+    hi, lo = max(c["high"] for c in chart), min(c["low"] for c in chart)
+    issues = []
+    for i, sc in enumerate((content.get("3") or {}).get("trading_scenarios") or []):
+        if not isinstance(sc, dict) or sc.get("horizon") == "ngắn hạn":
+            continue
+        parts = parse_strategy(sc.get("trading_strategy"))
+        if not parts:
+            continue
+        body = {k: next((b.replace("*", "") for lbl, b in parts if re.search(p, lbl, re.I)), "") for k, p in
+                (("entry", "entry"), ("target", "mục tiêu|target"), ("risk", "quản trị rủi ro|cắt lỗ|stop"))}
+        e_buy, e_sell, _ = _split_buy_sell(body["entry"])
+        side = sc.get("direction") if sc.get("direction") in ("tăng", "giảm") else (
+            "giảm" if e_sell and not e_buy else "tăng" if e_buy and not e_sell else None)
+        if not side or not is_breakout_entry(side, body["entry"]):
+            continue
+        lv = parse_signal_levels(side, body["entry"], body["target"], body["risk"])
+        zone = lv["entry_buy"] if side == "tăng" else lv["entry_sell"]
+        target = lv["target_buy"] if side == "tăng" else lv["target_sell"]
+        stop = lv["stop_lower"] if side == "tăng" else lv["stop_upper"]
+        if not zone:
+            continue
+        level = max(zone) if side == "tăng" else min(zone)
+        p = f"3.trading_scenarios[{i}].trading_strategy"
+        breaks_range = level >= hi - 0.25 * atr if side == "tăng" else level <= lo + 0.25 * atr
+        mm = hi + (hi - lo) if side == "tăng" else lo - (hi - lo)
+        if breaks_range and target is not None and abs(target - mm) > 0.5 * atr:
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Kịch bản {sc.get('horizon')}: lệnh phá biên 30 phiên nhưng mục tiêu {_fmt(target)} không theo phép đo biên độ "
+                f"({_fmt(mm)} = {'đỉnh' if side == 'tăng' else 'đáy'} 30 phiên {'+' if side == 'tăng' else '−'} biên độ {_fmt(hi - lo)}).", p,
+            ))
+        if stop is not None:
+            dist = (level - stop) if side == "tăng" else (stop - level)
+            if dist > 0 and not (0.5 * atr <= dist <= 1.5 * atr):
+                issues.append(_issue(
+                    "scenario", "3", "warning",
+                    f"Kịch bản {sc.get('horizon')}: cắt lỗ {_fmt(stop)} cách mức phá {_fmt(level)} {_fmt(dist)} = {dist / atr:.1f} × ATR "
+                    f"({_fmt(atr)}) — nên trong 0,5–1,5 × ATR ({_fmt(level + (0.5 if side == 'giảm' else -0.5) * atr)}…"
+                    f"{_fmt(level + (1.5 if side == 'giảm' else -1.5) * atr)}).", p,
+                ))
+    return issues
 
 
 def check_scenario_basis(content: Dict[str, Any], close: Optional[float] = None) -> List[Dict[str, str]]:
@@ -616,6 +686,45 @@ def check_horizon_overlap(content: Dict[str, Any]) -> List[Dict[str, str]]:
     return []
 
 
+_FREE_ALLOC_RE = re.compile(r"phân bổ miễn phí[^.\n]{0,80}?(?:tới|đến|trước)\s*(?:năm\s*)?(?:2029\s*[–-]\s*)?2030", re.IGNORECASE)
+
+
+def check_legislation_claims(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Lộ trình cắt phân bổ miễn phí (Chỉ thị (EU) 2023/959) chạy 2026–2034 (0% năm 2034) — viết "tới 2029–2030" là sai."""
+    issues = []
+    texts = _report_texts(content) + [
+        ("3", f"3.trading_scenarios[{i}]", " ".join(str(v) for v in sc.values() if isinstance(v, str)))
+        for i, sc in enumerate((content.get("3") or {}).get("trading_scenarios") or []) if isinstance(sc, dict)
+    ]
+    for section, path, text in texts:
+        if _FREE_ALLOC_RE.search(text) and "2034" not in text:
+            issues.append(_issue(
+                "scenario", section, "warning",
+                "Lộ trình cắt phân bổ miễn phí ghi kết thúc 2029–2030 — theo Chỉ thị (EU) 2023/959 chạy 2026–2034 (0% năm 2034), "
+                "2029–2030 chỉ là bước giảm mạnh nhất.", path,
+            ))
+    return issues
+
+
+_INTERPRETIVE_RE = re.compile(r"cho thấy|phản ánh|chứng tỏ|vẫn vững|củng cố niềm tin|vừa thiết lập|báo hiệu", re.IGNORECASE)
+
+
+def check_fact_tags(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Nhãn FACT chỉ cho dữ kiện — câu chứa diễn giải ("cho thấy cầu tuân thủ vẫn vững") phải tách phần OPINION."""
+    issues = []
+    drivers = (content.get("2") or {}).get("market_drivers") or {}
+    for side in ("bullish", "bearish"):
+        for i, d in enumerate(drivers.get(side) or [] if isinstance(drivers, dict) else []):
+            if isinstance(d, dict) and d.get("tag") == "FACT" and _INTERPRETIVE_RE.search(str(d.get("text") or "")):
+                m = _INTERPRETIVE_RE.search(str(d.get("text")))
+                issues.append(_issue(
+                    "scenario", "3", "warning",
+                    f"Nhãn FACT chứa diễn giải (\"{m.group(0)}\") — tách phần diễn giải thành OPINION: \"{str(d.get('text'))[:100]}\"",
+                    f"2.market_drivers.{side}[{i}].text",
+                ))
+    return issues
+
+
 def check_dev_driver_consistency(content: Dict[str, Any]) -> List[Dict[str, str]]:
     """Cùng 1 bài (source_url) không được nằm ở "Diễn biến chính" với 1 chiều và ở cột động lực Mục 2 chiều khác."""
     sec2 = content.get("2") or {}
@@ -668,9 +777,12 @@ def check_forecast_review(content: Dict[str, Any]) -> List[Dict[str, str]]:
     return issues
 
 
-HEDGE_ACTIONS = ("buy_now", "buy_scheduled", "hold", "defer")
-# Tín hiệu thẻ CBAM (services/cbam_estimate.py) ↔ hành động phòng hộ trái chiều hẳn.
+# Nhãn phòng hộ = tín hiệu thẻ CBAM (services/cbam_estimate.py) — 1 nhãn duy nhất. Nhãn kiểu cũ (buy_now/...) còn ở
+# báo cáo trước 18/10/2026: chấp nhận nhưng chỉ kiểm mâu thuẫn hẳn với thẻ CBAM.
+HEDGE_ACTIONS = ("increase", "hold", "reduce")
+LEGACY_HEDGE_ACTIONS = ("buy_now", "buy_scheduled", "defer")
 CBAM_SIGNAL_CONFLICT = {"increase": ("defer",), "reduce": ("buy_now",)}
+_PRICE_ZONE_ONLY_RE = re.compile(r"chỉ\s+(?:gom|mua)[^.;\n]{0,40}\d", re.IGNORECASE)
 
 
 def check_hedge_action(content: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -682,18 +794,27 @@ def check_hedge_action(content: Dict[str, Any]) -> List[Dict[str, str]]:
         return []
     issues: List[Dict[str, str]] = []
     ha = sec3.get("hedge_action")
-    if not isinstance(ha, dict) or ha.get("action") not in HEDGE_ACTIONS or _blank(ha.get("text")):
+    sig = ((content.get("2") or {}).get("cbam_estimate") or {}).get("signal")
+    if not isinstance(ha, dict) or ha.get("action") not in HEDGE_ACTIONS + LEGACY_HEDGE_ACTIONS:
         issues.append(_issue("scenario", "3", "error",
-                             "Thiếu hành động phòng hộ duy nhất cho sổ SIM (hedge_action).", "3.hedge_action"))
-    else:
-        cbam = (content.get("2") or {}).get("cbam_estimate") or {}
-        sig = cbam.get("signal")
-        if ha["action"] in CBAM_SIGNAL_CONFLICT.get(sig, ()) and "CBAM" not in str(ha.get("text")):
-            issues.append(_issue(
-                "scenario", "3", "warning",
-                f"Hành động phòng hộ \"{ha['action']}\" ngược tín hiệu thẻ CBAM \"{sig}\" mà không giải thích.",
-                "3.hedge_action",
-            ))
+                             "Thiếu nhãn phòng hộ duy nhất cho sổ SIM (hedge_action).", "3.hedge_action"))
+    elif ha["action"] in HEDGE_ACTIONS and sig and ha["action"] != sig:
+        issues.append(_issue(
+            "scenario", "3", "error",
+            f"2 nhãn phòng hộ trong 1 báo cáo: ô phòng hộ \"{ha['action']}\" ≠ thẻ CBAM \"{sig}\".", "3.hedge_action",
+        ))
+    elif ha["action"] in CBAM_SIGNAL_CONFLICT.get(sig, ()) and "CBAM" not in str(ha.get("text")):
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            f"Hành động phòng hộ \"{ha['action']}\" ngược tín hiệu thẻ CBAM \"{sig}\" mà không giải thích.",
+            "3.hedge_action",
+        ))
+    if isinstance(ha, dict) and _PRICE_ZONE_ONLY_RE.search(str(ha.get("text") or "")):
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            "Phòng hộ ghi \"chỉ gom/mua ở vùng giá\" — phần lõi phải bám lịch đấu giá; vùng giá chỉ cho phần chiến thuật ≤20%.",
+            "3.hedge_action",
+        ))
     notes = [i for i, sc in enumerate(sec3.get("trading_scenarios") or []) if isinstance(sc, dict) and not _blank(sc.get("hedge_note"))]
     if notes and isinstance(ha, dict):
         issues.append(_issue("scenario", "3", "warning",
@@ -1733,7 +1854,8 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
         "scenario": (
             check_scenarios(content) + check_forecast_review(content) + check_fuel_direction(content)
             + check_hedge_action(content) + check_consistency(content) + check_dev_driver_consistency(content)
-            + check_scenario_basis(content) + check_horizon_overlap(content)
+            + check_scenario_basis(content) + check_horizon_overlap(content) + check_breakout_levels(content)
+            + check_legislation_claims(content) + check_fact_tags(content)
         ),
         "source": check_sources(content, known_urls, article_meta, stale_before),
         "fact": check_facts(content, article_texts),

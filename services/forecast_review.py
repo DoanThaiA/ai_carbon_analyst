@@ -11,7 +11,8 @@ nhất có kịch bản ngắn hạn (còn trong khung ngắn hạn REVIEW_MAX_S
     thứ tự trong phiên); 1 phiên chạm cả cắt lỗ lẫn mục tiêu → tính cắt lỗ (thận trọng);
   - lệnh chờ hết hiệu lực sau ORDER_VALID_SESSIONS phiên chưa khớp; giá chạm mục tiêu trước khi khớp → huỷ lệnh, dự báo ĐÚNG
     hướng (lỗi thực thi: Entry quá xa) — không để lệnh treo rồi khớp vào nhịp ngược chiều như bản 09/10;
-  - kết luận: chạm cắt lỗ → SAI, chạm mục tiêu → ĐÚNG; còn lại theo chiều %Δ luỹ kế — nhưng CHƯA hết khung
+  - kết luận: chạm cắt lỗ → SAI, chạm mục tiêu → ĐÚNG, mục tiêu tới trước khi khớp → "đúng hướng, không khớp lệnh"
+    (đếm riêng, không vào tỷ lệ đúng); còn lại theo chiều %Δ luỹ kế — nhưng CHƯA hết khung
     REVIEW_MAX_SESSIONS phiên thì chỉ là "ĐANG LỆCH"/"ĐANG ĐÚNG HƯỚNG" (dự báo 1–2 tuần không bị chấm SAI
     sau 1 phiên).
 Bảng gồm REVIEW_MAX_REPORTS báo cáo gần nhất + báo cáo cũ hơn bị chấm SAI còn trong khung (tối đa REVIEW_MAX_ITEMS) —
@@ -52,7 +53,9 @@ def _hl(s: Dict[str, Any]) -> Tuple[float, float, float]:
     return float(s.get("high") if s.get("high") is not None else c), float(s.get("low") if s.get("low") is not None else c), c
 
 
-def simulate_trade(direction: str, levels: Optional[Dict[str, Any]], sessions: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def simulate_trade(
+    direction: str, levels: Optional[Dict[str, Any]], sessions: Sequence[Dict[str, Any]], ref_close: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
     """Mô phỏng lệnh của thẻ chiến lược trên các phiên sau phát hành. None nếu không tách được mức giá."""
     if not levels or direction not in ("tăng", "giảm"):
         return None
@@ -64,6 +67,10 @@ def simulate_trade(direction: str, levels: Optional[Dict[str, Any]], sessions: S
         return None
     lo, hi = min(zone), max(zone)
     limit_order = not levels.get("entry_breakout")
+    # Lệnh "dừng" mà giá lúc ra báo cáo đã ở/qua mức kích hoạt (bản 15/10: "mua khi … trên 87,00–87,50" khi EUA
+    # đang 87,14) không còn là lệnh chờ phá vỡ — thực chất là mua tại vùng đó → tính như lệnh giới hạn.
+    if not limit_order and ref_close is not None and (ref_close >= lo if long else ref_close <= hi):
+        limit_order = True
     trade: Dict[str, Any] = {
         "side": "buy" if long else "sell", "order_type": "limit" if limit_order else "stop",
         "entry_low": lo, "entry_high": hi, "stop": stop, "target": target,
@@ -151,11 +158,14 @@ def evaluate_forecast(
     direction = scenario.get("direction") or ""
     last = sessions[-1]
     change_pct = (float(last["close"]) / ref_close - 1) * 100
-    trade = simulate_trade(direction, strategy_levels(scenario), sessions)
+    trade = simulate_trade(direction, strategy_levels(scenario), sessions, ref_close)
     if trade and trade["status"] == "stopped":
         verdict = "wrong"
-    elif trade and trade["status"] in ("target_hit", "cancelled_target"):
+    elif trade and trade["status"] == "target_hit":
         verdict = "correct"
+    elif trade and trade["status"] == "cancelled_target":
+        # Đúng hướng nhưng lệnh không khớp (bản 09/10) — tách riêng, KHÔNG tính vào tỷ lệ đúng (không thổi phồng).
+        verdict = "direction_only"
     else:
         verdict = direction_verdict(direction, change_pct, final=len(sessions) >= REVIEW_MAX_SESSIONS)
     return {
@@ -258,7 +268,10 @@ def calibration_from(evaluated: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
     out = []
     for level in PROBABILITY_LEVELS:
         final = [e for e in evaluated if e.get("probability") == level and e.get("verdict") in ("correct", "wrong")]
-        out.append({"probability": level, "correct": sum(e["verdict"] == "correct" for e in final), "total": len(final)})
+        out.append({
+            "probability": level, "correct": sum(e["verdict"] == "correct" for e in final), "total": len(final),
+            "direction_only": sum(1 for e in evaluated if e.get("probability") == level and e.get("verdict") == "direction_only"),
+        })
     return out
 
 
@@ -312,7 +325,8 @@ TRADE_STATUS_VI = {
 }
 VERDICT_VI = {
     "correct": "ĐÚNG", "wrong": "SAI", "unclear": "chưa rõ",
-    "on_track": "ĐANG ĐÚNG HƯỚNG (chưa hết khung 1–2 tuần)", "diverging": "ĐANG LỆCH (chưa hết khung 1–2 tuần — chưa kết luận sai)",
+    "on_track": "ĐANG ĐÚNG HƯỚNG (chưa hết khung 1–2 tuần)",
+    "direction_only": "ĐÚNG HƯỚNG, KHÔNG KHỚP LỆNH (Entry quá xa — không tính vào tỷ lệ đúng)", "diverging": "ĐANG LỆCH (chưa hết khung 1–2 tuần — chưa kết luận sai)",
 }
 
 
@@ -344,11 +358,13 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
         )
     if block.get("wrong_in_row", 0) >= 2:
         lines.append(f"⚠ {block['wrong_in_row']} báo cáo LIÊN TIẾP dự báo sai.")
-    calib = [c for c in block.get("calibration") or [] if c.get("total")]
+    calib = [c for c in block.get("calibration") or [] if c.get("total") or c.get("direction_only")]
     if calib:
         lines.append(
             "TỶ LỆ ĐÚNG LŨY KẾ theo mức xác suất (dự báo đã có kết luận cuối): "
-            + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in calib)
+            + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}"
+                        + (f" (+{c['direction_only']} đúng hướng nhưng không khớp lệnh)" if c.get("direction_only") else "")
+                        for c in calib)
             + ". Mức nào tỷ lệ đúng < 50% (vd \"Cao\") thì KHÔNG dùng lại mức đó trừ khi có ≥2 yếu tố độc lập đã xác nhận; "
             "nguyên nhân dự báo sai phải nêu cả phần THỰC THI (Entry quá xa, lệnh treo/hết hiệu lực) chứ không chỉ tiền đề."
         )

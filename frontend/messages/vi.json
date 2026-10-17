@@ -435,9 +435,9 @@
     "title": "Ước tính giá CBAM {quarter}",
     "signalLabel": "Phòng vệ CBAM",
     "signal": {
-      "increase": "Tăng",
-      "hold": "Giữ",
-      "reduce": "Giảm"
+      "increase": "Bám lịch + mua sớm ≤20%",
+      "hold": "Bám lịch đấu giá",
+      "reduce": "Bám lịch + chờ ≤20%"
     },
     "estimate": "Ước tính giá quý",
     "ci": "Khoảng tin cậy {level}%: {low}–{high}",
@@ -450,11 +450,11 @@
     "signalWhy": "Vì sao",
     "reason": {
       "quarter_fixed": "Toàn bộ phiên đấu giá của quý đã diễn ra — giá quý coi như đã chốt, chờ EC công bố.",
-      "quarter_not_started": "Quý chưa có phiên đấu giá nào — chưa có mốc để so sánh, giữ tỷ lệ phòng vệ hiện tại.",
-      "quarter_mostly_fixed": "Đã chốt trên {fixed}% khối lượng quý — phần còn hở nhỏ, giữ nguyên và chuyển trọng tâm sang quý sau.",
-      "spot_below_qtd": "Giá EUA hiện tại thấp hơn VWAP đã chốt {gap}% (ngưỡng {threshold}%) — mua phòng vệ phần chưa chốt lúc này rẻ hơn mức quý đã chốt.",
-      "spot_above_qtd": "Giá EUA hiện tại cao hơn VWAP đã chốt {gap}% (ngưỡng {threshold}%) — mua thêm lúc này khoá giá cao hơn mức quý đã chốt; giãn tiến độ mua phòng vệ.",
-      "spot_near_qtd": "Giá EUA hiện tại lệch VWAP đã chốt {gap}% (dưới ngưỡng {threshold}%) — giữ tiến độ phòng vệ hiện tại."
+      "quarter_not_started": "Quý chưa có phiên đấu giá nào — phần lõi mua theo lịch đấu giá, chưa có mốc để dùng phần chiến thuật.",
+      "quarter_mostly_fixed": "Đã chốt trên {fixed}% khối lượng quý — phần còn hở nhỏ, chỉ bám lịch đấu giá, chuyển trọng tâm sang quý sau.",
+      "spot_below_qtd": "Phần lõi mua theo lịch đấu giá (chi phí bám VWAP = giá CBAM). Giá EUA thấp hơn VWAP đã chốt {gap}% (ngưỡng {threshold}%) → phần chiến thuật (≤20%) mua sớm — quan điểm giao dịch.",
+      "spot_above_qtd": "Phần lõi mua theo lịch đấu giá (chi phí bám VWAP = giá CBAM). Giá EUA cao hơn VWAP đã chốt {gap}% (ngưỡng {threshold}%) → phần chiến thuật (≤20%) chờ giá thấp hơn — quan điểm giao dịch.",
+      "spot_near_qtd": "Giá EUA lệch VWAP đã chốt {gap}% (dưới ngưỡng {threshold}%) — chỉ mua theo lịch đấu giá, không dùng phần chiến thuật."
     },
     "lastAuction": "Phiên gần nhất {date} ({platform}): giá khớp {price} EUR/t",
     "cover": "tỷ lệ đặt mua/chào bán {ratio}",
@@ -537,7 +537,8 @@
       "wrong": "Sai",
       "unclear": "Chưa rõ",
       "on_track": "Đang đúng hướng",
-      "diverging": "Đang lệch"
+      "diverging": "Đang lệch",
+      "direction_only": "Đúng hướng, không khớp lệnh"
     },
     "report": "Báo cáo {date}:",
     "forecast": "dự báo ngắn hạn {direction}, xác suất {probability}.",
@@ -560,8 +561,9 @@
     },
     "calibration": "Tỷ lệ đúng lũy kế theo xác suất:",
     "calibrationItem": "{probability} {correct}/{total}",
-    "rules": "Quy tắc chấm: kết luận Đúng/Sai khi lệnh chạm mục tiêu/cắt lỗ hoặc hết {horizon} phiên (khung 1–2 tuần); trước đó chỉ là Đang đúng hướng/Đang lệch. Chiều tính đúng khi |%Δ| ≥ {dir}%; \"đi ngang\" đúng khi |%Δ| < {side}%. Lệnh chờ hiệu lực {valid} phiên, huỷ nếu giá chạm mục tiêu trước khi khớp; lệnh giới hạn mở gap qua vùng Entry khớp tại giá mở. Báo cáo Chủ Nhật/Thứ Hai chỉ có tin tức nên không có dự báo để chấm.",
-    "lesson": "Nguyên nhân & điều chỉnh"
+    "rules": "Quy tắc chấm: kết luận Đúng/Sai khi lệnh chạm mục tiêu/cắt lỗ hoặc hết {horizon} phiên (khung 1–2 tuần); trước đó chỉ là Đang đúng hướng/Đang lệch. Chiều tính đúng khi |%Δ| ≥ {dir}%; \"đi ngang\" đúng khi |%Δ| < {side}%. Lệnh chờ hiệu lực {valid} phiên, huỷ nếu giá chạm mục tiêu trước khi khớp; lệnh giới hạn mở gap qua vùng Entry khớp tại giá mở. Giá chạm mục tiêu trước khi khớp → \"Đúng hướng, không khớp lệnh\", không tính vào tỷ lệ đúng. Báo cáo Chủ Nhật/Thứ Hai chỉ có tin tức nên không có dự báo để chấm.",
+    "lesson": "Nguyên nhân & điều chỉnh",
+    "calibrationUnfilled": "(+{n} đúng hướng, không khớp lệnh — không tính)"
   },
   "meta": {
     "title": "Carbon Analyst Dashboard",
@@ -644,8 +646,10 @@
       "hedgeAction": {
         "buy_now": "MUA NGAY",
         "buy_scheduled": "MUA TRẢI ĐỀU",
-        "hold": "GIỮ TỶ LỆ",
-        "defer": "HOÃN MUA"
+        "hold": "BÁM LỊCH ĐẤU GIÁ",
+        "defer": "HOÃN MUA",
+        "increase": "BÁM LỊCH ĐẤU GIÁ + MUA SỚM ≤20%",
+        "reduce": "BÁM LỊCH ĐẤU GIÁ + CHỜ ≤20%"
       },
       "openPositions": "Lệnh đang mở",
       "openPosition": "{side} {low}–{high} (báo cáo {date}), cắt lỗ {stop}",

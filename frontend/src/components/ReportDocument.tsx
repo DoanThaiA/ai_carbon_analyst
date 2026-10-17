@@ -575,9 +575,16 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
                   </span>
                 )}
               </h4>
-              <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
-                <HighlightNumbers text={hedgeAction?.text || signal.hedge_note} />
-              </p>
+              {hedgeAction?.core && (
+                <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body font-semibold">
+                  <HighlightNumbers text={hedgeAction.core} />
+                </p>
+              )}
+              {(hedgeAction?.text || (!hedgeAction && signal.hedge_note)) && (
+                <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
+                  <HighlightNumbers text={hedgeAction?.text || signal.hedge_note} />
+                </p>
+              )}
             </div>
           </div>
         )}

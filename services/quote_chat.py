@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
-from db.models import Article, BizSuggestion, Report, Instrument
+from db.models import Article, BizSuggestion, EuaAuction, Report, Instrument
 from schemas.chat_models import MAX_ATTACHMENTS_PER_TURN, Attachment, ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services import minio_service
@@ -20,6 +20,7 @@ from services.claude_connect import TEAM_INTRO
 from services.report_qc import qc_report_text
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
+from services import cbam_estimate, forecast_review
 from services.report_generator import (
     report_data_date,
     _compute_recurring_calendar_events,
@@ -504,6 +505,18 @@ def _format_section2(sec: dict) -> str:
             f"{sec.get('no_price_notice') or 'Không có phiên giao dịch — báo cáo không có dữ liệu giá.'}\n"
             f"Diễn biến chính:\n{developments or '(không có)'}"
         )
+    # Cột "Ghi chú" của bảng giá (instrument_notes của Mục 3 đã gộp vào prices[].note lúc sinh báo cáo).
+    notes = "\n".join(
+        f"- {p.get('code')}: {p['note']}" for p in sec.get("prices") or []
+        if isinstance(p, dict) and str(p.get("note") or "").strip()
+    )
+    extra = "".join(
+        f"\n\n{block}" for block in (
+            f"Ghi chú bảng giá:\n{notes}" if notes else "",
+            _format_cbam_estimate(sec.get("cbam_estimate")) if sec.get("cbam_estimate") else "",
+            _format_forecast_review(sec.get("forecast_review")) if sec.get("forecast_review") else "",
+        ) if block
+    )
     return (
         f"{sec.get('title', 'Bảng giá nhanh')}\n"
         f"{sec.get('price_timestamp', '')}\n"
@@ -511,7 +524,116 @@ def _format_section2(sec: dict) -> str:
         f"Diễn biến chính:\n{developments or '(không có)'}\n"
         f"Yếu tố hỗ trợ tăng giá:\n{_format_bullets(drivers.get('bullish'))}\n"
         f"Yếu tố hỗ trợ giảm giá:\n{_format_bullets(drivers.get('bearish'))}"
+        f"{extra}"
     )
+
+
+def _num(x: Any) -> str:
+    return f"{x:.2f}" if isinstance(x, (int, float)) else "?"
+
+
+# Nhãn phòng hộ: increase/hold/reduce dùng chung thẻ CBAM; buy_now/buy_scheduled/defer là báo cáo cũ.
+_HEDGE_ACTION_VI = {
+    **cbam_estimate.HEDGE_LABEL_VI,
+    "buy_now": "MUA NGAY", "buy_scheduled": "MUA THEO LỊCH", "defer": "HOÃN MUA",
+}
+_HEDGE_REASON_VI = {
+    "quarter_fixed": "quý đã chốt toàn bộ khối lượng",
+    "quarter_not_started": "quý chưa có phiên đấu giá nào có kết quả",
+    "quarter_mostly_fixed": "đã chốt ≥ {fixed}% khối lượng quý",
+    "spot_below_qtd": "giá EUA hiện tại thấp hơn VWAP đã chốt ≥ {gap}%",
+    "spot_above_qtd": "giá EUA hiện tại cao hơn VWAP đã chốt ≥ {gap}%",
+    "spot_near_qtd": "giá EUA hiện tại lệch VWAP đã chốt < {gap}%",
+}
+
+
+def _format_cbam_estimate(est: Optional[dict]) -> str:
+    """Khối "Ước tính giá CBAM" (content["2"].cbam_estimate — services/cbam_estimate.py, số do Python tính)."""
+    if not est:
+        return "Ước tính giá CBAM: (báo cáo không có — thiếu dữ liệu đấu giá EEX của quý)"
+    reason = _HEDGE_REASON_VI.get(est.get("signal_reason") or "", "").format(
+        fixed=est.get("hedge_fixed_share_pct", "?"), gap=_num(est.get("hedge_gap_pct")),
+    )
+    lines = [
+        f"Ước tính giá CBAM {est.get('quarter', '')} (dữ liệu đến {est.get('as_of', '?')}; giá CBAM EC công bố theo quý = "
+        "VWAP giá khớp mọi phiên đấu giá sơ cấp EUA trên EEX trong quý):",
+        f"- Ước tính: {_num(est.get('estimate'))} EUR/t"
+        + (f", khoảng tin cậy {est.get('ci_level')}%: {_num(est['ci_low'])}–{_num(est['ci_high'])}" if est.get("ci_low") is not None else ""),
+        f"- Đã chốt {est.get('auctions_done')}/{est.get('auctions_total')} phiên ({_num(est.get('volume_done_mt'))}/"
+        f"{_num(est.get('volume_total_mt'))} triệu t, {est.get('fixed_share_pct')}% khối lượng); VWAP đã chốt "
+        f"{_num(est.get('qtd_vwap'))}; giá EUA hiện tại {_num(est.get('spot'))}"
+        + (f" ({est['spot_vs_qtd_pct']:+.2f}% so với VWAP)" if isinstance(est.get("spot_vs_qtd_pct"), (int, float)) else "")
+        + (f"; biến động ngày {_num(est.get('daily_vol_pct'))}%" if est.get("daily_vol_pct") is not None else ""),
+        f"- Tín hiệu phòng vệ CBAM: {_HEDGE_ACTION_VI.get(est.get('signal'), est.get('signal'))}"
+        + (f" — lý do: {reason}" if reason else "")
+        + f" (phần lõi ≥{100 - int(est.get('tactical_max_pct') or cbam_estimate.TACTICAL_MAX_PCT)}% phần chưa chốt mua theo "
+        "lịch đấu giá; chỉ phần chiến thuật mới theo quan điểm giá)",
+    ]
+    last = est.get("last_auction")
+    if last:
+        lines.append(
+            f"- Phiên đấu giá gần nhất: {last.get('date')} ({last.get('platform')}) giá {_num(last.get('price'))}"
+            + (f", cover ratio {_num(last.get('cover_ratio'))}" if last.get("cover_ratio") is not None else "")
+        )
+    up = est.get("upcoming") or {}
+    if up.get("count"):
+        lines.append(f"- 7 ngày tới: {up['count']} phiên, {_num(up.get('volume_mt'))} triệu t ({up.get('first_date')} → {up.get('last_date')})")
+    prev = est.get("prev_quarter")
+    if prev:
+        lines.append(
+            f"- {prev.get('quarter')}: VWAP đấu giá {_num(prev.get('vwap'))}"
+            + (f" ↔ EC công bố {_num(prev.get('official'))} EUR/t" if prev.get("official") is not None else " (EC chưa công bố)")
+        )
+    return "\n".join(lines)
+
+
+def _format_trade(t: dict) -> str:
+    side = "mua" if t.get("side") == "buy" else "bán"
+    exit_d = t.get("exit_date") or t.get("filled_date")
+    return (
+        f"{forecast_review.ORDER_TYPE_VI.get(t.get('order_type'), 'lệnh')} {side} "
+        f"{_num(t.get('entry_low'))}–{_num(t.get('entry_high'))}, cắt lỗ {_num(t.get('stop'))}"
+        + (f", mục tiêu {_num(t['target'])}" if t.get("target") is not None else "")
+        + f" → {forecast_review.TRADE_STATUS_VI.get(t.get('status'), t.get('status'))}"
+        + (f" ngày {exit_d}" if exit_d else "")
+        + (f" (khớp {t['filled_date']}" + (f" tại {_num(t['fill_price'])}" if t.get("fill_price") is not None else "") + ")"
+           if t.get("filled_date") else "")
+    )
+
+
+def _format_forecast_item(it: dict) -> str:
+    return (
+        f"- Báo cáo {it.get('report_date')}: dự báo ngắn hạn \"{it.get('direction')}\" (xác suất {it.get('probability')}) → "
+        f"{forecast_review.VERDICT_VI.get(it.get('verdict'), it.get('verdict'))}"
+        + (" (dù gắn xác suất CAO)" if it.get("high_confidence_miss") else "")
+        + f". EUA {_num(it.get('ref_close'))} → {_num(it.get('last_close'))} ({it.get('change_pct', 0):+.2f}%, "
+        f"{it.get('sessions')} phiên tới {it.get('last_date')})"
+        + (f"; {_format_trade(it['trade'])}" if isinstance(it.get("trade"), dict) else "")
+    )
+
+
+def _format_forecast_review(block: Optional[dict]) -> str:
+    """Khối "Dự báo trước: đúng hay sai" (content["2"].forecast_review — services/forecast_review.py)."""
+    if not block or not block.get("items"):
+        return "Dự báo trước: đúng hay sai — (báo cáo không có: chưa có báo cáo trước nào còn trong khung ngắn hạn)"
+    lines = ["Dự báo trước: đúng hay sai (Python chấm từ giá EUA thật + mô phỏng lệnh của thẻ chiến lược; mới → cũ):"]
+    lines += [_format_forecast_item(it) for it in block["items"]]
+    if block.get("wrong_in_row", 0) >= 2:
+        lines.append(f"- {block['wrong_in_row']} báo cáo LIÊN TIẾP dự báo sai.")
+    calib = [c for c in block.get("calibration") or [] if c.get("total")]
+    if calib:
+        lines.append(
+            "Tỷ lệ đúng lũy kế theo mức xác suất (chỉ dự báo đã có kết luận cuối): "
+            + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in calib)
+        )
+    rules = block.get("rules")
+    if rules:
+        lines.append(
+            f"Quy tắc chấm: khung ngắn hạn {rules.get('horizon_sessions')} phiên; tăng/giảm đúng khi %Δ cùng chiều ≥ "
+            f"{_num(rules.get('direction_threshold_pct'))}%, đi ngang đúng khi |%Δ| < {_num(rules.get('sideways_max_pct'))}%; "
+            f"chạm cắt lỗ = SAI, chạm mục tiêu = ĐÚNG; lệnh chờ hết hiệu lực sau {rules.get('order_valid_sessions')} phiên."
+        )
+    return "\n".join(lines)
 
 
 def _format_section3(sec: dict) -> str:
@@ -524,7 +646,35 @@ def _format_section3(sec: dict) -> str:
         f"Chiến lược: {s.get('trading_strategy')}"
         for s in sec.get("trading_scenarios") or []
     )
-    return f"{sec.get('title', 'Phân tích chuyên sâu')}\n{blocks}\n\nKịch bản giao dịch:\n{scenarios or '(không có)'}"
+    parts = [f"{sec.get('title', 'Phân tích chuyên sâu')}\n{blocks}"]
+    if sec.get("fuel_model_note"):
+        parts.append(f"Giả định mô hình fuel switching: {sec['fuel_model_note']}")
+    if sec.get("vs_previous"):
+        parts.append(f"So với báo cáo trước (nguyên nhân & điều chỉnh): {sec['vs_previous']}")
+    parts.append(f"Kịch bản giao dịch:\n{scenarios or '(không có)'}")
+    ha = sec.get("hedge_action")
+    if isinstance(ha, dict) and ha.get("action"):
+        parts.append(
+            f"Phòng hộ CBAM: {_HEDGE_ACTION_VI.get(ha['action'], ha['action'])}"
+            + "".join(f"\n- {x}" for x in (ha.get("core"), ha.get("text")) if x)
+        )
+    positions = [p for p in sec.get("open_positions") or [] if isinstance(p, dict)]
+    if positions:
+        decision_vi = {"keep": "GIỮ", "move": "DỜI MỨC", "close": "ĐÓNG"}
+        parts.append("Lệnh mô phỏng đang mở (từ báo cáo trước):\n" + "\n".join(
+            f"- Báo cáo {p.get('report_date')}: {'mua' if p.get('side') == 'buy' else 'bán'} "
+            f"{_num(p.get('entry_low'))}–{_num(p.get('entry_high'))}, khớp {p.get('filled_date') or '?'}"
+            + (f" tại {_num(p['fill_price'])}" if p.get("fill_price") is not None else "")
+            + f", cắt lỗ {_num(p.get('stop'))}" + (f", mục tiêu {_num(p['target'])}" if p.get("target") is not None else "")
+            + f" → {decision_vi.get(p.get('decision'), 'chưa đối chiếu')}" + (f": {p['text']}" if p.get("text") else "")
+            for p in positions
+        ))
+    sources = [s for s in sec.get("sources") or [] if isinstance(s, dict)]
+    if sources:
+        parts.append("Nguồn đã trích trong mục này:\n" + "\n".join(
+            f"- {s.get('source_name', '?')} ({s.get('source_url', '')})" for s in sources
+        ))
+    return "\n\n".join(parts)
 
 
 def _format_section4(sec: dict) -> str:
@@ -902,63 +1052,123 @@ async def _tool_report_history_text(session: AsyncSession, end_date: str, sectio
 
 
 FORECAST_MAX_SESSIONS = 20
-FORECAST_DEFAULT_SESSIONS = 5
-
-
-def _evaluate_forecast(direction: Optional[str], base_close: float, after: List[tuple]) -> str:
-    """So hướng dự báo với diễn biến giá thực — phần SỐ tính sẵn bằng Python. 'cùng chiều/ngược chiều' chỉ
-    gán cho dự báo tăng/giảm; 'đi ngang' không gán nhãn đúng/sai (không có ngưỡng chuẩn trong hệ thống)."""
-    lines = [f"- {d}: đóng cửa {c:.2f} ({(c - base_close) / base_close * 100:+.2f}% so với mốc {base_close:.2f})" for d, c in after]
-    last_d, last_c = after[-1]
-    chg = (last_c - base_close) / base_close * 100
-    peak = max(after, key=lambda x: x[1])
-    trough = min(after, key=lambda x: x[1])
-    if direction in ("tăng", "giảm"):
-        same = (chg > 0) == (direction == "tăng") and chg != 0
-        verdict = (
-            f"Kết quả sau {len(after)} phiên (đến {last_d}): giá {chg:+.2f}% → "
-            + ("CÙNG chiều với dự báo " if same else "NGƯỢC chiều (hoặc đứng yên) so với dự báo ") + f"\"{direction}\"."
-        )
-    else:
-        verdict = (
-            f"Kết quả sau {len(after)} phiên (đến {last_d}): giá {chg:+.2f}% — dự báo \"{direction or 'không rõ'}\" không có "
-            "ngưỡng chuẩn nên KHÔNG gán nhãn đúng/sai, chỉ nêu số liệu."
-        )
-    return (
-        "\n".join(lines)
-        + f"\nCao nhất {peak[1]:.2f} ({peak[0]}), thấp nhất {trough[1]:.2f} ({trough[0]}) trong {len(after)} phiên sau báo cáo.\n"
-        + verdict
-    )
+FORECAST_DEFAULT_SESSIONS = forecast_review.REVIEW_MAX_SESSIONS
 
 
 async def _tool_review_forecast_text(session: AsyncSession, report_date: str, sessions: int) -> str:
+    """Đối chiếu dự báo ngắn hạn của 1 báo cáo published — chấm bằng ĐÚNG logic của khối "Dự báo trước: đúng hay
+    sai" (services/forecast_review.py: ngưỡng %Δ + mô phỏng lệnh, khung REVIEW_MAX_SESSIONS phiên) để câu trả lời
+    không bao giờ trái với bảng trên trang đầu báo cáo. `sessions` chỉ quyết định số phiên liệt kê."""
     content = (
         await session.execute(select(Report.content).where(Report.report_date == report_date, Report.status == "published"))
     ).scalar_one_or_none()
     if not content:
         return f"Không có báo cáo published ngày {report_date} để đối chiếu."
     base_date = report_data_date(report_date)
-    horizon_end = (date_cls.fromisoformat(report_date) + timedelta(days=sessions * 2 + 10)).isoformat()
-    hist = await get_historical_ohlc_for_report(session, "EUA", horizon_end, limit=sessions + 40)
-    rows = sorted((str(c["date"]), float(c["close"])) for c in hist if c.get("close") is not None)
-    before = [r for r in rows if r[0] <= base_date]
-    after = [r for r in rows if r[0] > base_date][:sessions]
     short = _scenario(content, "ngắn hạn")
     head = (
         f"Báo cáo {_fmt_day_full(report_date)} (dữ liệu đến phiên {base_date}):\n"
         f"Nhận định tổng quan: {_extract_eua_verdict(content) or '(không có)'}\n"
         f"Kịch bản ngắn hạn: {_format_scenario(short)}\nTrung hạn: {_format_scenario(_scenario(content, 'trung hạn'))}\n"
     )
-    if not before:
-        return head + "Không có giá EUA tại/trước mốc báo cáo để làm cơ sở so sánh."
+    ref = forecast_review._ref_close(content)
+    if not short or not ref:
+        return head + "Báo cáo không có kịch bản ngắn hạn hoặc giá EUA tham chiếu nên không chấm được dự báo."
+    horizon = max(sessions, forecast_review.REVIEW_MAX_SESSIONS)
+    end = (date_cls.fromisoformat(report_date) + timedelta(days=horizon * 2 + 10)).isoformat()
+    after = (await forecast_review._eua_sessions(session, report_date, end))[:horizon]
     if not after:
-        return head + f"Chưa có phiên EUA nào SAU mốc {before[-1][0]} trong hệ thống — còn quá sớm để đối chiếu dự báo."
-    base_d, base_c = before[-1]
+        return head + f"Chưa có phiên EUA nào từ ngày {report_date} trong hệ thống — còn quá sớm để đối chiếu dự báo."
+    item = forecast_review.evaluate_forecast(report_date, short, ref, after[: forecast_review.REVIEW_MAX_SESSIONS])
+    shown = after[:sessions]
+    lines = [
+        f"- {s['date']}: cao {_num(s.get('high'))} / thấp {_num(s.get('low'))} / đóng cửa {_num(s['close'])} "
+        f"({(float(s['close']) / ref - 1) * 100:+.2f}% so với giá báo cáo {ref:.2f})"
+        for s in shown
+    ]
+    peak = max(shown, key=lambda s: float(s["close"]))
+    trough = min(shown, key=lambda s: float(s["close"]))
     return (
-        head + f"\nDiễn biến EUA thực tế (mốc {base_d}: {base_c:.2f}):\n"
-        + _evaluate_forecast(short.get("direction") if short else None, base_c, after)
-        + "\nLƯU Ý: chỉ nêu kết quả đối chiếu trên; vùng giá/điều kiện của kịch bản là văn bản tự do — tự so với số liệu "
-        "trên và nói rõ nếu không đủ dữ liệu, KHÔNG phán quyết thêm."
+        head + f"\nDiễn biến EUA thực tế (giá trong báo cáo: {ref:.2f}):\n" + "\n".join(lines)
+        + f"\nĐóng cửa cao nhất {_num(peak['close'])} ({peak['date']}), thấp nhất {_num(trough['close'])} ({trough['date']}).\n"
+        + f"\nKẾT QUẢ CHẤM (cùng quy tắc với bảng \"Dự báo trước: đúng hay sai\" — khung {forecast_review.REVIEW_MAX_SESSIONS} "
+        "phiên; chưa hết khung thì chỉ là đang đúng hướng/đang lệch):\n"
+        + _format_forecast_item(item)
+        + "\nLƯU Ý: nêu ĐÚNG kết quả chấm trên, KHÔNG tự phán quyết khác."
+    )
+
+
+async def _tool_forecast_scorecard_text(session: AsyncSession, report_date: str) -> str:
+    """Khối "Dự báo trước: đúng hay sai" + đoạn "Nguyên nhân & điều chỉnh" (vs_previous) ĐÚNG như báo cáo hiển thị."""
+    content = (
+        await session.execute(select(Report.content).where(Report.report_date == report_date, Report.status == "published"))
+    ).scalar_one_or_none()
+    if not content:
+        return f"Không có báo cáo published ngày {report_date}."
+    text = f"Báo cáo {_fmt_day_full(report_date)}.\n" + _format_forecast_review((content.get("2") or {}).get("forecast_review"))
+    vs_prev = (content.get("3") or {}).get("vs_previous")
+    if vs_prev:
+        text += f"\n\nNguyên nhân & điều chỉnh (Jenny viết trong báo cáo): {vs_prev}"
+    return text
+
+
+async def _tool_cbam_estimate_text(session: AsyncSession, report_date: str) -> str:
+    """Khối "Ước tính giá CBAM" + ô phòng hộ Mục 3 ĐÚNG như báo cáo hiển thị (đóng băng lúc sinh báo cáo)."""
+    content = (
+        await session.execute(select(Report.content).where(Report.report_date == report_date, Report.status == "published"))
+    ).scalar_one_or_none()
+    if not content:
+        return f"Không có báo cáo published ngày {report_date}."
+    sec2 = content.get("2") or {}
+    if sec2.get("no_price_data"):
+        return (
+            f"Báo cáo {_fmt_day_full(report_date)} là báo cáo chỉ tin tức (không có phiên) — không có ước tính CBAM. "
+            "Xem báo cáo của ngày có phiên gần nhất (list_reports)."
+        )
+    text = f"Báo cáo {_fmt_day_full(report_date)}.\n" + _format_cbam_estimate(sec2.get("cbam_estimate"))
+    ha = (content.get("3") or {}).get("hedge_action")
+    if isinstance(ha, dict) and ha.get("action"):
+        text += "\n\nÔ phòng hộ Mục 3: " + _HEDGE_ACTION_VI.get(ha["action"], ha["action"]) + "".join(
+            f"\n- {x}" for x in (ha.get("core"), ha.get("text")) if x
+        )
+    return text + "\nLƯU Ý: số do Python tính sẵn — dùng ĐÚNG số này, KHÔNG tự ước tính lại."
+
+
+AUCTIONS_MAX_DAYS = 120
+AUCTIONS_DEFAULT_BACK_DAYS = 14
+AUCTIONS_DEFAULT_AHEAD_DAYS = 14
+_AUCTION_STATUS_VI = {"scheduled": "theo lịch (chưa có kết quả)", "successful": "đã đấu giá", "cancelled": "BỊ HUỶ"}
+
+
+async def _tool_eua_auctions_text(session: AsyncSession, start_date: str, end_date: str) -> str:
+    """Lịch + kết quả đấu giá sơ cấp EUA trên EEX (bảng eua_auctions) trong 1 khoảng ngày."""
+    rows = (await session.execute(
+        select(EuaAuction)
+        .where(EuaAuction.auction_date >= date_cls.fromisoformat(start_date), EuaAuction.auction_date <= date_cls.fromisoformat(end_date))
+        .order_by(EuaAuction.auction_date, EuaAuction.auction_name)
+    )).scalars().all()
+    if not rows:
+        return f"Không có phiên đấu giá EUA nào trong hệ thống từ {start_date} đến {end_date}."
+    lines = []
+    for a in rows:
+        line = f"- {a.auction_date.isoformat()} [{a.auction_name}] {_AUCTION_STATUS_VI.get(a.status, a.status)}: {a.volume / 1e6:.2f} triệu t"
+        if a.auction_price is not None:
+            line += f", giá khớp {a.auction_price:.2f} EUR/t"
+        if a.cover_ratio is not None:
+            line += f", cover ratio {a.cover_ratio:.2f}"
+        if a.total_bidders is not None:
+            line += f", {a.total_bidders} nhà thầu"
+        lines.append(line)
+    done = [(a.auction_price, a.volume) for a in rows if a.status == "successful" and a.auction_price]
+    avg = cbam_estimate.vwap(done)
+    summary = (
+        f"Tổng kết khoảng: {len(done)} phiên có kết quả, VWAP {avg:.2f} EUR/t trên {sum(v for _, v in done) / 1e6:.2f} triệu t"
+        if avg is not None else "Tổng kết khoảng: chưa có phiên nào có kết quả"
+    )
+    return (
+        f"Đấu giá sơ cấp EUA trên EEX từ {start_date} đến {end_date} ({len(rows)} phiên; EU/DE/PL/NIR = nền tảng):\n"
+        + "\n".join(lines) + f"\n{summary}.\n"
+        "LƯU Ý: VWAP trên chỉ tính trong khoảng đã hỏi — giá CBAM quý = VWAP mọi phiên trong CẢ quý (dùng get_cbam_estimate)."
     )
 
 
@@ -1782,15 +1992,63 @@ CLIENT_TOOLS = [
         "name": "review_past_forecast",
         "description": (
             "ĐỐI CHIẾU dự báo của 1 báo cáo trong quá khứ với diễn biến giá EUA THỰC TẾ sau đó: trả nhận định + kịch bản "
-            "ngắn/trung hạn của báo cáo, giá EUA từng phiên sau mốc báo cáo, % so với mốc, và kết quả cùng/ngược chiều (tính "
-            "sẵn). Dùng cho 'dự báo hôm qua có đúng không', 'kịch bản tuần trước có thành hiện thực không', 'Jenny nhận định "
-            "đúng hay sai'. Chỉ áp dụng cho EUA."
+            "ngắn/trung hạn của báo cáo, giá EUA từng phiên sau báo cáo, và KẾT QUẢ CHẤM tính sẵn (đúng/sai/đang đúng hướng/"
+            "đang lệch + lệnh của thẻ chiến lược đã khớp/chạm cắt lỗ/chạm mục tiêu/hết hiệu lực) — cùng quy tắc với bảng "
+            "\"Dự báo trước: đúng hay sai\" của báo cáo. Dùng cho 'dự báo ngày X có đúng không', 'kịch bản tuần trước có "
+            "thành hiện thực không', 'lệnh hôm đó có khớp không'. Muốn xem cả bảng nhiều báo cáo + tỷ lệ đúng theo mức xác "
+            "suất thì dùng get_forecast_scorecard. Chỉ áp dụng cho EUA."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "date": {"type": "string", "description": "YYYY-MM-DD, ngày của báo cáo cần đối chiếu (báo cáo đó phải published). Bắt buộc khi hỏi về báo cáo KHÁC ngày đang xem; bỏ trống = báo cáo đang xem."},
                 "sessions": {"type": "integer", "description": f"Số phiên giá sau báo cáo để đối chiếu (mặc định {FORECAST_DEFAULT_SESSIONS}, tối đa {FORECAST_MAX_SESSIONS})."},
+            },
+        },
+    },
+    {
+        "name": "get_forecast_scorecard",
+        "description": (
+            "BẢNG \"DỰ BÁO TRƯỚC: ĐÚNG HAY SAI\" ở trang đầu 1 báo cáo, đúng như người đọc thấy: kết quả chấm dự báo ngắn "
+            "hạn của các báo cáo gần đây (đúng/sai/đang đúng hướng/đang lệch, %Δ EUA, lệnh mô phỏng khớp/chạm cắt lỗ/chạm "
+            "mục tiêu/hết hiệu lực), số báo cáo sai liên tiếp, TỶ LỆ ĐÚNG LŨY KẾ theo mức xác suất (Cao/Trung bình/Thấp), "
+            "quy tắc chấm, và đoạn \"Nguyên nhân & điều chỉnh\" Jenny viết. Dùng cho 'Jenny dự báo đúng bao nhiêu', 'độ tin "
+            "cậy mức Cao có đáng tin không', 'vì sao dự báo hôm trước sai', 'bảng đúng/sai nói gì'. Chi tiết từng phiên "
+            "của 1 báo cáo cụ thể thì dùng review_past_forecast."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo chứa bảng. Không truyền = báo cáo đang xem."}},
+        },
+    },
+    {
+        "name": "get_cbam_estimate",
+        "description": (
+            "THẺ \"ƯỚC TÍNH GIÁ CBAM\" của 1 báo cáo (số tính sẵn bằng Python): ước tính giá CBAM quý đang chạy (giá EC công "
+            "bố theo quý = VWAP giá khớp mọi phiên đấu giá sơ cấp EUA trên EEX trong quý) + khoảng tin cậy 90%, số phiên/"
+            "khối lượng đã chốt, VWAP đã chốt so với giá EUA hiện tại, TÍN HIỆU PHÒNG VỆ CBAM và lý do, phiên đấu giá gần "
+            "nhất, khối lượng 7 ngày tới, đối chiếu quý trước (VWAP ↔ giá EC công bố), kèm ô phòng hộ ở Mục 3. Dùng cho "
+            "'giá CBAM quý này dự kiến bao nhiêu', 'có nên mua phòng vệ CBAM bây giờ', 'đã chốt bao nhiêu % quý'. Giá CBAM "
+            "đã công bố của quý trước có ở get_market_prices."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo. Không truyền = báo cáo đang xem."}},
+        },
+    },
+    {
+        "name": "get_eua_auctions",
+        "description": (
+            "LỊCH + KẾT QUẢ ĐẤU GIÁ SƠ CẤP EUA trên EEX theo từng phiên (nền tảng EU/DE/PL/NIR): ngày, trạng thái (theo lịch/"
+            "đã đấu giá/bị huỷ), khối lượng, giá khớp, cover ratio, số nhà thầu, kèm VWAP các phiên có kết quả trong khoảng. "
+            "Dùng cho 'phiên đấu giá hôm qua cover ratio bao nhiêu', 'tuần sau có bao nhiêu phiên đấu giá', 'nhu cầu đấu "
+            "giá đang yếu hay mạnh', 'giá đấu giá so với giá futures'. Tối đa %d ngày mỗi lần gọi." % AUCTIONS_MAX_DAYS
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "start_date": {"type": "string", "description": f"TUỲ CHỌN — YYYY-MM-DD, đầu khoảng (lấy từ LỊCH THAM CHIẾU). Mặc định {AUCTIONS_DEFAULT_BACK_DAYS} ngày trước ngày dữ liệu."},
+                "end_date": {"type": "string", "description": f"TUỲ CHỌN — YYYY-MM-DD, cuối khoảng (có thể ở tương lai để xem lịch). Mặc định {AUCTIONS_DEFAULT_AHEAD_DAYS} ngày sau ngày dữ liệu."},
             },
         },
     },
@@ -1956,7 +2214,7 @@ class StatusEvent:
         self.message = message
 
 
-_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc")
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate")
 
 
 async def _execute_client_tool(
@@ -1988,8 +2246,10 @@ async def _execute_client_tool(
         cache_key = (name, tool_input.get("section"), tool_input.get("days"), tool_input.get("date"))
     elif name == "review_past_forecast":
         cache_key = (name, tool_input.get("date"), tool_input.get("sessions"))
-    elif name in ("get_report_overview", "jack_qc"):
+    elif name in ("get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate"):
         cache_key = (name, tool_input.get("date"))
+    elif name == "get_eua_auctions":
+        cache_key = (name, tool_input.get("start_date"), tool_input.get("end_date"))
     elif name == "get_calendar_events":
         cache_key = (name, tool_input.get("start_date"), tool_input.get("end_date"))
     elif name == "calc_price_stats":
@@ -2032,7 +2292,7 @@ async def _execute_client_tool(
     # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
     if raw_date:
         target_date = raw_date
-    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc"):
+    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate"):
         target_date = report_date
     else:
         target_date = report_data_date(report_date)
@@ -2060,6 +2320,21 @@ async def _execute_client_tool(
             result = await _tool_review_forecast_text(session, target_date, max(1, min(fs, FORECAST_MAX_SESSIONS)))
         elif name == "get_report_overview":
             result = await _tool_report_overview_text(session, target_date)
+        elif name == "get_forecast_scorecard":
+            result = await _tool_forecast_scorecard_text(session, target_date)
+        elif name == "get_cbam_estimate":
+            result = await _tool_cbam_estimate_text(session, target_date)
+        elif name == "get_eua_auctions":
+            anchor_d = date_cls.fromisoformat(target_date)
+            sd = str(tool_input.get("start_date") or "")
+            ed = str(tool_input.get("end_date") or "")
+            sd = sd if re.fullmatch(r"\d{4}-\d{2}-\d{2}", sd) else (anchor_d - timedelta(days=AUCTIONS_DEFAULT_BACK_DAYS)).isoformat()
+            ed = ed if re.fullmatch(r"\d{4}-\d{2}-\d{2}", ed) else (anchor_d + timedelta(days=AUCTIONS_DEFAULT_AHEAD_DAYS)).isoformat()
+            if sd > ed:
+                sd, ed = ed, sd
+            if (date_cls.fromisoformat(ed) - date_cls.fromisoformat(sd)).days + 1 > AUCTIONS_MAX_DAYS:
+                sd = (date_cls.fromisoformat(ed) - timedelta(days=AUCTIONS_MAX_DAYS - 1)).isoformat()
+            result = await _tool_eua_auctions_text(session, sd, ed)
         elif name == "get_calendar_events":
             sd, ed = str(tool_input.get("start_date") or ""), str(tool_input.get("end_date") or "")
             if not (re.fullmatch(r"\d{4}-\d{2}-\d{2}", sd) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", ed)):

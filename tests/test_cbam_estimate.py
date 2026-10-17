@@ -167,4 +167,4 @@ def test_describe_for_prompt():
     est = {"quarter": "Q4 2026", **ce.estimate_quarter(DONE, [(date(2026, 10, 19), 2e6)], 86.0, 0.02, AS_OF),
            "prev_quarter": {"quarter": "Q3 2026", "vwap": 82.32, "official": 82.32}}
     text = ce.describe_for_prompt(est)
-    assert "VWAP" in text and "Q4 2026" in text and "82,32" in text and "GIỮ" in text
+    assert "VWAP" in text and "Q4 2026" in text and "82,32" in text and "BÁM LỊCH ĐẤU GIÁ" in text

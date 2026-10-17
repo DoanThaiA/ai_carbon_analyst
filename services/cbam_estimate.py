@@ -12,12 +12,16 @@ Q2 75,2766 / Q3 82,3185 ↔ EC 75,36 / 75,28 / 82,32 (trung bình cộng thườ
     Var(Σwⱼ·Pⱼ) = S²σ²·ΣᵢΣⱼ wᵢwⱼ·min(tᵢ,tⱼ) (tⱼ = số ngày giao dịch tới phiên j) — tính đúng việc các
     phiên gần nhau tương quan mạnh, không coi là độc lập.
 
-Tín hiệu cho vị thế phòng vệ (người phải mua chứng chỉ CBAM theo giá quý, phòng vệ bằng EUA futures):
-  - quý đã chốt ≥ HEDGE_FIXED_SHARE_HOLD khối lượng → "hold" (phần còn hở quá nhỏ);
-  - giá hiện tại thấp hơn VWAP đã chốt ≥ HEDGE_GAP_PCT → "increase" (khoá phần còn lại rẻ hơn mức
-    đã chốt, kéo giá quý xuống);
-  - cao hơn ≥ HEDGE_GAP_PCT → "reduce" (giãn tiến độ mua thêm — mua lúc này khoá cao hơn mức quý đã chốt);
+Phòng vệ CBAM — 1 nhãn DUY NHẤT cho cả báo cáo (thẻ CBAM + ô phòng hộ Mục 3 dùng chung, report_generator.
+_finalize_hedge_fields): giá CBAM quý = VWAP mọi phiên đấu giá, nên phần LÕI (≥ 100 − TACTICAL_MAX_PCT % phần chưa
+chốt) luôn BÁM LỊCH ĐẤU GIÁ (mua theo tỷ trọng khối lượng từng phiên → chi phí bám VWAP), KHÔNG chờ vùng giá. Chỉ phần
+CHIẾN THUẬT (≤ TACTICAL_MAX_PCT %) là quan điểm giá — "signal" là hướng nghiêng của riêng phần này:
+  - quý đã chốt ≥ HEDGE_FIXED_SHARE_HOLD khối lượng / chưa có phiên → "hold" (chỉ bám lịch);
+  - giá hiện tại thấp hơn VWAP đã chốt ≥ HEDGE_GAP_PCT → "increase" (mua sớm phần chiến thuật);
+  - cao hơn ≥ HEDGE_GAP_PCT → "reduce" (phần chiến thuật chờ giá thấp hơn — phần lõi vẫn mua theo lịch);
   - còn lại → "hold".
+Bản 17/10/2026 từng có thẻ CBAM "GIỮ" + Mục 3 "MUA TRẢI ĐỀU" nhưng thực chất là lệnh giới hạn "chỉ gom ở 82,35–84,00"
+→ thiếu phòng hộ nếu giá không về vùng đó trong khi 77,1% khối lượng quý chưa chốt.
 Kết quả là DỮ LIỆU THUẦN (số + enum ASCII) — frontend tự dựng nhãn/câu theo ngôn ngữ, nên bản dịch
 máy (services/report_translation.py) không chạm vào số.
 """
@@ -33,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import EuaAuction, Instrument, Price
 
 HEDGE_FIXED_SHARE_HOLD = 0.85
+TACTICAL_MAX_PCT = 20  # tối đa phần phòng vệ dành cho quan điểm giá (lệnh giới hạn/mua sớm); phần còn lại bám lịch đấu giá
 HEDGE_GAP_PCT = 2.0
 CI_LEVEL = 90
 CI_Z = 1.645
@@ -142,6 +147,7 @@ def estimate_quarter(
         "signal_reason": reason,
         "hedge_gap_pct": HEDGE_GAP_PCT,
         "hedge_fixed_share_pct": round(HEDGE_FIXED_SHARE_HOLD * 100),
+        "tactical_max_pct": TACTICAL_MAX_PCT,
     }
 
 
@@ -219,6 +225,13 @@ async def build_cbam_estimate(
     return out
 
 
+HEDGE_LABEL_VI = {
+    "increase": "BÁM LỊCH ĐẤU GIÁ + mua sớm phần chiến thuật",
+    "hold": "BÁM LỊCH ĐẤU GIÁ",
+    "reduce": "BÁM LỊCH ĐẤU GIÁ + phần chiến thuật chờ giá thấp hơn",
+}
+
+
 def describe_for_prompt(est: Optional[Dict[str, Any]]) -> str:
     """Tóm tắt 1 khối cho prompt LLM (Mục 4/biz) — để nhắc tới giá CBAM thì dùng đúng số này."""
     if not est:
@@ -227,7 +240,7 @@ def describe_for_prompt(est: Optional[Dict[str, Any]]) -> str:
     def n(x: Optional[float]) -> str:
         return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if x is not None else "?"
 
-    signal_vi = {"increase": "TĂNG phòng vệ", "hold": "GIỮ", "reduce": "GIẢM/giãn tiến độ phòng vệ"}[est["signal"]]
+    signal_vi = HEDGE_LABEL_VI[est["signal"]]
     lines = [
         f"ƯỚC TÍNH GIÁ CBAM {est['quarter']} (tính sẵn bằng Python — dùng ĐÚNG số này, KHÔNG tự tính lại; "
         "báo cáo đã hiển thị khối này riêng nên KHÔNG chép lại toàn bộ, chỉ dẫn số khi cần):",
@@ -236,7 +249,11 @@ def describe_for_prompt(est: Optional[Dict[str, Any]]) -> str:
         f"VWAP đã chốt {n(est['qtd_vwap'])} EUR/t; giá EUA hiện tại {n(est['spot'])} EUR/t.",
         f"- Ước tính giá CBAM {est['quarter']}: {n(est['estimate'])} EUR/t"
         + (f", khoảng tin cậy {est['ci_level']}%: {n(est['ci_low'])}–{n(est['ci_high'])}" if est.get("ci_low") is not None else "")
-        + f". Tín hiệu vị thế phòng vệ CBAM: {signal_vi}.",
+        + ".",
+        f"- PHÒNG VỆ CBAM (nhãn DUY NHẤT của báo cáo, Python quyết định — KHÔNG tự đặt nhãn khác): {signal_vi}. Lõi "
+        f"≥{100 - est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% phần chưa chốt ({n(100 - est['fixed_share_pct'])}% khối lượng quý) mua theo tỷ "
+        "trọng lịch đấu giá để chi phí bám VWAP (= giá CBAM), KHÔNG chờ vùng giá; lệnh giới hạn/vùng giá CHỈ áp cho phần "
+        f"chiến thuật ≤{est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% và phải ghi là quan điểm giao dịch.",
     ]
     prev = est.get("prev_quarter")
     if prev and prev.get("official") is not None:

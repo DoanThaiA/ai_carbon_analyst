@@ -50,7 +50,7 @@ export interface ForecastReviewItem {
   change_pct: number;
   sessions: number;
   // on_track/diverging: chiều %Δ đúng/ngược nhưng chưa hết khung ngắn hạn — chưa kết luận.
-  verdict: "correct" | "wrong" | "unclear" | "on_track" | "diverging";
+  verdict: "correct" | "wrong" | "unclear" | "on_track" | "diverging" | "direction_only";
   high_confidence_miss: boolean;
   trade: {
     side: "buy" | "sell";
@@ -70,8 +70,11 @@ export interface ForecastReviewItem {
 // Mục 3: 1 hành động duy nhất cho sổ phòng hộ SIM + đối chiếu lệnh đang mở (services/report_generator.py
 // _finalize_hedge_fields). Báo cáo cũ không có → thẻ vị thế dùng hedge_note của kịch bản ngắn hạn.
 export interface HedgeAction {
-  action: "buy_now" | "buy_scheduled" | "hold" | "defer";
+  // increase/hold/reduce = nhãn chung với thẻ CBAM (phần lõi luôn bám lịch đấu giá); buy_now/... = báo cáo cũ.
+  action: "increase" | "hold" | "reduce" | "buy_now" | "buy_scheduled" | "defer";
+  core?: string;
   text: string;
+  tactical_max_pct?: number;
 }
 
 export interface OpenPosition {
@@ -91,7 +94,7 @@ export interface ForecastReview {
   items: ForecastReviewItem[];
   wrong_in_row: number;
   // Báo cáo cũ không có 2 trường dưới.
-  calibration?: { probability: string; correct: number; total: number }[];
+  calibration?: { probability: string; correct: number; total: number; direction_only?: number }[];
   rules?: { horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number };
 }
 

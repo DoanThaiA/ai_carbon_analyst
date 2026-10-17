@@ -271,6 +271,15 @@ chưa xảy ra khi Tổng hợp TRUNG LẬP) và `check_horizon_overlap` (kích 
 vòng tự sửa kịch bản; `derived_target_issues` báo nhãn % tính từ đóng cửa khi Entry là mức kích hoạt khác. Lịch Mục 8: sự
 kiện định kỳ mang `released_at` (giờ VN) — gắn kết quả nếu đã công bố trước lúc sinh báo cáo; giờ đấu giá EEX quy đổi giờ VN
 theo Europe/Berlin. `check_facts` chấp nhận số tự tính khi phép tính a/b, a×b hiện ngay trong câu.
+**Phòng vệ CBAM — 1 nhãn**: `cbam_estimate.signal` (increase/hold/reduce) là nhãn DUY NHẤT, dùng chung thẻ CBAM và
+`content["3"].hedge_action` (`_finalize_hedge_fields` ghi đè nhãn LLM). Phần LÕI (≥ 100 − `TACTICAL_MAX_PCT`% phần chưa
+chốt) luôn bám lịch đấu giá (chi phí bám VWAP = giá CBAM, `hedge_core_text`); vùng giá/lệnh giới hạn chỉ cho phần chiến
+thuật ≤20%. SIM chịu CBAM gián tiếp (`CBAM_DECLARANT_RULE`: bên mua chứng chỉ là declarant EU). Jack thêm
+`check_breakout_levels` (lệnh phá biên 30 phiên: mục tiêu đo biên độ, cắt lỗ 0,5–1,5 ATR), kịch bản "đi ngang" mà chiến
+lược 1 chiều phá vỡ bị báo + kiểm số học theo chiều thật, `check_legislation_claims`, `check_fact_tags`. Fuel switching là
+suy luận MÔ HÌNH (không có dữ liệu sản lượng điện) + độ nhạy TTF (`ttf_breakeven`, `spread_per_10pct_ttf`); crack spread và
+tỷ lệ đặt mua/chào bán đấu giá chỉ so với lịch sử của chính hệ thống. Mục 6 luôn giữ bài đã trích ở mục khác. Chấm dự báo:
+mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, không vào tỷ lệ đúng).
 
 **Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
@@ -285,6 +294,8 @@ dừng/giới hạn phân biệt bằng `strategy_levels.is_breakout_entry` (ch�
 chữ "trên" lẻ không tính); lệnh giới hạn khớp do mở gap thì xét cắt lỗ theo đáy/đỉnh của chính phiên đó; đủ N phiên chưa
 khớp là `expired` ngay. Bảng hiện MỌI báo cáo còn trong khung (`REVIEW_MAX_ITEMS`). Jack
 `check_forecast_review`: có dự báo SAI mà `vs_previous` trống → error, không nhắc ngày báo cáo sai → warning.
+Tool chat/MCP: `get_forecast_scorecard` đọc nguyên khối này từ báo cáo published; `review_past_forecast` chấm 1 báo cáo bằng
+CHÍNH `forecast_review.evaluate_forecast` (khung `REVIEW_MAX_SESSIONS`) — không tự chấm riêng, để không trái với bảng trang đầu.
 
 **Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,
 vd Bloomberg). Tóm tắt Mục 6 trả thêm `origin` (hãng gốc khi bài dẫn lại, vd "Zelenskyy told the FT" trên Politico) →
@@ -298,7 +309,10 @@ chạy trong job giá 06:00). Giá CBAM EC công bố theo quý = VWAP (gia quy�
 Q1–Q3/2026 tới 0,01) → `services/cbam_estimate.py` ước tính quý đang chạy + khoảng tin cậy 90% + tín hiệu phòng vệ
 (`HEDGE_GAP_PCT`/`HEDGE_FIXED_SHARE_HOLD`), lưu ở `content["2"].cbam_estimate` (chỉ số + enum ASCII, frontend
 `CbamEstimateCard.tsx` dựng chữ theo ngôn ngữ). "EUA lũy kế quý" (`qtd_avg`) ưu tiên VWAP đấu giá, thiếu thì TB giá đóng cửa và
-ghi "xấp xỉ" (`qtd_basis`). Mục 8 có 1 sự kiện gộp các phiên đấu giá 7 ngày tới (`_auction_calendar_events`).
+ghi "xấp xỉ" (`qtd_basis`). Mục 8 có 1 sự kiện gộp các phiên đấu giá 7 ngày tới (`_auction_calendar_events`). Tool chat/MCP:
+`get_cbam_estimate` (thẻ CBAM + ô phòng hộ Mục 3, đọc từ báo cáo published) và `get_eua_auctions` (bảng `eua_auctions` theo
+khoảng ngày, không neo báo cáo). `get_report_section` Mục 2/3 trả đủ ghi chú bảng giá, `cbam_estimate`, `forecast_review`,
+`vs_previous`, `hedge_action`, `open_positions`, `fuel_model_note`, `sources` (test: `tests/test_quote_chat_report_tools.py`).
 
 **Market data**: unchanged from the original crawler — `market_data.py` defines a
 `PriceProvider` ABC with `YFinanceProvider` (real data, WTI/Brent only) and

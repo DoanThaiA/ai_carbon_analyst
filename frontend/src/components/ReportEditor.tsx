@@ -512,7 +512,7 @@ const KEY_DEV_COLUMNS: ColumnDef[] = [
   ...SOURCE_COLUMNS,
   { key: "source_date", label: "Ngày đăng (DD/MM/YYYY)" },
 ];
-const VERDICTS = ["correct", "wrong", "unclear", "on_track", "diverging"];
+const VERDICTS = ["correct", "wrong", "unclear", "on_track", "diverging", "direction_only"];
 const TRADE_SELECTS = {
   side: ["buy", "sell"],
   order_type: ["limit", "stop"],
@@ -587,6 +587,7 @@ function ForecastReviewEditor({ review, onChange }: { review: Json; onChange: (v
             { key: "probability", label: "Xác suất", type: "select", options: ["Cao", "Trung bình", "Thấp"] },
             { key: "correct", label: "Đúng", type: "number" },
             { key: "total", label: "Tổng", type: "number" },
+            { key: "direction_only", label: "Đúng hướng, không khớp", type: "number" },
           ]}
           rows={review.calibration}
           onChange={(rows) => onChange({ ...review, calibration: rows })}
@@ -886,17 +887,24 @@ export function ReportEditor({ content, onChange }: { content: Json; onChange: (
 
               {!noPriceData && (
                 <div className="space-y-2">
-                  <FieldLabel>Sổ phòng hộ SIM — hành động duy nhất (buy_now / buy_scheduled / hold / defer)</FieldLabel>
+                  <FieldLabel>Sổ phòng hộ SIM — nhãn chung với thẻ CBAM (increase / hold / reduce), phần lõi + phần chiến thuật ≤20%</FieldLabel>
                   <OptionalBlock
                     present={!!sec3.hedge_action}
-                    onCreate={() => patchSection("3", { hedge_action: { action: "hold", text: "" } })}
+                    onCreate={() => patchSection("3", { hedge_action: { action: "hold", core: "", text: "" } })}
                     label="Thêm hành động phòng hộ"
                   >
                     <Select
                       value={sec3.hedge_action?.action}
-                      options={["buy_now", "buy_scheduled", "hold", "defer"]}
+                      options={["increase", "hold", "reduce"]}
                       onChange={(v) => patchSection("3", { hedge_action: { ...sec3.hedge_action, action: v } })}
                     />
+                    <FieldLabel>Phần lõi (bám lịch đấu giá)</FieldLabel>
+                    <TextArea
+                      rows={2}
+                      value={sec3.hedge_action?.core}
+                      onChange={(v) => patchSection("3", { hedge_action: { ...sec3.hedge_action, core: v } })}
+                    />
+                    <FieldLabel>Phần chiến thuật (≤20%, quan điểm giao dịch)</FieldLabel>
                     <TextArea
                       rows={2}
                       value={sec3.hedge_action?.text}

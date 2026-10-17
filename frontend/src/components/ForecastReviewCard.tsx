@@ -31,6 +31,7 @@ const VERDICT_TONE: Record<ForecastReviewItem["verdict"], string> = {
   unclear: "bg-surface text-muted-light border-border",
   on_track: "bg-up/5 text-up border-up/20 border-dashed",
   diverging: "bg-down/5 text-down border-down/20 border-dashed",
+  direction_only: "bg-surface text-up border-up/30 border-dashed",
 };
 
 export function ForecastReviewCard({
@@ -61,7 +62,8 @@ export function ForecastReviewCard({
           const tr = it.trade;
           return (
             <li key={it.report_date} className="print:break-inside-avoid px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
-              <span className={clsx("self-start shrink-0 font-mono text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
+              {/* Nhãn rộng cố định (vừa nhãn dài nhất "Đang đúng hướng") để cột nội dung các dòng thẳng hàng. */}
+              <span className={clsx("self-start shrink-0 sm:w-[8.75rem] text-center whitespace-nowrap font-mono text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
                 {t(`verdict.${it.verdict}`)}
               </span>
               <div className="text-[13.5px] leading-[1.55] text-body min-w-0">
@@ -95,12 +97,15 @@ export function ForecastReviewCard({
         })}
       </ul>
 
-      {review.calibration?.some((c) => c.total > 0) && (
+      {review.calibration?.some((c) => c.total > 0 || (c.direction_only ?? 0) > 0) && (
         <div className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
           <span className="font-semibold text-label">{t("calibration")}</span>{" "}
           {review.calibration
-            .filter((c) => c.total > 0)
-            .map((c) => t("calibrationItem", { probability: enumLabel(c.probability), correct: c.correct, total: c.total }))
+            .filter((c) => c.total > 0 || (c.direction_only ?? 0) > 0)
+            .map((c) =>
+              t("calibrationItem", { probability: enumLabel(c.probability), correct: c.correct, total: c.total })
+              + (c.direction_only ? ` ${t("calibrationUnfilled", { n: c.direction_only })}` : ""),
+            )
             .join(" · ")}
         </div>
       )}

@@ -164,7 +164,9 @@ def test_0910_target_before_fill_cancels_order():
         ("2026-10-15", 86.87, 86.87, 85.37, 85.84), ("2026-10-16", 85.8, 86.1, 84.9, 85.41),
     ]))
     assert it["trade"]["status"] == "cancelled_target" and it["trade"]["exit_date"] == "2026-10-12"
-    assert it["verdict"] == "correct" and fr.open_trades({"items": [it]}) == []
+    assert it["verdict"] == "direction_only" and fr.open_trades({"items": [it]}) == []
+    calib = fr.calibration_from([it])
+    assert calib[0] == {"probability": "Cao", "correct": 0, "total": 0, "direction_only": 1}
 
 
 def test_order_expires_after_valid_sessions():
@@ -203,11 +205,24 @@ def test_calibration_counts_only_final_verdicts():
         {"probability": "Cao", "verdict": "wrong"}, {"probability": "Cao", "verdict": "wrong"},
         {"probability": "Trung bình", "verdict": "correct"}, {"probability": "Trung bình", "verdict": "diverging"},
     ])
-    assert calib[0] == {"probability": "Cao", "correct": 0, "total": 2}
-    assert calib[1] == {"probability": "Trung bình", "correct": 1, "total": 1}
+    assert calib[0] == {"probability": "Cao", "correct": 0, "total": 2, "direction_only": 0}
+    assert calib[1] == {"probability": "Trung bình", "correct": 1, "total": 1, "direction_only": 0}
     text = fr.describe_for_prompt({"items": [], "calibration": calib})
     assert "Cao 0/2" in text and "Thấp" not in text
 
 
 def test_degenerate_zone_printed_as_single_level():
     assert fr._zone(88.82, 88.82) == "88,82" and fr._zone(87.0, 87.5) == "87,00–87,50"
+
+
+def test_stop_entry_already_reached_at_issue_is_limit():
+    # Bản 15/10: "Mua khi giá vượt 87,00–87,50" khi EUA đang 87,14 (đã trong vùng) → không phải lệnh chờ phá vỡ;
+    # phiên 15/10 mở gap 86,87 → khớp 86,87, đáy 85,37 thủng cắt lỗ 86,60 → SAI.
+    sc = {"direction": "tăng", "probability": "Trung bình",
+          "trading_strategy": "**Entry:** Mua khi giá vượt 87,00–87,50\n**Mục tiêu:** 88,82\n**Quản trị rủi ro:** Cắt lỗ dưới 86,60"}
+    it = fr.evaluate_forecast("2026-10-15", sc, 87.14, _s([("2026-10-15", 86.87, 86.87, 85.37, 85.84)]))
+    t = it["trade"]
+    assert (t["order_type"], t["status"], t["fill_price"]) == ("limit", "stopped", 86.87) and it["verdict"] == "wrong"
+    # Bản 14/10: mua khi phá 88,82 khi EUA đang 88,05 → lệnh dừng thật, giữ nguyên.
+    sc14 = {**sc, "trading_strategy": "**Entry:** Mua khi phá đỉnh 88,82\n**Mục tiêu:** 91,30\n**Quản trị rủi ro:** Cắt lỗ dưới 87,15"}
+    assert fr.evaluate_forecast("2026-10-14", sc14, 88.05, _s([("2026-10-15", 86.87, 86.87, 85.37, 85.84)]))["trade"]["order_type"] == "stop"

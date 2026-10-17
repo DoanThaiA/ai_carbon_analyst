@@ -59,7 +59,8 @@ GOLDEN = {
              "price_zone": "75–90", "key_risk": "...",
              "trading_strategy": "**Entry:** Mua quanh 75–76\n**Mục tiêu:** 85 (kháng cự 30 phiên)\n**Quản trị rủi ro:** Cắt lỗ dưới 72"},
         ],
-        "hedge_action": {"action": "defer", "text": "Hoãn mua phòng hộ, chờ vùng 75,5–76 (hỗ trợ 30 phiên)."},
+        "hedge_action": {"action": "hold", "core": "Phần lõi: mua theo tỷ trọng lịch đấu giá.",
+                         "text": "Phần chiến thuật (≤20%, quan điểm giao dịch): không dùng hôm nay."},
         "open_positions": [],
     },
     "4": {"title": "Cập nhật tín chỉ carbon & CBAM", "bullets": [{"text": "**VCM:** ...", "source_name": None, "source_url": None}]},
@@ -823,7 +824,9 @@ def test_jack_fuel_direction_symmetric_when_saturated():
     ))
     assert len(issues) == 2, msgs(issues)
     assert "MỞ RỘNG" in issues[1]["message"] and "bão hòa" in issues[0]["message"]
-    assert report_qc.check_fuel_direction(_fuel_content(bullish=["Chênh khí − than mở rộng, TTF tăng mạnh hơn API2"])) == []
+    # Đã bão hòa: "chênh mở rộng" chỉ giữ mức, không phải động lực tăng (bản chấm 17/10).
+    widened = report_qc.check_fuel_direction(_fuel_content(bullish=["Chênh khí − than mở rộng, TTF tăng mạnh hơn API2"]))
+    assert len(widened) == 1 and "GIỮ MỨC" in widened[0]["message"]
 
 
 # ── Nhất quán số học / 1 hành động phòng hộ (bản chấm 16/10/2026) ─────
@@ -873,12 +876,25 @@ def test_hedge_action_required_and_open_trade_must_be_reconciled():
     assert report_qc.check_hedge_action(c) == []
 
 
-def test_hedge_action_conflicting_cbam_signal_needs_reason():
+def test_hedge_label_must_match_cbam_card():
     c = g()
     c["2"]["cbam_estimate"] = {"signal": "increase"}
-    assert report_qc.check_hedge_action(c)[0]["severity"] == "warning"
-    c["3"]["hedge_action"]["text"] += " Khác tín hiệu CBAM vì quý đã cố định 80%."
+    issues = report_qc.check_hedge_action(c)
+    assert issues[0]["severity"] == "error" and "2 nhãn phòng hộ" in issues[0]["message"]
+    c["3"]["hedge_action"]["action"] = "increase"
     assert report_qc.check_hedge_action(c) == []
+    c["3"]["hedge_action"]["text"] = "Chỉ gom ở 82,35–84,00."
+    assert "chỉ gom" in report_qc.check_hedge_action(c)[0]["message"]
+
+
+def test_generator_forces_system_hedge_label():
+    from services.report_generator import _finalize_hedge_fields
+
+    sec3 = {"trading_scenarios": [{"hedge_note": "x"}], "hedge_action": {"action": "buy_scheduled", "text": "t"}}
+    _finalize_hedge_fields(sec3, [], {"signal": "hold", "fixed_share_pct": 22.9, "tactical_max_pct": 20, "quarter": "Q4 2026",
+                                      "upcoming": {"count": 5, "volume_mt": 15.2}})
+    ha = sec3["hedge_action"]
+    assert ha["action"] == "hold" and "77,1%" in ha["core"] and "5 phiên" in ha["core"] and "hedge_note" not in sec3["trading_scenarios"][0]
 
 
 def test_session_shape_not_called_reversal():
@@ -973,3 +989,37 @@ def test_1710_technical_levels_have_breakdown_target():
 
     chart = [{"high": 88.82, "low": 86.0, "close": 87.0}] + [{"high": 86.0, "low": 82.35, "close": 85.0}] * 29
     assert "75.88" in _eua_technical_levels_summary(chart)
+
+
+def test_1710_mid_term_sideways_with_breakdown_strategy():
+    c = g()
+    # ATR ≈ 1,6 như thực tế (1,69): cắt lỗ 84,20 cách mức thủng 81,50 là 2,70 ≈ 1,7 × ATR → báo.
+    c["2"]["chart_data"] = [{"date": "d", "high": 88.82, "low": 87.0, "close": 88.0}] + [
+        {"date": "d", "high": 84.0, "low": 82.35 + (i % 2) * 0.05, "close": 83.2} for i in range(29)]
+    c["3"]["trading_scenarios"][1] = {
+        "horizon": "trung hạn", "probability": "Trung bình", "direction": "đi ngang", "condition": "Nếu đóng cửa dưới 81,50",
+        "price_zone": "81,50–85,41", "key_risk": "Vượt 84,20",
+        "trading_strategy": "**Entry:** Bán khi đóng cửa dưới 81,50\n**Mục tiêu:** 77,80 (−4,5%)\n**Quản trị rủi ro:** Cắt lỗ trên 84,20",
+    }
+    text = msgs(report_qc.check_scenarios(c) + report_qc.check_breakout_levels(c))
+    assert "nhãn \"đi ngang\" nhưng chiến lược là lệnh bán khi thủng" in text, text
+    assert "phép đo biên độ" in text and "75.88" in text and "× ATR" in text, text
+
+
+def test_free_allocation_phaseout_claim():
+    c = g()
+    c["3"]["trading_scenarios"][2]["condition"] = "Nếu lộ trình cắt phân bổ miễn phí tới 2029–2030 (Chỉ thị (EU) 2023/959) được giữ"
+    assert len(report_qc.check_legislation_claims(c)) == 1
+    c["3"]["trading_scenarios"][2]["condition"] = "Nếu lộ trình cắt phân bổ miễn phí (về 0% năm 2034, giảm mạnh nhất 2029–2030) được giữ"
+    assert report_qc.check_legislation_claims(c) == []
+
+
+def test_section6_vn_source_about_vietnam_stays_vn():
+    from services.report_generator import _split_section6_by_subject
+
+    intl, vn = _split_section6_by_subject([
+        {"url": "na", "region": "vietnam", "about_vietnam": False, "title": "Tỉnh Nghệ An thu hút dự án điện mặt trời"},
+        {"url": "de", "region": "vietnam", "about_vietnam": False,
+         "title": "Chính phủ Đức áp phí quỹ khí, Thủ tướng Đức bảo vệ kế hoạch"},
+    ])
+    assert [a["url"] for a in vn] == ["na"] and [a["url"] for a in intl] == ["de"]

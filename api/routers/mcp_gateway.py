@@ -57,10 +57,10 @@ _DESKTOP_TOOLS_LEGACY = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_n
 _rate_limiter = RateLimiter(max_calls=60, window_seconds=60)
 
 
-# Tool không neo theo ngày báo cáo (tìm/đọc tin, lịch, danh sách báo cáo, đọc URL) — vẫn chạy
+# Tool không neo theo ngày báo cáo (tìm/đọc tin, lịch, danh sách báo cáo, đọc URL, đấu giá EEX) — vẫn chạy
 # được khi chưa có báo cáo published nào hoặc report_date trỏ tới ngày chưa published.
 _REPORT_INDEPENDENT_TOOLS = frozenset(
-    {"search_news", "get_article", "get_calendar_events", "list_reports", "fetch_user_source"}
+    {"search_news", "get_article", "get_calendar_events", "list_reports", "fetch_user_source", "get_eua_auctions"}
 )
 # jack_qc neo theo ngày báo cáo (resolve về báo cáo published) nên không nằm trong tập trên.
 _VN_TZ = timezone(timedelta(hours=7))
