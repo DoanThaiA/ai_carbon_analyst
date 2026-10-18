@@ -37,9 +37,10 @@ def test_calibration_window_lists_reports_and_cumulative():
     cao_all = next(c for c in extra["calibration_all"] if c["probability"] == "Cao")
     # Báo cáo 01–11/09: đủ 10 phiên mà giá đi ngang → "chưa rõ", không có kết luận; 12–20/09 chạm cắt lỗ 21/09.
     assert cao_all["total"] == extra["calibration_all_reports"] == 9 and cao_all["correct"] == 0
-    block = {"items": [], "calibration": calib, "calibration_window": extra["window"], "calibration_all": extra["calibration_all"]}
+    block = {"items": [], "calibration": calib, "calibration_window": extra["window"], "calibration_all": extra["calibration_all"],
+             "calibration_all_reports": extra["calibration_all_reports"]}
     text = fr.describe_for_prompt(block)
-    assert "gồm báo cáo 20/09" in text and "LŨY KẾ: Cao 0/9" in text
+    assert "gồm báo cáo 20/09" in text and "LŨY KẾ (9 báo cáo có kết luận Đúng/Sai" in text and "): Cao 0/9" in text
 
 
 # 2. Nhận định tổng quan ↔ kịch bản ngắn hạn.

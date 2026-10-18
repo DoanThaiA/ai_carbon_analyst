@@ -1100,6 +1100,9 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
                     </span>
                   )}
                   {it.stage && <span className="block text-[11px] font-normal text-muted-light">{it.stage}</span>}
+                  {it.pinned && it.verified === false && (
+                    <span className="block text-[11px] font-normal italic text-muted-light">{t("etsPolicy.unverified")}</span>
+                  )}
                 </td>
                 <td className="px-2 sm:px-3 py-2 text-body break-words">
                   <RichText text={it.status || ""} />
@@ -1111,8 +1114,9 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
                 <td className="px-2 sm:px-3 py-2">
                   <span className={clsx("inline-block font-mono text-[10.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border",
                     POLICY_IMPACT_TONE[it.impact] || POLICY_IMPACT_TONE["trung lập"])}>
-                    {t(`etsPolicy.impactLabel.${it.impact === "tăng" ? "up" : it.impact === "giảm" ? "down" : "neutral"}`)}
+                    {t(`etsPolicy.impactLabel.${it.kind === "event" ? "event" : it.impact === "tăng" ? "up" : it.impact === "giảm" ? "down" : "neutral"}`)}
                   </span>
+                  {it.mechanism && <span className="block mt-1 text-[11.5px] leading-[1.4] text-muted-light">{it.mechanism}</span>}
                 </td>
               </tr>
             ))}
@@ -2728,8 +2732,8 @@ export function ReportDocument({
                           </div>
                           {/* Nguồn nằm liền sau nội dung tin (cùng đoạn), chỉ xuống dòng khi hết chỗ */}
                           <p className="mt-0.5 text-[14.5px] leading-[1.4] text-body">
-                            {/* Bài đã trích ở mục khác: chỉ giữ tiêu đề + link (không lặp lại tóm tắt). */}
-                            {!art.cited_elsewhere && <><RichText text={art.summary} />{" "}</>}
+                            {/* Mọi tin đều có tóm tắt (bản chấm 17/10: chỉ còn tiêu đề thì Phần 3 mất giá trị). */}
+                            <RichText text={art.summary} />{" "}
                             <a
                               href={art.url}
                               target="_blank"

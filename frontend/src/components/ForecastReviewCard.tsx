@@ -121,63 +121,7 @@ export function ForecastReviewCard({
               + (c.direction_only ? ` ${t("calibrationUnfilled", { n: c.direction_only })}` : ""),
             )
             .join(" · ")}
-          {review.calibration_window && review.calibration_window.length > 0 && (
-            <div className="text-[11.5px] text-muted-light">
-              {t("calibrationIncludes", {
-                dates: review.calibration_window
-                  .map((w) => `${dm(w.report_date)} (${t(`windowVerdict.${w.verdict}`)})`)
-                  .join(", "),
-              })}
-            </div>
-          )}
-          {review.calibration_all?.some((c) => c.total > 0) && (
-            <div>
-              <span className="font-semibold text-label">{t("calibrationAll", { n: review.calibration_all_reports ?? 0 })}</span>{" "}
-              {review.calibration_all
-                .filter((c) => c.total > 0)
-                .map((c) => t("calibrationItem", { probability: enumLabel(c.probability), correct: c.correct, total: c.total }))
-                .join(" · ")}
-            </div>
-          )}
-          {/* Tỷ lệ gần đây thấp hơn lũy kế ≥ 20 điểm % (lũy kế ≥ 5 báo cáo) — cùng ngưỡng forecast_review.calibration_drift. */}
-          {(review.calibration || []).map((c) => {
-            const a = review.calibration_all?.find((x) => x.probability === c.probability);
-            if (!c.total || !a || a.total < 5 || (a.correct / a.total - c.correct / c.total) * 100 < 20) return null;
-            return (
-              <div key={`drift-${c.probability}`} className="text-[12px] font-semibold text-down">
-                {t("calibrationDrift", {
-                  probability: enumLabel(c.probability),
-                  recent: `${c.correct}/${c.total}`,
-                  overall: `${a.correct}/${a.total}`,
-                })}
-              </div>
-            );
-          })}
         </div>
-      )}
-
-      {review.baseline && review.baseline.model.total > 0 && (
-        <div className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
-          {t("baseline", {
-            total: review.baseline.model.total,
-            model: `${review.baseline.model.correct}/${review.baseline.model.total}`,
-            sideways: `${review.baseline.always_sideways.correct}/${review.baseline.always_sideways.total}`,
-            n: review.baseline.momentum.sessions,
-            momentum: `${review.baseline.momentum.correct}/${review.baseline.momentum.total}`,
-          })}
-        </div>
-      )}
-
-      {review.rules && (
-        <p className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[11.5px] leading-[1.5] text-muted-light">
-          {t("rules", {
-            horizon: review.rules.horizon_sessions,
-            dir: num(review.rules.direction_threshold_pct, locale),
-            side: num(review.rules.sideways_max_pct, locale),
-            path: num(review.rules.sideways_path_max_pct ?? 2, locale),
-            valid: review.rules.order_valid_sessions,
-          })}
-        </p>
       )}
 
       {children && (

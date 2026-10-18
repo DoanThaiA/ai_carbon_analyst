@@ -222,6 +222,8 @@ def product_exposure(
             defaults.append({
                 "origin": d.get("origin"), "default_value": d["default_value"], "with_markup": round(d["default_value"] * (1 + markup), 3),
                 "net_tco2_per_t": round(charged, 3), "cost_eur_per_t": round(charged * estimate, 2),
+                # Giá trị mặc định áp theo NƯỚC XUẤT XỨ — chỉ dòng Việt Nam dùng được cho khách của SIM.
+                "vn": bool(d.get("vn")) or str(d.get("origin") or "").strip().lower() in ("việt nam", "vietnam", "viet nam"),
             })
         out.append({
             "key": p["key"], "cn": str(p["cn"]), "route": p.get("route"), "embedded": p["embedded"], "benchmark": p["benchmark"],
@@ -291,6 +293,8 @@ async def build_cbam_estimate(
 
     last = next((a for a in reversed(rows) if a.status == "successful" and a.auction_date <= as_of), None)
     out["last_auction_date"] = max(d for d, _ in remaining).isoformat() if remaining else None
+    expiry = (load_cbam_products().get("futures_expiry") or {}).get(year)
+    out["futures_expiry"] = str(expiry) if expiry else None
     out["product_exposure"] = product_exposure(out["estimate"], out.get("ci_low"), out.get("ci_high"), year)
 
     out["last_auction"] = {
@@ -338,11 +342,26 @@ def hedge_structure_text(est: Dict[str, Any]) -> str:
     quarter = est.get("quarter", "quý")
     year = str(quarter).split(" ")[-1][-2:] if str(quarter).split(" ")[-1].isdigit() else ""
     contract = f"EUA futures Dec-{year} (ICE Endex)" if year else "EUA futures Dec (ICE Endex)"
-    last = est.get("last_auction_date")
-    expiry_note = (
-        f" Phiên đấu giá cuối quý: {last[8:10]}/{last[5:7]} — phần bán rải rơi SAU ngày đáo hạn {contract.split(' ')[2]} (nếu có) chuyển "
-        "sang hợp đồng Mar kế tiếp; kiểm lịch đáo hạn ICE trước khi đặt lệnh." if last else ""
-    )
+    last, expiry = est.get("last_auction_date"), est.get("futures_expiry")
+    dec = contract.split(" ")[2]
+
+    def _dmy(iso: str) -> str:
+        return f"{iso[8:10]}/{iso[5:7]}"
+
+    if last and expiry and last == expiry:
+        # Bản chấm 17/10: Dec-26 đáo hạn 14/12/2026 và phiên đấu giá cuối Q4 cũng 14/12 (EU) — chốt bằng dữ liệu, bỏ "nếu có".
+        expiry_note = (f" Phiên đấu giá cuối quý ({_dmy(last)}) TRÙNG ngày đáo hạn {dec}: bán phần cuối trong ngày {_dmy(last)} trước "
+                       "giờ chốt giao dịch đáo hạn, hoặc dời sang hợp đồng Mar kế tiếp nếu thanh khoản phiên đáo hạn mỏng.")
+    elif last and expiry and last > expiry:
+        expiry_note = (f" Có phiên đấu giá sau ngày đáo hạn {dec} ({_dmy(expiry)}; phiên cuối quý {_dmy(last)}): phần tương ứng các phiên "
+                       "đó khóa bằng hợp đồng Mar kế tiếp.")
+    elif last and expiry:
+        expiry_note = f" Mọi phiên đấu giá còn lại (cuối quý {_dmy(last)}) đều trước ngày đáo hạn {dec} ({_dmy(expiry)})."
+    elif last:
+        expiry_note = (f" Phiên đấu giá cuối quý: {_dmy(last)} — chưa có ngày đáo hạn {dec} trong cbam_products.yaml: kiểm lịch đáo hạn "
+                       "ICE; phần rơi sau đáo hạn chuyển sang hợp đồng Mar kế tiếp.")
+    else:
+        expiry_note = ""
     # % tính trên NGHĨA VỤ CBAM của quý (tCO2) — tỷ trọng chưa chốt = tỷ trọng khối lượng đấu giá còn lại (trọng số VWAP);
     # ghi "% khối lượng quý" dễ bị hiểu là khối lượng đấu giá.
     return (
@@ -375,14 +394,20 @@ def describe_product_exposure(est: Dict[str, Any]) -> str:
                 f"≈ {_n(r['cost_eur_per_t'])} EUR/t" + (f" (KTC {_n(r['cost_low'])}–{_n(r['cost_high'])})" if r.get("cost_low") is not None else ""))
         if r.get("defaults"):
             text += "; nếu dùng GIÁ TRỊ MẶC ĐỊNH (+" + f"{r.get('default_markup_pct')}% markup): " + ", ".join(
-                f"{d['origin']} {_n(d['with_markup'], 3)} → ≈ {_n(d['cost_eur_per_t'])} EUR/t" for d in r["defaults"])
+                f"{d['origin']} {_n(d['with_markup'], 3)} → ≈ {_n(d['cost_eur_per_t'])} EUR/t"
+                + ("" if d.get("vn") else " (MINH HỌA theo xuất xứ này — KHÔNG áp cho hàng xuất xứ Việt Nam)")
+                for d in r["defaults"])
         parts.append(text)
     src = r0.get("benchmark_source") or "benchmark CBAM theo mã CN"
     return (
         "- Chi phí CBAM / tấn sản phẩm (phát thải nộp là GIẢ ĐỊNH — thay bằng số thực đã thẩm định): " + "; ".join(parts)
         + f". Nguồn benchmark: {src}" + ("" if r0.get("benchmark_verified") else " (số theo nguồn thứ cấp — CẦN ĐỐI CHIẾU Phụ lục văn bản gốc)")
         + f". Mỗi +0,1 tCO2/t phát thải nộp ≈ +{_n(r0.get('per_0_1_tco2_eur'))} EUR/t sản phẩm; chênh lệch số thực ↔ giá trị mặc định là "
-        "luận điểm chính cho chương trình thẩm định phát thải. Giá trị mặc định cho xuất xứ Việt Nam: chưa có trong dữ liệu — KHÔNG tự đoán."
+        "luận điểm chính cho chương trình thẩm định phát thải. Giá trị mặc định áp THEO NƯỚC XUẤT XỨ"
+        + ("" if any(d.get("vn") for r in rows for d in r.get("defaults") or []) else
+           ": chưa có giá trị mặc định cho xuất xứ Việt Nam — khoản tiết kiệm cho khách VN PHẢI ghi dạng công thức \"(mặc định VN × "
+           f"{1 + (r0.get('default_markup_pct') or 0) / 100:.2f} − số thực) × giá CBAM\", số theo Trung Quốc/UAE chỉ được nêu là \"minh họa, cận "
+           "trên, chưa áp cho VN\"; KHÔNG tự đoán số VN") + "."
     )
 
 

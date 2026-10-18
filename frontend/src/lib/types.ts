@@ -131,12 +131,13 @@ export interface ForecastReview {
   calibration?: { probability: string; correct: number; total: number; direction_only?: number }[];
   rules?: {
     horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number;
-    calibration_reports?: number; sideways_path_max_pct?: number; min_rr?: number; min_stop_atr?: number;
+    calibration_reports?: number; sideways_path_max_pct?: number; min_rr?: number; min_stop_atr?: number; method_since?: string;
   };
   // Báo cáo tạo nên tỷ lệ cửa sổ (có thể gồm báo cáo đã ra khỏi bảng) + tỷ lệ lũy kế — báo cáo từ 18/10/2026.
   calibration_window?: { report_date: string; probability: string | null; verdict: string }[];
   calibration_all?: { probability: string; correct: number; total: number; direction_only?: number }[];
   calibration_all_reports?: number;
+  calibration_all_excluded?: number;
   // Dự báo ngây thơ trên cùng các báo cáo đã có kết luận (services/forecast_review.py::baseline_from).
   baseline?: {
     model: { correct: number; total: number };

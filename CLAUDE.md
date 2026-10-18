@@ -255,7 +255,7 @@ thẻ CBAM) thay cho `hedge_note` từng kịch bản (bị xoá khi sinh; báo 
 mô phỏng đang mở (`forecast_review.open_trades`) + quyết định `keep|move|close` của LLM (`merge_open_positions`) — Jack
 `check_hedge_action`. Tin Mục 3 đánh số [N]; watchpoint "Cần theo dõi" không có `[N]`/`[giá]` bị xoá
 (`_resolve_section3_citations`), nguồn đã trích vào `content["3"].sources` → Mục 9. Mục 6 chia VIỆT NAM/QUỐC TẾ theo
-`about_vietnam` của bản tóm tắt (chủ đề bài), không theo region nguồn. Δ tuyệt đối ở bảng giá tính từ giá đóng cửa kỳ
+NƠI ĐĂNG (region của nguồn crawl), không theo chủ đề bài (quyết định 18/10/2026). Δ tuyệt đối ở bảng giá tính từ giá đóng cửa kỳ
 so sánh trong DB (`_comparison_closes`), không suy ngược từ % đã làm tròn.
 Cũng tự sửa/kiểm: số phiên tăng/giảm liên tiếp của EUA (`eua_streak`/`fix_streak_claims`; prompt nhận khối "CHUỖI PHIÊN"
 kèm khối lượng TỪNG phiên trong nhịp so TB 20 phiên — không kết luận cả nhịp chỉ từ phiên cuối), mục tiêu dạng
@@ -320,6 +320,16 @@ mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, khôn
   `_biz_policy_block`, trích nguồn "HSk" → `source_ref`). `policy_calendar.yaml` hỗ trợ `outcome`; Mục 8 bỏ bản LLM trùng họp
   đã có. TB cover ratio 90 ngày loại chính phiên đang so. Bảng chấm ghi Đ/S từng báo cáo + `calibration_drift`. Cắt cứng: Tóm
   tắt ≤ `EXEC_SUMMARY_MAX_BULLETS`, Diễn biến chính ≤ `KEY_DEV_MAX_ITEMS`, Cần theo dõi ≤ `WATCH_MAX_ITEMS` (4).
+- Lần chấm 4 (test `tests/test_report_review_1710_v3.py`): hồ sơ yaml có `kind` (event = sự kiện, không chiều riêng),
+  `mechanism`, `verified`; prompt có khối "CƠ CHẾ MSR" (nâng ngưỡng vô hiệu hóa / giảm chuyển vào MSR = NỚI cung) + Jack
+  `check_msr_direction`. Bảng chính sách hiển thị "Tác động lên giá EUA". Mẫu số lũy kế = báo cáo có kết luận Đúng/Sai
+  (`calibration_all_excluded` tách riêng), chấm lại toàn bộ theo quy tắc từ `SCORING_METHOD_SINCE`. Thẻ "Dự báo trước" CHỈ hiện
+  bảng + tỷ lệ cửa sổ 7 báo cáo + "Nguyên nhân & điều chỉnh" (lũy kế/chuẩn so sánh/quy tắc vẫn tính, chỉ dùng trong prompt).
+  Giá trị mặc định CBAM áp theo nước xuất xứ (số TQ/UAE = minh họa; `vn: true` khi admin thêm số VN). `futures_expiry` trong
+  cbam_products.yaml chốt câu đáo hạn Dec. Fuel: không có ngưỡng TTF chiều lên (Jack `_UPWARD_THRESHOLD_RE`). Mục 1 nhận
+  `_exec_policy_block` (bắt buộc bullet "Chính sách ETS"). `_trim_section3_blocks` bỏ "Quan điểm thị trường" chỉ lặp nguồn bảng
+  chính sách + gạch đầu dòng thừa. Mục 6 luôn có tóm tắt; bài nguồn VN về chính sách carbon VN/CBAM luôn giữ
+  (`_section6_must_keep`). Jack `check_facts` kiểm cả số trong Mục 3 với bài nguồn (`content["3"].sources`).
 - `frontend/messages/parts/*.json` đang CŨ hơn `vi.json`/`en.json` (đã sửa thẳng file gộp) — KHÔNG chạy
   `scripts/merge-messages.mjs` khi chưa đồng bộ parts, sẽ mất key.
 

@@ -61,6 +61,9 @@ SIDEWAYS_PATH_MAX_PCT = 2.0    # "đi ngang": mọi giá đóng cửa trong khun
 MIN_RR = 1.5                   # = report_qc.MIN_RISK_REWARD
 MIN_STOP_ATR = 0.5             # cắt lỗ cách giá vào ≥ 0,5 × ATR (quy tắc prompt Mục 3)
 MOMENTUM_SESSIONS = 5          # dự báo ngây thơ "lặp chiều N phiên trước"
+# Tỷ lệ lũy kế được CHẤM LẠI toàn bộ theo quy tắc hiện hành mỗi lần sinh báo cáo — có thể lệch số in ở báo cáo cũ (vd bảng
+# 17/10 bản đầu "Cao 9/13; Trung bình 16/29" chấm theo quy tắc trước 18/10, chưa có chấm "đi ngang" theo hành trình).
+SCORING_METHOD_SINCE = "2026-10-18"
 _SUMMARY_LINE_RE = re.compile(r"\*\*Tổng hợp:?\*\*\s*(.*)")
 
 
@@ -318,12 +321,13 @@ async def build_forecast_review(session: AsyncSession, report_date: str, data_da
         "calibration_window": extra.pop("window"),
         "calibration_all": extra.pop("calibration_all"),
         "calibration_all_reports": extra.pop("calibration_all_reports", 0),
+        "calibration_all_excluded": extra.pop("calibration_all_excluded", 0),
         "baseline": extra,
         "rules": {
             "horizon_sessions": REVIEW_MAX_SESSIONS, "direction_threshold_pct": DIRECTION_THRESHOLD_PCT,
             "sideways_max_pct": SIDEWAYS_MAX_PCT, "order_valid_sessions": ORDER_VALID_SESSIONS,
             "calibration_reports": CALIBRATION_REPORTS, "sideways_path_max_pct": SIDEWAYS_PATH_MAX_PCT,
-            "min_rr": MIN_RR, "min_stop_atr": MIN_STOP_ATR,
+            "min_rr": MIN_RR, "min_stop_atr": MIN_STOP_ATR, "method_since": SCORING_METHOD_SINCE,
         },
     }
     return block, describe_for_prompt(block, premises)
@@ -413,7 +417,10 @@ async def _calibration(session: AsyncSession, report_date: str, data_date: str) 
         "window": window_reports(window),
         # Tỷ lệ LŨY KẾ mọi báo cáo đã có kết luận trong CALIBRATION_SCAN_REPORTS báo cáo gần nhất (bản cũ hiển thị số này).
         "calibration_all": calibration_from(evaluated),
-        "calibration_all_reports": len(evaluated),
+        # Mẫu số = số báo cáo có kết luận ĐÚNG/SAI (tổng các mức) — trước đếm cả báo cáo "không tính" (đúng hướng, không khớp
+        # lệnh) nên ghi "43 báo cáo" trong khi Cao 13 + Trung bình 29 = 42 (bản chấm 17/10).
+        "calibration_all_reports": sum(c["total"] for c in calibration_from(evaluated)),
+        "calibration_all_excluded": sum(c["direction_only"] for c in calibration_from(evaluated)),
     }
 
 
@@ -478,7 +485,7 @@ def calibration_drift(window: Sequence[Dict[str, Any]], cumulative: Sequence[Dic
             out.append(
                 f"⚠ Độ tin cậy mức \"{c['probability']}\" đang suy giảm: gần đây {c['correct']}/{c['total']} so với lũy kế "
                 f"{a['correct']}/{a['total']} — lý do có căn cứ để KHÔNG dùng mức này (ngoài việc thiếu dữ liệu vị thế quỹ); "
-                "\"vs_previous\" nên nêu"
+                "\"vs_previous\" chỉ nêu Ý NGHĨA (mức này đang kém tin cậy), không dẫn số lũy kế"
             )
     return out
 
@@ -488,7 +495,8 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
         return ""
     premises = premises or {}
     lines = ["ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY (tính sẵn từ giá EUA thật + mô phỏng lệnh — dùng đúng, KHÔNG tự tính lại; "
-             "khối này đã hiển thị dạng bảng ở trang đầu):"]
+             "khối này đã hiển thị dạng bảng ở trang đầu, kèm DUY NHẤT dòng tỷ lệ đúng của cửa sổ gần nhất — tỷ lệ LŨY KẾ, CHUẨN "
+             "SO SÁNH ngây thơ và danh sách báo cáo của cửa sổ KHÔNG hiển thị cho người đọc nên \"vs_previous\" KHÔNG dẫn các số đó):"]
     for it in block["items"]:
         t = it.get("trade")
         trade_txt = ""
@@ -538,8 +546,10 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
             + (f" — gồm báo cáo {', '.join(_dm(w['report_date']) + ' (' + WINDOW_VERDICT_VI.get(w['verdict'], w['verdict']) + ')' for w in win)}"
                f" (có báo cáo đã ra khỏi bảng vì quá khung {REVIEW_MAX_SESSIONS} phiên; báo cáo trong bảng còn \"đang...\" chưa được "
                "tính; KHÔNG suy lại tỷ lệ từ riêng các dòng trong bảng)" if win else "")
-            + ". LŨY KẾ: " + "; ".join(
-                f"{c['probability']} {c['correct']}/{c['total']}" for c in block.get("calibration_all") or [] if c.get("total"))
+            + f". LŨY KẾ ({block.get('calibration_all_reports', 0)} báo cáo có kết luận Đúng/Sai"
+            + (f", không tính {block['calibration_all_excluded']} báo cáo đúng hướng nhưng không khớp lệnh" if block.get("calibration_all_excluded") else "")
+            + f"; chấm lại toàn bộ theo quy tắc hiện hành từ {_dm(SCORING_METHOD_SINCE)}/{SCORING_METHOD_SINCE[:4]} nên có thể lệch số in ở báo cáo cũ): "
+            + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in block.get("calibration_all") or [] if c.get("total"))
             + "".join(f". {w}" for w in calibration_drift(block.get("calibration") or [], block.get("calibration_all") or []))
             + ". Mức nào tỷ lệ đúng < 50% (vd \"Cao\") thì KHÔNG dùng lại mức đó trừ khi có ≥2 yếu tố độc lập đã xác nhận; "
             "nguyên nhân dự báo sai phải nêu cả phần THỰC THI (Entry quá xa, lệnh treo/hết hiệu lực) chứ không chỉ tiền đề."

@@ -21,7 +21,7 @@ from services import cbam_estimate
 from services import forecast_review
 from services.report_consistency import (
     GAP_MIN_ATR, apply_consistency_fixes, atr_true_range, derived_target_issues, describe_range_position, eua_streak,
-    session_signals, streak_momentum,
+    parse_num, session_signals, streak_momentum,
 )
 from services.title_similarity import is_similar_title, title_tokens
 from services import eua_causal_chains as chains
@@ -121,7 +121,10 @@ CONCISENESS_RULE = (
     "(23) MỖI TIN PHÂN TÍCH ĐẦY ĐỦ ĐÚNG 1 LẦN: Tóm tắt điều hành chỉ 1 câu sự kiện + chiều tác động; phân tích cơ chế nằm ở "
     "Mục 3 \"Phân tích\"; \"Diễn biến chính\" chỉ nêu sự kiện + chiều; \"Cần theo dõi\" chỉ nêu ĐIỀU KIỆN TƯƠNG LAI, KHÔNG tóm tắt "
     "lại tin. Tin có tác động lên EUA \"Thấp\"/gián tiếp (hợp tác địa phương, sổ tay/hướng dẫn tín chỉ tự nguyện, thương vụ "
-    "loại bỏ carbon tự nguyện, SAF) → KHÔNG đưa vào Tóm tắt điều hành, Diễn biến chính hay \"Cần theo dõi\"."
+    "loại bỏ carbon tự nguyện, SAF) → KHÔNG đưa vào Tóm tắt điều hành, Diễn biến chính hay \"Cần theo dõi\". "
+    "(24) TRÍCH PHÁT NGÔN: dịch THEO NGHĨA, không dịch từng chữ cụm hình ảnh/thành ngữ; không chắc nghĩa thì giữ nguyên văn "
+    "trong ngoặc kép kèm nghĩa (vd \"gabella troppo cara\" = khoản thuế quá đắt — KHÔNG phải \"chiếc lồng\"); chi tiết/số liệu "
+    "phát ngôn chỉ ghi khi có trong chính bài được trích."
 )
 
 # Văn bản đã luật hoá được phép dùng làm luận điểm chính sách dài hạn KÈM trích dẫn văn bản (ngoài tin trong ngày).
@@ -1059,6 +1062,9 @@ def _load_ets_dossiers(path: Path = ETS_DOSSIERS_PATH) -> List[Dict[str, Any]]:
             "supply_mt": d.get("supply_mt") if isinstance(d.get("supply_mt"), (int, float)) else None,
             "cbam_effect": str(d.get("cbam_effect") or "").strip() or None,
             "structural": bool(d.get("structural")),
+            "kind": "event" if str(d.get("kind") or "").strip().lower() == "event" else "dossier",
+            "mechanism": str(d.get("mechanism") or "").strip() or None,
+            "verified": bool(d.get("verified")),
             "source_name": str(d.get("source_name") or "admin").strip(),
             "source_url": str(d.get("source_url") or "").strip() or None,
             "source_date": str(d.get("source_date") or "").strip() or None,
@@ -1076,10 +1082,13 @@ def _ets_policy_prompt_block(nums: List[int], index_lookup: Dict[int, Dict], dos
     """Khối thêm vào cuối prompt Mục 3 (cả bản có giá lẫn bản chỉ tin tức)."""
     pinned = "\n".join(
         f"[{k}] {d['item']} ({d['stage'] or 'chưa rõ giai đoạn'}): {d['status']} | Bước tiếp: {d['next_step']} | "
-        f"chiều cung: {d['impact']}" + (f" | quy mô ~{d['supply_mt']:g} triệu hạn ngạch" if d.get("supply_mt") else "")
+        f"CHIỀU GIÁ EUA ĐÃ CHỐT: {d['impact']}" + (f" — cơ chế: {d['mechanism']}" if d.get("mechanism") else "")
+        + (" | SỰ KIỆN (không phải hồ sơ)" if d.get("kind") == "event" else "")
+        + (f" | quy mô ~{d['supply_mt']:g} triệu hạn ngạch" if d.get("supply_mt") else "")
         + (f" | tác động CBAM: {d['cbam_effect']}" if d.get("cbam_effect") else "")
         + (" | HỒ SƠ CẤU TRÚC" if d.get("structural") else "")
-        + f" (nguồn: {d['source_name']}{', ' + d['source_date'] if d.get('source_date') else ''})"
+        + f" (nguồn: {d['source_name']}{', ' + d['source_date'] if d.get('source_date') else ''}"
+        + ("" if d.get("verified") else "; CHƯA đối chiếu văn bản gốc — khi nêu PHẢI ghi \"theo tóm tắt, chưa đối chiếu văn bản gốc\"") + ")"
         for k, d in (dossiers or {}).items()
     )
     if nums:
@@ -1093,8 +1102,15 @@ def _ets_policy_prompt_block(nums: List[int], index_lookup: Dict[int, Dict], dos
     return f"""
 
 HỒ SƠ ETS/MSR ĐANG MỞ — ADMIN ĐÃ XÁC NHẬN (hệ thống TỰ đưa vào bảng theo dõi, KHÔNG lặp lại trong "ets_policy"; trích dẫn bằng
-"[HSk]" như số [N]; hồ sơ quy mô lớn về nguồn cung PHẢI được đánh giá ở nhóm "Chính sách:" của "Phân tích" và có watchpoint riêng):
+"[HSk]" như số [N]; hồ sơ quy mô lớn về nguồn cung PHẢI được đánh giá ở nhóm "Chính sách:" của "Phân tích" và có watchpoint riêng.
+"CHIỀU GIÁ EUA ĐÃ CHỐT" của từng hồ sơ là BẮT BUỘC ở MỌI chỗ (Phân tích, Cần theo dõi, Tổng hợp, kịch bản): hồ sơ "giảm" KHÔNG
+được xếp làm "đối trọng"/yếu tố hỗ trợ EUA; watchpoint về hồ sơ chỉ được nêu nhánh ngược chiều khi đó là việc hồ sơ bị BÁC):
 {pinned or "(Không có.)"}
+
+CƠ CHẾ MSR (BẮT BUỘC phân biệt — bản 17/10 viết "nâng ngưỡng vô hiệu hóa 800 triệu → cung siết lại → hỗ trợ EUA" là SAI):
+  - CHUYỂN hạn ngạch vào MSR (intake) → bớt hạn ngạch đấu giá → SIẾT cung; GIẢM/TẠM DỪNG chuyển → NỚI cung.
+  - VÔ HIỆU HÓA (hủy vĩnh viễn hạn ngạch trong MSR vượt ngưỡng) → SIẾT dài hạn; NÂNG ngưỡng vô hiệu hóa → hủy ít hơn → NỚI cung dài hạn.
+  - XẢ hạn ngạch từ MSR ra thị trường (release) → NỚI cung.
 
 THEO DÕI CHÍNH SÁCH ETS/MSR — TIN {ETS_POLICY_LOOKBACK_DAYS} NGÀY QUA (khối CỐ ĐỊNH; chính sách nguồn cung là động lực chi phối giá
 EUA 2026, mạnh hơn nhiên liệu — dùng chung số [N] với TIN TỨC LIÊN QUAN, trích dẫn như các tin khác):
@@ -1106,7 +1122,9 @@ sách ĐANG MỞ, mỗi hồ sơ 1 object (gộp nhiều bài cùng hồ sơ th�
   - "status": lập trường/tiến độ HIỆN TẠI của từng cơ quan có trong bài (Ủy ban / Hội đồng / Nghị viện / nước thành viên) — chỉ ghi điều bài nêu, số liệu (triệu hạn ngạch, %, mốc ngày) phải có trong bài;
   - "stage": giai đoạn — "đề xuất" | "đang đàm phán" | "đã thông qua" (chưa áp dụng);
   - "next_step": bước kế tiếp + mốc thời gian nếu bài nêu (vd "đàm phán ba bên, mục tiêu xong trước cuối 2026"); bài không nêu → "Chưa có lịch xác nhận";
-  - "impact": chiều tác động lên NGUỒN CUNG → giá EUA nếu được thông qua: "tăng" (siết cung) / "giảm" (nới cung) / "trung lập" (chưa rõ);
+  - "impact": chiều tác động lên GIÁ EUA nếu được thông qua: "tăng" / "giảm" / "trung lập" (chưa rõ, hoặc là sự kiện chưa có quyết định);
+  - "mechanism": 1 câu cơ chế (cung hay cầu thay đổi thế nào) — theo đúng "CƠ CHẾ MSR" ở trên; KHÔNG gọi "nới cung" cho thay đổi
+    chỉ tác động phía CẦU (vd kéo dài phân bổ miễn phí không đổi tổng cap — là giảm cầu mua của ngành CBAM);
   - "source_index": số [N] có thật.
 QUY TẮC: (1) hồ sơ đang chờ quyết định trong khung kịch bản PHẢI có 1 watchpoint riêng ở "Cần theo dõi" (ghi "chưa có kết quả" nếu bài
 chưa xác nhận); (2) điều kiện kịch bản dạng "không có quyết định chính sách EU mới về nguồn cung" PHẢI nêu ĐÚNG hồ sơ cụ thể ở đây;
@@ -1119,6 +1137,50 @@ hồ sơ ĐƯỢC thông qua kèm tác động lên giá EUA; KHÔNG đặt đi�
 dụng KHÔNG phải hồ sơ chính sách — không đưa vào "ets_policy" (đã có ở khối đấu giá/lịch sự kiện)."""
 
 
+def _exec_policy_block(dossiers: Dict[str, Dict[str, Any]]) -> str:
+    """Hồ sơ ETS/MSR đang mở cho prompt Tóm tắt điều hành — bản chấm 17/10: rủi ro chi phối (bế tắc 15/10, dời tháng 12)
+    không có trong Tóm tắt trong khi có ý "Chính sách khí"."""
+    if not dossiers:
+        return ""
+    listing = "\n".join(
+        f"- {d['item']}: {d['status']} | Bước tiếp: {d['next_step']} | chiều giá EUA: "
+        + ("sự kiện, chưa quyết định" if d.get("kind") == "event" else d["impact"])
+        for d in dossiers.values()
+    )
+    return f"""
+
+CHÍNH SÁCH ETS/MSR ĐANG MỞ (admin xác nhận — rủi ro chi phối giá EUA 2026):
+{listing}
+BẮT BUỘC có 1 bullet "**Chính sách ETS:**" (source_index: null) nêu hồ sơ/sự kiện quan trọng nhất + trạng thái + chiều giá đúng
+như trên; tin chính sách khí (kho dự trữ khí...) gộp vào bullet "**Nhiên liệu:**" tối đa 1 câu, KHÔNG thành bullet riêng."""
+
+
+MARKET_VIEW_HEADING = "Quan điểm thị trường"
+_CITE_NUM_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def _trim_section3_blocks(sec3: Dict[str, Any], index_lookup: Dict[int, Dict]) -> None:
+    """Dọn analysis_blocks TRƯỚC khi đổi [N] thành tên nguồn:
+      - bỏ khối "Quan điểm thị trường" khi mọi bài nó trích đã có trong bảng theo dõi chính sách (bản 17/10: đề nghị của CEO
+        Eni lặp ở Phân tích, Quan điểm thị trường, bảng chính sách, Cần theo dõi);
+      - bỏ dòng chỉ có dấu gạch đầu dòng và gạch đầu dòng đứng trước "**Kết luận:**" (dấu chấm thừa trước hộp Kết luận)."""
+    policy_urls = {it.get("source_url") for it in sec3.get("ets_policy") or [] if isinstance(it, dict) and it.get("source_url")}
+    kept = []
+    for blk in sec3.get("analysis_blocks") or []:
+        if not isinstance(blk, dict):
+            continue
+        content = str(blk.get("content") or "")
+        if str(blk.get("heading") or "").strip() == MARKET_VIEW_HEADING:
+            urls = {index_lookup[int(n)]["url"] for n in _CITE_NUM_RE.findall(content) if int(n) in index_lookup}
+            if policy_urls and (not urls or urls <= policy_urls):
+                logger.info("[REPORT] Mục 3: bỏ khối Quan điểm thị trường — chỉ lặp nguồn của bảng chính sách.")
+                continue
+        content = re.sub(r"(?m)^[ \t]*[-–—•][ \t]*(?=\*\*Kết luận)", "", content)
+        content = re.sub(r"(?m)^[ \t]*[-–—•][ \t]*$\n?", "", content).strip()
+        kept.append({**blk, "content": content})
+    sec3["analysis_blocks"] = kept
+
+
 def _biz_policy_block(dossiers: Dict[str, Dict[str, Any]]) -> str:
     """Hồ sơ chính sách có tác động CBAM cho prompt gợi ý kinh doanh SIM."""
     rows = {k: d for k, d in (dossiers or {}).items() if d.get("cbam_effect") or d.get("structural")}
@@ -1129,14 +1191,18 @@ def _biz_policy_block(dossiers: Dict[str, Dict[str, Any]]) -> str:
         + (f" | tác động CBAM: {d['cbam_effect']}" if d.get("cbam_effect") else "")
         for k, d in rows.items()
     )
+    schedule = " · ".join(f"{y}: {_vn_num(f * 100, 1)}%" for y, f in sorted(cbam_estimate.CBAM_FREE_ALLOCATION_FACTOR.items())
+                          if 2026 <= y <= 2030)
     return f"""
 
 HỒ SƠ CHÍNH SÁCH EU ĐANG MỞ ẢNH HƯỞNG CHI PHÍ CBAM/LỘ TRÌNH ETS (admin xác nhận — trích bằng "source_index": "HSk"):
 {listing}
+LỘ TRÌNH HỆ SỐ CBAM HIỆN HÀNH (Chỉ thị (EU) 2023/959 — trục gốc của bảng độ nhạy, dùng ĐÚNG số này): {schedule}.
 QUY TẮC: có hồ sơ làm đổi hệ số CBAM/lộ trình phân bổ miễn phí → BẮT BUỘC 1 gợi ý "long_term": dựng bảng độ nhạy chi phí
 CBAM/tấn theo 2 lộ trình hệ số CBAM (hiện hành theo Chỉ thị (EU) 2023/959 vs theo đề xuất) cho 2027–2030 để dùng trong đàm phán
 hợp đồng dài hạn; "owner": "Phòng Chiến lược phát triển"; "kpi" có mốc trước bước tiếp theo của hồ sơ; số chi phí/tấn hiện tại lấy
-từ khối "Chi phí CBAM / tấn sản phẩm" (KHÔNG tự đoán hệ số của lộ trình đề xuất khi hồ sơ không nêu — ghi "cần xác minh")."""
+từ khối "Chi phí CBAM / tấn sản phẩm"; lộ trình hiện hành dùng đúng các hệ số ở trên (KHÔNG ghi "hồ sơ chưa nêu số hệ số"
+cho lộ trình hiện hành); chỉ hệ số của lộ trình ĐỀ XUẤT khi hồ sơ không nêu mới ghi "cần xác minh"."""
 
 
 def _resolve_ets_policy(items: Any, index_lookup: Dict[int, Dict], dossiers: Optional[List[Dict]] = None) -> List[Dict]:
@@ -1161,6 +1227,7 @@ def _resolve_ets_policy(items: Any, index_lookup: Dict[int, Dict], dossiers: Opt
             "status": str(it.get("status") or "").strip(),
             "next_step": str(it.get("next_step") or "").strip() or "Chưa có lịch xác nhận",
             "stage": str(it.get("stage") or "").strip(),
+            "mechanism": str(it.get("mechanism") or "").strip() or None,
             "impact": impact if impact in ETS_POLICY_IMPACTS else "trung lập",
             "source_name": art["source"],
             "source_url": art["url"],
@@ -1460,31 +1527,27 @@ def _content_source_urls(node: Any) -> set:
     return out
 
 
-_VN_SUBJECT_RE = re.compile(
-    r"Việt Nam|\bVN\b|(?i:tỉnh)|Hà Nội|TP\.?\s?HCM|Hồ Chí Minh|Bộ (?:Công Thương|Tài nguyên|TN&MT|Nông nghiệp|Tài chính)|"
-    r"EVN|Petrovietnam|PVN"
-)
-
-
 def _split_section6_by_subject(articles: List[Dict]) -> tuple:
-    """Nhóm VIỆT NAM / QUỐC TẾ của Mục 6 theo quốc gia của CHỦ ĐỀ bài (LLM tóm tắt trả "about_vietnam"), không
-    theo region của nguồn crawl — tin phí quỹ khí của Đức đăng trên cafef.vn từng bị xếp vào "VIỆT NAM".
-    LLM không trả cờ → giữ region của nguồn."""
+    """Nhóm VIỆT NAM / QUỐC TẾ của Mục 6 theo NƠI ĐĂNG (region của nguồn crawl), không theo chủ đề bài — quyết định của
+    bàn (18/10/2026): tin Reuters đăng lại trên vnexpress nằm ở nhóm Việt Nam."""
     international, vietnam = [], []
     for a in articles:
-        flag = a.pop("about_vietnam", None)
-        topics = set(a.get("topics") or [])
-        if topics & {"vietnam_carbon_policy", TOPIC_DISPLAY_LABELS["vietnam_carbon_policy"]}:
-            is_vn = True  # tin đã phân loại chính sách carbon VN — không để LLM tóm tắt đẩy sang Quốc tế
-        elif a.get("region") == "vietnam" and _VN_SUBJECT_RE.search(f"{a.get('title') or ''} {a.get('summary') or ''}"):
-            # Nguồn VN nói về địa phương/cơ quan VN (vd tỉnh Nghệ An) — giữ nhóm Việt Nam dù LLM trả false. CHỈ xét tiêu đề
-            # + tóm tắt (chủ đề chính): trước quét cả 2.500 ký tự nội dung nên tin Reuters về trừng phạt tàu dầu của Mỹ
-            # trên vnexpress (nhắc "Việt Nam" ở đoạn cuối) bị xếp vào nhóm Việt Nam.
-            is_vn = True
-        else:
-            is_vn = flag if isinstance(flag, bool) else a.get("region") == "vietnam"
-        (vietnam if is_vn else international).append(a)
+        a.pop("about_vietnam", None)  # báo cáo/bản tóm tắt cũ còn trường này
+        (vietnam if a.get("region") == "vietnam" else international).append(a)
     return international, vietnam
+
+
+# Tin đăng trên nguồn Việt Nam về chính sách carbon VN/CBAM luôn giữ ở Mục 6 dù bản tóm tắt chấm "relevant": false (bản
+# chấm 17/10: kho có 3 bài chính sách carbon VN, vd "Thị trường carbon mở không gian mới cho kinh tế xanh Việt Nam", mà Mục 6
+# không có tin Việt Nam nào).
+SECTION6_KEEP_VN_TOPICS = {"vietnam_carbon_policy", "cbam"}
+
+
+def _section6_must_keep(art: Dict) -> bool:
+    if art.get("region") != "vietnam":
+        return False
+    labels = {TOPIC_DISPLAY_LABELS.get(t, t) for t in SECTION6_KEEP_VN_TOPICS} | SECTION6_KEEP_VN_TOPICS
+    return bool(set(art.get("topics") or []) & labels)
 
 
 def _prompt_section6_summary(article: Dict, target_date: str) -> str:
@@ -1511,10 +1574,9 @@ YÊU CẦU: Viết đúng 1 đoạn tóm tắt bằng TIẾNG VIỆT, ĐÚNG 2 C
 
 - "origin": hãng tin/cơ quan GỐC của thông tin chính khi bài DẪN LẠI rõ ràng từ nơi khác (vd bài Politico viết "Zelenskyy told the Financial Times" → "Financial Times"; "according to a Reuters report" → "Reuters"; số liệu từ thông cáo IEA → "IEA"); trong "summary" cũng ghi theo chuỗi đó ("theo phỏng vấn với Financial Times..."). Bài tự đưa tin/phỏng vấn trực tiếp hoặc chỉ trích dẫn ngắn nhiều nguồn → null. KHÔNG đoán.
 
-- "about_vietnam": true CHỈ KHI chủ thể/sự kiện chính của bài diễn ra tại hoặc trực tiếp liên quan Việt Nam (chính sách, doanh nghiệp, thị trường Việt Nam; doanh nghiệp Việt chịu CBAM...). Xét theo NỘI DUNG, KHÔNG theo trang đăng: bài trên báo Việt Nam nói về phí quỹ khí của Đức → false.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ (không text ngoài):
-{{"relevant": true, "summary": "...", "origin": null, "about_vietnam": <true hoặc false theo quy tắc trên>}}"""
+{{"relevant": true, "summary": "...", "origin": null}}"""
 
 
 SECTION6_SUMMARY_CONCURRENCY = 4
@@ -1564,7 +1626,8 @@ async def _summarize_section6_articles(
                     parsed = None  # vẫn lỗi → rơi xuống fallback
             summary = (parsed.get("summary") or "").strip() if parsed else ""
 
-            if parsed and parsed.get("relevant") is False and summary and art["url"] not in (keep_urls or set()):
+            if (parsed and parsed.get("relevant") is False and summary and art["url"] not in (keep_urls or set())
+                    and not _section6_must_keep(art)):
                 logger.info("[REPORT] Mục 6: loại bài không liên quan: %s", art["url"])
                 return None
 
@@ -1573,8 +1636,7 @@ async def _summarize_section6_articles(
                 summary = art["summary"]
 
             origin = parsed.get("origin") if parsed and isinstance(parsed.get("origin"), str) else None
-            about_vn = parsed.get("about_vietnam") if parsed and isinstance(parsed.get("about_vietnam"), bool) else None
-            return {**art, "summary": summary, "origin": (origin or "").strip() or None, "about_vietnam": about_vn}
+            return {**art, "summary": summary, "origin": (origin or "").strip() or None}
 
     summarized = await asyncio.gather(*[_summarize_one(art) for art in articles])
     return [a for a in summarized if a is not None]
@@ -1999,8 +2061,18 @@ def _fleet_threshold_line(st: Dict[str, Any]) -> str:
            if st.get("robust_saturation") else " → kết luận nhạy với giả định hiệu suất, KHÔNG viết dứt khoát \"đã bão hòa\".")
         + f"\n  - NGƯỠNG THẬT (đầu thấp dải hòa vốn = giá EUA hiện tại): TTF ≈ {_vn_num(st['ttf_first_switch'], 1)} EUR/MWh "
         f"({_vn_num(st['ttf_first_move_pct'], 0, sign=True)}%, API2 giữ nguyên) HOẶC API2 ≈ {_vn_num(st['api2_first_switch'], 0)} "
-        f"USD/t ({_vn_num(st['api2_first_move_pct'], 0, sign=True)}%, TTF giữ nguyên)."
+        f"USD/t ({_vn_num(st['api2_first_move_pct'], 0, sign=True)}%, TTF giữ nguyên). Đây là mức tại đó CCGT hiệu suất cao "
+        f"nhất ({FUEL_FLEET_GAS_EFF[1]:.0%}) BẮT ĐẦU cạnh tranh được với nhà máy than kém nhất ({FUEL_FLEET_COAL_EFF[0]:.0%}) — chưa "
+        "phải toàn hệ thống đổi thứ tự huy động."
     )
+    if st.get("spread", 0) > FUEL_NEAR_BREAKEVEN:
+        text += (
+            "\n  - CHIỀU CỦA NGƯỠNG: than ĐÃ đứng trước khí trong thứ tự huy động → TTF tăng thêm KHÔNG đổi thứ tự, KHÔNG có ngưỡng "
+            "chiều lên; ngưỡng DUY NHẤT có ý nghĩa là chiều XUỐNG (TTF dưới mức trên). TUYỆT ĐỐI KHÔNG viết \"chưa kéo TTF tới "
+            "ngưỡng…\" cho tin làm TTF tăng. Watchpoint nhánh \"TTF xuống dưới ngưỡng → áp lực giảm EUA\" PHẢI nêu yếu tố làm TTF "
+            "GIẢM (thời tiết ấm, cung LNG tăng, hạ nhiệt Nga–Ukraine…) — KHÔNG dùng tin làm TTF TĂNG (kho dự trữ, đóng tuyến ống…) "
+            "làm nguyên nhân cho nhánh này."
+        )
     if fuel_threshold_far(st):
         text += (
             " Cả 2 mức đều ngoài tầm biến động 1–2 tuần/1–3 tháng → KHÔNG đặt điều kiện fuel switching cho kịch bản ngắn/trung "
@@ -3336,6 +3408,7 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
 
 C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả 3 horizon "ngắn hạn", "trung hạn", "dài hạn". Đây là phần người đọc xem để RA QUYẾT ĐỊNH nên phải NGẮN, TRỰC DIỆN, đi thẳng vào giá trị: chỉ nêu điều kiện, mức giá và hành động — KHÔNG giải thích cơ chế, KHÔNG lặp lại mục B, KHÔNG câu đệm/mở đầu/sáo rỗng. Mỗi trường là 1 mệnh đề cô đọng, ưu tiên số liệu cụ thể hơn lời văn. Mỗi kịch bản gồm:
    - "horizon": "ngắn hạn" (1–2 tuần) / "trung hạn" (1–3 tháng) / "dài hạn" (3–12 tháng — ghi rõ mốc trong "condition", vd "tới hết Q2/2027")
+     DÀI HẠN: ghi khung thời gian cụ thể (vd "6–12 tháng, tới hết Q3/2027") ngay đầu "condition"; nếu tin có dự báo giá EUA của 1 tổ chức (ngân hàng, hãng phân tích) thì dẫn làm mốc tham chiếu kèm [N]. TRUNG HẠN "đi ngang" dùng chung vùng lệnh với ngắn hạn thì ghi "dùng chung vùng với lệnh ngắn hạn, khác ở mục tiêu/cắt lỗ" thay vì lặp vùng gần trùng.
      KHUNG THEO HORIZON (BẮT BUỘC): "trung hạn" dùng biên 30 phiên ĐÚNG như MỐC KỸ THUẬT (đáy–đỉnh 30 phiên, KHÔNG trộn mức cắt lỗ với kháng cự thành 1 biên lệch); "dài hạn" PHẢI dựa trên ≥2 động lực CẤU TRÚC (cap/hệ số giảm tuyến tính, MSR, lộ trình phân bổ miễn phí/CBAM, ETS2, rà soát ETS 2026 — từ "THEO DÕI CHÍNH SÁCH ETS/MSR" hoặc VĂN BẢN ĐÃ LUẬT HÓA), KHÔNG dùng mục tiêu đo biên độ 30 phiên (công cụ kỹ thuật ngắn hạn) và KHÔNG lấy giá đóng cửa hôm nay làm cận vùng; không suy ra được mức giá có cơ sở → nêu chiều + điều kiện, phần mức giá ghi "chưa đủ cơ sở định lượng".
    - "probability": xác suất kịch bản này xảy ra — CHỈ 1 trong 3 giá trị "Cao" / "Trung bình" / "Thấp", dựa trên driver ở mục B đã được dữ liệu/tin tức xác nhận rõ (probability cao hơn) hay mới chỉ là suy đoán/tin đồn (probability thấp hơn). CHỈ chọn "Cao" khi ≥2 yếu tố độc lập cùng chiều VÀ không có chỗ nào trong báo cáo ghi "thiếu xác nhận"/"tín hiệu hỗn hợp"/Δ ngày–Δ tuần trái chiều; luận điểm dựa trên tương quan ngắn hạn mà chưa định lượng được (không có spread, vị thế quỹ, đấu giá EEX, MSR) → tối đa "Trung bình". Kịch bản trung/dài hạn tối đa "Trung bình" trừ khi có sự kiện chính sách đã xác nhận.
    - "direction": ĐÚNG 1 trong 3 giá trị "tăng" / "giảm" / "đi ngang" — chiều giá EUA của RIÊNG kịch bản này, phải khớp ĐÚNG chiều với "trading_strategy" bên dưới (dùng để hiển thị mũi tên trên giao diện).
@@ -3501,7 +3574,10 @@ CBAM_COST_RULE = (
     "thải nhúng × giá CBAM làm chi phí. Số chi phí/tấn (cả kịch bản số thực lẫn GIÁ TRỊ MẶC ĐỊNH kèm markup) dùng ĐÚNG khối "
     "\"Chi phí CBAM / tấn sản phẩm\" tính sẵn trong ƯỚC TÍNH GIÁ CBAM, KHÔNG tự tính benchmark khác; khi nhân với khối lượng "
     "thí điểm ghi phép tính (vd \"1.000 t × 26,69 = 26.690 EUR\"). Phát thải nhúng không có trong dữ liệu → gắn nhãn "
-    "\"giả định\" hoặc để khách tự điền, KHÔNG trình bày như số thật; gợi ý về thẩm định phát thải NÊN so sánh số thực ↔ giá trị mặc định."
+    "\"giả định\" hoặc để khách tự điền, KHÔNG trình bày như số thật; gợi ý về thẩm định phát thải NÊN so sánh số thực ↔ giá trị mặc định. GIÁ TRỊ MẶC ĐỊNH áp THEO NƯỚC XUẤT XỨ: khách của "
+    "SIM là nhà máy Việt Nam → TUYỆT ĐỐI KHÔNG dùng số mặc định Trung Quốc/UAE để tính khoản tiết kiệm cho khách; khi chưa có "
+    "số VN ghi \"Khoản tiết kiệm = (mặc định VN × 1,10 − số thực) × giá CBAM; minh họa theo mặc định Trung Quốc: X EUR/t (cận "
+    "trên, chưa áp cho VN)\"."
 )
 CBAM_SCOPE_RULE = (
     "Phạm vi phát thải: với SẮT THÉP và NHÔM, CBAM hiện CHỈ tính phát thải TRỰC TIẾP (Scope 1 của quá trình sản xuất); "
@@ -3694,7 +3770,7 @@ async def _revise_scenarios_if_invalid(
 POSITIONING_DATA_AVAILABLE = False
 
 
-def _enforce_scenario_rules(sec3: Dict[str, Any]) -> None:
+def _enforce_scenario_rules(sec3: Dict[str, Any], close: Optional[float] = None) -> None:
     """Quy tắc prompt mà LLM vẫn vi phạm sau vòng tự sửa → áp cứng bằng Python (tại chỗ):
       - "đi ngang" mà chiến lược là lệnh PHÁ biên 1 chiều → direction = chiều phá, xác suất "Thấp" (bản 17/10 trung hạn
         "đi ngang" + "bán khi đóng cửa dưới 81,50", Jack đã cảnh báo nhưng vẫn lọt);
@@ -3721,6 +3797,14 @@ def _enforce_scenario_rules(sec3: Dict[str, Any]) -> None:
                 r"(\*\*Mục tiêu:?\*\*:?)[^\n]*", r"\1 chưa đủ cơ sở định lượng (theo dõi cap, MSR, rà soát ETS)",
                 str(sc["trading_strategy"]), count=1,
             )
+        if sc.get("horizon") == "dài hạn" and close:
+            # Vùng tích lũy dài hạn nằm DƯỚI giá hiện tại → chiến lược là chờ giá điều chỉnh mới mua: ghi rõ (bản chấm 17/10).
+            zone = [parse_num(x) for x in re.findall(r"\d{2,3}(?:,\d+)?", str(sc.get("price_zone") or ""))]
+            zone = [z for z in zone if 0.5 * close < z < 2 * close]
+            if len(zone) >= 2 and max(zone) < close and "chờ giá điều chỉnh" not in str(sc.get("price_zone")):
+                lo, hi = (1 - max(zone) / close) * 100, (1 - min(zone) / close) * 100
+                sc["price_zone"] = (f"{str(sc.get('price_zone')).rstrip('. ')} (thấp hơn giá đóng cửa {_vn_num(close)} "
+                                    f"{_vn_num(lo, 1)}–{_vn_num(hi, 1)}%: chờ giá điều chỉnh mới tích lũy)")
         if sc.get("probability") == "Cao" and not POSITIONING_DATA_AVAILABLE:
             logger.warning("[REPORT] Mục 3: kịch bản %s xác suất Cao nhưng chưa có dữ liệu vị thế quỹ — hạ xuống Trung bình.",
                            sc.get("horizon"))
@@ -4273,7 +4357,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
 
             if sec_key == "3" and not no_price and sec_data is not FALLBACKS["3"]:
                 sec_data = await _revise_scenarios_if_invalid(sec_data, system_prompt, user_prompt, chart_data, prices)
-                _enforce_scenario_rules(sec_data)
+                _enforce_scenario_rules(
+                    sec_data, next((p.get("close") for p in prices if str(p.get("code", "")).upper() == "EUA"), None),
+                )
             return sec_key, sec_data
 
     # "Diễn biến chính" chạy TRƯỚC để chốt chiều tác động của từng tin; Mục 2/3 phải dùng đúng chiều đó (bản 17/10:
@@ -4287,6 +4373,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     lookups = {"1": section1_index_lookup, "2": section2_index_lookup, "3": section3_index_lookup}
     SECTIONS = [
         (k, (sys_p, usr_p + (ets_policy_block if k == "3" else "") + (_biz_policy_block(dossier_lookup) if k == "biz" else "")
+             + (_exec_policy_block(dossier_lookup) if k == "1" else "")
              + (_dev_verdict_block(dev_impacts, lookups[k]) if k in lookups else "")))
         for k, (sys_p, usr_p) in SECTIONS if k != "dev"
     ]
@@ -4338,6 +4425,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 p["note"] = f"{p['note']} {llm_note}".strip() if p.get("note") else llm_note
             content["3"] = {k: v for k, v in section_data.items() if k != "instrument_notes"}
             content["3"]["ets_policy"] = _resolve_ets_policy(section_data.get("ets_policy"), section3_index_lookup, ets_dossiers)
+            _trim_section3_blocks(content["3"], section3_index_lookup)
             content["3"]["sources"] = _resolve_section3_citations(content["3"], section3_index_lookup, dossier_lookup)
             # Giả định mô hình fuel switching hiển thị cho người đọc (dưới Phân tích) để kiểm chứng giá EUA hòa vốn.
             content["3"]["fuel_model_note"] = fuel_model_note(fuel_spread_state(prices)) if not no_price else ""
@@ -4409,10 +4497,6 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             section6_news["international"] + section6_news["vietnam"], target_date, keep_urls=cited_urls,
         )
     )
-    # Bài đã trích ở mục khác chỉ hiện tiêu đề + link ở Mục 6 (bản 17/10: cùng 1 tin lặp 3–4 lần, báo cáo 17 trang).
-    for art in section6_international + section6_vietnam:
-        if isinstance(art, dict) and art.get("url") in cited_urls:
-            art["cited_elsewhere"] = True
     content["6"] = {
         "title": "Chi tiết các tin tức chính",
         "international": section6_international,

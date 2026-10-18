@@ -589,13 +589,14 @@
     },
     "baseline": "Chuẩn so sánh ({total} báo cáo đã có kết luận): báo cáo đúng {model} · dự báo ngây thơ \"luôn đi ngang\" {sideways} · \"lặp chiều {n} phiên trước\" {momentum}",
     "calibrationIncludes": "Tính trên các báo cáo {dates} — có báo cáo đã ra khỏi bảng trên vì quá khung chấm; các báo cáo còn \"Đang…\" trong bảng chưa được tính.",
-    "calibrationAll": "Tỷ lệ đúng lũy kế ({n} báo cáo đã có kết luận):",
+    "calibrationAll": "Tỷ lệ đúng lũy kế ({n} báo cáo có kết luận Đúng/Sai):",
     "windowVerdict": {
       "correct": "Đ",
       "wrong": "S",
       "direction_only": "không tính"
     },
-    "calibrationDrift": "Độ tin cậy mức {probability} đang suy giảm: gần đây {recent} so với lũy kế {overall}."
+    "calibrationDrift": "Độ tin cậy mức {probability} đang suy giảm: gần đây {recent} so với lũy kế {overall}.",
+    "calibrationMethod": "Lũy kế được chấm lại toàn bộ theo quy tắc hiện hành (từ {date}) nên có thể lệch số in ở báo cáo cũ."
   },
   "meta": {
     "title": "Carbon Analyst Dashboard",
@@ -831,13 +832,15 @@
       "item": "Hồ sơ",
       "status": "Lập trường / tiến độ",
       "nextStep": "Bước tiếp theo",
-      "impact": "Tác động lên nguồn cung",
+      "impact": "Tác động lên giá EUA",
       "impactLabel": {
-        "up": "Siết cung",
-        "down": "Nới cung",
-        "neutral": "Chưa rõ"
+        "up": "Hỗ trợ EUA",
+        "down": "Áp lực EUA",
+        "neutral": "Chưa rõ",
+        "event": "Sự kiện — chưa quyết định"
       },
-      "cbamEffect": "CBAM:"
+      "cbamEffect": "CBAM:",
+      "unverified": "Theo tóm tắt, chưa đối chiếu văn bản gốc"
     }
   },
   "shellHeader": {

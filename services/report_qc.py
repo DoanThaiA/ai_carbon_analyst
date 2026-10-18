@@ -591,12 +591,47 @@ _HEDGE_SUPPORT_RE = re.compile(
 )
 
 
+# Bản 17/10: "nâng ngưỡng vô hiệu hóa 800 triệu → kỳ vọng cung siết lại → hỗ trợ EUA" và xếp nó làm "đối trọng" — sai chiều.
+_MSR_INVALIDATION_RE = re.compile(r"(?:nâng|tăng)\s+ngưỡng\s+vô hiệu", re.IGNORECASE)
+_MSR_INTAKE_CUT_RE = re.compile(r"(?:giảm|tạm dừng|dừng|hoãn)\s+(?:việc\s+)?chuyển[^.;\n]{0,40}?MSR", re.IGNORECASE)
+_SUPPORT_CLAIM_RE = re.compile(r"siết|hỗ trợ\s+(?:giá\s+)?EUA|đối trọng|đỡ\s+(?:giá\s+)?EUA", re.IGNORECASE)
+
+
+def check_msr_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Nâng ngưỡng vô hiệu hóa MSR / giảm chuyển hạn ngạch vào MSR đều là NỚI cung — không được viết là siết/hỗ trợ EUA
+    (trừ câu nói về việc đề nghị bị BÁC)."""
+    issues = []
+    for section, path, text in _report_texts(content):
+        for line in re.split(r"(?<=[.;])\s+|\n", text):
+            if re.search(r"\bbác\b|bị từ chối|không được thông qua", line, re.IGNORECASE):
+                continue
+            m = _MSR_INVALIDATION_RE.search(line) or _MSR_INTAKE_CUT_RE.search(line)
+            if m and _SUPPORT_CLAIM_RE.search(line[m.end():] + " " + line[:m.start()]):
+                issues.append(_issue(
+                    "scenario", section, "error",
+                    f"Chiều MSR sai: \"{m.group(0)}\" là NỚI cung (hủy ít hơn / giữ thêm hạn ngạch trên thị trường), không phải "
+                    f"siết cung/hỗ trợ EUA: \"{line.strip()[:110]}\"", path,
+                ))
+                break
+    return issues
+
+
+_UPWARD_THRESHOLD_RE = re.compile(r"(?:chưa|không)\s+(?:kéo|đẩy|đưa)\s+TTF\s+(?:tới|lên|đến|chạm)\s+ngưỡng", re.IGNORECASE)
+
+
 def check_ttf_channel(content: Dict[str, Any]) -> List[Dict[str, str]]:
     state = fuel_spread_state((content.get("2") or {}).get("prices") or [])
     if not (state and state["spread"] > FUEL_NEAR_BREAKEVEN):
         return []
     issues = []
     for section, path, text in _report_texts(content):
+        up = _UPWARD_THRESHOLD_RE.search(text)
+        if up:
+            issues.append(_issue(
+                "scenario", section, "warning",
+                f"\"{up.group(0)}\" ngầm hiểu có ngưỡng chiều LÊN — than đã đứng trước khí, TTF tăng thêm không đổi thứ tự huy "
+                "động; ngưỡng duy nhất là chiều xuống.", path,
+            ))
         for line in text.split("\n"):
             m = _HEDGE_SUPPORT_RE.search(line)
             if m and re.search(r"TTF|khí|điện|DEBY", line, re.IGNORECASE):
@@ -1137,6 +1172,10 @@ def collect_source_urls(content: Dict[str, Any]) -> List[str]:
         if isinstance(it, dict) and it.get("url"):
             urls.append(it["url"])
     urls.extend(_policy_tracker_urls(content))
+    urls.extend(
+        s["source_url"] for s in (content.get("3") or {}).get("sources") or []
+        if isinstance(s, dict) and isinstance(s.get("source_url"), str)
+    )
     return urls
 
 
@@ -1524,6 +1563,22 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
         items.append(("4", f"Tín chỉ/CBAM #{i + 1}", f"4.bullets[{i}]", b))
     for i, d in enumerate(_market_drivers(sec2)):
         items.append(("3", f"Yếu tố thị trường #{i + 1}", f"2.market_drivers[{i}]", d))
+    # Mục 3 (Phân tích / Quan điểm thị trường / Cần theo dõi): mỗi dòng có "(Nguồn: X)" đối chiếu với các bài X trong
+    # content["3"].sources — bản chấm 17/10: số "30–40%, 50%, 20–30 USD/thùng" của tin Eni lặp 3 lần mà chưa kiểm chứng.
+    by_name: Dict[str, List[str]] = {}
+    for src in (content.get("3") or {}).get("sources") or []:
+        if isinstance(src, dict) and src.get("source_url"):
+            by_name.setdefault(str(src.get("source_name") or ""), []).append(src["source_url"])
+    for bi, blk in enumerate((content.get("3") or {}).get("analysis_blocks") or []):
+        if not isinstance(blk, dict):
+            continue
+        for li, line in enumerate(str(blk.get("content") or "").split("\n")):
+            names = [n.strip() for m in re.finditer(r"\(Nguồn:\s*([^)]+)\)", line) for n in m.group(1).split(";")]
+            urls = [u for n in names for u in by_name.get(n, [])]
+            if urls:
+                items.append(("3", f"{blk.get('heading') or 'Mục 3'} — dòng {li + 1}", f"3.analysis_blocks[{bi}].content",
+                              {"text": re.sub(r"\(Nguồn:[^)]*\)", " ", line), "source_urls": urls,
+                               "source_name": "; ".join(dict.fromkeys(names))}))
 
     for section, label, path, it in items:
         if not isinstance(it, dict):
@@ -1539,7 +1594,8 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
         issues += _check_remaining_math(text, section, label, f"{path}.text")
         issues += _check_remaining_vs_section6(text, content, it, section, label, f"{path}.text")
         url = it.get("source_url")
-        source_text = article_texts.get(_norm_url(url)) if url else None
+        urls = it.get("source_urls") or ([url] if url else [])
+        source_text = "\n".join(t for t in (article_texts.get(_norm_url(u)) for u in urls) if t)
         if not source_text:
             continue
         pool = _numbers_in(source_text)
@@ -1901,6 +1957,9 @@ BIZ_OFF_LENS = (
     (r"\bSAF\b|dầu ăn đã qua sử dụng|\bUCO\b", "căn cứ SAF/dầu ăn đã qua sử dụng không có đường truyền tới kinh doanh kim loại."),
     (r"Hormuz[^.]{0,80}(?:tuyến|vận chuyển|cước)[^.]{0,40}(?:Việt Nam|EU)",
      "tuyến Việt Nam–EU không đi qua Hormuz — kênh đúng là nguồn cung nhôm vùng Vịnh."),
+    # Bản chấm 17/10 lần 4: tiết kiệm cho khách VN tính bằng giá trị mặc định Trung Quốc — mặc định áp theo nước xuất xứ.
+    (r"mặc định\s+(?:của\s+)?(?:Trung Quốc|UAE|Bahrain)(?![^.]{0,80}(?:minh họa|chưa áp|cận trên))",
+     "dùng giá trị mặc định của nước khác để tính tiết kiệm cho khách VN — mặc định áp theo nước xuất xứ; ghi \"minh họa, chưa áp cho VN\"."),
 )
 
 
@@ -2163,7 +2222,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             + check_scenario_basis(content) + check_horizon_overlap(content) + check_breakout_levels(content)
             + check_legislation_claims(content) + check_fact_tags(content)
             + check_fuel_thresholds(content) + check_long_term_basis(content) + check_technical_claims(content)
-            + check_ttf_channel(content)
+            + check_ttf_channel(content) + check_msr_direction(content)
         ),
         "source": check_sources(content, known_urls, article_meta, stale_before) + check_inline_attribution(content),
         "fact": check_facts(content, article_texts),

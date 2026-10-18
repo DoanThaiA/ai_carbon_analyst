@@ -589,13 +589,14 @@
     },
     "baseline": "Benchmark ({total} concluded reports): report right {model} · naive \"always sideways\" {sideways} · \"repeat last {n} sessions' direction\" {momentum}",
     "calibrationIncludes": "Based on reports {dates} — some have left the table above (outside the grading window); reports still \"On track/Diverging\" in the table are not counted yet.",
-    "calibrationAll": "Cumulative hit rate ({n} concluded reports):",
+    "calibrationAll": "Cumulative hit rate ({n} reports graded Right/Wrong):",
     "windowVerdict": {
       "correct": "R",
       "wrong": "W",
       "direction_only": "excluded"
     },
-    "calibrationDrift": "Reliability of the {probability} level is declining: {recent} recently vs {overall} cumulative."
+    "calibrationDrift": "Reliability of the {probability} level is declining: {recent} recently vs {overall} cumulative.",
+    "calibrationMethod": "The cumulative rate is regraded in full under the current rules (since {date}), so it may differ from figures printed in older reports."
   },
   "meta": {
     "title": "Carbon Analyst Dashboard",
@@ -831,13 +832,15 @@
       "item": "File",
       "status": "Position / progress",
       "nextStep": "Next step",
-      "impact": "Supply impact",
+      "impact": "EUA price impact",
       "impactLabel": {
-        "up": "Tighter supply",
-        "down": "Looser supply",
-        "neutral": "Unclear"
+        "up": "Supports EUA",
+        "down": "Weighs on EUA",
+        "neutral": "Unclear",
+        "event": "Event — no decision yet"
       },
-      "cbamEffect": "CBAM:"
+      "cbamEffect": "CBAM:",
+      "unverified": "Per summary, not checked against the original text"
     }
   },
   "shellHeader": {

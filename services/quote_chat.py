@@ -669,10 +669,14 @@ def _format_section3(sec: dict) -> str:
         parts.append(f"Giả định mô hình fuel switching: {sec['fuel_model_note']}")
     policy = [p for p in sec.get("ets_policy") or [] if isinstance(p, dict)]
     if policy:
-        impact_vi = {"tăng": "siết cung → hỗ trợ EUA", "giảm": "nới cung → áp lực EUA", "trung lập": "chưa rõ chiều"}
+        impact_vi = {"tăng": "hỗ trợ giá EUA", "giảm": "áp lực giá EUA", "trung lập": "chưa rõ chiều"}
         parts.append("Theo dõi chính sách ETS/MSR:\n" + "\n".join(
             f"- {p.get('item')}: {p.get('status')} | Bước tiếp: {p.get('next_step')} | "
-            f"{impact_vi.get(p.get('impact'), p.get('impact'))} ({p.get('source_name')}, {p.get('source_date')}: {p.get('source_url')})"
+            f"{'sự kiện, chưa quyết định' if p.get('kind') == 'event' else impact_vi.get(p.get('impact'), p.get('impact'))}"
+            + (f" — {p['mechanism']}" if p.get("mechanism") else "")
+            + f" ({p.get('source_name')}, {p.get('source_date')}"
+            + (": " + p["source_url"] if p.get("source_url") else "")
+            + ("; chưa đối chiếu văn bản gốc" if p.get("pinned") and p.get("verified") is False else "") + ")"
             for p in policy
         ))
     if sec.get("vs_previous"):

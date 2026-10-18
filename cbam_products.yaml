@@ -13,6 +13,11 @@ default_markup:
   2027: 0.20
   2028: 0.30
 
+# Ngày đáo hạn hợp đồng EUA futures Dec theo năm (ICE Endex) — dùng để chốt câu "phiên đấu giá cuối quý so với đáo hạn"
+# trong sổ phòng hộ. Dec-26: 14/12/2026 (theo ICE; cần kiểm giờ chốt giao dịch ngày đáo hạn).
+futures_expiry:
+  2026: "2026-12-14"
+
 benchmark_source: "Benchmark CBAM theo mã CN — Quy định thực thi (EU) 2025/2620"
 benchmark_verified: false  # số dưới đây theo nguồn thứ cấp (cbamguide, landedmath) — cần đối chiếu Phụ lục của Quy định
 
@@ -29,7 +34,8 @@ products:
     benchmark: 1.370  # đã gồm tiền chất (không phải benchmark gang lỏng ETS 1,288)
 
 # Ví dụ giá trị MẶC ĐỊNH theo xuất xứ (tCO2/t, trước markup) — nguồn thứ cấp, minh họa khoảng cách số thực ↔ mặc định.
-# Giá trị mặc định cho xuất xứ Việt Nam: tra Phụ lục I Quy định thực thi (EU) 2026/1740 rồi thêm vào đây.
+# Giá trị mặc định áp THEO NƯỚC XUẤT XỨ: khách của SIM là nhà máy Việt Nam nên số Trung Quốc/UAE chỉ là MINH HỌA, không dùng
+# tính tiết kiệm cho khách. Tra Phụ lục I Quy định thực thi (EU) 2026/1740 rồi thêm dòng origin: "Việt Nam" (vn: true).
 default_examples:
   - key: aluminium_primary
     origin: "UAE/Bahrain"
