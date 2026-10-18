@@ -18,6 +18,7 @@ from services import minio_service
 from services.source_reader import read_source
 from services.claude_connect import TEAM_INTRO
 from services.report_qc import qc_report_text
+from services.report_qc_review import qc_review_text
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services import cbam_estimate, forecast_review
@@ -2217,6 +2218,21 @@ ADMIN_TOOLS = [
             "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo cần QC. Không truyền = báo cáo đang xem."}},
         },
     },
+    {
+        "name": "get_qc_review",
+        "description": (
+            "Đọc BIÊN BẢN QC mới nhất của 1 báo cáo do Jack chấm trên Claude (qua MCP, lưu ở hệ thống — chạy tự động "
+            "08:00 trên bản nháp): điểm tổng thang 10 + kết luận (Đạt / Đạt, cần sửa / Không đạt), điểm 7 tiêu chí, "
+            "danh sách lỗi (báo cáo ghi / nên sửa / căn cứ, số báo cáo lỗi lặp lại), ưu tiên cải thiện. Gọi khi admin "
+            "hỏi kết quả QC/biên bản QC/bản chấm của Jack, lý do báo cáo không được tự xuất bản, hoặc nhờ sửa theo bản "
+            "chấm. KHÁC jack_qc (Jack đối chiếu rule-based tức thời, không dùng AI). Giữ nguyên số liệu biên bản, "
+            "không tự thêm lỗi."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo. Không truyền = báo cáo đang xem."}},
+        },
+    },
 ]
 
 # Chặn lặp vô hạn nếu model cứ liên tục gọi tool. Báo cáo có tới 10 mục
@@ -2244,7 +2260,7 @@ class StatusEvent:
         self.message = message
 
 
-_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate")
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_qc_review", "get_forecast_scorecard", "get_cbam_estimate")
 
 
 async def _execute_client_tool(
@@ -2276,7 +2292,7 @@ async def _execute_client_tool(
         cache_key = (name, tool_input.get("section"), tool_input.get("days"), tool_input.get("date"))
     elif name == "review_past_forecast":
         cache_key = (name, tool_input.get("date"), tool_input.get("sessions"))
-    elif name in ("get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate"):
+    elif name in ("get_report_overview", "jack_qc", "get_qc_review", "get_forecast_scorecard", "get_cbam_estimate"):
         cache_key = (name, tool_input.get("date"))
     elif name == "get_eua_auctions":
         cache_key = (name, tool_input.get("start_date"), tool_input.get("end_date"))
@@ -2322,7 +2338,7 @@ async def _execute_client_tool(
     # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
     if raw_date:
         target_date = raw_date
-    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate"):
+    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_qc_review", "get_forecast_scorecard", "get_cbam_estimate"):
         target_date = report_date
     else:
         target_date = report_data_date(report_date)
@@ -2454,6 +2470,11 @@ async def _execute_client_tool(
             if not (allow_admin_tools or allow_jack_qc):
                 return "Tool jack_qc chỉ dành cho quản trị viên."
             result = await qc_report_text(session, target_date, published_only=not allow_admin_tools)
+        elif name == "get_qc_review":
+            # Biên bản QC chỉ admin xem — MCP gateway (role user / qc_agent) không bao giờ có cờ này.
+            if not allow_admin_tools:
+                return "Tool get_qc_review chỉ dành cho quản trị viên."
+            result = await qc_review_text(session, target_date)
         else:
             return f"Tool không xác định: {name}"
     except Exception:

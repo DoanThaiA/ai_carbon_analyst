@@ -13,10 +13,15 @@ Script chạy ngầm 24/7, tự động kích hoạt các tác vụ độc lập
                                                - intl_news_crawl: region='international', giờ New York
                                                  (≈ 19:00/20:00 → 04:00/05:00 giờ VN, tuỳ giờ mùa hè Mỹ)
                                              Cờ is_noon_crawl không còn ảnh hưởng lịch tự động.
-  3. auto_report_job        07:00 VN       — CHỈ thứ 3 → thứ 7 (cấu hình AUTO_REPORT_DAYS trong .env)
-                                      tự động sinh 1 báo cáo/ngày bằng Claude, lưu report_date = HÔM NAY
+  3. auto_report_job        07:45 VN       — CHỈ thứ 3 → thứ 7 (cấu hình AUTO_REPORT_DAYS / AUTO_REPORT_TIME)
+                                      tự động sinh 1 báo cáo NHÁP/ngày bằng Claude, lưu report_date = HÔM NAY
                                       (VN) — dữ liệu vẫn là giá/tin của hôm qua, xem
                                       services/report_generator.py::report_data_date
+     (08:00 VN — lịch Claude (routine, NGOÀI scheduler này) QC bản nháp qua MCP, token qc_agent, gửi biên bản
+      vào report_qc_reviews — services/report_qc_review.py)
+  4. auto_publish_job       08:10 VN       — cùng các ngày; tự xuất bản bản nháp hôm nay + gửi email PDF, CHỈ
+                                      chặn khi biên bản QC mới nhất kết luận Không đạt (AUTO_PUBLISH_TIME,
+                                      trống = tắt)
 
 Crawl theo giờ không nhân chi phí LLM vì mỗi đợt chỉ xử lý URL MỚI: URL đã lưu (`articles`)
 và URL đã bị loại (`crawl_seen_urls` — LLM đánh không liên quan, ngoài cửa sổ ngày, ...)
@@ -252,6 +257,54 @@ async def run_auto_report_job() -> None:
     logger.info("=" * 60)
 
 
+async def run_auto_publish_job() -> None:
+    """Tự xuất bản bản nháp HÔM NAY (VN) lúc AUTO_PUBLISH_TIME — quy tắc C2: chỉ chặn khi biên bản QC (Claude/Jack
+    qua MCP) mới nhất của báo cáo kết luận Không đạt; chưa có biên bản vẫn xuất bản. Báo cáo không ở trạng thái
+    draft (đang sinh, lỗi, đã xuất bản, chưa có) thì bỏ qua — admin vẫn duyệt tay được như cũ."""
+    from sqlalchemy import select
+    from api.deps import async_session_maker
+    from api.routers.admin_reports import _send_report_email_job
+    from db.models import Report
+    from services.report_qc_review import publish_gate
+
+    target_date = datetime.now(TZ_VN).strftime("%Y-%m-%d")
+    logger.info("=" * 60)
+    logger.info("🚀 [SCHEDULER] Auto Publish Job cho báo cáo %s...", target_date)
+    async with async_session_maker() as session:
+        report = (await session.execute(select(Report).where(Report.report_date == target_date))).scalars().first()
+        if report is None or report.status != "draft":
+            logger.info("━━━ [PUBLISH] Báo cáo %s không ở trạng thái draft (%s) — bỏ qua.",
+                        target_date, report.status if report else "chưa có")
+            logger.info("=" * 60)
+            return
+        allowed, reason = await publish_gate(session, target_date)
+        if not allowed:
+            logger.warning("━━━ [PUBLISH] KHÔNG tự xuất bản %s: %s — chờ admin xử lý.", target_date, reason)
+            logger.info("=" * 60)
+            return
+        report.status = "published"
+        report.published_at = datetime.utcnow()
+        await session.commit()
+    logger.info("✅ [PUBLISH] Đã tự xuất bản %s (%s) — gửi email PDF...", target_date, reason)
+    try:
+        await _send_report_email_job(target_date)
+    except Exception:
+        logger.exception("━━━ [PUBLISH] Lỗi gửi email PDF báo cáo %s (báo cáo vẫn đã xuất bản).", target_date)
+    logger.info("=" * 60)
+
+
+def _parse_hhmm(value: str, default: str) -> tuple:
+    raw = (value or default).strip()
+    try:
+        hour, minute = (int(x) for x in raw.split(":", 1))
+        if 0 <= hour < 24 and 0 <= minute < 60:
+            return hour, minute
+    except ValueError:
+        pass
+    logger.warning("Giờ '%s' không hợp lệ (cần HH:MM) — dùng %s.", raw, default)
+    return tuple(int(x) for x in default.split(":"))
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
@@ -287,22 +340,40 @@ async def main() -> None:
     # Chỉ tự động sinh báo cáo vào các ngày cấu hình ở AUTO_REPORT_DAYS (mặc định
     # thứ 3 → thứ 7, xem core/config.py::Settings.auto_report_days).
     from core.config import Settings
-    auto_report_days = Settings.from_env().auto_report_days
+    cfg = Settings.from_env()
+    auto_report_days = cfg.auto_report_days
+    report_h, report_m = _parse_hhmm(cfg.auto_report_time, "07:45")
     scheduler.add_job(
         run_auto_report_job,
-        trigger=CronTrigger(day_of_week=auto_report_days, hour=7, minute=0, timezone="Asia/Ho_Chi_Minh"),
+        trigger=CronTrigger(day_of_week=auto_report_days, hour=report_h, minute=report_m, timezone="Asia/Ho_Chi_Minh"),
         id="auto_report",
         name="Auto Report Generation",
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    publish_hm = _parse_hhmm(cfg.auto_publish_time, "08:10") if cfg.auto_publish_time else None
+    if publish_hm:
+        scheduler.add_job(
+            run_auto_publish_job,
+            trigger=CronTrigger(day_of_week=auto_report_days, hour=publish_hm[0], minute=publish_hm[1],
+                                timezone="Asia/Ho_Chi_Minh"),
+            id="auto_publish",
+            name="Auto Report Publish",
+            replace_existing=True,
+            # Trễ quá 30 phút (server dừng) thì bỏ lượt — admin duyệt tay, tránh xuất bản giữa trưa bất ngờ.
+            misfire_grace_time=1800,
+        )
 
     scheduler.start()
     logger.info("📅 Scheduler đã khởi động:")
     logger.info("   - Giá:      06:00 SA (giờ VN) mỗi ngày")
     for _, _, hours, tz, label in NEWS_CRAWL_SCHEDULES:
         logger.info("   - Tin tức:  đầu giờ %s (%s, %s)", hours, label, tz)
-    logger.info("   - Báo cáo:  07:00 SA (giờ VN), chỉ các ngày '%s' (AUTO_REPORT_DAYS)", auto_report_days)
+    logger.info("   - Báo cáo nháp: %02d:%02d (giờ VN), chỉ các ngày '%s' (AUTO_REPORT_DAYS)", report_h, report_m, auto_report_days)
+    if publish_hm:
+        logger.info("   - Tự xuất bản: %02d:%02d (giờ VN), chặn khi biên bản QC Không đạt", *publish_hm)
+    else:
+        logger.info("   - Tự xuất bản: TẮT (AUTO_PUBLISH_TIME trống)")
 
     if run_now:
         logger.info("⚡ Chế độ --now: chạy ngay để test (Prices → News toàn bộ nguồn → Report)...")
@@ -313,7 +384,7 @@ async def main() -> None:
         return
 
     # In thông tin lần chạy tiếp theo của từng job
-    for job_id in ("daily_prices", *(j[0] for j in NEWS_CRAWL_SCHEDULES), "auto_report"):
+    for job_id in ("daily_prices", *(j[0] for j in NEWS_CRAWL_SCHEDULES), "auto_report", "auto_publish"):
         job = scheduler.get_job(job_id)
         if job and job.next_run_time:
             logger.info("⏰ [%s] Lần chạy tiếp theo: %s", job_id, job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z"))

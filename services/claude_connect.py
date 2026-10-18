@@ -14,13 +14,17 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Deque, Dict, List, Optional
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import ApiToken, ClaudeHandoff, User
 
 TOKEN_PREFIX = "cat_"
 TOKEN_TTL_DAYS = 90
+# Token cho lịch Claude QC 08:00 (scope 'qc_agent', admin tạo ở trang QC) — hạn dài hơn vì gắn vào routine chạy tự động.
+QC_AGENT_TOKEN_TTL_DAYS = 180
+MAX_ACTIVE_QC_AGENT_TOKENS = 3
+TOKEN_SCOPES = ("user", "qc_agent")
 MAX_ACTIVE_TOKENS_PER_USER = 5
 HANDOFF_TTL_HOURS = 24
 # Chặn spam handoff (mỗi cái là 1 dòng DB) — đủ rộng cho dùng thật, chỉ chặn vòng lặp/lạm dụng.
@@ -55,15 +59,22 @@ def generate_handoff_id() -> str:
     return secrets.token_urlsafe(9)  # 12 ký tự, ngắn để dán vào prompt; bảo vệ thật sự là check chủ sở hữu
 
 
-async def create_api_token(session: AsyncSession, *, user_email: str, name: str) -> tuple[ApiToken, str]:
-    """Trả về (bản ghi, token gốc) — token gốc chỉ có ở đây, không lấy lại được."""
+async def create_api_token(
+    session: AsyncSession, *, user_email: str, name: str, scope: str = "user"
+) -> tuple[ApiToken, str]:
+    """Trả về (bản ghi, token gốc) — token gốc chỉ có ở đây, không lấy lại được.
+    `scope='qc_agent'`: `user_email` = tên đăng nhập admin tạo token (không cần có trong bảng users)."""
+    if scope not in TOKEN_SCOPES:
+        raise ValueError(f"scope không hợp lệ: {scope}")
     raw = generate_raw_token()
+    ttl = QC_AGENT_TOKEN_TTL_DAYS if scope == "qc_agent" else TOKEN_TTL_DAYS
     token = ApiToken(
         user_email=user_email,
         name=name.strip(),
+        scope=scope,
         token_hash=hash_token(raw),
         token_prefix=raw[: len(TOKEN_PREFIX) + 4],
-        expires_at=_now() + timedelta(days=TOKEN_TTL_DAYS),
+        expires_at=_now() + timedelta(days=ttl),
     )
     session.add(token)
     await session.commit()
@@ -71,22 +82,39 @@ async def create_api_token(session: AsyncSession, *, user_email: str, name: str)
     return token, raw
 
 
-async def count_active_tokens(session: AsyncSession, *, user_email: str) -> int:
+async def count_active_tokens(session: AsyncSession, *, user_email: Optional[str], scope: str = "user") -> int:
+    """scope 'user': token còn hiệu lực của 1 user. scope 'qc_agent': mọi token qc_agent còn hiệu lực."""
     stmt = select(func.count()).select_from(ApiToken).where(
-        ApiToken.user_email == user_email,
+        ApiToken.scope == scope,
         ApiToken.revoked_at.is_(None),
         ApiToken.expires_at > _now(),
     )
+    if scope == "user":
+        stmt = stmt.where(ApiToken.user_email == user_email)
     return (await session.execute(stmt)).scalar_one()
 
 
 async def list_api_tokens(session: AsyncSession, *, user_email: str) -> List[ApiToken]:
-    stmt = select(ApiToken).where(ApiToken.user_email == user_email).order_by(ApiToken.created_at.desc())
+    stmt = (
+        select(ApiToken).where(ApiToken.user_email == user_email, ApiToken.scope == "user")
+        .order_by(ApiToken.created_at.desc())
+    )
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def revoke_api_token(session: AsyncSession, *, token_id: int, user_email: str) -> bool:
-    stmt = select(ApiToken).where(ApiToken.id == token_id, ApiToken.user_email == user_email)
+async def list_qc_agent_tokens(session: AsyncSession) -> List[ApiToken]:
+    """Mọi token qc_agent (admin nào tạo cũng thấy — chỉ trang admin gọi)."""
+    stmt = select(ApiToken).where(ApiToken.scope == "qc_agent").order_by(ApiToken.created_at.desc())
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def revoke_api_token(
+    session: AsyncSession, *, token_id: int, user_email: Optional[str] = None, scope: str = "user"
+) -> bool:
+    """scope 'user': chỉ chủ token thu hồi được. scope 'qc_agent': admin bất kỳ (không lọc user_email)."""
+    stmt = select(ApiToken).where(ApiToken.id == token_id, ApiToken.scope == scope)
+    if scope == "user":
+        stmt = stmt.where(ApiToken.user_email == user_email)
     token = (await session.execute(stmt)).scalar_one_or_none()
     if token is None:
         return False
@@ -98,19 +126,20 @@ async def revoke_api_token(session: AsyncSession, *, token_id: int, user_email: 
 
 async def authenticate_token(session: AsyncSession, raw_token: str) -> Optional[ApiToken]:
     """Token hợp lệ = tồn tại, chưa thu hồi, chưa hết hạn VÀ user vẫn is_active
-    (admin tắt user là mất quyền ngay, không cần đi thu hồi từng token)."""
+    (admin tắt user là mất quyền ngay, không cần đi thu hồi từng token). Token `qc_agent` không gắn với bảng
+    users (admin tạo cho lịch Claude QC) nên chỉ cần còn hạn + chưa thu hồi."""
     if not raw_token.startswith(TOKEN_PREFIX):
         return None
     now = _now()
     # 1 truy vấn cho cả token lẫn trạng thái user (mỗi tool call đều đi qua đây).
     stmt = (
         select(ApiToken)
-        .join(User, User.email == ApiToken.user_email)
+        .outerjoin(User, User.email == ApiToken.user_email)
         .where(
             ApiToken.token_hash == hash_token(raw_token),
             ApiToken.revoked_at.is_(None),
             ApiToken.expires_at > now,
-            User.is_active.is_(True),
+            or_(ApiToken.scope == "qc_agent", User.is_active.is_(True)),
         )
     )
     token = (await session.execute(stmt)).scalar_one_or_none()

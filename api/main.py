@@ -19,6 +19,7 @@ setup_logging()
 from api.deps import get_current_user, get_db, settings
 from api.routers import (
     admin_chat_reviews,
+    admin_qc_reviews,
     admin_eua_framework,
     admin_feedback,
     admin_news_sources,
@@ -83,6 +84,7 @@ app.include_router(admin_reports.router)
 app.include_router(admin_prices.router)
 app.include_router(admin_stats.router)
 app.include_router(admin_chat_reviews.router)
+app.include_router(admin_qc_reviews.router)
 app.include_router(admin_eua_framework.router)
 app.include_router(admin_quote_chat_examples.router)
 app.include_router(quote_chat.router)

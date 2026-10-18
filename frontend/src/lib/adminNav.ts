@@ -1,6 +1,6 @@
 import {
   FileText, Radar, Newspaper, Users, MessageSquareText, MessagesSquare, BrainCircuit, Sparkles,
-  MessageSquareWarning, ClipboardList, BarChart3, LineChart,
+  MessageSquareWarning, ClipboardList, BarChart3, LineChart, ClipboardCheck,
 } from "lucide-react";
 
 // Điều hướng admin — dùng chung giữa sidebar desktop (admin/layout.tsx) và menu
@@ -16,7 +16,11 @@ export const ADMIN_NAV_GROUPS: { id: string; labelKey: string; items: AdminNavIt
   {
     id: "daily",
     labelKey: "group_daily",
-    items: [{ href: "/admin/reports", labelKey: "reports", icon: FileText }],
+    items: [
+      { href: "/admin/reports", labelKey: "reports", icon: FileText },
+      // Biên bản QC (Claude/Jack qua MCP) — tổng hợp mọi báo cáo, xem services/report_qc_review.py.
+      { href: "/admin/qc-results", labelKey: "qcResults", icon: ClipboardCheck },
+    ],
   },
   {
     id: "stats",

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download, Undo2 } from "lucide-react";
+import { ArrowLeft, Send, AlertCircle, FileText, CheckCircle2, Trash2, Edit2, X, Save, Loader2, RefreshCw, Download, Undo2, ClipboardCheck } from "lucide-react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import clsx from "clsx";
@@ -13,6 +13,7 @@ import { ReportEditor } from "@/components/ReportEditor";
 import { QuoteChat } from "@/components/QuoteChat";
 import { EnglishFallbackNotice } from "@/components/EnglishFallbackNotice";
 import { localizeReport, removeBizFromContentEn } from "@/lib/reportLocale";
+import { QcReviewPanel } from "@/components/QcReview";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -34,6 +35,8 @@ export default function AdminReportReview() {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  // Panel "Kết quả QC" (biên bản Claude/Jack qua MCP) — chỉ có khi báo cáo CHƯA xuất bản.
+  const [showQc, setShowQc] = useState(false);
 
   const fetchReport = useCallback(async () => {
     try {
@@ -78,6 +81,7 @@ export default function AdminReportReview() {
       await api.post(`/api/admin/reports/${date}/publish`);
       setReport(prev => prev ? { ...prev, status: "published" } : null);
       setIsEditing(false);
+      setShowQc(false);
     } catch (err: any) {
       alert(err.response?.data?.detail || t("publishError"));
     } finally {
@@ -237,6 +241,19 @@ export default function AdminReportReview() {
             </button>
           )}
 
+          {report.status === 'draft' && (
+            <button
+              onClick={() => setShowQc(v => !v)}
+              className={clsx(
+                "flex items-center gap-1.5 border px-4 py-1.5 rounded-full font-semibold text-sm transition-colors duration-500 ease-in-out",
+                showQc ? "bg-tint border-primary/30 text-primary-dark" : "bg-surface hover:bg-surface-alt border-border text-foreground"
+              )}
+            >
+              <ClipboardCheck size={14} />
+              {t("qcResult")}
+            </button>
+          )}
+
           {report.status === 'draft' && !isEditing && (
             <button
               onClick={handleEditClick}
@@ -318,6 +335,7 @@ export default function AdminReportReview() {
           );
         })()
       )}
+      {showQc && report.status === 'draft' && <QcReviewPanel date={date} onClose={() => setShowQc(false)} />}
     </div>
   );
 }

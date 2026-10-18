@@ -308,3 +308,116 @@ export interface HandoffCreated {
   prompt: string;
   expires_at: string;
 }
+
+// --- Biên bản QC báo cáo (Claude/Jack gửi qua MCP) — backend api/routers/admin_qc_reviews.py, CHỈ admin ---
+
+export type QcVerdict = "pass" | "pass_with_fixes" | "fail";
+export type QcSeverity = "critical" | "major" | "minor";
+export type QcFindingStatus = "open" | "fixed" | "wont_fix";
+
+export interface QcCriterionDef {
+  key: string;
+  label: string;
+  weight: number;
+  guide: string;
+}
+
+export interface QcCriterionScore {
+  key: string;
+  label: string;
+  weight: number;
+  score: number;
+  comment: string;
+}
+
+export interface QcFinding {
+  id: number;
+  position: number;
+  severity: QcSeverity;
+  criterion: string;
+  criterion_label: string;
+  section: string | null;
+  location: string | null;
+  field_path: string | null;
+  title: string;
+  current_text: string | null;
+  expected_text: string | null;
+  evidence: string | null;
+  verification: "verified" | "partially_verified" | "unverified";
+  source_refs: { label: string; url: string }[];
+  repeat_count: number;
+  status: QcFindingStatus;
+  status_note: string | null;
+  updated_at: string | null;
+}
+
+export interface QcReviewSummary {
+  id: number;
+  report_date: string;
+  run_no: number;
+  source: string;
+  reviewer: string | null;
+  report_status: string;
+  verdict: QcVerdict;
+  claude_verdict: QcVerdict | null;
+  overall_score: number;
+  criteria: QcCriterionScore[];
+  critical_count: number;
+  major_count: number;
+  minor_count: number;
+  jack_rule_score: number | null;
+  jack_rule_issue_count: number | null;
+  summary: string;
+  strengths: string[];
+  priorities: { rank: number; text: string; expected_gain: number | null }[];
+  created_at: string | null;
+  is_stale: boolean;
+  current_report_status?: string | null;
+}
+
+export interface QcReviewDetail extends QcReviewSummary {
+  body_markdown: string | null;
+  findings: QcFinding[];
+}
+
+export interface QcReportReviews {
+  report_date: string;
+  report_status: string;
+  latest: QcReviewDetail | null;
+  history: QcReviewSummary[];
+  auto_publish: { time: string | null; allowed: boolean; reason: string };
+  criteria: QcCriterionDef[];
+}
+
+export interface QcReviewListResponse {
+  total: number;
+  items: QcReviewSummary[];
+  criteria: QcCriterionDef[];
+}
+
+export interface QcReviewStats {
+  reports: number;
+  by_verdict: Record<QcVerdict, number>;
+  avg_score: number | null;
+  trend: { report_date: string; score: number; verdict: QcVerdict }[];
+  criteria_avg: { key: string; label: string; weight: number; avg: number | null }[];
+  recurring: { fingerprint: string; reports: number; title: string; criterion: string; section: string | null }[];
+}
+
+export interface QcAgentToken {
+  id: number;
+  name: string;
+  token_prefix: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface QcAgentTokensResponse {
+  items: QcAgentToken[];
+  routine_prompt: string;
+  auto_report_time: string;
+  auto_publish_time: string | null;
+}

@@ -161,7 +161,7 @@ so a connection isn't held idle while awaiting the Claude API.
 **Lịch crawl** (`scheduler.py`): giá 06:00 VN; tin tức đầu mỗi giờ 08:00–17:00 MỌI ngày (nhóm `vietnam` thêm đợt 06:00 VN trước báo cáo 07:00), tách
 theo `news_crawl_sources.region` (`NEWS_CRAWL_SCHEDULES`): `vietnam` theo giờ VN, `international`
 theo giờ New York (`America/New_York`, tự theo giờ mùa hè Mỹ); mỗi job `max_instances=1` +
-`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report 07:00 VN. `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
+`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report NHÁP 07:45 VN (`AUTO_REPORT_TIME`), tự xuất bản 08:10 (`AUTO_PUBLISH_TIME`, xem "Biên bản QC Claude"). `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
 Để crawl hàng giờ không gọi LLM lặp lại, URL đã xử lý nhưng KHÔNG lưu thành article
 (irrelevant, ngoài cửa sổ ngày, trùng hash, extract/classify lỗi, link Bloomberg gốc) được
 ghi vào bảng `crawl_seen_urls` (`pipeline/crawl_pipeline.py::process_source` →
@@ -244,6 +244,21 @@ hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cá
 `parse_signal_levels` (nằm ở `services/strategy_levels.py`, `report_qc` re-export) là bản port 1-1 parser thẻ KHUYẾN NGHỊ VỊ THẾ (trước là TÍN HIỆU HÔM NAY) trong `ReportDocument.tsx` — sửa bên nào
 phải sửa cả bên kia. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
+
+**Biên bản QC Claude (MCP) + tự xuất bản** (`services/report_qc_review.py`, bảng `report_qc_reviews` + `report_qc_findings`,
+migration `a9e4c7b2d5f1`): 07:45 sinh nháp → 08:00 lịch Claude (routine NGOÀI repo, prompt `QC_ROUTINE_PROMPT` / MCP prompt
+`jack_qc_review`) dùng token `api_tokens.scope='qc_agent'` (admin tạo ở `/admin/qc-results`, không gắn bảng `users`, hạn
+`QC_AGENT_TOKEN_TTL_DAYS`) gọi `get_qc_assignment` (phiếu giao + `assignment_id` = `content_hash(content)` + Jack rule-based +
+lỗi biên bản trước; `part=` đọc JSON bản nháp) rồi `submit_qc_review` → 08:10 `scheduler.run_auto_publish_job` xuất bản +
+gửi email, CHỈ chặn khi biên bản mới nhất `verdict='fail'` (`publish_gate`, quy tắc C2: chưa có biên bản vẫn xuất bản; admin
+duyệt tay không bị chặn). Server KHÔNG tin số Claude: `overall_score` = Σ điểm × trọng số `QC_CRITERIA` (7 tiêu chí, tổng 100),
+`decide_verdict` chỉ nghiêm hơn Claude (điểm < `FAIL_SCORE` hoặc critical đã kiểm chứng → fail); `assignment_id` lệch nội dung
+hiện tại → từ chối; lỗi định dạng trả văn bản liệt kê đủ để Claude gửi lại. `fingerprint` lỗi → `repeat_count` trên
+`REPEAT_LOOKBACK_REPORTS` báo cáo trước. Token qc_agent: tool QC chỉ hiện với scope này (gateway `tools_for_token`, MCP HTTP
+list_tools theo token), tool neo ngày được đọc bản nháp, jack_qc chạy trên nháp; đây là đường GHI duy nhất của gateway. Chỉ
+admin xem: `api/routers/admin_qc_reviews.py`, tool Jenny `get_qc_review` (ADMIN_TOOLS). Frontend: nút "Kết quả QC" + panel
+`QcReviewPanel` ở `/admin/reports/[date]` CHỈ khi status `draft`; trang tổng hợp `/admin/qc-results` (+ `[id]`, quản lý token,
+prompt routine). Test: `tests/test_report_qc_review.py`.
 
 **Tự sửa số học/trình bày** (`services/report_consistency.py`, hàm thuần): cuối `generate_report_content` chạy
 `apply_consistency_fixes` trên toàn bộ văn xuôi (bỏ qua `SKIP_KEYS`): tính lại nhãn "X (±p% so với đóng cửa Y)" (và
