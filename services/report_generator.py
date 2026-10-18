@@ -20,6 +20,7 @@ from services import biz_memory
 from services import cbam_estimate
 from services import forecast_review
 from services.report_consistency import (
+    merge_adjacent_sources,
     GAP_MIN_ATR, apply_consistency_fixes, atr_true_range, derived_target_issues, describe_range_position, eua_streak,
     parse_num, session_signals, streak_momentum,
 )
@@ -1342,7 +1343,8 @@ def _resolve_section3_citations(
             return f" (Nguồn: {art['source']})"
 
         out = _CITE_RE.sub(_one, text)
-        out = re.sub(r"(\(Nguồn: [^)]+\))(\s*\(Nguồn: ([^)]+)\))+", lambda m: m.group(0).replace(") (Nguồn: ", "; ").replace(")(Nguồn: ", "; "), out)
+        # Gộp "(Nguồn: A) (Nguồn: B)" — đếm ngoặc cân bằng vì tên hồ sơ có thể chứa ngoặc ("COM(2026) 616").
+        out = merge_adjacent_sources(out)
         return out, cited
 
     for blk in sec3.get("analysis_blocks") or []:

@@ -117,3 +117,50 @@ def test_routine_prompt_mentions_deadline_and_flow():
     schema = qr.submission_schema_text()
     for c in qr.QC_CRITERIA:
         assert f"`{c['key']}`" in schema
+
+
+def test_policy_tracker_sources_not_stale_in_section9():
+    from datetime import datetime, timezone
+    from services import report_qc
+    old = "https://climate.ec.europa.eu/auction-calendar"
+    content = {"3": {"sources": [{"source_name": "EC", "source_url": old}]},
+               "9": {"items": [{"url": old, "title": "x", "source": "climate.ec.europa.eu"}]}}
+    meta = {report_qc._norm_url(old): {"source": "climate.ec.europa.eu",
+                                        "published_at": datetime(2026, 10, 1, tzinfo=timezone.utc)}}
+    window_start = datetime(2026, 10, 17, tzinfo=timezone.utc)
+    stale = report_qc.check_sources(content, [old], meta, window_start, datetime(2026, 9, 26, tzinfo=timezone.utc))
+    assert not [i for i in stale if "tin CŨ" in i["message"]]
+    # Cũ hơn cả cửa sổ quét chính sách → vẫn là tin cũ.
+    meta[report_qc._norm_url(old)]["published_at"] = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    stale = report_qc.check_sources(content, [old], meta, window_start, datetime(2026, 9, 26, tzinfo=timezone.utc))
+    assert [i for i in stale if "tin CŨ" in i["message"]]
+    assert report_qc._norm_url(old) in report_qc.policy_window_urls(content)
+
+
+# Bản 18/10: tên hồ sơ có ngoặc "COM(2026) 616" làm lặp "(Nguồn: …) (Nguồn: …)" và Jack báo nhầm số 616.
+WATCH4 = ("4. Tiến độ đàm phán COM(2026) 616 tại Hội đồng và Nghị viện (kéo dài phân bổ miễn phí tới 2038, thêm 6 tỷ EUR "
+          "phân bổ miễn phí 2026–2030). (Nguồn: Ủy ban châu Âu, COM(2026) 616, 07/2026) (Nguồn: argusmedia.com)")
+
+
+def test_inline_sources_balanced_parentheses():
+    from services import report_consistency as rc
+    assert rc.inline_source_names(WATCH4) == ["Ủy ban châu Âu, COM(2026) 616, 07/2026", "argusmedia.com"]
+    merged = rc.merge_adjacent_sources(WATCH4)
+    assert merged.endswith("(Nguồn: Ủy ban châu Âu, COM(2026) 616, 07/2026; argusmedia.com)")
+    assert merged.count("(Nguồn:") == 1
+    stripped = rc.strip_inline_sources(WATCH4)
+    assert "Nguồn" not in stripped and "07/2026)" not in stripped
+    # Không liền nhau thì không gộp; cụm không đóng ngoặc bị bỏ qua.
+    assert rc.merge_adjacent_sources("a (Nguồn: X) b (Nguồn: Y)") == "a (Nguồn: X) b (Nguồn: Y)"
+    assert rc.inline_source_names("a (Nguồn: X") == []
+
+
+def test_jack_no_false_alarm_on_legal_doc_id():
+    from services import report_qc
+    argus = "https://www.argusmedia.com/x"
+    content = {"3": {"sources": [{"source_name": "argusmedia.com", "source_url": argus}],
+                     "analysis_blocks": [{"heading": "Cần theo dõi", "content": WATCH4}]}}
+    texts = {report_qc._norm_url(argus): "Commission warns against ETS price controls under Article 29a."}
+    msgs = [i["message"] for i in report_qc.check_facts(content, texts)]
+    assert not [m for m in msgs if "616" in m]
+    assert not [m for m in msgs if "COM(2026;" in m]

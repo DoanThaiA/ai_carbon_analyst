@@ -32,13 +32,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import Article, BizSuggestion, Instrument, Price, Report
 from services import biz_memory
 from services.strategy_levels import is_breakout_entry
-from services.report_consistency import atr_true_range, consistency_issues, session_signals, technical_claim_issues
+from services.report_consistency import (
+    LEGAL_DOC_ID_RE,
+    atr_true_range,
+    consistency_issues,
+    inline_source_names,
+    inline_source_spans,
+    session_signals,
+    strip_inline_sources,
+    technical_claim_issues,
+)
 from services.report_generator import (
     CBAM_CODE,
     SECTION_TOPICS,
     TOPIC_DISPLAY_LABELS,
     CALENDAR_WINDOW_DAYS,
     STALE_NEWS_MAX_AGE_DAYS,
+    ETS_POLICY_LOOKBACK_DAYS,
+    _load_ets_dossiers,
     FUEL_NEAR_BREAKEVEN,
     _compute_recurring_calendar_events,
     fuel_spread_state,
@@ -1188,19 +1199,44 @@ def _policy_tracker_urls(content: Dict[str, Any]) -> List[str]:
     ]
 
 
+def _section3_source_urls(content: Dict[str, Any]) -> List[str]:
+    """Nguồn Mục 3 đã trích ([N]/[HSk], content["3"].sources → Mục 9). Tin trong ngày của Mục 3 luôn nằm trong khung
+    tin, nên bài CŨ hơn khung ở đây chỉ có thể đến từ khối theo dõi chính sách ETS (quét ETS_POLICY_LOOKBACK_DAYS ngày)
+    hoặc hồ sơ ets_policy_dossiers.yaml — chỉ coi là "tin cũ" khi cũ hơn cả cửa sổ quét đó."""
+    return [
+        it["source_url"] for it in (content.get("3") or {}).get("sources") or []
+        if isinstance(it, dict) and isinstance(it.get("source_url"), str)
+    ]
+
+
+def _dossier_urls() -> Set[str]:
+    try:
+        return {_norm_url(d["source_url"]) for d in _load_ets_dossiers() if d.get("source_url")}
+    except Exception:  # yaml lỗi không được làm hỏng QC
+        return set()
+
+
+def policy_window_urls(content: Dict[str, Any]) -> Set[str]:
+    """URL hợp lệ dù ngoài khung tin trong ngày: bảng chính sách ETS, nguồn Mục 3 (khối chính sách), hồ sơ yaml."""
+    return {_norm_url(u) for u in _policy_tracker_urls(content) + _section3_source_urls(content)} | _dossier_urls()
+
+
 def check_sources(
     content: Dict[str, Any],
     known_urls: Iterable[str],
     article_meta: Optional[Dict[str, Dict[str, Any]]] = None,
     stale_before: Optional[datetime] = None,
+    policy_stale_before: Optional[datetime] = None,
 ) -> List[Dict[str, str]]:
     """`known_urls`: những URL trong `collect_source_urls(content)` CÓ tồn tại ở bảng articles.
     `article_meta`: _norm_url(url) -> {"source", "published_at"} của các bài đó — kiểm thêm tin cũ
-    (đăng trước `stale_before`) và nhãn nguồn khác nhà xuất bản thật của URL."""
+    (đăng trước `stale_before`) và nhãn nguồn khác nhà xuất bản thật của URL. Nguồn Mục 3 (khối chính sách ETS)
+    chỉ là tin cũ khi đăng trước `policy_stale_before` (đầu khung tin − ETS_POLICY_LOOKBACK_DAYS; None = miễn)."""
     known = {_norm_url(u) for u in known_urls}
     meta_by_url = article_meta or {}
     issues: List[Dict[str, str]] = []
-    policy_urls = {_norm_url(u) for u in _policy_tracker_urls(content)}
+    policy_urls = {_norm_url(u) for u in _policy_tracker_urls(content)} | _dossier_urls()
+    section3_urls = {_norm_url(u) for u in _section3_source_urls(content)} - policy_urls
 
     def _check_url(url: Optional[str], section: str, label: str, path: str, shown_source: Any = None) -> None:
         if not url:
@@ -1212,10 +1248,12 @@ def check_sources(
         if not meta:
             return
         published = meta.get("published_at")
-        if stale_before and isinstance(published, datetime) and _norm_url(url) not in policy_urls:
+        norm = _norm_url(url)
+        threshold = policy_stale_before if norm in section3_urls else stale_before
+        if threshold and isinstance(published, datetime) and norm not in policy_urls:
             if published.tzinfo is None:
                 published = published.replace(tzinfo=timezone.utc)
-            if published < stale_before:
+            if published < threshold:
                 issues.append(_issue(
                     "source", section, "error",
                     f"{label}: tin CŨ — đăng {published.strftime('%d/%m/%Y')}, không phải tin trong khung báo cáo ({url}).",
@@ -1569,15 +1607,19 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
     for src in (content.get("3") or {}).get("sources") or []:
         if isinstance(src, dict) and src.get("source_url"):
             by_name.setdefault(str(src.get("source_name") or ""), []).append(src["source_url"])
+    # Hồ sơ chính sách (ets_policy_dossiers.yaml, trích "[HSk]" → "(Nguồn: <tên>, <ngày>)") không phải bài crawl — số
+    # trong câu trích hồ sơ được đối chiếu với chính nội dung hồ sơ.
+    dossier_text_by_name = _dossier_texts_by_name()
     for bi, blk in enumerate((content.get("3") or {}).get("analysis_blocks") or []):
         if not isinstance(blk, dict):
             continue
         for li, line in enumerate(str(blk.get("content") or "").split("\n")):
-            names = [n.strip() for m in re.finditer(r"\(Nguồn:\s*([^)]+)\)", line) for n in m.group(1).split(";")]
+            names = inline_source_names(line)
             urls = [u for n in names for u in by_name.get(n, [])]
+            extra = "\n".join(t for t in (_dossier_text_for(n, dossier_text_by_name) for n in names) if t)
             if urls:
                 items.append(("3", f"{blk.get('heading') or 'Mục 3'} — dòng {li + 1}", f"3.analysis_blocks[{bi}].content",
-                              {"text": re.sub(r"\(Nguồn:[^)]*\)", " ", line), "source_urls": urls,
+                              {"text": strip_inline_sources(line), "source_urls": urls, "extra_source_text": extra,
                                "source_name": "; ".join(dict.fromkeys(names))}))
 
     for section, label, path, it in items:
@@ -1598,8 +1640,9 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
         source_text = "\n".join(t for t in (article_texts.get(_norm_url(u)) for u in urls) if t)
         if not source_text:
             continue
-        pool = _numbers_in(source_text)
-        body = _DATE_TOKEN_RE.sub(" ", re.sub(r"\*\*[^*]*\*\*", " ", text))  # bỏ ngày + nhãn in đậm đầu bullet
+        pool = _numbers_in(source_text + "\n" + str(it.get("extra_source_text") or ""))
+        # Bỏ ngày, nhãn in đậm đầu bullet và mã văn bản pháp lý ("COM(2026) 616", "Điều 29a" — định danh, không phải số liệu).
+        body = LEGAL_DOC_ID_RE.sub(" ", _DATE_TOKEN_RE.sub(" ", re.sub(r"\*\*[^*]*\*\*", " ", text)))
         missing = [
             raw for raw in _TEXT_NUM_RE.findall(body)
             if _checkable_number(raw) and not _supported(raw, pool) and not _supported(raw, report_pool)
@@ -1678,7 +1721,25 @@ _AGENCY_RE = re.compile(
     re.IGNORECASE,
 )
 STATE_MEDIA = ("tass", "ria", "ria novosti", "xinhua", "tân hoa xã")
-_INLINE_SOURCE_RE = re.compile(r"\(Nguồn:\s*([^)]+)\)")
+
+
+def _dossier_texts_by_name() -> Dict[str, str]:
+    """Tên nguồn hiển thị của hồ sơ chính sách → toàn bộ chữ của hồ sơ (để đối chiếu số trong câu trích hồ sơ)."""
+    try:
+        dossiers = _load_ets_dossiers()
+    except Exception:  # yaml lỗi không được làm hỏng QC
+        return {}
+    out: Dict[str, str] = {}
+    for d in dossiers:
+        name = str(d.get("source_name") or "").strip()
+        if name:
+            out[name] = (out.get(name, "") + "\n" + " | ".join(str(v) for v in d.values() if isinstance(v, (str, int, float)))).strip()
+    return out
+
+
+def _dossier_text_for(shown_name: str, texts: Dict[str, str]) -> str:
+    """Tên hiển thị có thể kèm ngày ("S&P Global, 05/10/2026") — khớp theo tiền tố tên hồ sơ."""
+    return next((t for n, t in texts.items() if shown_name == n or shown_name.startswith(n + ",")), "")
 
 
 def check_inline_attribution(content: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -1694,8 +1755,8 @@ def check_inline_attribution(content: Dict[str, Any]) -> List[Dict[str, str]]:
     for i, blk in enumerate((content.get("3") or {}).get("analysis_blocks") or []):
         if isinstance(blk, dict):
             for line in str(blk.get("content") or "").split("\n"):
-                src = _INLINE_SOURCE_RE.search(line)
-                items.append(("3", f"3.analysis_blocks[{i}].content", line, src.group(1) if src else ""))
+                spans = inline_source_spans(line)
+                items.append(("3", f"3.analysis_blocks[{i}].content", line, spans[0][2] if spans else ""))
     issues = []
     for section, path, text, label in items:
         for m in _AGENCY_RE.finditer(text):
@@ -2075,12 +2136,13 @@ def check_news(content: Dict[str, Any], articles: List[Dict[str, Any]]) -> tuple
         if n_used and not stats[f"sec6_{region}"]:
             issues.append(_issue("news", "6", "warning", f"Có {n_used} bài {label} trong ngày nhưng Mục Tin tức chi tiết phần {label} trống.", f"6.{region}"))
 
+    policy_ok = policy_window_urls(content)
     for url, section, label, path in cited:
         if _norm_url(url) not in window_urls:
             issues.append(_issue("news", section, "info", f"{label}: nguồn không thuộc khung tin của báo cáo (có thể là tin cũ hoặc nhập tay).", path))
     for i, it in enumerate((content.get("9") or {}).get("items") or []):
         url = it.get("url") if isinstance(it, dict) else None
-        if url and _norm_url(url) not in window_urls:
+        if url and _norm_url(url) not in window_urls and _norm_url(url) not in policy_ok:
             issues.append(_issue("news", "9", "info", f"Nguồn #{i + 1}: không thuộc khung tin của báo cáo.", f"9.items[{i}].url"))
 
     # Chỉ xét chủ đề được đưa vào prompt Mục 1/Diễn biến chính (SECTION_TOPICS["1"]) — VCM, tin
@@ -2201,6 +2263,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             article_meta[_norm_url(r.url)] = {"source": r.source, "published_at": r.published_at}
             article_texts[_norm_url(r.url)] = f"{r.title or ''}\n{r.content or ''}"
     stale_before = news_window(target_date)[0] - timedelta(days=STALE_NEWS_MAX_AGE_DAYS)
+    policy_stale_before = news_window(target_date)[0] - timedelta(days=max(ETS_POLICY_LOOKBACK_DAYS, STALE_NEWS_MAX_AGE_DAYS))
 
     biz = content.get("biz") or {}
     biz_ids = [
@@ -2224,7 +2287,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             + check_fuel_thresholds(content) + check_long_term_basis(content) + check_technical_claims(content)
             + check_ttf_channel(content) + check_msr_direction(content)
         ),
-        "source": check_sources(content, known_urls, article_meta, stale_before) + check_inline_attribution(content),
+        "source": check_sources(content, known_urls, article_meta, stale_before, policy_stale_before) + check_inline_attribution(content),
         "fact": check_facts(content, article_texts),
         "calendar": check_calendar(content, report_date),
         "biz": check_biz(content, suggestions, valid_codes, (content.get("2") or {}).get("prices") or [], report_date),

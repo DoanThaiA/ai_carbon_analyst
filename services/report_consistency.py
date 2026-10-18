@@ -635,3 +635,76 @@ def consistency_issues(content: Dict[str, Any]) -> List[Dict[str, str]]:
     walk_text(copy.deepcopy(content), _fn)
     found.extend(derived_target_issues(content.get("3") or {}, close, list(rng or ())))
     return found
+
+
+# ── Trích nguồn "(Nguồn: …)" — tên nguồn có thể chứa ngoặc, vd "Ủy ban châu Âu, COM(2026) 616" ──
+
+_INLINE_SOURCE_OPEN = "(Nguồn:"
+
+
+def inline_source_spans(text: str) -> List[Tuple[int, int, str]]:
+    """Các cụm "(Nguồn: …)" trong `text` → [(start, end, phần bên trong đã strip)], đếm ngoặc CÂN BẰNG — regex
+    `[^)]+` cắt sai ở "(Nguồn: Ủy ban châu Âu, COM(2026) 616, 07/2026)" (bản 18/10: lặp "(Nguồn: …) (Nguồn: …)" và Jack
+    báo nhầm "số 616 không có trong bài nguồn"). Cụm không đóng ngoặc thì bỏ qua."""
+    spans: List[Tuple[int, int, str]] = []
+    pos = 0
+    while True:
+        start = text.find(_INLINE_SOURCE_OPEN, pos)
+        if start < 0:
+            return spans
+        depth, i = 0, start
+        while i < len(text):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if i >= len(text):
+            return spans
+        spans.append((start, i + 1, text[start + len(_INLINE_SOURCE_OPEN):i].strip()))
+        pos = i + 1
+
+
+def inline_source_names(text: str) -> List[str]:
+    """Tên nguồn trong mọi cụm "(Nguồn: A; B)" (tách theo ";")."""
+    return [n.strip() for _, _, inner in inline_source_spans(text) for n in inner.split(";") if n.strip()]
+
+
+def strip_inline_sources(text: str, repl: str = " ") -> str:
+    out, last = [], 0
+    for start, end, _ in inline_source_spans(text):
+        out.append(text[last:start])
+        out.append(repl)
+        last = end
+    out.append(text[last:])
+    return "".join(out)
+
+
+def merge_adjacent_sources(text: str) -> str:
+    """"(Nguồn: A) (Nguồn: B)" liền nhau (chỉ cách khoảng trắng) → "(Nguồn: A; B)"."""
+    spans = inline_source_spans(text)
+    if len(spans) < 2:
+        return text
+    out, last, i = [], 0, 0
+    while i < len(spans):
+        start, end, inner = spans[i]
+        names = [inner]
+        while i + 1 < len(spans) and not text[end:spans[i + 1][0]].strip():
+            i += 1
+            end, names = spans[i][1], names + [spans[i][2]]
+        out.append(text[last:start])
+        out.append(f"(Nguồn: {'; '.join(names)})")
+        last = end
+        i += 1
+    out.append(text[last:])
+    return "".join(out)
+
+
+# Mã văn bản pháp lý — số trong đó là định danh, không phải số liệu cần đối chiếu với bài nguồn.
+LEGAL_DOC_ID_RE = re.compile(
+    r"\bCOM\s*\(\s*\d{4}\s*\)\s*\d+|\(\s*(?:EU|EC|EEC)\s*\)\s*(?:No\s*)?\d{2,4}\s*/\s*\d+|\b\d{1,4}\s*/\s*QĐ-TTg\b"
+    r"|\b\d{1,4}\s*/\s*\d{4}\s*/\s*NĐ-CP\b|\bĐiều\s+\d+[a-z]?\b|\bArticle\s+\d+[a-z]?\b",
+    re.IGNORECASE,
+)

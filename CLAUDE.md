@@ -289,7 +289,7 @@ Mốc kỹ thuật có cả mục tiêu đo biên độ chiều xuống. Jack th
 chưa xảy ra khi Tổng hợp TRUNG LẬP) và `check_horizon_overlap` (kích hoạt trung hạn nằm trong cắt lỗ ngắn hạn) — cả 2 đi vào
 vòng tự sửa kịch bản; `derived_target_issues` báo nhãn % tính từ đóng cửa khi Entry là mức kích hoạt khác. Lịch Mục 8: sự
 kiện định kỳ mang `released_at` (giờ VN) — gắn kết quả nếu đã công bố trước lúc sinh báo cáo; giờ đấu giá EEX quy đổi giờ VN
-theo Europe/Berlin. `check_facts` chấp nhận số tự tính khi phép tính a/b, a×b hiện ngay trong câu.
+theo Europe/Berlin. `check_facts` chấp nhận số tự tính khi phép tính a/b, a×b hiện ngay trong câu. Cụm "(Nguồn: …)" luôn tách bằng `report_consistency.inline_source_spans` (đếm ngoặc cân bằng — tên hồ sơ như "COM(2026) 616" có ngoặc; KHÔNG dùng regex `[^)]+`); `check_facts` bỏ số trong mã văn bản (`LEGAL_DOC_ID_RE`) và đối chiếu số câu trích hồ sơ với chính nội dung hồ sơ yaml.
 **Phòng vệ CBAM — 1 nhãn**: `cbam_estimate.signal` (increase/hold/reduce) là nhãn DUY NHẤT, dùng chung thẻ CBAM và
 `content["3"].hedge_action` (`_finalize_hedge_fields` ghi đè nhãn LLM). Phần LÕI (≥ 100 − `TACTICAL_MAX_PCT`% phần chưa
 chốt) luôn bám lịch đấu giá (chi phí bám VWAP = giá CBAM, `hedge_core_text`); vùng giá/lệnh giới hạn chỉ cho phần chiến
