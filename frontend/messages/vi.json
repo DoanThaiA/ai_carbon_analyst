@@ -407,7 +407,9 @@
     "messageCount": "{count} tin nhắn",
     "pageInfo": "Trang {page}/{pages} — {total} phiên",
     "prevPage": "Trang trước",
-    "nextPage": "Trang sau"
+    "nextPage": "Trang sau",
+    "openSession": "Mở phiên",
+    "openHint": "Bấm vào 1 dòng (hoặc \"Mở phiên\") để xem toàn bộ hội thoại, đánh giá và bấm \"Để tham khảo\" ở câu trả lời tốt."
   },
   "adminUsrChatReviewDetail": {
     "back": "Quay lại danh sách",
@@ -695,7 +697,9 @@
         "close": "ĐÓNG LỆNH",
         "none": "CHƯA ĐỐI CHIẾU"
       },
-      "midAlt": "thay thế: {arrow} xác suất thấp"
+      "midAlt": "thay thế: {arrow} xác suất thấp",
+      "legBuyTitle": "Lệnh mua (biên dưới)",
+      "legSellTitle": "Lệnh bán (biên trên)"
     },
     "scenario": {
       "heading": "Kịch bản hành động",

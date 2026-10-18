@@ -407,7 +407,9 @@
     "messageCount": "{count, plural, one {# message} other {# messages}}",
     "pageInfo": "Page {page}/{pages} — {total, plural, one {# session} other {# sessions}}",
     "prevPage": "Previous page",
-    "nextPage": "Next page"
+    "nextPage": "Next page",
+    "openSession": "Open session",
+    "openHint": "Click a row (or \"Open session\") to see the full conversation, rate it and press \"Add as reference\" on a good answer."
   },
   "adminUsrChatReviewDetail": {
     "back": "Back to list",
@@ -695,7 +697,9 @@
         "close": "CLOSE",
         "none": "NOT REVIEWED"
       },
-      "midAlt": "alternative: {arrow} low probability"
+      "midAlt": "alternative: {arrow} low probability",
+      "legBuyTitle": "Buy order (lower band)",
+      "legSellTitle": "Sell order (upper band)"
     },
     "scenario": {
       "heading": "Action scenarios",

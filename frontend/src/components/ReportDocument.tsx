@@ -404,30 +404,62 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
     ...(lv.stopUpper !== undefined ? [{ label: t("signal.stopAbove"), value: fp(lv.stopUpper), className: "text-red-600" }] : []),
   ];
 
-  // KPI tính TỪ chính các mức giá đã tách (không qua LLM): chỉ khi kịch bản có
-  // hướng rõ ràng và đủ Entry/Mục tiêu/Cắt lỗ đúng thứ tự.
-  let kpis: { label: string; value: string; sub?: string; className: string }[] = [];
-  let ladder: { stop: number; entry: number; target: number } | null = null;
-  if (dir !== "đi ngang" && hasEntry) {
-    const long = dir === "tăng";
-    const entry = long ? mid(lv.entryBuy) : mid(lv.entrySell);
+  // KPI tính TỪ chính các mức giá đã tách (không qua LLM): Entry = điểm giữa vùng, mục tiêu đầu tiên, cắt lỗ.
+  // Kịch bản "đi ngang" (lệnh 2 chiều) tính R/R RIÊNG cho từng chân mua/bán — trước chỉ hiện "Biên độ giao dịch" nên
+  // khối R/R biến mất ở các ngày đi ngang (bản 16/10).
+  type Kpi = { label: string; value: string; sub?: string; className: string };
+  const legKpis = (zone: number[], target: number | undefined, stop: number | undefined, long: boolean) => {
+    const entry = zone.length ? mid(zone) : undefined;
+    if (entry === undefined || Number.isNaN(entry) || target === undefined || stop === undefined) return null;
+    const reward = long ? target - entry : entry - target;
+    const risk = long ? entry - stop : stop - entry;
+    if (!(reward > 0 && risk > 0)) return null;
+    return {
+      entry, target, stop,
+      kpis: [
+        { label: "Risk / Reward", value: `1 : ${fnum(reward / risk, 1, locale)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
+        { label: t("signal.targetProfit"), value: `+${fnum((reward / entry) * 100, 1, locale)}%`, sub: `${fp(reward)} EUR/tCO₂ → ${fp(target)}`, className: "text-emerald-700" },
+        { label: t("signal.maxRisk"), value: `−${fnum((risk / entry) * 100, 1, locale)}%`, sub: `${fp(risk)} EUR/tCO₂ → ${fp(stop)}`, className: "text-red-600" },
+      ] as Kpi[],
+    };
+  };
+  // Mỗi "khối lệnh" = 3 ô Entry/Mục tiêu/Cắt lỗ + KPI R/R + thang giá. Kịch bản 1 chiều: 1 khối. Kịch bản "đi ngang" có đủ
+  // 2 chân: 2 khối riêng "Lệnh mua" / "Lệnh bán" trình bày y như kịch bản 1 chiều (yêu cầu 18/10/2026), thêm dòng biên độ.
+  type Row = { label: string; value: string; className: string };
+  type OrderBlock = {
+    key: string; title?: string; tone?: string; entryRows: Row[]; targetRows: Row[]; stopRows: Row[];
+    kpis: Kpi[]; ladder: { stop: number; entry: number; target: number } | null;
+  };
+  const block = (key: string, long: boolean, title?: string, tone?: string): OrderBlock => {
+    const zone = long ? lv.entryBuy : lv.entrySell;
     const target = long ? lv.targetBuy : lv.targetSell;
     const stop = long ? lv.stopLower : lv.stopUpper;
-    if (entry !== undefined && !Number.isNaN(entry) && target !== undefined && stop !== undefined) {
-      const reward = long ? target - entry : entry - target;
-      const risk = long ? entry - stop : stop - entry;
-      if (reward > 0 && risk > 0) {
-        ladder = { stop, entry, target };
-        kpis = [
-          { label: "Risk / Reward", value: `1 : ${fnum(reward / risk, 1, locale)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
-          { label: t("signal.targetProfit"), value: `+${fnum((reward / entry) * 100, 1, locale)}%`, sub: `${fp(reward)} EUR/tCO₂`, className: "text-emerald-700" },
-          { label: t("signal.maxRisk"), value: `−${fnum((risk / entry) * 100, 1, locale)}%`, sub: `${fp(risk)} EUR/tCO₂`, className: "text-red-600" },
-        ];
-      }
-    }
-  } else if (dir === "đi ngang" && lv.entryBuy.length && lv.entrySell.length) {
+    const leg = legKpis(zone, target, stop, long);
+    return {
+      key, title, tone,
+      entryRows: zone.length ? [{ label: t(long ? "signal.buyAround" : "signal.sellAround"), value: fmtRange(zone, locale), className: long ? buyCls : sellCls }] : [],
+      targetRows: target !== undefined ? [{ label: t(long ? "signal.takeLong" : "signal.takeShort"), value: fp(target), className: "text-emerald-700" }] : [],
+      stopRows: stop !== undefined ? [{ label: t(long ? "signal.stopBelow" : "signal.stopAbove"), value: fp(stop), className: "text-red-600" }] : [],
+      kpis: leg ? leg.kpis : [],
+      ladder: leg ? { stop: leg.stop, entry: leg.entry, target: leg.target } : null,
+    };
+  };
+  const twoSided = dir === "đi ngang" && lv.entryBuy.length > 0 && lv.entrySell.length > 0;
+  let orderBlocks: OrderBlock[];
+  let rangeKpis: Kpi[] = [];
+  if (twoSided) {
+    orderBlocks = [block("buy", true, t("signal.legBuyTitle"), buyCls), block("sell", false, t("signal.legSellTitle"), sellCls)];
     const lo = mid(lv.entryBuy), hi = mid(lv.entrySell);
-    if (hi > lo) kpis = [{ label: t("signal.tradingRange"), value: `${fnum(((hi - lo) / lo) * 100, 1, locale)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
+    if (hi > lo) rangeKpis = [{ label: t("signal.tradingRange"), value: `${fnum(((hi - lo) / lo) * 100, 1, locale)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
+  } else {
+    // 1 chiều (hoặc đi ngang chỉ tách được 1 chân / dữ liệu cũ): 1 khối với mọi mức đã tách được, như trước.
+    const leg = dir === "tăng" ? legKpis(lv.entryBuy, lv.targetBuy, lv.stopLower, true)
+      : dir === "giảm" ? legKpis(lv.entrySell, lv.targetSell, lv.stopUpper, false) : null;
+    orderBlocks = [{
+      key: "single", entryRows, targetRows, stopRows,
+      kpis: leg ? leg.kpis : [],
+      ladder: leg ? { stop: leg.stop, entry: leg.entry, target: leg.target } : null,
+    }];
   }
 
   // Dữ liệu cũ (chưa có trading_strategy) chỉ có action_plan dạng câu — vẫn hiển thị.
@@ -500,20 +532,35 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
 
         {hasLevels ? (
           <>
-            {/* ═══ 3 ô số liệu lớn: Entry · Mục tiêu · Cắt lỗ ═══ */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10 print:break-inside-avoid">
-              <LevelTile icon={Crosshair} title={t("signal.tileEntry")} tone="text-primary-dark" rows={entryRows} />
-              <LevelTile icon={Target} title={t("signal.tileTarget")} tone="text-emerald-700" rows={targetRows} />
-              <LevelTile icon={ShieldCheck} title={t("signal.tileStop")} tone="text-red-600" rows={stopRows} />
-            </div>
-
-            {/* ═══ KPI + thang giá ═══ */}
-            {kpis.length > 0 && (
-              <div className="border-t border-primary/10 bg-[#f8faf9] px-4 sm:px-6 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                <div className="flex flex-wrap justify-center divide-x divide-primary/10">
-                  {kpis.map(k => <KpiBox key={k.label} {...k} />)}
+            {orderBlocks.map((b, bi) => (
+              <div key={b.key} className={clsx("print:break-inside-avoid", bi > 0 && "border-t-2 border-primary/20")}>
+                {/* Tiêu đề khối lệnh — chỉ khi đi ngang tách 2 chân */}
+                {b.title && (
+                  <div className={clsx("px-4 sm:px-6 pt-3 text-[12px] sm:text-[13px] font-extrabold uppercase tracking-wider", b.tone)}>{b.title}</div>
+                )}
+                {/* ═══ 3 ô số liệu lớn: Entry · Mục tiêu · Cắt lỗ ═══ */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10">
+                  <LevelTile icon={Crosshair} title={t("signal.tileEntry")} tone="text-primary-dark" rows={b.entryRows} />
+                  <LevelTile icon={Target} title={t("signal.tileTarget")} tone="text-emerald-700" rows={b.targetRows} />
+                  <LevelTile icon={ShieldCheck} title={t("signal.tileStop")} tone="text-red-600" rows={b.stopRows} />
                 </div>
-                {ladder && <SignalLadder {...ladder} last={lastClose} />}
+                {/* ═══ KPI + thang giá ═══ */}
+                {b.kpis.length > 0 && (
+                  <div className="border-t border-primary/10 bg-[#f8faf9] px-4 sm:px-6 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                    <div className="flex flex-wrap justify-center divide-x divide-primary/10">
+                      {b.kpis.map(k => <KpiBox key={k.label} {...k} />)}
+                    </div>
+                    {b.ladder && <SignalLadder {...b.ladder} last={lastClose} />}
+                  </div>
+                )}
+              </div>
+            ))}
+            {/* Đi ngang: biên độ giữa 2 vùng lệnh */}
+            {rangeKpis.length > 0 && (
+              <div className="border-t-2 border-primary/20 bg-[#f8faf9] px-4 sm:px-6 py-3 print:break-inside-avoid [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                <div className="flex flex-wrap justify-center">
+                  {rangeKpis.map(k => <KpiBox key={k.label} {...k} />)}
+                </div>
               </div>
             )}
           </>
