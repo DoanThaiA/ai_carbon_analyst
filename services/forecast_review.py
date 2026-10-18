@@ -1,5 +1,5 @@
 """Đối chiếu dự báo NGẮN HẠN của các báo cáo gần đây với giá EUA thực tế — khối cố định "Dự báo trước:
-đúng hay sai" ở trang đầu báo cáo (content["2"].forecast_review) + dữ liệu cho LLM viết "vs_previous".
+đúng hay sai" ngay sau Phần 3 — Chi tiết tin tức (content["2"].forecast_review) + dữ liệu cho LLM viết "vs_previous".
 
 Tính bằng Python từ OHLC EUA (không để LLM tự chấm): với mỗi báo cáo trong REVIEW_MAX_REPORTS báo cáo gần
 nhất có kịch bản ngắn hạn (còn trong khung ngắn hạn REVIEW_MAX_SESSIONS phiên):
@@ -495,7 +495,7 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
         return ""
     premises = premises or {}
     lines = ["ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY (tính sẵn từ giá EUA thật + mô phỏng lệnh — dùng đúng, KHÔNG tự tính lại; "
-             "khối này đã hiển thị dạng bảng ở trang đầu, kèm DUY NHẤT dòng tỷ lệ đúng của cửa sổ gần nhất — tỷ lệ LŨY KẾ, CHUẨN "
+             "khối này đã hiển thị dạng bảng ngay sau Phần 3 (Chi tiết tin tức), kèm DUY NHẤT dòng tỷ lệ đúng của cửa sổ gần nhất — tỷ lệ LŨY KẾ, CHUẨN "
              "SO SÁNH ngây thơ và danh sách báo cáo của cửa sổ KHÔNG hiển thị cho người đọc nên \"vs_previous\" KHÔNG dẫn các số đó):"]
     for it in block["items"]:
         t = it.get("trade")

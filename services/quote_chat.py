@@ -1088,7 +1088,7 @@ FORECAST_DEFAULT_SESSIONS = forecast_review.REVIEW_MAX_SESSIONS
 async def _tool_review_forecast_text(session: AsyncSession, report_date: str, sessions: int) -> str:
     """Đối chiếu dự báo ngắn hạn của 1 báo cáo published — chấm bằng ĐÚNG logic của khối "Dự báo trước: đúng hay
     sai" (services/forecast_review.py: ngưỡng %Δ + mô phỏng lệnh, khung REVIEW_MAX_SESSIONS phiên) để câu trả lời
-    không bao giờ trái với bảng trên trang đầu báo cáo. `sessions` chỉ quyết định số phiên liệt kê."""
+    không bao giờ trái với bảng "Dự báo trước" của báo cáo. `sessions` chỉ quyết định số phiên liệt kê."""
     content = (
         await session.execute(select(Report.content).where(Report.report_date == report_date, Report.status == "published"))
     ).scalar_one_or_none()
@@ -2039,7 +2039,7 @@ CLIENT_TOOLS = [
     {
         "name": "get_forecast_scorecard",
         "description": (
-            "BẢNG \"DỰ BÁO TRƯỚC: ĐÚNG HAY SAI\" ở trang đầu 1 báo cáo, đúng như người đọc thấy: kết quả chấm dự báo ngắn "
+            "BẢNG \"DỰ BÁO TRƯỚC: ĐÚNG HAY SAI\" của 1 báo cáo (nằm sau Phần 3 — Chi tiết tin tức), đúng như người đọc thấy: kết quả chấm dự báo ngắn "
             "hạn của các báo cáo gần đây (đúng/sai/đang đúng hướng/đang lệch, %Δ EUA, lệnh mô phỏng khớp/chạm cắt lỗ/chạm "
             "mục tiêu/hết hiệu lực), số báo cáo sai liên tiếp, TỶ LỆ ĐÚNG LŨY KẾ theo mức xác suất (Cao/Trung bình/Thấp), "
             "quy tắc chấm, và đoạn \"Nguyên nhân & điều chỉnh\" Jenny viết. Dùng cho 'Jenny dự báo đúng bao nhiêu', 'độ tin "

@@ -333,7 +333,7 @@ mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, khôn
 - `frontend/messages/parts/*.json` đang CŨ hơn `vi.json`/`en.json` (đã sửa thẳng file gộp) — KHÔNG chạy
   `scripts/merge-messages.mjs` khi chưa đồng bộ parts, sẽ mất key.
 
-**Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
+**Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định ngay sau Phần 3 — Chi tiết tin tức (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
 chấm `REVIEW_MAX_REPORTS` báo cáo gần nhất có kịch bản ngắn hạn (còn trong `REVIEW_MAX_SESSIONS` phiên): %Δ EUA luỹ kế từ giá
 báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi biên độ phiên chạm vùng Entry, lệnh giới hạn mở gap qua vùng khớp tại giá mở;
@@ -350,7 +350,7 @@ Từ 18/10/2026: "đi ngang" chấm cả hành trình (`SIDEWAYS_PATH_MAX_PCT`),
 `design_flaws` (R:R tại giá khớp < `MIN_RR`, cắt lỗ < `MIN_STOP_ATR` ATR — Jack đòi `vs_previous` nêu) và khối `baseline`
 (dự báo ngây thơ "luôn đi ngang"/"lặp chiều 5 phiên" trên cùng các báo cáo đã có kết luận; `_calibration` trả tuple).
 Tool chat/MCP: `get_forecast_scorecard` đọc nguyên khối này từ báo cáo published; `review_past_forecast` chấm 1 báo cáo bằng
-CHÍNH `forecast_review.evaluate_forecast` (khung `REVIEW_MAX_SESSIONS`) — không tự chấm riêng, để không trái với bảng trang đầu.
+CHÍNH `forecast_review.evaluate_forecast` (khung `REVIEW_MAX_SESSIONS`) — không tự chấm riêng, để không trái với bảng "Dự báo trước".
 
 **Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,
 vd Bloomberg). Tóm tắt Mục 6 trả thêm `origin` (hãng gốc khi bài dẫn lại, vd "Zelenskyy told the FT" trên Politico) →

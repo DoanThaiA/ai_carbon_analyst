@@ -612,7 +612,8 @@
       "sources": "References",
       "open": "Open navigation menu",
       "close": "Close navigation menu",
-      "toc": "Contents"
+      "toc": "Contents",
+      "forecastReview": "Previous forecasts: right or wrong"
     },
     "enum": {
       "shortTerm": "short term",

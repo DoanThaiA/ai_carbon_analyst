@@ -612,7 +612,8 @@
       "sources": "Nguồn tham khảo",
       "open": "Mở menu điều hướng",
       "close": "Đóng menu điều hướng",
-      "toc": "Mục lục"
+      "toc": "Mục lục",
+      "forecastReview": "Dự báo trước: đúng hay sai"
     },
     "enum": {
       "shortTerm": "ngắn hạn",
