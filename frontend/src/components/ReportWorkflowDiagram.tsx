@@ -10,7 +10,11 @@
 import { useTranslations } from "next-intl";
 
 const VIEW_W = 1240;
-const VIEW_H = 470;
+const VIEW_H = 460;
+// Bề rộng hiển thị: tối đa MAX_W (≈ 0,8 lần toạ độ gốc → tiêu đề ~16px, mô tả ~13px), căn trái theo nội dung trang;
+// hẹp hơn MIN_W thì cuộn ngang thay vì thu chữ quá nhỏ.
+const MAX_W = 1000;
+const MIN_W = 820;
 
 const COLORS = {
   background: "#F3F7F7",
@@ -158,12 +162,12 @@ export function ReportWorkflowDiagram({ className }: { className?: string }) {
   const t = useTranslations("reportWorkflow");
   const title = t("ariaLabel");
   return (
-    <div className={className} style={{ overflowX: "auto", borderRadius: 16, background: COLORS.background }}>
+    <div className={className} style={{ overflowX: "auto", maxWidth: MAX_W, borderRadius: 16, background: COLORS.background }}>
       <svg
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         role="img"
         aria-label={title}
-        style={{ display: "block", width: "100%", minWidth: 960, height: "auto" }}
+        style={{ display: "block", width: "100%", minWidth: MIN_W, height: "auto" }}
       >
         <title>{title}</title>
         <defs>
