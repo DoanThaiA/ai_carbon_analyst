@@ -5,19 +5,21 @@
 - GET  /api/admin/qc-reviews/{id}                chi tiết 1 biên bản (đủ findings + body_markdown)
 - GET  /api/admin/qc-reviews/report/{date}       biên bản mới nhất + lịch sử của 1 báo cáo (panel cạnh báo cáo)
 - PATCH /api/admin/qc-reviews/findings/{id}      đánh dấu lỗi đã sửa / không sửa
+- POST /api/admin/qc-reviews/report/{date}/fix-preview   đề xuất sửa bản nháp theo biên bản QC (không ghi gì)
+- POST /api/admin/qc-reviews/report/{date}/fix-apply     ghi các thay đổi admin đã chọn (hoặc hoàn tác)
 - GET/POST/DELETE /api/admin/qc-reviews/agent-tokens   token scope 'qc_agent' cho lịch Claude QC 08:00
 
 Ẩn/hiện theo trạng thái báo cáo (chỉ hiện nút "Kết quả QC" khi báo cáo CHƯA xuất bản) là việc của giao diện
 trang báo cáo; trang tổng hợp QC Result vẫn liệt kê đủ để admin xem lại lịch sử.
 """
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_current_admin, get_db, settings
+from api.deps import async_session_maker, get_current_admin, get_db, settings
 from db.models import Report, ReportQcFinding, ReportQcReview
 from services.claude_connect import (
     MAX_ACTIVE_QC_AGENT_TOKENS,
@@ -26,6 +28,7 @@ from services.claude_connect import (
     list_qc_agent_tokens,
     revoke_api_token,
 )
+from services.report_qc_fix import QcFixError, apply_fix_changes, build_fix_preview
 from services.report_qc_review import (
     FINDING_STATUSES,
     QC_CRITERIA,
@@ -50,6 +53,25 @@ router = APIRouter(
 class FindingStatusUpdate(BaseModel):
     status: str = Field(..., description="open | fixed | wont_fix")
     note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class QcFixPreviewRequest(BaseModel):
+    finding_ids: Optional[List[int]] = Field(default=None, description="Trống = mọi lỗi còn mở của biên bản mới nhất")
+    review_id: Optional[int] = None
+
+
+class QcFixChange(BaseModel):
+    path: str = Field(..., max_length=300)
+    before: str
+    after: str
+    finding_ids: List[int] = Field(default_factory=list)
+
+
+class QcFixApplyRequest(BaseModel):
+    base_hash: str
+    changes: List[QcFixChange] = Field(..., max_length=200)
+    run_no: Optional[int] = None
+    undo: bool = Field(default=False, description="Hoàn tác: changes đã đảo before/after, lỗi trả về 'open'")
 
 
 class QcAgentTokenCreate(BaseModel):
@@ -229,3 +251,32 @@ async def patch_finding(finding_id: int, body: FindingStatusUpdate, session: Asy
     if finding is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy lỗi QC.")
     return finding_dict(finding)
+
+
+@router.post("/report/{date}/fix-preview")
+async def fix_preview(date: str, body: QcFixPreviewRequest, session: AsyncSession = Depends(get_db)):
+    """Đề xuất sửa bản nháp theo biên bản QC — chỉ trả diff từng đoạn, KHÔNG ghi gì (services/report_qc_fix.py)."""
+    try:
+        return await build_fix_preview(session, date, body.finding_ids or None, body.review_id)
+    except QcFixError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+
+@router.post("/report/{date}/fix-apply")
+async def fix_apply(
+    date: str, body: QcFixApplyRequest, background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db), admin: dict = Depends(get_current_admin),
+):
+    """Ghi các thay đổi đã chọn ở bước xem trước (điều kiện: báo cáo chưa đổi kể từ lúc xem trước) và đánh dấu lỗi
+    "Đã sửa"; `undo=true` ghi ngược lại và trả lỗi về "Chưa xử lý". Dịch lại bản tiếng Anh ở nền như PUT báo cáo."""
+    from services.report_translation import ensure_report_translation
+
+    try:
+        result = await apply_fix_changes(
+            session, date, body.base_hash, [c.model_dump() for c in body.changes],
+            finding_status="open" if body.undo else "fixed", actor=str(admin.get("sub") or "admin"), run_no=body.run_no,
+        )
+    except QcFixError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    background_tasks.add_task(ensure_report_translation, async_session_maker, settings, date)
+    return result

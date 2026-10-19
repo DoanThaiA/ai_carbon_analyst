@@ -3,14 +3,16 @@
 // Biên bản QC báo cáo do Claude (vai Jack) gửi qua MCP — CHỈ dùng trong trang admin.
 // - QcReviewView: nội dung 1 biên bản (điểm, tiêu chí, lỗi, ưu tiên, biên bản đầy đủ) — dùng ở trang
 //   /admin/qc-results/[id] và trong panel cạnh báo cáo.
-// - QcReviewPanel: panel trượt bên phải trang /admin/reports/[date], chỉ mở khi báo cáo CHƯA xuất bản.
+// - QcReviewPanel: panel trượt bên phải trang /admin/reports/[date], chỉ mở khi báo cáo CHƯA xuất bản. Có nút
+//   "Sửa báo cáo theo QC" (QcFixModal) khi trang cho phép (`onReportChanged`).
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { useTranslations } from "next-intl";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ExternalLink, Loader2, Repeat, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ExternalLink, Loader2, Repeat, Wand2, X, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import type { QcFinding, QcFindingStatus, QcReportReviews, QcReviewDetail, QcSeverity, QcVerdict } from "@/lib/types";
+import { QcFixModal } from "@/components/QcFixModal";
+import type { Report, QcFinding, QcFindingStatus, QcReportReviews, QcReviewDetail, QcSeverity, QcVerdict } from "@/lib/types";
 
 const VERDICT_CLS: Record<QcVerdict, string> = {
   pass: "bg-tint text-primary-dark border border-primary/20",
@@ -45,7 +47,11 @@ function sectionLabel(t: ReturnType<typeof useTranslations>, section: string | n
   return t.has(`section_${section}`) ? t(`section_${section}`) : section;
 }
 
-function FindingCard({ finding, onStatus }: { finding: QcFinding; onStatus?: (f: QcFinding, s: QcFindingStatus) => void }) {
+function FindingCard({ finding, onStatus, onFix }: {
+  finding: QcFinding;
+  onStatus?: (f: QcFinding, s: QcFindingStatus) => void;
+  onFix?: (ids: number[]) => void;
+}) {
   const t = useTranslations("adminQcReviews");
   return (
     <li className={clsx("rounded-xl border p-3 text-sm", finding.status === "open" ? "border-border bg-background" : "border-border-soft bg-surface opacity-75")}>
@@ -105,6 +111,16 @@ function FindingCard({ finding, onStatus }: { finding: QcFinding; onStatus?: (f:
               {t(`status_${s}`)}
             </button>
           ))}
+          {onFix && finding.status === "open" && (
+            <button
+              type="button"
+              onClick={() => onFix([finding.id])}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border border-primary/30 text-primary-dark hover:bg-tint"
+            >
+              <Wand2 size={11} />
+              {t("fixOne")}
+            </button>
+          )}
           {finding.status_note && <span className="text-[11px] text-muted-light">— {finding.status_note}</span>}
         </div>
       )}
@@ -112,7 +128,11 @@ function FindingCard({ finding, onStatus }: { finding: QcFinding; onStatus?: (f:
   );
 }
 
-export function QcReviewView({ review, onChange }: { review: QcReviewDetail; onChange?: (r: QcReviewDetail) => void }) {
+export function QcReviewView({ review, onChange, onFix }: {
+  review: QcReviewDetail;
+  onChange?: (r: QcReviewDetail) => void;
+  onFix?: (ids?: number[]) => void; // có = trang cho phép sửa báo cáo theo QC (bản nháp, không đang sửa tay)
+}) {
   const t = useTranslations("adminQcReviews");
   const [showBody, setShowBody] = useState(false);
   const [severity, setSeverity] = useState<QcSeverity | "all">("all");
@@ -132,6 +152,7 @@ export function QcReviewView({ review, onChange }: { review: QcReviewDetail; onC
     }
   };
 
+  const openCount = review.findings.filter((f) => f.status === "open").length;
   const findings = review.findings
     .filter((f) => severity === "all" || f.severity === severity)
     .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || a.position - b.position);
@@ -167,6 +188,17 @@ export function QcReviewView({ review, onChange }: { review: QcReviewDetail; onC
       )}
 
       <p className="text-sm text-body whitespace-pre-wrap">{review.summary}</p>
+
+      {onFix && openCount > 0 && (
+        <button
+          type="button"
+          onClick={() => onFix()}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-primary hover:bg-primary-dark text-white text-sm font-semibold transition-colors"
+        >
+          <Wand2 size={15} />
+          {t("fixAll", { count: openCount })}
+        </button>
+      )}
 
       <div>
         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-light mb-2">{t("criteriaTitle")}</h4>
@@ -208,7 +240,7 @@ export function QcReviewView({ review, onChange }: { review: QcReviewDetail; onC
           <p className="text-sm text-muted-light">{t("noFindings")}</p>
         ) : (
           <ul className="space-y-2">
-            {findings.map((f) => <FindingCard key={f.id} finding={f} onStatus={onChange ? handleStatus : undefined} />)}
+            {findings.map((f) => <FindingCard key={f.id} finding={f} onStatus={onChange ? handleStatus : undefined} onFix={onFix} />)}
           </ul>
         )}
       </div>
@@ -253,10 +285,16 @@ export function QcReviewView({ review, onChange }: { review: QcReviewDetail; onC
   );
 }
 
-export function QcReviewPanel({ date, onClose }: { date: string; onClose: () => void }) {
+export function QcReviewPanel({ date, onClose, onReportChanged }: {
+  date: string;
+  onClose: () => void;
+  onReportChanged?: (content: Report["content"]) => void; // không truyền = ẩn nút sửa theo QC (vd đang sửa tay)
+}) {
   const t = useTranslations("adminQcReviews");
   const [data, setData] = useState<QcReportReviews | null>(null);
   const [error, setError] = useState("");
+  // undefined = modal đóng; null = sửa mọi lỗi còn mở; [id] = chỉ lỗi đó (giữ trong state để mảng ổn định).
+  const [fixIds, setFixIds] = useState<number[] | null | undefined>(undefined);
 
   const load = useCallback(async () => {
     try {
@@ -297,7 +335,11 @@ export function QcReviewPanel({ date, onClose }: { date: string; onClose: () => 
               </div>
             )}
             {data.latest ? (
-              <QcReviewView review={data.latest} onChange={(r) => setData({ ...data, latest: r })} />
+              <QcReviewView
+                review={data.latest}
+                onChange={(r) => setData({ ...data, latest: r })}
+                onFix={onReportChanged && data.report_status === "draft" ? (ids) => setFixIds(ids ?? null) : undefined}
+              />
             ) : (
               <p className="text-sm text-muted-light">{t("noReviewYet")}</p>
             )}
@@ -322,6 +364,17 @@ export function QcReviewPanel({ date, onClose }: { date: string; onClose: () => 
           </div>
         )}
       </div>
+      {fixIds !== undefined && onReportChanged && (
+        <QcFixModal
+          date={date}
+          findingIds={fixIds ?? undefined}
+          onClose={() => setFixIds(undefined)}
+          onApplied={(content) => {
+            onReportChanged(content);
+            load(); // trạng thái lỗi + "đã sửa sau QC" đổi theo
+          }}
+        />
+      )}
     </aside>
   );
 }

@@ -335,7 +335,16 @@ export default function AdminReportReview() {
           );
         })()
       )}
-      {showQc && report.status === 'draft' && <QcReviewPanel date={date} onClose={() => setShowQc(false)} />}
+      {showQc && report.status === 'draft' && (
+        <QcReviewPanel
+          date={date}
+          onClose={() => setShowQc(false)}
+          // Đang sửa tay thì ẩn nút sửa theo QC — tránh 2 bản sửa ghi đè nhau. Bản dịch cũ hết hiệu lực
+          // (backend dịch lại nền), giống lưu sửa tay.
+          onReportChanged={isEditing ? undefined : (content) =>
+            setReport(prev => prev ? { ...prev, content, content_en: null } : prev)}
+        />
+      )}
     </div>
   );
 }

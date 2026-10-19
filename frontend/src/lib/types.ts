@@ -380,6 +380,45 @@ export interface QcReviewDetail extends QcReviewSummary {
   findings: QcFinding[];
 }
 
+// "Sửa báo cáo theo QC" (services/report_qc_fix.py) — bước xem trước.
+export interface QcFixChange {
+  id: number;
+  path: string;
+  before: string;
+  after: string;
+  finding_ids: number[];
+  edits: { old: string; new: string; finding_ids: number[]; note: string | null }[];
+  rejected: { old: string | null; new: string | null; reason: string }[];
+  jack_regressions: string[];
+  selected: boolean;
+}
+
+export interface QcFixPreview {
+  report_date: string;
+  review_id: number;
+  run_no: number;
+  base_hash: string;
+  review_is_stale: boolean;
+  changes: QcFixChange[];
+  findings: {
+    id: number;
+    title: string;
+    severity: QcSeverity;
+    section: string | null;
+    status: "proposed" | "manual" | "skipped" | "rejected";
+    reason: string | null;
+  }[];
+  jack_score_before: number | null;
+  jack_score_after: number | null;
+}
+
+export interface QcFixApplyResult {
+  content: Report["content"];
+  content_hash: string;
+  finding_ids: number[];
+  changed_paths: string[];
+}
+
 export interface QcReportReviews {
   report_date: string;
   report_status: string;

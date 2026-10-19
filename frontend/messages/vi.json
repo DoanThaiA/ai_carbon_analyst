@@ -900,7 +900,9 @@
     "desc_users": "Cấp quyền đăng nhập cho cấp trên và đồng cấp",
     "desc_feedback": "Phản ánh về thái độ và hiệu quả của Jenny",
     "desc_releaseNotes": "Yêu cầu khách hàng và kết quả kiểm tra",
-    "qcResults": "QC Result"
+    "qcResults": "QC Result",
+    "pin": "Ghim menu",
+    "unpin": "Bỏ ghim menu"
   },
   "shellHotNews": {
     "title": "Hot News",
@@ -1078,7 +1080,30 @@
     "greeting": "Xin chào!",
     "title": "Bạn muốn truy cập chức năng nào?",
     "subtitle": "Lựa chọn danh mục bên dưới để xem báo cáo, phân tích dữ liệu và khai thác các công cụ của Jenny.",
-    "groupCount": "{count, plural, other {# chức năng}}"
+    "groupCount": "{count, plural, other {# chức năng}}",
+    "openToday": "Mở báo cáo hôm nay",
+    "openReports": "Danh sách báo cáo",
+    "openQc": "Kết quả QC",
+    "statusLabel": "Trạng thái vận hành",
+    "todayLabel": "Báo cáo hôm nay",
+    "todayNone": "Chưa sinh",
+    "todayHint": "Ngày {date}",
+    "status_published": "Đã xuất bản",
+    "status_draft": "Bản nháp",
+    "status_generating": "Đang sinh",
+    "status_failed": "Lỗi khi sinh",
+    "draftsLabel": "Nháp chờ duyệt",
+    "draftsHint": "Mới nhất: {date}",
+    "draftsNone": "Không có bản nháp tồn",
+    "publishedLabel": "Đã xuất bản ({days} ngày)",
+    "publishedHint": "Báo cáo đã gửi người đọc",
+    "qcLabel": "Điểm QC TB ({count} báo cáo)",
+    "qcTrendLabel": "Điểm QC từng báo cáo gần đây, cũ tới mới",
+    "qcBarTitle": "{date}: {score}/10",
+    "qcHint": "QC gần nhất: {date}",
+    "qcNone": "Chưa có biên bản QC",
+    "featuresTitle": "Chức năng",
+    "featuresHint": "Rê chuột vào thanh bên trái để mở menu đầy đủ"
   },
   "adminQcReviews": {
     "pageTitle": "QC Result",
@@ -1159,6 +1184,33 @@
     "notFound": "Không tìm thấy biên bản QC.",
     "backToList": "Quay lại QC Result",
     "openReport": "Mở báo cáo {date}",
-    "detailTitle": "Biên bản QC báo cáo {date} · lần #{run}"
+    "detailTitle": "Biên bản QC báo cáo {date} · lần #{run}",
+    "fixAll": "Sửa báo cáo theo QC ({count} lỗi còn mở)",
+    "fixOne": "Sửa lỗi này"
+  },
+  "adminQcFix": {
+    "title": "Sửa báo cáo theo QC · {date}",
+    "close": "Đóng",
+    "loading": "Đang định vị từng lỗi trong báo cáo và soạn đề xuất sửa — khoảng 20–60 giây…",
+    "previewError": "Không tạo được đề xuất sửa.",
+    "summary": "{changes} đoạn đề xuất sửa · {fixed} lỗi sửa được · {manual} lỗi cần xử lý tay",
+    "jackScore": "Jack rule-based: {before} → {after}/100",
+    "guarantee": "Chỉ đoạn chứa lỗi được sửa, bằng thay thế tối thiểu; đề xuất bịa số, đụng trích nguồn hoặc lan sang đoạn khác đã bị loại tự động. Đoạn làm phát sinh lỗi Jack mới được bỏ chọn sẵn.",
+    "staleNotice": "Báo cáo đã được sửa sau lần QC này — chỉ những lỗi còn tìm thấy nguyên văn mới được đề xuất sửa.",
+    "noChanges": "Không có đoạn nào sửa tự động được an toàn — xem danh sách lỗi cần xử lý tay bên dưới.",
+    "jackRegression": "Jack phát hiện vấn đề mới tại đây sau khi sửa",
+    "rejectedEdits": "{count} đề xuất bị loại khi kiểm",
+    "manualTitle": "Lỗi chưa sửa tự động",
+    "status_manual": "Cần sửa tay",
+    "status_skipped": "AI không sửa",
+    "status_rejected": "Đề xuất bị loại",
+    "status_proposed": "Đã đề xuất",
+    "cancel": "Huỷ",
+    "apply": "Áp dụng {count} thay đổi",
+    "applyError": "Không áp dụng được thay đổi.",
+    "appliedNotice": "Đã sửa {count} đoạn và đánh dấu các lỗi tương ứng là \"Đã sửa\". Bản tiếng Anh đang được dịch lại. Biên bản QC hiện tại vẫn giữ kết luận cũ — nếu kết luận là Không đạt, lịch tự xuất bản vẫn bị chặn cho tới khi QC lại hoặc duyệt tay.",
+    "undo": "Hoàn tác",
+    "undoError": "Không hoàn tác được — báo cáo có thể đã bị sửa tiếp.",
+    "done": "Xong"
   }
 }

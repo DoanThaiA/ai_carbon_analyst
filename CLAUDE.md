@@ -267,6 +267,14 @@ list_tools theo token), tool neo ngày được đọc bản nháp, jack_qc ch�
 admin xem: `api/routers/admin_qc_reviews.py`, tool Jenny `get_qc_review` (ADMIN_TOOLS). Frontend: nút "Kết quả QC" + panel
 `QcReviewPanel` ở `/admin/reports/[date]` CHỈ khi status `draft`; trang tổng hợp `/admin/qc-results` (+ `[id]`, quản lý token,
 prompt routine). Test: `tests/test_report_qc_review.py`.
+**Sửa báo cáo theo QC** (`services/report_qc_fix.py`, nút trong `QcReviewPanel` → `QcFixModal.tsx`, chỉ bản nháp, ẩn khi
+đang sửa tay): `POST .../report/{date}/fix-preview` KHÔNG ghi gì — Python neo từng lỗi vào đúng chuỗi văn xuôi qua
+`field_path` + nguyên văn `current_text` (bỏ `SKIP_KEYS`, tiêu đề gốc Mục 6; không neo được/mơ hồ → "cần sửa tay", không
+gửi LLM), LLM (`FIX_MODEL`) chỉ trả cặp `{old → new}` trong các chuỗi được giao, `validate_edits` loại thay thế không khớp
+đúng 1 lần/chồng nhau/đụng "(Nguồn: …)"/URL/số mới không có trong biên bản hoặc đoạn gốc; rồi `apply_consistency_fixes`
+chỉ trên đoạn vừa sửa + Jack trước/sau (đoạn phát sinh lỗi Jack mới bị bỏ chọn sẵn). `POST .../fix-apply` ghi khi
+`base_hash` và `before` từng đoạn còn khớp, đánh dấu lỗi `fixed`, dịch lại bản EN; `undo=true` = áp ngược, lỗi về `open`.
+Biên bản cũ giữ verdict (fail vẫn chặn tự xuất bản tới khi QC lại/duyệt tay). Test: `tests/test_report_qc_fix.py`.
 
 **Tự sửa số học/trình bày** (`services/report_consistency.py`, hàm thuần): cuối `generate_report_content` chạy
 `apply_consistency_fixes` trên toàn bộ văn xuôi (bỏ qua `SKIP_KEYS`): tính lại nhãn "X (±p% so với đóng cửa Y)" (và
