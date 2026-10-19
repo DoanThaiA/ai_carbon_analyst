@@ -220,6 +220,14 @@ phiên bản hợp lệ (uv đọc phiên bản từ tên file) — không dùng
 
 **Jenny chat — token**: prompt tĩnh (`_build_static_instructions`) chỉ giữ INFERENCE_RULES + FUEL_SWITCHING + CONFLICT_RESOLUTION; các khối khung EUA khác (`FRAMEWORK_ON_DEMAND_BLOCKS`) model tra qua tool `get_eua_framework` (`FRAMEWORK_TOOL`, CỐ Ý ngoài `CLIENT_TOOLS` nên MCP gateway không bao giờ phục vụ — có test). Không liệt kê lại tool trong prompt (mô tả nằm ở chính tool). Cache: system tĩnh TTL theo `QUOTE_CHAT_CACHE_TTL` (1h|5m — chọn bằng `python -m scripts.analyze_chat_cache_ttl`), lượt lịch sử cuối, và `cache_control` cấp request cho vòng lặp tool. Báo cáo ngày KHÔNG cache system (mỗi prompt chỉ dùng 1 lần/ngày).
 
+**Bài học từ góp ý người đọc** (`services/report_lessons.py`, bảng `report_lessons`): Jenny là người viết báo cáo — bị góp ý
+thì kiểm tra bằng tool trước, CHỈ khi sai/thiếu THẬT mới gọi `record_report_lesson` (`LESSON_TOOL`, CỐ Ý ngoài `CLIENT_TOOLS` —
+MCP chỉ đọc, có test). `generate_report_content` nạp bài học còn hiệu lực (`LESSON_MEMORY_DAYS`, về báo cáo trước ngày đang
+sinh) và `_process_section` nối `lessons_prompt_block` (bài học của mục đó + "general") vào user prompt từng mục. Tắt bài
+học sai: `python -m scripts.report_lessons --dismiss ID`. Đoạn chat tham khảo admin chọn (`quote_chat_examples`, tối đa
+`MAX_INJECTED_EXAMPLES` mới nhất) vừa vào system prompt Jenny chat, vừa được `build_report_reference_block` nối vào CUỐI
+system prompt từng mục báo cáo (chỉ học cách suy luận, không chép số, không theo định dạng chat).
+
 **Jack QC báo cáo** (`services/report_qc.py`): tool `jack_qc`: trong Jenny chat web CHỈ bật cho admin
 (`ADMIN_TOOLS` trong `services/quote_chat.py`; `_execute_client_tool(..., allow_admin_tools=...)` chặn thêm ở tầng
 thực thi, admin QC được cả bản draft). Trên MCP/Claude Desktop, gateway thêm riêng `JACK_QC_DESKTOP_TOOL`

@@ -39,7 +39,7 @@ export default function LandingPage() {
     // họ, thay vì phải xem lại trang giới thiệu mỗi lần.
     api.get("/api/auth/me")
       .then((res) => {
-        router.replace(res.data.role === "admin" ? "/admin/reports" : "/dashboard");
+        router.replace(res.data.role === "admin" ? "/admin" : "/dashboard");
       })
       .catch(() => {});
   }, [router]);

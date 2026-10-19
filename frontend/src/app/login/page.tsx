@@ -160,7 +160,7 @@ function AdminLoginForm() {
     try {
       await api.post("/api/admin/auth/login", { username, password });
       setAuthRole("admin");
-      router.push("/admin/reports");
+      router.push("/admin");
     } catch (err: any) {
       setError(err.response?.data?.detail || t("loginFailed"));
     } finally {

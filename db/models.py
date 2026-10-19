@@ -752,3 +752,38 @@ class EuaAuction(Base):
 
     def __repr__(self) -> str:
         return f"EuaAuction({self.auction_date!r}, {self.auction_name!r}, {self.status!r}, {self.auction_price!r})"
+
+
+class ReportLesson(Base):
+    """Bài học rút ra từ góp ý của người dùng trong Jenny chat (services/report_lessons.py).
+    Jenny chỉ ghi SAU KHI đã kiểm tra bằng tool và xác nhận báo cáo sai/thiếu THẬT (tool
+    record_report_lesson); mỗi lần sinh báo cáo, các bài học còn hiệu lực được đưa vào prompt
+    của mục tương ứng để không lặp lại lỗi. `section` là khoá mục của bộ sinh ("1", "2", "dev",
+    "3", "4", "8", "biz") hoặc "general" (áp dụng mọi mục). Admin tắt bằng status='dismissed'."""
+
+    __tablename__ = "report_lessons"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'dismissed')", name="ck_report_lessons_status"),
+        CheckConstraint(
+            "section IN ('1', '2', 'dev', '3', '4', '8', 'biz', 'general')", name="ck_report_lessons_section"
+        ),
+        Index("ix_report_lessons_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_date: Mapped[str] = mapped_column(Text, nullable=False)  # báo cáo bị góp ý, "YYYY-MM-DD"
+    section: Mapped[str] = mapped_column(Text, nullable=False, server_default="general")
+    mistake: Mapped[str] = mapped_column(Text, nullable=False)  # báo cáo đã viết sai gì
+    correction: Mapped[str] = mapped_column(Text, nullable=False)  # nội dung/số đúng sau khi đối chiếu
+    lesson: Mapped[str] = mapped_column(Text, nullable=False)  # quy tắc áp dụng cho các báo cáo sau
+    evidence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # nguồn/tool đã đối chiếu
+    reported_by: Mapped[str] = mapped_column(Text, nullable=False)
+    chat_session_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
+    dismissed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"ReportLesson(id={self.id!r}, date={self.report_date!r}, section={self.section!r}, status={self.status!r})"

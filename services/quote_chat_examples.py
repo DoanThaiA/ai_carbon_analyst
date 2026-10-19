@@ -2,6 +2,8 @@
 chat mà mình đánh giá là phân tích hợp lý (xem api/routers/admin_chat_reviews.py),
 hệ thống tiêm lại các cặp này vào system prompt của MỌI phiên Quote Chat sau đó
 làm chuẩn tham khảo về cách suy luận/văn phong — xem db.models.QuoteChatExample.
+Cùng các ví dụ đó cũng được nối vào system prompt của từng mục khi sinh báo cáo
+ngày (build_report_reference_block, gọi từ report_generator.generate_report_content).
 """
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -97,13 +99,25 @@ async def get_example_map_for_session(session: AsyncSession, *, session_id: int)
     return {msg_id: example_id for msg_id, example_id in result.all() if msg_id is not None}
 
 
+async def _latest_examples(session: AsyncSession) -> Sequence[QuoteChatExample]:
+    stmt = select(QuoteChatExample).order_by(QuoteChatExample.created_at.desc()).limit(MAX_INJECTED_EXAMPLES)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+def _format_examples(examples: Sequence[QuoteChatExample]) -> List[str]:
+    # Đảo lại thành cũ -> mới khi in ra, để ví dụ MỚI NHẤT (admin vừa chọn) nằm gần cuối khối,
+    # gần vị trí model đọc trước khi trả lời.
+    return [
+        f"--- Ví dụ {i} ---\nCâu hỏi: {ex.question}\nCâu trả lời mẫu: {ex.answer}"
+        for i, ex in enumerate(reversed(examples), start=1)
+    ]
+
+
 async def build_few_shot_prompt_block(session: AsyncSession) -> str:
     """Ghép các ví dụ mẫu (tối đa MAX_INJECTED_EXAMPLES, mới nhất) thành 1 khối
     text để tiêm vào system prompt của Quote Chat — rỗng nếu chưa có ví dụ nào
     (không tiêm thêm gì, không đổi hành vi hiện tại)."""
-    stmt = select(QuoteChatExample).order_by(QuoteChatExample.created_at.desc()).limit(MAX_INJECTED_EXAMPLES)
-    result = await session.execute(stmt)
-    examples: Sequence[QuoteChatExample] = list(result.scalars().all())
+    examples = await _latest_examples(session)
     if not examples:
         return ""
 
@@ -115,8 +129,24 @@ async def build_few_shot_prompt_block(session: AsyncSession) -> str:
         "chép lại số liệu, tên sự kiện, hay kết luận cụ thể trong ví dụ vào câu trả lời cho câu hỏi "
         "hiện tại — chỉ học cách trình bày, mức độ ngắn gọn, cách trích dẫn, cách kết luận."
     ]
-    # Đảo lại thành cũ -> mới khi in ra, để ví dụ MỚI NHẤT (admin vừa chọn) nằm gần cuối khối,
-    # gần vị trí model đọc trước khi trả lời.
-    for i, ex in enumerate(reversed(examples), start=1):
-        parts.append(f"--- Ví dụ {i} ---\nCâu hỏi: {ex.question}\nCâu trả lời mẫu: {ex.answer}")
+    parts.extend(_format_examples(examples))
     return "\n\n".join(parts)
+
+
+async def build_report_reference_block(session: AsyncSession) -> str:
+    """Cùng các ví dụ mẫu trên, đóng khung cho bộ sinh báo cáo ngày — nối vào CUỐI system prompt
+    của từng mục. Rỗng nếu chưa có ví dụ nào. Ví dụ là hội thoại chat (văn xuôi), nên dặn rõ chỉ
+    học cách suy luận, KHÔNG theo định dạng của ví dụ (báo cáo phải giữ đúng JSON/định dạng mục)."""
+    examples = await _latest_examples(session)
+    if not examples:
+        return ""
+    return "\n\n".join([
+        "\n\n=== ĐOẠN CHAT THAM KHẢO ĐÃ ĐƯỢC ADMIN CHỌN LỌC ===\n"
+        "Đây là các cặp hỏi-đáp trong Jenny chat mà admin đánh giá là PHÂN TÍCH HỢP LÝ. Dùng làm chuẩn tham "
+        "khảo về CÁCH SUY LUẬN (chuỗi nhân quả, cách cân nhắc yếu tố trái chiều, mức độ thận trọng khi kết luận, "
+        "cách dẫn nguồn) khi viết mục này. TUYỆT ĐỐI KHÔNG dùng làm nguồn số liệu/sự kiện — các ví dụ có thể "
+        "thuộc ngày khác, KHÔNG chép số liệu, tên sự kiện hay kết luận cụ thể của ví dụ vào báo cáo hôm nay. "
+        "KHÔNG theo định dạng/xưng hô của ví dụ (đó là văn chat): định dạng đầu ra vẫn PHẢI đúng yêu cầu của "
+        "mục này ở trên.",
+        *_format_examples(examples),
+    ])

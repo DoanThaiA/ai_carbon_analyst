@@ -16,6 +16,8 @@ from core.config import Settings
 from services import biz_memory
 from services import cbam_estimate
 from services import forecast_review
+from services import report_lessons
+from services.quote_chat_examples import build_report_reference_block
 from services.report_consistency import (
     apply_consistency_fixes, atr_true_range, derived_target_issues, describe_range_position, eua_streak,
 )
@@ -3371,6 +3373,13 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     # 1 query duy nhất — override admin đã custom cho khung phân tích EUA (nếu
     # có), dùng cho cả Mục 2/3/5 bên dưới (xem services/eua_framework_admin.py).
     eua_framework_overrides = await get_overrides_map(session)
+    # Lỗi đã được người đọc chỉ ra + Jenny kiểm chứng trong chat (services/report_lessons.py) —
+    # nối vào prompt từng mục trong _process_section để không lặp lại.
+    lessons = await report_lessons.load_active(session, report_date)
+    if lessons:
+        logger.info("[REPORT] %s: áp dụng %d bài học từ góp ý người đọc.", report_date, len(lessons))
+    # Đoạn chat tham khảo admin đã chọn (bảng quote_chat_examples) — nối vào system prompt từng mục.
+    chat_reference_block = await build_report_reference_block(session)
     if no_price:
         logger.info("[REPORT] %s: ngày dữ liệu %s không có phiên giao dịch — báo cáo chỉ phân tích tin tức.", report_date, target_date)
         prices, max_price_date, chart_data = [], None, []
@@ -3671,6 +3680,8 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             logger.info(f"[REPORT] Đang sinh mục {sec_key}...")
             # Tạo khoảng trễ giữa các request liên tiếp để giảm tải rate limit
             await asyncio.sleep(3)
+            user_prompt += report_lessons.lessons_prompt_block(lessons, sec_key)
+            system_prompt += chat_reference_block
             raw, parsed = None, None
             for attempt in range(SECTION_PARSE_RETRIES):
                 raw = await _call_llm(

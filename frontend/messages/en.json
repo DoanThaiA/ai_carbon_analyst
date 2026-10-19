@@ -795,15 +795,16 @@
     "connectClaude": "Connect Claude",
     "connectClaudeTitle": "Connect Claude Desktop",
     "menu": "Menu",
-    "logout": "Log out"
+    "logout": "Log out",
+    "closeMenu": "Close menu"
   },
   "shellNav": {
-    "group_daily": "1. Daily Reports",
-    "group_stats": "2. Statistics & Performance",
-    "group_resources": "3. Jenny's Resources",
-    "group_capability": "4. Jenny's Capabilities",
-    "group_colleagues": "5. Colleagues",
-    "group_feedback": "6. Feedback on Jenny",
+    "group_daily": "Daily Reports",
+    "group_stats": "Statistics & Performance",
+    "group_resources": "Jenny's Resources",
+    "group_capability": "Jenny's Capabilities",
+    "group_colleagues": "Colleagues",
+    "group_feedback": "Feedback on Jenny",
     "reports": "Daily reports",
     "priceDashboard": "Price dashboard",
     "performance": "Performance stats",
@@ -815,7 +816,30 @@
     "chatHistory": "Conversation history",
     "users": "Colleagues",
     "feedback": "Feedback on Jenny",
-    "releaseNotes": "Release notes"
+    "releaseNotes": "Release notes",
+    "home": "Overview",
+    "brandSubtitle": "Admin console",
+    "collapse": "Collapse menu",
+    "expand": "Expand menu",
+    "navLabel": "Admin navigation",
+    "groupDesc_daily": "Generate, check and publish the Daily Carbon Intelligence report.",
+    "groupDesc_stats": "Track price moves and how reports and chat are used.",
+    "groupDesc_resources": "Input data and knowledge framework Jenny analyses with.",
+    "groupDesc_capability": "Answer standards, reviews and Jenny's conversation history.",
+    "groupDesc_colleagues": "Manage who is allowed to work with Jenny.",
+    "groupDesc_feedback": "User feedback and the system change log.",
+    "desc_reports": "Create drafts, edit and publish",
+    "desc_priceDashboard": "Closing-price charts for tracked contracts",
+    "desc_performance": "Report reads and chat questions per day",
+    "desc_priceSources": "Configure contracts and price crawl sources",
+    "desc_newsSources": "Configure news crawl sources",
+    "desc_euaFramework": "Customise EUA causal knowledge blocks",
+    "desc_chatExamples": "Sample Q&A used by chat and report generation",
+    "desc_chatReviews": "Good/bad ratings for each chat session",
+    "desc_chatHistory": "Read users' full conversations",
+    "desc_users": "Grant login access to managers and peers",
+    "desc_feedback": "Feedback on Jenny's attitude and effectiveness",
+    "desc_releaseNotes": "Customer requests and verification results"
   },
   "shellHotNews": {
     "title": "Hot News",
@@ -988,5 +1012,11 @@
     "task_excel_ph": "E.g. Build an Excel sheet of EUA price scenarios for the next 3 months under these assumptions.",
     "task_strategy": "Build strategy",
     "task_strategy_ph": "E.g. Propose a trading strategy with entry/exit conditions and risk management."
+  },
+  "adminHome": {
+    "greeting": "Hello!",
+    "title": "Which feature would you like to open?",
+    "subtitle": "Pick a category below to view reports, analyse data and use Jenny's tools.",
+    "groupCount": "{count, plural, one {# feature} other {# features}}"
   }
 }

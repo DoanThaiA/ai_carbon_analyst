@@ -263,6 +263,8 @@ async def quote_chat_stream(
                 few_shot_block=few_shot_block,
                 attachments=body.attachments,
                 is_admin=payload.get("role") == "admin",
+                user_email=user_email,
+                chat_session_id=chat_session.id,
             ):
                 if isinstance(delta, StatusEvent):
                     # Trạng thái tạm (vd đang dùng trợ lý Sonic) — chỉ hiện trên UI, không vào câu trả lời/lịch sử.

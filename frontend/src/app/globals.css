@@ -350,3 +350,19 @@ svg text {
     100% { transform: translateX(0); }
   }
 }
+
+/* Drawer điều hướng admin trên mobile (Header.tsx) — nền mờ dần + panel trượt từ trái. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-[fadeIn"],
+  [class*="animate-[slideInLeft"] {
+    animation: none !important;
+  }
+}

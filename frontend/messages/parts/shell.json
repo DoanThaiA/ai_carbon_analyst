@@ -6,7 +6,8 @@
    "connectClaude": "Kết nối Claude",
    "connectClaudeTitle": "Kết nối Claude Desktop",
    "menu": "Menu",
-   "logout": "Đăng xuất"
+   "logout": "Đăng xuất",
+   "closeMenu": "Đóng menu"
   },
   "en": {
    "admin": "Admin",
@@ -14,17 +15,18 @@
    "connectClaude": "Connect Claude",
    "connectClaudeTitle": "Connect Claude Desktop",
    "menu": "Menu",
-   "logout": "Log out"
+   "logout": "Log out",
+   "closeMenu": "Close menu"
   }
  },
  "shellNav": {
   "vi": {
-   "group_daily": "1. Báo cáo ngày",
-   "group_stats": "2. Thống kê & Hiệu suất",
-   "group_resources": "3. Nguồn lực của Jenny",
-   "group_capability": "4. Năng lực của Jenny",
-   "group_colleagues": "5. Đồng nghiệp",
-   "group_feedback": "6. Phản ánh về Jenny",
+   "group_daily": "Báo cáo ngày",
+   "group_stats": "Thống kê & Hiệu suất",
+   "group_resources": "Nguồn lực của Jenny",
+   "group_capability": "Năng lực của Jenny",
+   "group_colleagues": "Đồng nghiệp",
+   "group_feedback": "Phản ánh về Jenny",
    "reports": "Báo cáo ngày",
    "priceDashboard": "Dashboard giá",
    "performance": "Thống kê hiệu suất",
@@ -36,15 +38,38 @@
    "chatHistory": "Lịch sử giao tiếp",
    "users": "Đồng nghiệp",
    "feedback": "Phản ánh về Jenny",
-   "releaseNotes": "Release Note"
+   "releaseNotes": "Release Note",
+   "home": "Tổng quan",
+   "brandSubtitle": "Bảng điều khiển quản trị",
+   "collapse": "Thu gọn menu",
+   "expand": "Mở rộng menu",
+   "navLabel": "Điều hướng quản trị",
+   "groupDesc_daily": "Sinh, kiểm tra và xuất bản báo cáo Daily Carbon Intelligence.",
+   "groupDesc_stats": "Theo dõi diễn biến giá và mức độ sử dụng báo cáo, chat.",
+   "groupDesc_resources": "Dữ liệu đầu vào và khung tri thức Jenny dùng để phân tích.",
+   "groupDesc_capability": "Chuẩn trả lời, đánh giá và lịch sử hội thoại của Jenny.",
+   "groupDesc_colleagues": "Quản lý những người được phép làm việc với Jenny.",
+   "groupDesc_feedback": "Phản ánh của người dùng và nhật ký cập nhật hệ thống.",
+   "desc_reports": "Tạo bản draft, chỉnh sửa và duyệt xuất bản",
+   "desc_priceDashboard": "Biểu đồ giá đóng cửa các hợp đồng theo dõi",
+   "desc_performance": "Lượt đọc báo cáo và hỏi đáp theo từng ngày",
+   "desc_priceSources": "Cấu hình hợp đồng và nguồn crawl giá",
+   "desc_newsSources": "Cấu hình nguồn crawl tin tức",
+   "desc_euaFramework": "Tuỳ chỉnh khối tri thức nhân quả về EUA",
+   "desc_chatExamples": "Hỏi-đáp mẫu dùng cho chat và sinh báo cáo",
+   "desc_chatReviews": "Đánh giá tốt/không tốt từng phiên chat",
+   "desc_chatHistory": "Đọc lại toàn bộ hội thoại của người dùng",
+   "desc_users": "Cấp quyền đăng nhập cho cấp trên và đồng cấp",
+   "desc_feedback": "Phản ánh về thái độ và hiệu quả của Jenny",
+   "desc_releaseNotes": "Yêu cầu khách hàng và kết quả kiểm tra"
   },
   "en": {
-   "group_daily": "1. Daily Reports",
-   "group_stats": "2. Statistics & Performance",
-   "group_resources": "3. Jenny's Resources",
-   "group_capability": "4. Jenny's Capabilities",
-   "group_colleagues": "5. Colleagues",
-   "group_feedback": "6. Feedback on Jenny",
+   "group_daily": "Daily Reports",
+   "group_stats": "Statistics & Performance",
+   "group_resources": "Jenny's Resources",
+   "group_capability": "Jenny's Capabilities",
+   "group_colleagues": "Colleagues",
+   "group_feedback": "Feedback on Jenny",
    "reports": "Daily reports",
    "priceDashboard": "Price dashboard",
    "performance": "Performance stats",
@@ -56,7 +81,30 @@
    "chatHistory": "Conversation history",
    "users": "Colleagues",
    "feedback": "Feedback on Jenny",
-   "releaseNotes": "Release notes"
+   "releaseNotes": "Release notes",
+   "home": "Overview",
+   "brandSubtitle": "Admin console",
+   "collapse": "Collapse menu",
+   "expand": "Expand menu",
+   "navLabel": "Admin navigation",
+   "groupDesc_daily": "Generate, check and publish the Daily Carbon Intelligence report.",
+   "groupDesc_stats": "Track price moves and how reports and chat are used.",
+   "groupDesc_resources": "Input data and knowledge framework Jenny analyses with.",
+   "groupDesc_capability": "Answer standards, reviews and Jenny's conversation history.",
+   "groupDesc_colleagues": "Manage who is allowed to work with Jenny.",
+   "groupDesc_feedback": "User feedback and the system change log.",
+   "desc_reports": "Create drafts, edit and publish",
+   "desc_priceDashboard": "Closing-price charts for tracked contracts",
+   "desc_performance": "Report reads and chat questions per day",
+   "desc_priceSources": "Configure contracts and price crawl sources",
+   "desc_newsSources": "Configure news crawl sources",
+   "desc_euaFramework": "Customise EUA causal knowledge blocks",
+   "desc_chatExamples": "Sample Q&A used by chat and report generation",
+   "desc_chatReviews": "Good/bad ratings for each chat session",
+   "desc_chatHistory": "Read users' full conversations",
+   "desc_users": "Grant login access to managers and peers",
+   "desc_feedback": "Feedback on Jenny's attitude and effectiveness",
+   "desc_releaseNotes": "Customer requests and verification results"
   }
  },
  "shellHotNews": {
@@ -153,6 +201,20 @@
    "wdFull_fri": "Friday",
    "wdFull_sat": "Saturday",
    "wdFull_sun": "Sunday"
+  }
+ },
+ "adminHome": {
+  "vi": {
+   "greeting": "Xin chào!",
+   "title": "Bạn muốn truy cập chức năng nào?",
+   "subtitle": "Lựa chọn danh mục bên dưới để xem báo cáo, phân tích dữ liệu và khai thác các công cụ của Jenny.",
+   "groupCount": "{count, plural, other {# chức năng}}"
+  },
+  "en": {
+   "greeting": "Hello!",
+   "title": "Which feature would you like to open?",
+   "subtitle": "Pick a category below to view reports, analyse data and use Jenny's tools.",
+   "groupCount": "{count, plural, one {# feature} other {# features}}"
   }
  }
 }

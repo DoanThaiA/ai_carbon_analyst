@@ -2,27 +2,26 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
-import clsx from "clsx";
 import { LogoutButton } from "@/components/LogoutButton";
 import { HotNewsBell } from "@/components/HotNewsBell";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { Settings, Menu, X, LogOut, Plug } from "lucide-react";
-import { api, setAuthRole } from "@/lib/api";
-import { ADMIN_NAV_GROUPS, ADMIN_NAV_ITEMS } from "@/lib/adminNav";
+import { Settings, Menu, X, Plug, ChevronRight } from "lucide-react";
+import { api } from "@/lib/api";
+import { ADMIN_HOME_HREF, activeAdminItem } from "@/lib/adminNav";
+import { AdminNavList } from "@/components/admin/AdminNavList";
 
 export function Header() {
   const t = useTranslations("shellHeader");
   const tNav = useTranslations("shellNav");
   const pathname = usePathname();
-  const router = useRouter();
   const isAdmin = pathname?.startsWith("/admin");
   const isLogin = pathname === "/login";
   const [role, setRole] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const logoHref = isAdmin ? "/admin/reports" : role ? "/dashboard" : "/";
+  const logoHref = isAdmin ? ADMIN_HOME_HREF : role ? "/dashboard" : "/";
 
   useEffect(() => {
     if (!isLogin) {
@@ -42,16 +41,22 @@ export function Header() {
   // (chưa đăng nhập) không nên hiện các nút này.
   const isAuthenticated = !isLogin && role !== null;
 
-  // Breadcrumb "Admin/<Tên trang>" — hiện ở thanh riêng NGAY DƯỚI header (không
-  // còn thay chỗ tiêu đề "Jenny AI" nữa), cùng nguồn ADMIN_NAV_ITEMS với
-  // sidebar/menu mobile bên dưới nên luôn khớp nhãn.
-  const adminPageLabel = ADMIN_NAV_ITEMS.find(({ href }) => pathname?.startsWith(href))?.labelKey;
+  // Breadcrumb "Quản trị › <Nhóm> › <Trang>" — NGAY DƯỚI header, cùng nguồn ADMIN_NAV_GROUPS
+  // với sidebar/drawer nên luôn khớp nhãn.
+  const adminActive = activeAdminItem(pathname);
 
-  const handleAdminLogout = async () => {
-    await api.post("/api/admin/auth/logout").catch(() => {});
-    setAuthRole(null);
-    router.replace("/login?as=admin");
-  };
+  // Drawer mobile mở thì khoá cuộn trang phía sau + Esc để đóng.
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMobileNavOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [mobileNavOpen]);
 
   return (
     <>
@@ -69,7 +74,7 @@ export function Header() {
             <>
             {role === "admin" && !isAdmin && (
               <Link
-                href="/admin/reports"
+                href={ADMIN_HOME_HREF}
                 className="text-white/80 hover:text-white flex items-center gap-1.5 text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full"
                 title={t("adminTitle")}
               >
@@ -93,6 +98,7 @@ export function Header() {
                 onClick={() => setMobileNavOpen(v => !v)}
                 className="md:hidden text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
                 aria-label={t("menu")}
+                aria-expanded={mobileNavOpen}
               >
                 {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
@@ -103,63 +109,65 @@ export function Header() {
           )}
         </div>
 
-        {/* Menu mobile admin — điều hướng + đăng xuất, thay cho sidebar (chỉ
-            hiện từ md trở lên, xem admin/layout.tsx). */}
-        {isAdmin && mobileNavOpen && (
-          <div className="md:hidden absolute top-full inset-x-0 bg-primary-dark border-t border-white/10 shadow-lg z-40">
-            {/* Cùng phân nhóm với sidebar desktop — vạch kẻ mờ giữa các nhóm,
-                "Đăng xuất" nằm cuối nhóm cuối. */}
-            <div className="p-3">
-              {ADMIN_NAV_GROUPS.map((group, gi) => {
-                const isLast = gi === ADMIN_NAV_GROUPS.length - 1;
-                return (
-                  <div key={group.id}>
-                    {gi > 0 && <div className="my-2 mx-3 h-px bg-white/15" aria-hidden="true" />}
-                    <ul className="space-y-1">
-                      {group.items.map(({ href, labelKey, icon: Icon }) => (
-                        <li key={href}>
-                          <Link
-                            href={href}
-                            className={clsx(
-                              "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors",
-                              pathname?.startsWith(href) ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10"
-                            )}
-                          >
-                            <Icon size={16} />
-                            {tNav(labelKey)}
-                          </Link>
-                        </li>
-                      ))}
-                      {isLast && (
-                        <li>
-                          <button
-                            onClick={handleAdminLogout}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
-                          >
-                            <LogOut size={16} />
-                            {t("logout")}
-                          </button>
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </header>
 
-      {/* Breadcrumb "Admin/<Tên trang>" — chỉ là chữ, không có thanh nền màu
-          riêng; nằm ngay dưới header, cuộn theo nội dung trang (không sticky)
-          thay vì lấn vào tiêu đề chính "Jenny AI". Màu text-muted-light —
-          đúng token thiết kế đang dùng cho chữ meta/caption trong toàn app. */}
-      {isAdmin && (
-        <div className="px-6 pt-2.5 print:hidden">
-          <p className="text-muted-light text-xs sm:text-sm font-semibold tracking-wide truncate">
-            Admin/{adminPageLabel ? tNav(adminPageLabel) : ""}
-          </p>
+      {/* Drawer điều hướng admin dưới md — cùng AdminNavList với sidebar desktop. */}
+      {isAdmin && mobileNavOpen && (
+        <div className="md:hidden fixed inset-0 z-[60] print:hidden" role="dialog" aria-modal="true" aria-label={tNav("navLabel")}>
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/30 animate-[fadeIn_200ms_ease-out]"
+            onClick={() => setMobileNavOpen(false)}
+            aria-label={t("closeMenu")}
+          />
+          <div className="absolute inset-y-0 left-0 flex w-[min(20rem,85vw)] flex-col bg-background shadow-[var(--shadow-medium)] animate-[slideInLeft_250ms_cubic-bezier(.4,0,.2,1)]">
+            <div className="flex items-center gap-3 border-b border-border px-4 py-3.5">
+              <Image src="/jenny.jpg" alt="Jenny AI" width={36} height={36} className="h-9 w-9 rounded-full object-cover ring-2 ring-tint" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-bold text-heading leading-tight">Jenny AI</span>
+                <span className="block text-xs text-muted-light truncate">{tNav("brandSubtitle")}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(false)}
+                className="rounded-full p-2 text-muted-light hover:bg-surface hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                aria-label={t("closeMenu")}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <nav className="flex-1 overflow-y-auto p-3">
+              <AdminNavList />
+            </nav>
+          </div>
         </div>
+      )}
+
+      {isAdmin && (
+        <nav aria-label="Breadcrumb" className="px-4 md:px-6 pt-3 print:hidden">
+          <ol className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-muted-light min-w-0">
+            <li className="shrink-0">
+              <Link href={ADMIN_HOME_HREF} className="hover:text-primary transition-colors">{t("admin")}</Link>
+            </li>
+            {adminActive ? (
+              <>
+                {tNav(adminActive.group.labelKey) !== tNav(adminActive.item.labelKey) && (
+                  <>
+                    <li aria-hidden="true" className="hidden sm:block"><ChevronRight size={14} /></li>
+                    <li className="hidden sm:block shrink-0">{tNav(adminActive.group.labelKey)}</li>
+                  </>
+                )}
+                <li aria-hidden="true"><ChevronRight size={14} /></li>
+                <li className="truncate text-heading" aria-current="page">{tNav(adminActive.item.labelKey)}</li>
+              </>
+            ) : (
+              <>
+                <li aria-hidden="true"><ChevronRight size={14} /></li>
+                <li className="truncate text-heading" aria-current="page">{tNav("home")}</li>
+              </>
+            )}
+          </ol>
+        </nav>
       )}
     </>
   );

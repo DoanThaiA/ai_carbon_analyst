@@ -795,15 +795,16 @@
     "connectClaude": "Kết nối Claude",
     "connectClaudeTitle": "Kết nối Claude Desktop",
     "menu": "Menu",
-    "logout": "Đăng xuất"
+    "logout": "Đăng xuất",
+    "closeMenu": "Đóng menu"
   },
   "shellNav": {
-    "group_daily": "1. Báo cáo ngày",
-    "group_stats": "2. Thống kê & Hiệu suất",
-    "group_resources": "3. Nguồn lực của Jenny",
-    "group_capability": "4. Năng lực của Jenny",
-    "group_colleagues": "5. Đồng nghiệp",
-    "group_feedback": "6. Phản ánh về Jenny",
+    "group_daily": "Báo cáo ngày",
+    "group_stats": "Thống kê & Hiệu suất",
+    "group_resources": "Nguồn lực của Jenny",
+    "group_capability": "Năng lực của Jenny",
+    "group_colleagues": "Đồng nghiệp",
+    "group_feedback": "Phản ánh về Jenny",
     "reports": "Báo cáo ngày",
     "priceDashboard": "Dashboard giá",
     "performance": "Thống kê hiệu suất",
@@ -815,7 +816,30 @@
     "chatHistory": "Lịch sử giao tiếp",
     "users": "Đồng nghiệp",
     "feedback": "Phản ánh về Jenny",
-    "releaseNotes": "Release Note"
+    "releaseNotes": "Release Note",
+    "home": "Tổng quan",
+    "brandSubtitle": "Bảng điều khiển quản trị",
+    "collapse": "Thu gọn menu",
+    "expand": "Mở rộng menu",
+    "navLabel": "Điều hướng quản trị",
+    "groupDesc_daily": "Sinh, kiểm tra và xuất bản báo cáo Daily Carbon Intelligence.",
+    "groupDesc_stats": "Theo dõi diễn biến giá và mức độ sử dụng báo cáo, chat.",
+    "groupDesc_resources": "Dữ liệu đầu vào và khung tri thức Jenny dùng để phân tích.",
+    "groupDesc_capability": "Chuẩn trả lời, đánh giá và lịch sử hội thoại của Jenny.",
+    "groupDesc_colleagues": "Quản lý những người được phép làm việc với Jenny.",
+    "groupDesc_feedback": "Phản ánh của người dùng và nhật ký cập nhật hệ thống.",
+    "desc_reports": "Tạo bản draft, chỉnh sửa và duyệt xuất bản",
+    "desc_priceDashboard": "Biểu đồ giá đóng cửa các hợp đồng theo dõi",
+    "desc_performance": "Lượt đọc báo cáo và hỏi đáp theo từng ngày",
+    "desc_priceSources": "Cấu hình hợp đồng và nguồn crawl giá",
+    "desc_newsSources": "Cấu hình nguồn crawl tin tức",
+    "desc_euaFramework": "Tuỳ chỉnh khối tri thức nhân quả về EUA",
+    "desc_chatExamples": "Hỏi-đáp mẫu dùng cho chat và sinh báo cáo",
+    "desc_chatReviews": "Đánh giá tốt/không tốt từng phiên chat",
+    "desc_chatHistory": "Đọc lại toàn bộ hội thoại của người dùng",
+    "desc_users": "Cấp quyền đăng nhập cho cấp trên và đồng cấp",
+    "desc_feedback": "Phản ánh về thái độ và hiệu quả của Jenny",
+    "desc_releaseNotes": "Yêu cầu khách hàng và kết quả kiểm tra"
   },
   "shellHotNews": {
     "title": "Hot News",
@@ -988,5 +1012,11 @@
     "task_excel_ph": "VD: Lập bảng Excel kịch bản giá EUA 3 tháng tới theo các giả định.",
     "task_strategy": "Lập chiến lược",
     "task_strategy_ph": "VD: Đề xuất chiến lược giao dịch kèm điều kiện vào/ra lệnh và quản trị rủi ro."
+  },
+  "adminHome": {
+    "greeting": "Xin chào!",
+    "title": "Bạn muốn truy cập chức năng nào?",
+    "subtitle": "Lựa chọn danh mục bên dưới để xem báo cáo, phân tích dữ liệu và khai thác các công cụ của Jenny.",
+    "groupCount": "{count, plural, other {# chức năng}}"
   }
 }
