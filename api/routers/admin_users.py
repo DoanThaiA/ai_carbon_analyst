@@ -18,6 +18,9 @@ router = APIRouter(
 
 RelationType = Literal["superior", "peer"]
 
+# Số email (bảng users) tối đa được thêm vào hệ thống.
+MAX_USERS = 5
+
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -57,8 +60,11 @@ async def create_user(body: UserCreate, session: AsyncSession = Depends(get_db))
     email = body.email.strip().lower()
 
     user_count = (await session.execute(select(func.count(User.id)))).scalar()
-    if user_count >= 4:
-        raise HTTPException(status_code=400, detail="Hệ thống đã đạt giới hạn 4 người dùng. Vui lòng xoá user cũ để thêm mới.")
+    if user_count >= MAX_USERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hệ thống đã đạt giới hạn {MAX_USERS} người dùng. Vui lòng xoá user cũ để thêm mới.",
+        )
 
     row = User(
         email=email,
