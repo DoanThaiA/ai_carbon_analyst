@@ -877,7 +877,6 @@
     "users": "Đồng nghiệp",
     "feedback": "Phản ánh về Jenny",
     "releaseNotes": "Release Note",
-<<<<<<< HEAD
     "home": "Tổng quan",
     "brandSubtitle": "Bảng điều khiển quản trị",
     "collapse": "Thu gọn menu",
@@ -900,10 +899,8 @@
     "desc_chatHistory": "Đọc lại toàn bộ hội thoại của người dùng",
     "desc_users": "Cấp quyền đăng nhập cho cấp trên và đồng cấp",
     "desc_feedback": "Phản ánh về thái độ và hiệu quả của Jenny",
-    "desc_releaseNotes": "Yêu cầu khách hàng và kết quả kiểm tra"
-=======
+    "desc_releaseNotes": "Yêu cầu khách hàng và kết quả kiểm tra",
     "qcResults": "QC Result"
->>>>>>> d6b4d70b31b4791519175f3c66a938425760098d
   },
   "shellHotNews": {
     "title": "Hot News",
@@ -1077,13 +1074,12 @@
     "task_strategy": "Lập chiến lược",
     "task_strategy_ph": "VD: Đề xuất chiến lược giao dịch kèm điều kiện vào/ra lệnh và quản trị rủi ro."
   },
-<<<<<<< HEAD
   "adminHome": {
     "greeting": "Xin chào!",
     "title": "Bạn muốn truy cập chức năng nào?",
     "subtitle": "Lựa chọn danh mục bên dưới để xem báo cáo, phân tích dữ liệu và khai thác các công cụ của Jenny.",
     "groupCount": "{count, plural, other {# chức năng}}"
-=======
+  },
   "adminQcReviews": {
     "pageTitle": "QC Result",
     "pageDesc": "Biên bản QC báo cáo do Jack chấm trên Claude (lịch 08:00, gửi qua MCP) — chỉ quản trị viên xem được. Biên bản Không đạt chặn lịch tự xuất bản.",
@@ -1164,6 +1160,5 @@
     "backToList": "Quay lại QC Result",
     "openReport": "Mở báo cáo {date}",
     "detailTitle": "Biên bản QC báo cáo {date} · lần #{run}"
->>>>>>> d6b4d70b31b4791519175f3c66a938425760098d
   }
 }
