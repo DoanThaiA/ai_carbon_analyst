@@ -652,51 +652,118 @@
       "headingWatch": "Cần theo dõi",
       "headingKeyDev": "Diễn biến chính"
     },
-    "trend": {
-      "up": "NGHIÊNG TĂNG",
-      "down": "NGHIÊNG GIẢM",
-      "sideways": "GIẰNG CO"
-    },
-    "position": {
-      "up": "MUA (LONG) — theo xu hướng ngắn hạn",
-      "down": "BÁN (SHORT) — theo xu hướng ngắn hạn",
-      "sideways": "ĐI NGANG — chỉ đặt lệnh chờ (limit)"
-    },
     "ladder": {
-      "current": "Hiện tại {price}",
-      "stop": "Cắt lỗ",
-      "entry": "Vào lệnh",
-      "target": "Mục tiêu"
+      "current": "Hiện tại",
+      "support": "Hỗ trợ",
+      "resistance": "Kháng cự",
+      "zone": {
+        "buy": "Vùng mua",
+        "sell": "Vùng bán"
+      },
+      "trigger": {
+        "buy": "Mua khi phá",
+        "sell": "Bán khi phá"
+      },
+      "scale": {
+        "buy": "Tích lũy",
+        "sell": "Bán dần"
+      },
+      "target": {
+        "buy": "MT mua",
+        "sell": "MT bán",
+        "plain": "MT"
+      },
+      "stop": {
+        "buy": "SL mua",
+        "sell": "SL bán",
+        "plain": "SL"
+      },
+      "horizon": {
+        "mid": "trung hạn",
+        "long": "dài hạn"
+      },
+      "withHorizon": "{name} {horizon}"
     },
     "signal": {
-      "title": "KHUYẾN NGHỊ VỊ THẾ",
-      "confidence": "Độ tin cậy:",
-      "market": "Thị trường:",
-      "shortTerm": "Ngắn hạn (1–2 tuần):",
-      "midTerm": "Trung hạn (1–3 tháng):",
-      "position": "Vị thế",
-      "priceZone": "Vùng giá",
-      "buyAround": "Mua quanh",
-      "sellAround": "Bán quanh",
-      "takeLong": "Chốt vị thế mua",
-      "takeShort": "Chốt vị thế bán",
-      "stopBelow": "Cắt lỗ nếu dưới",
-      "stopAbove": "Cắt lỗ nếu trên",
-      "rrSub": "rủi ro : lợi nhuận",
-      "targetProfit": "Lợi nhuận mục tiêu",
-      "maxRisk": "Rủi ro tối đa",
-      "tradingRange": "Biên độ giao dịch",
-      "tileEntry": "Vào lệnh (Entry)",
-      "tileTarget": "Mục tiêu (Target)",
-      "tileStop": "Cắt lỗ (Stop Loss)",
-      "support": "Hỗ trợ",
-      "supportSub": "đáy 30 phiên",
-      "resistance": "Kháng cự",
-      "resistanceSub": "đỉnh 30 phiên",
-      "techTarget": "Mục tiêu kỹ thuật",
-      "techTargetSub": "nếu phá kháng cự",
-      "basis": "Cơ sở",
-      "keyRisk": "Rủi ro chính",
+      "title": "Khuyến nghị vị thế EUA",
+      "dataAsOf": "Dữ liệu phiên {date} · đơn vị EUR/tCO₂",
+      "outlook": "Nhận định",
+      "gaugeDown": "Giảm",
+      "gaugeUp": "Tăng",
+      "outlookLabel": {
+        "up": "Nghiêng tăng",
+        "down": "Nghiêng giảm",
+        "upMidDown": "Tăng ngắn hạn · trung hạn giảm",
+        "downMidUp": "Giảm ngắn hạn · trung hạn tăng",
+        "neutral": "Trung lập",
+        "neutralUp": "Trung lập · nghiêng tăng",
+        "neutralDown": "Trung lập · nghiêng giảm"
+      },
+      "refPrice": "Giá tham chiếu",
+      "dayPct": "{pct}% ngày",
+      "weekPct": "{pct}% tuần",
+      "range30": "Biên 30 phiên",
+      "rangePos": {
+        "above": "Trên biên trên",
+        "below": "Dưới biên dưới",
+        "nearTop": "Sát biên trên ({pct}%)",
+        "nearBottom": "Sát biên dưới ({pct}%)",
+        "middle": "Vùng giữa biên ({pct}%)",
+        "upper": "Nửa trên biên ({pct}%)",
+        "lower": "Nửa dưới biên ({pct}%)"
+      },
+      "measured": "Đo biên độ: ↓{down} · ↑{up}",
+      "atr": "ATR {n} phiên",
+      "atrPct": "≈ {pct}% giá",
+      "volVsAvg": "KL {pct}% so TB {n} phiên",
+      "track": "Dự báo trước",
+      "trackUnit": "đúng",
+      "trackWrong": "Sai: {dates}",
+      "trackRight": "Đúng: {dates}",
+      "trackPending": "{n} chưa có kết luận",
+      "trackNone": "Chưa có dự báo để chấm",
+      "col": {
+        "horizon": "Khung · hướng",
+        "order": "Lệnh",
+        "entry": "Entry",
+        "target": "Mục tiêu",
+        "stop": "Cắt lỗ",
+        "rr": "R:R",
+        "condition": "Điều kiện / vô hiệu"
+      },
+      "period": {
+        "short": "1–2 tuần",
+        "mid": "1–3 tháng",
+        "long": "3–12 tháng"
+      },
+      "prob": "XS {p}",
+      "alternative": "thay thế",
+      "order": {
+        "limit": {
+          "buy": "Mua chờ",
+          "sell": "Bán chờ"
+        },
+        "now": {
+          "buy": "Mua quanh giá",
+          "sell": "Bán quanh giá"
+        },
+        "breakout": {
+          "buy": "Mua khi phá",
+          "sell": "Bán khi phá"
+        },
+        "scale": {
+          "buy": "Tích lũy dần",
+          "sell": "Bán dần"
+        }
+      },
+      "onClose": "ĐC",
+      "vsPrice": "{pct}% so giá",
+      "unquantified": "Chưa định lượng",
+      "rrWeak": "R:R dưới chuẩn 1 : {min}",
+      "invalidation": "Vô hiệu:",
+      "legendRisk": "Rủi ro tới cắt lỗ",
+      "legendReward": "Lợi nhuận tới mục tiêu",
+      "legendNote": "cùng thang đo, tính từ điểm giữa vùng Entry (lệnh phá vỡ: mức kích hoạt); chuẩn R:R ≥ 1 : {min}. MT = mục tiêu · SL = cắt lỗ · ĐC = giá đóng cửa · XS = xác suất.",
       "hedge": "Sổ phòng hộ SIM (CBAM)",
       "hedgeAction": {
         "buy_now": "MUA NGAY",
@@ -715,10 +782,7 @@
         "move": "DỜI MỨC",
         "close": "ĐÓNG LỆNH",
         "none": "CHƯA ĐỐI CHIẾU"
-      },
-      "midAlt": "thay thế: {arrow} xác suất thấp",
-      "legBuyTitle": "Lệnh mua (biên dưới)",
-      "legSellTitle": "Lệnh bán (biên trên)"
+      }
     },
     "scenario": {
       "heading": "Kịch bản hành động",
@@ -865,6 +929,40 @@
       },
       "cbamEffect": "CBAM:",
       "unverified": "Theo tóm tắt, chưa đối chiếu văn bản gốc"
+    },
+    "hedge": {
+      "title": "Phòng hộ CBAM {quarter}",
+      "estimateCi": "Giá CBAM quý ước tính {est} (KTC {level}%: {low}–{high})",
+      "estimate": "Giá CBAM quý ước tính {est}",
+      "segFixed": "Đã chốt {pct}%",
+      "segCore": "Lõi {pct}% — MUA {contract} hôm nay",
+      "segTactical": {
+        "hold": "Chiến thuật {pct}% — chưa dùng",
+        "increase": "Chiến thuật {pct}% — khóa thêm",
+        "reduce": "Chiến thuật {pct}% — chờ"
+      },
+      "segTacticalShort": {
+        "hold": "Chờ {pct}%",
+        "increase": "Thêm {pct}%",
+        "reduce": "Chờ {pct}%"
+      },
+      "sellPlan": "Lõi: mua {contract} hôm nay, bán rải theo {left} phiên đấu giá còn lại (tới {last}) → chi phí ròng ≈ giá mua hôm nay.",
+      "sellPlanNoDate": "Lõi: mua {contract} hôm nay, bán rải theo {left} phiên đấu giá còn lại → chi phí ròng ≈ giá mua hôm nay.",
+      "next7": "7 ngày tới: {count} phiên / {volume} triệu t.",
+      "tactical": {
+        "spot_near_qtd": "Chiến thuật (≤{tmax}% phần chưa chốt) chưa dùng: giá {spot} lệch {gap}% so với VWAP đấu giá đã chốt {qtd}, dưới ngưỡng ±{threshold}%.",
+        "spot_below_qtd": "Chiến thuật (≤{tmax}% phần chưa chốt): khóa thêm ngay — giá {spot} thấp hơn {gap}% so với VWAP đấu giá đã chốt {qtd} (ngưỡng {threshold}%).",
+        "spot_above_qtd": "Chiến thuật (≤{tmax}% phần chưa chốt): chưa khóa thêm — giá {spot} cao hơn {gap}% so với VWAP đấu giá đã chốt {qtd} (ngưỡng {threshold}%), chờ giá về gần {qtd}.",
+        "quarter_mostly_fixed": "Chiến thuật chưa dùng: quý đã chốt {fixed}% khối lượng, phần hở nhỏ.",
+        "quarter_not_started": "Chiến thuật chưa dùng: quý chưa có phiên đấu giá nào làm mốc.",
+        "quarter_fixed": "Quý đã chốt toàn bộ khối lượng — giá CBAM quý coi như đã chốt."
+      },
+      "expiry": {
+        "sameDay": "{last}: phiên đấu giá cuối quý trùng ngày đáo hạn {contract} — bán phần cuối trước giờ chốt đáo hạn, hoặc dời sang {next}.",
+        "afterExpiry": "Có phiên đấu giá sau ngày đáo hạn {contract} ({expiry}; phiên cuối quý {last}) — phần đó khóa bằng {next}.",
+        "beforeExpiry": "Mọi phiên đấu giá còn lại (cuối quý {last}) đều trước ngày đáo hạn {contract} ({expiry}).",
+        "noExpiry": "Phiên đấu giá cuối quý {last} — chưa có ngày đáo hạn {contract}: kiểm lịch ICE; phần sau đáo hạn chuyển sang {next}."
+      }
     }
   },
   "shellHeader": {

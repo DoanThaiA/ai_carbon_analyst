@@ -7,11 +7,11 @@ import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X, Trash2,
-  Leaf, Calendar, RefreshCw
+  Leaf, Calendar, RefreshCw, ArrowLeftRight, CalendarClock
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
-import type { HedgeAction, OpenPosition, Report } from "@/lib/types";
+import type { CbamEstimate, ForecastReview, HedgeAction, OpenPosition, Report } from "@/lib/types";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
@@ -102,14 +102,13 @@ const DIRECTION_META: Record<string, { icon: typeof TrendingUp; className: strin
   "đi ngang": { icon: Minus, className: "bg-blue-600 text-white border-blue-600" },
 };
 
-// Nhãn xu hướng dạng mũi tên + chữ cho thẻ KHUYẾN NGHỊ VỊ THẾ (Phần 2) — chỉ là
-// cách gọi tên khác của cùng "direction" (tăng/giảm/đi ngang) đã có sẵn trong
+// Mũi tên + màu chiều giá của từng kịch bản trong thẻ KHUYẾN NGHỊ VỊ THẾ (Phần 2) — chỉ là
+// cách hiển thị khác của cùng "direction" (tăng/giảm/đi ngang) đã có sẵn trong
 // trading_scenarios, KHÔNG phải trường dữ liệu mới/suy diễn thêm.
-// labelKey: khoá dịch reportDoc.trend.* / reportDoc.position.*
-const TREND_META: Record<string, { arrow: string; labelKey: "up" | "down" | "sideways"; className: string }> = {
-  "tăng": { arrow: "▲", labelKey: "up", className: "text-up" },
-  "giảm": { arrow: "▼", labelKey: "down", className: "text-down" },
-  "đi ngang": { arrow: "↔", labelKey: "sideways", className: "text-blue-700" },
+const TREND_META: Record<string, { arrow: string; className: string }> = {
+  "tăng": { arrow: "▲", className: "text-up" },
+  "giảm": { arrow: "▼", className: "text-down" },
+  "đi ngang": { arrow: "↔", className: "text-blue-700" },
 };
 
 // Nhãn tác động của từng SỰ KIỆN TIN TỨC trong "Diễn biến chính" lên cán cân
@@ -119,10 +118,6 @@ const IMPACT_META: Record<string, { arrow: string; label: string; badge: string;
   "giảm": { arrow: "▼", label: "Áp lực EUA", badge: "text-down border-down/30 bg-red-50", bar: "border-l-down" },
   "trung lập": { arrow: "●", label: "Chờ xác nhận", badge: "text-blue-700 border-blue-200 bg-blue-50", bar: "border-l-blue-400" },
 };
-
-// "Khuyến nghị vị thế" cũng suy ra trực tiếp từ "direction" có sẵn của kịch
-// bản "ngắn hạn" — không phải khuyến nghị đầu tư mới do LLM tự sinh riêng.
-// (Nhãn hiển thị: reportDoc.position.<labelKey của TREND_META>.)
 
 // Mục 1: mỗi bullet mở đầu bằng 1 tag tự do do LLM đặt tên (EUA, Chính sách, Địa
 // chính trị...) — không phải enum cố định nên không thể map tay từng giá trị.
@@ -285,99 +280,97 @@ function HighlightNumbers({ text }: { text: string }) {
   );
 }
 
-// Thang giá: Cắt lỗ — Vào lệnh — Mục tiêu trên 1 trục, tô đỏ vùng rủi ro / xanh
-// vùng lợi nhuận, vạch "Hiện tại" là giá đóng cửa gần nhất của chart_data.
-function SignalLadder({ stop, entry, target, last }: { stop: number; entry: number; target: number; last?: number }) {
-  const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  const pts = [stop, entry, target, ...(last !== undefined ? [last] : [])];
-  const lo = Math.min(...pts), hi = Math.max(...pts);
-  const pad = (hi - lo) * 0.08 || 1;
-  const min = lo - pad, span = hi + pad - min;
-  const pct = (n: number) => ((n - min) / span) * 100;
-  const zone = (a: number, b: number) => ({ left: `${pct(Math.min(a, b))}%`, width: `${Math.abs(pct(a) - pct(b))}%` });
-  const marks = [
-    { key: t("ladder.stop"), v: stop, color: "bg-red-500", text: "text-red-600" },
-    { key: t("ladder.entry"), v: entry, color: "bg-primary", text: "text-primary-dark" },
-    { key: t("ladder.target"), v: target, color: "bg-emerald-600", text: "text-emerald-700" },
-  ];
-  return (
-    <div className="relative h-[66px] mt-4 select-none [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true">
-      <div className="absolute top-[20px] left-0 right-0 h-[8px] rounded-full bg-gray-200" />
-      <div className="absolute top-[20px] h-[8px] bg-red-400/70" style={zone(stop, entry)} />
-      <div className="absolute top-[20px] h-[8px] bg-emerald-500/70" style={zone(entry, target)} />
-      {last !== undefined && (
-        <div className="absolute top-0 flex flex-col items-center" style={{ left: `${pct(last)}%`, transform: "translateX(-50%)" }}>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-label whitespace-nowrap">{t("ladder.current", { price: fmtPrice(last, locale) })}</span>
-          <span className="w-[2px] h-[22px] bg-label" />
-        </div>
-      )}
-      {marks.map(m => (
-        <div key={m.key} className="absolute top-[16px] flex flex-col items-center" style={{ left: `${pct(m.v)}%`, transform: "translateX(-50%)" }}>
-          <span className={clsx("w-[16px] h-[16px] rounded-full border-2 border-white shadow", m.color)} />
-          <span className={clsx("mt-1 text-[10px] sm:text-[11px] font-bold whitespace-nowrap tabular-nums", m.text)}>{m.key} {fmtPrice(m.v, locale)}</span>
-        </div>
-      ))}
-    </div>
-  );
+// ═══════════════════════════════════════════════════════════════════════════
+// KHUYẾN NGHỊ VỊ THẾ — gộp 3 kịch bản (ngắn/trung/dài hạn) vào 1 thẻ: hàng chỉ số →
+// thang giá → bảng lệnh (Entry/Mục tiêu/Cắt lỗ/R:R) → phòng hộ CBAM. Mọi con số lấy
+// thẳng từ dữ liệu báo cáo hoặc tính bằng công thức cố định của backend (ghi ở từng
+// hàm) — không suy diễn thêm; mức nào không tách được thì hiện "—".
+// ═══════════════════════════════════════════════════════════════════════════
+
+// = report_consistency.ATR_SESSIONS / forecast_review.MIN_RR (báo cáo cũ không có rules.min_rr)
+// / TB khối lượng 20 phiên của report_generator._eua_volume_summary.
+const ATR_SESSIONS = 14;
+const DEFAULT_MIN_RR = 1.5;
+const VOL_AVG_SESSIONS = 20;
+
+type Side = "buy" | "sell";
+// limit: chờ giá về vùng · now: giá đang nằm trong vùng · breakout: lệnh dừng khi phá mức · scale: tích lũy/bán dần
+type OrderKind = "limit" | "now" | "breakout" | "scale";
+
+interface Leg {
+  side: Side;
+  kind: OrderKind;
+  zone: number[];              // vùng Entry (1–2 số); lệnh phá vỡ: đúng 1 mức kích hoạt
+  entry?: number;              // điểm giữa vùng / mức kích hoạt — gốc tính R:R và % so với giá
+  target?: number;
+  stop?: number;
+  onClose: boolean;            // kích hoạt theo giá ĐÓNG CỬA ("bán khi đóng cửa dưới X")
+  targetUnquantified: boolean; // "Mục tiêu: chưa đủ cơ sở định lượng" (dài hạn)
+  risk?: number;
+  reward?: number;
+  rr?: number;
 }
 
-// 1 ô số liệu lớn (Entry / Mục tiêu / Cắt lỗ): tiêu đề + 1–2 dòng "nhãn — số to".
-function LevelTile({ icon: Icon, title, tone, rows }: {
-  icon: typeof Target; title: string; tone: string;
-  rows: { label: string; value: string; className: string }[];
-}) {
-  return (
-    <div className="p-4 sm:p-5 flex flex-col print:break-inside-avoid">
-      <div className={clsx("flex items-center gap-2 mb-3 print:break-after-avoid", tone)}>
-        <Icon size={16} strokeWidth={2.5} aria-hidden="true" />
-        <h3 className="text-[12px] sm:text-[13px] font-extrabold uppercase tracking-wider">{title}</h3>
-      </div>
-      {rows.length ? (
-        <div className="flex flex-col gap-2.5">
-          {rows.map(r => (
-            <div key={r.label} className="print:break-inside-avoid">
-              <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light print:break-after-avoid">{r.label}</div>
-              <p className={clsx("font-black tabular-nums tracking-tight leading-none text-[30px] sm:text-[36px]", r.className)}>{r.value}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <span className="text-muted-light">—</span>
-      )}
-    </div>
-  );
+// Các trường của 1 kịch bản (content["3"].trading_scenarios — report_generator.py, mục C) mà thẻ dùng.
+interface Scenario {
+  horizon: string; direction?: string; probability?: string | null; condition?: string; price_zone?: string;
+  key_risk?: string; trading_strategy?: string; action_plan?: string; hedge_note?: string;
+}
+// 1 phiên OHLC của content["2"].chart_data / dòng EUA của Bảng giá nhanh (content["2"].prices).
+interface OhlcRow { date: string; open: number; high: number; low: number; close: number; volume?: number | null }
+interface PriceRow { code?: string; close?: number; day_change_pct?: number | null; week_change_pct?: number | null }
+
+interface HorizonPlan { horizon: string; sc: Scenario; dir: Dir; legs: Leg[] }
+
+const PLAN_HORIZONS = ["ngắn hạn", "trung hạn", "dài hạn"];
+const HORIZON_KEY: Record<string, "short" | "mid" | "long"> = { "ngắn hạn": "short", "trung hạn": "mid", "dài hạn": "long" };
+
+const SCALE_RE: Record<Side, RegExp> = {
+  buy: /tích l(?:ũy|uỹ)|gom dần|mua dần|mua rải|accumulat|scale in/i,
+  sell: /bán dần|bán rải|hạ dần|distribut|scale out/i,
+};
+const UNQUANTIFIED_RE = /chưa đủ cơ sở|chưa định lượng|quantitative basis|not quantif|unquantif/i;
+
+// Port services/strategy_levels.py::is_breakout_entry (+ cụm tiếng Anh của content_en): lệnh DỪNG ("bán khi đóng
+// cửa dưới X", "phá đỉnh") khác lệnh giới hạn ("mua quanh X") — chữ "trên"/"dưới" đứng lẻ không tính.
+function isBreakoutEntry(side: Side, entry: string): boolean {
+  const word = side === "buy" ? "trên|vượt|phá(?:\\s+(?:lên|đỉnh))?" : "dưới|thủng|phá(?:\\s+(?:xuống|đáy))?";
+  if (new RegExp(`(?:khi|nếu|sau khi|lúc)\\s+(?:giá\\s+)?(?:EUA\\s+)?(?:đóng cửa\\s+)?(?:${word})`, "i").test(entry)) return true;
+  if ((side === "buy" ? /\bclos(?:e[sd]?|ing)\s+(?:above|over)\b/i : /\bclos(?:e[sd]?|ing)\s+(?:below|under)\b/i).test(entry)) return true;
+  return /breakout|breaks?\s+(?:above|below)|buy stop|sell stop|lệnh dừng|phá (?:đỉnh|đáy)/i.test(entry);
 }
 
-// 1 chỉ số tổng hợp (R:R, % lợi nhuận, % rủi ro) — số rất lớn.
-function KpiBox({ label, value, sub, className }: { label: string; value: string; sub?: string; className: string }) {
-  return (
-    <div className="flex-1 min-w-[96px] px-3 py-2.5 text-center">
-      <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light">{label}</div>
-      <div className={clsx("font-black tabular-nums leading-tight text-[24px] sm:text-[30px]", className)}>{value}</div>
-      {sub && <div className="text-[10px] sm:text-[11px] text-muted-light tabular-nums">{sub}</div>}
-    </div>
-  );
+// Mệnh đề Entry của 1 chân lệnh — bỏ mệnh đề của chân ngược chiều ("Mua quanh A, bán quanh B").
+function legClauses(body: string, side: Side): string {
+  const other = side === "buy" ? /bán|\bsell/i : /mua|\bbuy/i;
+  return clauses(body).filter(c => !other.test(c)).join(", ");
 }
 
-interface TechnicalLevels { support: number; resistance: number; target: number }
+function buildLeg(side: Side, lv: SignalLevels, entryBody: string, targetBody: string, last?: number): Leg {
+  const zone = side === "buy" ? lv.entryBuy : lv.entrySell;
+  const text = legClauses(entryBody, side);
+  const breakout = zone.length > 0 && isBreakoutEntry(side, text);
+  const inZone = last !== undefined && zone.length > 1 && last >= Math.min(...zone) && last <= Math.max(...zone);
+  const kind: OrderKind = breakout ? "breakout" : SCALE_RE[side].test(text) ? "scale" : inZone ? "now" : "limit";
+  // Lệnh phá vỡ: mức kích hoạt là số ĐẦU TIÊN ("bán khi đóng cửa dưới 81,50 (đáy 30 phiên 82,35)").
+  const z = breakout ? zone.slice(0, 1) : zone;
+  const entry = z.length ? mid(z) : undefined;
+  const target = side === "buy" ? lv.targetBuy : lv.targetSell;
+  const stop = side === "buy" ? lv.stopLower : lv.stopUpper;
+  const reward = entry !== undefined && target !== undefined ? (side === "buy" ? target - entry : entry - target) : undefined;
+  const risk = entry !== undefined && stop !== undefined ? (side === "buy" ? entry - stop : stop - entry) : undefined;
+  return {
+    side, kind, zone: z, entry, target, stop,
+    onClose: breakout && /đóng cửa|\bclos(?:e|ing)/i.test(text),
+    targetUnquantified: target === undefined && UNQUANTIFIED_RE.test(targetBody),
+    risk, reward,
+    rr: reward !== undefined && risk !== undefined && reward > 0 && risk > 0 ? reward / risk : undefined,
+  };
+}
 
-function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, hedgeAction, openPositions }: {
-  signal: any; midTermSignal?: any; technicalLevels: TechnicalLevels | null; lastClose?: number;
-  hedgeAction?: HedgeAction | null; openPositions?: OpenPosition[];
-}) {
-  const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  const enumLabel = useEnumLabel();
-  const fp = (n: number) => fmtPrice(n, locale);
-  const dir: Dir = (["tăng", "giảm", "đi ngang"] as const).includes(signal.direction) ? signal.direction : "đi ngang";
-  const trendMeta = TREND_META[dir];
-  // Trung hạn xác suất "Thấp" là kịch bản THAY THẾ (vd phá biên giảm) — cơ sở vẫn là giằng co, không gọi là "nghiêng".
-  const midIsAlt = midTermSignal?.probability === "Thấp" && midTermSignal?.direction !== "đi ngang";
-  const midTrendMeta = midTermSignal ? TREND_META[midIsAlt ? "đi ngang" : midTermSignal.direction] : undefined;
-  const midAltMeta = midIsAlt ? TREND_META[midTermSignal.direction] : undefined;
-  const position = trendMeta ? t(`position.${trendMeta.labelKey}`) : undefined;
-  const strategy = parseStrategy(signal.trading_strategy);
+function buildPlan(sc: Scenario, last?: number): HorizonPlan {
+  const dir: Dir = sc.direction === "tăng" || sc.direction === "giảm" ? sc.direction : "đi ngang";
+  const strategy = parseStrategy(sc.trading_strategy);
   const body = (re: RegExp) => {
     const p = strategy?.find(s => re.test(s.label));
     return p ? subCO2(stripMarkdown(p.body)) : "";
@@ -385,292 +378,770 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
   // Nhãn tiếng Anh (content_en): "Target", "Risk management"/"Stop-loss".
   const entryBody = body(/entry/i), targetBody = body(/mục tiêu|target/i), riskBody = body(/quản trị rủi ro|cắt lỗ|stop|risk/i);
   const lv = parseSignalLevels(dir, entryBody, targetBody, riskBody);
-
-  const hasEntry = lv.entryBuy.length > 0 || lv.entrySell.length > 0;
-  const hasLevels = hasEntry || lv.targetBuy !== undefined || lv.targetSell !== undefined
-    || lv.stopLower !== undefined || lv.stopUpper !== undefined;
-
-  const buyCls = "text-primary-dark", sellCls = "text-[#a67520]";
-  const entryRows = [
-    ...(lv.entryBuy.length ? [{ label: t("signal.buyAround"), value: fmtRange(lv.entryBuy, locale), className: buyCls }] : []),
-    ...(lv.entrySell.length ? [{ label: t("signal.sellAround"), value: fmtRange(lv.entrySell, locale), className: sellCls }] : []),
-  ];
-  const targetRows = [
-    ...(lv.targetBuy !== undefined ? [{ label: t("signal.takeLong"), value: fp(lv.targetBuy), className: "text-emerald-700" }] : []),
-    ...(lv.targetSell !== undefined ? [{ label: t("signal.takeShort"), value: fp(lv.targetSell), className: "text-emerald-700" }] : []),
-  ];
-  const stopRows = [
-    ...(lv.stopLower !== undefined ? [{ label: t("signal.stopBelow"), value: fp(lv.stopLower), className: "text-red-600" }] : []),
-    ...(lv.stopUpper !== undefined ? [{ label: t("signal.stopAbove"), value: fp(lv.stopUpper), className: "text-red-600" }] : []),
-  ];
-
-  // KPI tính TỪ chính các mức giá đã tách (không qua LLM): Entry = điểm giữa vùng, mục tiêu đầu tiên, cắt lỗ.
-  // Kịch bản "đi ngang" (lệnh 2 chiều) tính R/R RIÊNG cho từng chân mua/bán — trước chỉ hiện "Biên độ giao dịch" nên
-  // khối R/R biến mất ở các ngày đi ngang (bản 16/10).
-  type Kpi = { label: string; value: string; sub?: string; className: string };
-  const legKpis = (zone: number[], target: number | undefined, stop: number | undefined, long: boolean) => {
-    const entry = zone.length ? mid(zone) : undefined;
-    if (entry === undefined || Number.isNaN(entry) || target === undefined || stop === undefined) return null;
-    const reward = long ? target - entry : entry - target;
-    const risk = long ? entry - stop : stop - entry;
-    if (!(reward > 0 && risk > 0)) return null;
-    return {
-      entry, target, stop,
-      kpis: [
-        { label: "Risk / Reward", value: `1 : ${fnum(reward / risk, 1, locale)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
-        { label: t("signal.targetProfit"), value: `+${fnum((reward / entry) * 100, 1, locale)}%`, sub: `${fp(reward)} EUR/tCO₂ → ${fp(target)}`, className: "text-emerald-700" },
-        { label: t("signal.maxRisk"), value: `−${fnum((risk / entry) * 100, 1, locale)}%`, sub: `${fp(risk)} EUR/tCO₂ → ${fp(stop)}`, className: "text-red-600" },
-      ] as Kpi[],
-    };
-  };
-  // Mỗi "khối lệnh" = 3 ô Entry/Mục tiêu/Cắt lỗ + KPI R/R + thang giá. Kịch bản 1 chiều: 1 khối. Kịch bản "đi ngang" có đủ
-  // 2 chân: 2 khối riêng "Lệnh mua" / "Lệnh bán" trình bày y như kịch bản 1 chiều (yêu cầu 18/10/2026), thêm dòng biên độ.
-  type Row = { label: string; value: string; className: string };
-  type OrderBlock = {
-    key: string; title?: string; tone?: string; entryRows: Row[]; targetRows: Row[]; stopRows: Row[];
-    kpis: Kpi[]; ladder: { stop: number; entry: number; target: number } | null;
-  };
-  const block = (key: string, long: boolean, title?: string, tone?: string): OrderBlock => {
-    const zone = long ? lv.entryBuy : lv.entrySell;
-    const target = long ? lv.targetBuy : lv.targetSell;
-    const stop = long ? lv.stopLower : lv.stopUpper;
-    const leg = legKpis(zone, target, stop, long);
-    return {
-      key, title, tone,
-      entryRows: zone.length ? [{ label: t(long ? "signal.buyAround" : "signal.sellAround"), value: fmtRange(zone, locale), className: long ? buyCls : sellCls }] : [],
-      targetRows: target !== undefined ? [{ label: t(long ? "signal.takeLong" : "signal.takeShort"), value: fp(target), className: "text-emerald-700" }] : [],
-      stopRows: stop !== undefined ? [{ label: t(long ? "signal.stopBelow" : "signal.stopAbove"), value: fp(stop), className: "text-red-600" }] : [],
-      kpis: leg ? leg.kpis : [],
-      ladder: leg ? { stop: leg.stop, entry: leg.entry, target: leg.target } : null,
-    };
-  };
-  const twoSided = dir === "đi ngang" && lv.entryBuy.length > 0 && lv.entrySell.length > 0;
-  let orderBlocks: OrderBlock[];
-  let rangeKpis: Kpi[] = [];
-  if (twoSided) {
-    orderBlocks = [block("buy", true, t("signal.legBuyTitle"), buyCls), block("sell", false, t("signal.legSellTitle"), sellCls)];
-    const lo = mid(lv.entryBuy), hi = mid(lv.entrySell);
-    if (hi > lo) rangeKpis = [{ label: t("signal.tradingRange"), value: `${fnum(((hi - lo) / lo) * 100, 1, locale)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
-  } else {
-    // 1 chiều (hoặc đi ngang chỉ tách được 1 chân / dữ liệu cũ): 1 khối với mọi mức đã tách được, như trước.
-    const leg = dir === "tăng" ? legKpis(lv.entryBuy, lv.targetBuy, lv.stopLower, true)
-      : dir === "giảm" ? legKpis(lv.entrySell, lv.targetSell, lv.stopUpper, false) : null;
-    orderBlocks = [{
-      key: "single", entryRows, targetRows, stopRows,
-      kpis: leg ? leg.kpis : [],
-      ladder: leg ? { stop: leg.stop, entry: leg.entry, target: leg.target } : null,
-    }];
+  const sides: Side[] = [];
+  if (dir !== "giảm" && lv.entryBuy.length) sides.push("buy");
+  if (dir !== "tăng" && lv.entrySell.length) sides.push("sell");
+  if (!sides.length && dir === "tăng" && (lv.targetBuy !== undefined || lv.stopLower !== undefined)) sides.push("buy");
+  if (!sides.length && dir === "giảm" && (lv.targetSell !== undefined || lv.stopUpper !== undefined)) sides.push("sell");
+  // "Đi ngang" chỉ có 1 chân (dữ liệu cũ): parseSignalLevels gán số không có từ khoá vào chân mua trước — chân bán lấy lại.
+  if (dir === "đi ngang" && sides.length === 1) {
+    if (sides[0] === "sell") { lv.targetSell ??= lv.targetBuy; lv.stopUpper ??= lv.stopLower; }
+    else { lv.targetBuy ??= lv.targetSell; lv.stopLower ??= lv.stopUpper; }
   }
+  return { horizon: sc.horizon, sc, dir, legs: sides.map(s => buildLeg(s, lv, entryBody, targetBody, last)) };
+}
 
-  // Dữ liệu cũ (chưa có trading_strategy) chỉ có action_plan dạng câu — vẫn hiển thị.
-  const fallbackText: string = signal.trading_strategy || signal.action_plan || "";
+// Nhận định = chiều kịch bản ngắn hạn, "nghiêng" theo trung hạn — trung hạn xác suất Thấp là kịch bản THAY THẾ, không tính.
+function outlookOf(short?: Scenario, midTerm?: Scenario): { pos: number; key: string; tone: string } {
+  const s = short?.direction;
+  const m = midTerm && !(midTerm.probability === "Thấp" && midTerm.direction !== "đi ngang") ? midTerm.direction : undefined;
+  if (s === "tăng") return m === "giảm" ? { pos: 65, key: "upMidDown", tone: "text-up" } : { pos: 85, key: "up", tone: "text-up" };
+  if (s === "giảm") return m === "tăng" ? { pos: 35, key: "downMidUp", tone: "text-down" } : { pos: 15, key: "down", tone: "text-down" };
+  if (m === "tăng") return { pos: 62, key: "neutralUp", tone: "text-warn" };
+  if (m === "giảm") return { pos: 38, key: "neutralDown", tone: "text-warn" };
+  return { pos: 50, key: "neutral", tone: "text-warn" };
+}
 
+// = report_consistency.atr_true_range: TB True Range n phiên cuối, TR = max(cao − thấp, |cao − đóng cửa trước|, |thấp − đóng cửa trước|).
+function atrTrueRange(chart: OhlcRow[], n = ATR_SESSIONS): number | undefined {
+  const rows = chart.filter(c => typeof c?.high === "number" && typeof c?.low === "number");
+  if (!rows.length) return undefined;
+  const trs: number[] = [];
+  for (let i = Math.max(0, rows.length - n); i < rows.length; i++) {
+    const { high: h, low: l } = rows[i];
+    const pc = i > 0 ? rows[i - 1].close : undefined;
+    trs.push(typeof pc === "number" ? Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)) : h - l);
+  }
+  return trs.reduce((a, b) => a + b, 0) / trs.length;
+}
+
+// = report_consistency.range_position + MIDDLE_BAND_PCT (40–60% biên = "vùng giữa", không gọi nửa trên/dưới).
+type RangePos = "above" | "below" | "nearTop" | "nearBottom" | "middle" | "upper" | "lower";
+function rangePosition(price: number, low: number, high: number): { pct: number; pos: RangePos } | null {
+  if (high <= low) return null;
+  const pct = ((price - low) / (high - low)) * 100;
+  const r = Math.round(pct * 10) / 10;
+  const pos: RangePos = pct > 100 ? "above" : pct < 0 ? "below" : pct >= 80 ? "nearTop" : pct <= 20 ? "nearBottom"
+    : r > 40 && r < 60 ? "middle" : pct > 50 ? "upper" : "lower";
+  return { pct, pos };
+}
+
+// ["2026-10-13", "2026-10-15", "2026-10-16"] → "13, 15, 16/10" (gộp theo tháng).
+function joinDayMonth(dates: string[]): string {
+  const byMonth = new Map<string, string[]>();
+  [...dates].sort().forEach(d => {
+    const [, m, day] = d.split("-");
+    byMonth.set(m, [...(byMonth.get(m) ?? []), day]);
+  });
+  return [...byMonth].map(([m, days]) => `${days.join(", ")}/${m}`).join(" · ");
+}
+
+// ── Thang giá ────────────────────────────────────────────────────────────────
+type MarkTone = "buy" | "sell" | "target" | "stop" | "ref" | "current";
+interface LadderMark {
+  lo: number; hi: number;   // lo === hi: 1 mức giá; khác nhau: vùng Entry
+  names: string[];
+  tone: MarkTone;
+  prio: number;             // 0 = quan trọng nhất; > 2 có thể bị bỏ khi hết chỗ (bảng lệnh vẫn đủ số)
+  below: boolean;           // nhãn ưu tiên dưới trục (mốc tham chiếu); lệnh ưu tiên trên trục
+  faded: boolean;           // vùng Entry trung/dài hạn — vẽ nhạt hơn vùng ngắn hạn
+}
+
+const MARK_TEXT: Record<MarkTone, string> = {
+  buy: "text-up", sell: "text-down", target: "text-up", stop: "text-down", ref: "text-body", current: "text-label",
+};
+const MARK_BG: Record<MarkTone, string> = {
+  buy: "bg-up", sell: "bg-down", target: "bg-up", stop: "bg-down", ref: "bg-muted-light", current: "bg-label",
+};
+
+function buildLadderMarks(plans: HorizonPlan[], range: [number, number] | null, last: number | undefined, t: ReportT): LadderMark[] {
+  const marks: LadderMark[] = [];
+  // Cùng 1 mức giá (vd cắt lỗ chân mua = mức kích hoạt bán trung hạn) → 1 nhãn gộp.
+  const add = (m: LadderMark) => {
+    const same = m.lo === m.hi ? marks.find(o => o.lo === o.hi && Math.abs(o.lo - m.lo) < 0.005) : undefined;
+    if (!same) { marks.push(m); return; }
+    same.names.push(...m.names);
+    if (m.prio < same.prio) Object.assign(same, { tone: m.tone, prio: m.prio, below: m.below });
+  };
+  if (last !== undefined) add({ lo: last, hi: last, names: [t("ladder.current")], tone: "current", prio: 0, below: true, faded: false });
+  if (range) {
+    add({ lo: range[0], hi: range[0], names: [t("ladder.support")], tone: "ref", prio: 2, below: true, faded: false });
+    add({ lo: range[1], hi: range[1], names: [t("ladder.resistance")], tone: "ref", prio: 2, below: true, faded: false });
+  }
+  for (const p of plans) {
+    const hk = HORIZON_KEY[p.horizon] ?? "short";
+    const prio = hk === "short" ? 1 : hk === "mid" ? 2 : 3;
+    const named = (name: string) => (hk === "short" ? name : t("ladder.withHorizon", { name, horizon: t(`ladder.horizon.${hk}`) }));
+    for (const leg of p.legs) {
+      // Trung/dài hạn 1 chân: "MT trung hạn" thay vì "MT bán trung hạn".
+      const levelName = (key: "target" | "stop") => named(t(`ladder.${key}.${hk === "short" || p.legs.length > 1 ? leg.side : "plain"}`));
+      if (leg.zone.length) {
+        add({
+          lo: Math.min(...leg.zone), hi: Math.max(...leg.zone), tone: leg.side, prio, below: false, faded: hk !== "short",
+          names: [named(t(`ladder.${leg.kind === "breakout" ? "trigger" : leg.kind === "scale" ? "scale" : "zone"}.${leg.side}`))],
+        });
+      }
+      const levelPrio = hk === "short" ? 1 : prio + 1;
+      if (leg.target !== undefined) add({ lo: leg.target, hi: leg.target, names: [levelName("target")], tone: "target", prio: levelPrio, below: false, faded: false });
+      if (leg.stop !== undefined) add({ lo: leg.stop, hi: leg.stop, names: [levelName("stop")], tone: "stop", prio: levelPrio, below: false, faded: false });
+    }
+  }
+  return marks;
+}
+
+// Bề rộng giả định để xếp nhãn không chồng nhau: ≤ bề rộng thật của thẻ trên màn hình lẫn khổ A4 khi in — vị trí vẽ
+// theo %, khung thật rộng hơn chỉ làm nhãn thưa ra chứ không chồng thêm.
+const LADDER_W = 600;
+const LADDER_ROW_H = 30;
+const LADDER_AXIS_H = 26;
+const LADDER_GAP = 6;
+
+type LadderSide = "above" | "below";
+interface PlacedMark extends LadderMark {
+  value: string; name: string; c: number; anchor: "center" | "left" | "right"; side: LadderSide; row: number;
+}
+
+function layoutLadder(marks: LadderMark[], fmt: (n: number) => string) {
+  const lo = Math.min(...marks.map(m => m.lo)), hi = Math.max(...marks.map(m => m.hi));
+  const pad = (hi - lo) * 0.03 || 1;
+  const min = lo - pad, span = hi + pad - min;
+  const px = (v: number) => ((v - min) / span) * LADDER_W;
+  // Mỗi hàng nhãn giữ các khoảng [trái, phải] đã chiếm — gồm cả đường dẫn của nhãn ở hàng xa trục hơn đi xuyên qua.
+  const rows: Record<LadderSide, [number, number][][]> = { above: [], below: [] };
+  const hits = (side: LadderSide, r: number, a: number, b: number) => (rows[side][r] ?? []).some(([x, y]) => a < y && b > x);
+  const placed: PlacedMark[] = [];
+  const ordered = [...marks].sort((a, b) => a.prio - b.prio || Number(b.hi > b.lo) - Number(a.hi > a.lo) || a.lo - b.lo);
+  for (const m of ordered) {
+    const value = m.hi - m.lo > 0.005 ? `${fmt(m.lo)}–${fmt(m.hi)}` : fmt(m.lo);
+    const name = m.names.join(" · ");
+    // Ước lượng bề rộng chữ (11,5px đậm cho số, 10,5px cho tên) — dư một chút để an toàn.
+    const width = Math.max(value.length * 6.6, name.length * 5.7) + 8;
+    const c = (px(m.lo) + px(m.hi)) / 2;
+    const left = Math.min(Math.max(c - width / 2, 0), LADDER_W - width);
+    const anchor = c - width / 2 < 0 ? "left" : c + width / 2 > LADDER_W ? "right" : "center";
+    const own: LadderSide = m.below ? "below" : "above", other: LadderSide = m.below ? "above" : "below";
+    const fits = ([side, r]: [LadderSide, number]) =>
+      !hits(side, r, left - LADDER_GAP, left + width + LADDER_GAP)
+      && Array.from({ length: r }, (_, k) => k).every(k => !hits(side, k, c - 2, c + 2));
+    const slots: [LadderSide, number][] = [[own, 0], [own, 1], [other, 0], [other, 1]];
+    if (m.prio <= 2) slots.push([own, 2], [other, 2]);
+    let slot = slots.find(fits);
+    if (!slot) {
+      if (m.prio > 2) continue; // mức phụ (mục tiêu/cắt lỗ trung–dài hạn) hết chỗ: bỏ khỏi thang, bảng vẫn có
+      slot = [own, 2];
+    }
+    const [side, r] = slot;
+    (rows[side][r] ??= []).push([left, left + width]);
+    for (let k = 0; k < r; k++) (rows[side][k] ??= []).push([c - 1, c + 1]);
+    placed.push({ ...m, value, name, c, anchor, side, row: r });
+  }
+  return { placed, min, span, rowsAbove: rows.above.length, rowsBelow: rows.below.length };
+}
+
+function PriceLadder({ marks, range }: { marks: LadderMark[]; range: [number, number] | null }) {
+  const locale = useLocale();
+  const { placed, min, span, rowsAbove, rowsBelow } = layoutLadder(marks, n => fmtPrice(n, locale));
+  const pct = (v: number) => `${((v - min) / span) * 100}%`;
+  const len = (d: number) => `${(d / span) * 100}%`;
+  const axisTop = rowsAbove * LADDER_ROW_H;
+  const axisY = axisTop + LADDER_AXIS_H / 2;
+  const zones = placed.filter(m => m.hi - m.lo > 0.005).sort((a, b) => Number(b.faded) - Number(a.faded));
+  const points = placed.filter(m => m.hi - m.lo <= 0.005);
   return (
-    <div className="mb-6">
-      <div className="rounded-xl border border-primary/20 overflow-hidden shadow-[var(--shadow-soft)]">
-        {/* ═══ Header: tiêu đề + Độ tin cậy · Thị trường · Xu hướng ═══ */}
-        <div className="bg-gradient-to-r from-primary-dark to-[#0d7870] px-4 sm:px-6 py-3.5 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-          <div className="flex items-center justify-between flex-wrap gap-y-2">
-            <div className="flex items-center gap-2.5 text-white">
-              <LineChart size={20} strokeWidth={2.5} aria-hidden="true" />
-              <h2 className="text-[18px] sm:text-[20px] font-extrabold uppercase tracking-wide">{t("signal.title")}</h2>
-            </div>
-            <div className="flex items-center gap-3 sm:gap-4 text-white/90 text-[12px] sm:text-[13px]">
-              {signal.probability && (
-                <div className="flex flex-col items-center leading-tight">
-                  <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.confidence")}</span>
-                  <strong className="font-bold text-white">{enumLabel(signal.probability)}</strong>
-                </div>
-              )}
-              <div className="w-px h-6 bg-white/25 hidden sm:block" />
-              <div className="flex flex-col items-center leading-tight">
-                <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.market")}</span>
-                <strong className="font-bold text-white uppercase">Carbon</strong>
-              </div>
-              {trendMeta && (
-                <>
-                  <div className="w-px h-6 bg-white/25 hidden sm:block" />
-                  <div className="flex flex-col items-center leading-tight">
-                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.shortTerm")}</span>
-                    <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{trendMeta.arrow} {t(`trend.${trendMeta.labelKey}`)}</strong>
-                  </div>
-                </>
-              )}
-              {midTrendMeta && (
-                <>
-                  <div className="w-px h-6 bg-white/25 hidden sm:block" />
-                  <div className="flex flex-col items-center leading-tight">
-                    <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.midTerm")}</span>
-                    <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{midTrendMeta.arrow} {t(`trend.${midTrendMeta.labelKey}`)}</strong>
-                    {midAltMeta && (
-                      <span className="text-[9px] sm:text-[10px] text-white/70 font-medium">{t("signal.midAlt", { arrow: midAltMeta.arrow })}</span>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ═══ Vị thế khuyến nghị (theo chiều kịch bản ngắn hạn) + Vùng giá tham chiếu (price_zone) ═══ */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-2 px-4 sm:px-6 py-2.5 bg-tint border-b border-primary/10 text-[13px] sm:text-[14px] text-body [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-          {/* min-w-0 + xuống dòng: nhãn vị thế dài không được đẩy thẻ rộng quá khổ trang khi in/xuất PDF */}
-          {position && (
-            <div className="flex items-baseline gap-2 min-w-0 sm:max-w-[50%]">
-              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0">{t("signal.position")}</span>
-              <strong className={clsx("font-extrabold break-words", trendMeta?.className)}>{position}</strong>
-            </div>
+    <div
+      className="relative hidden sm:block select-none [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
+      style={{ height: axisTop + LADDER_AXIS_H + rowsBelow * LADDER_ROW_H }}
+      aria-hidden="true"
+    >
+      <div className="absolute inset-x-0 h-[2px] bg-border" style={{ top: axisY - 1 }} />
+      {/* Biên 30 phiên (hỗ trợ → kháng cự) */}
+      {range && <div className="absolute h-[6px] rounded-full bg-[#d5dbd9]" style={{ top: axisY - 3, left: pct(range[0]), width: len(range[1] - range[0]) }} />}
+      {zones.map((m, i) => (
+        <div
+          key={`z${i}`}
+          className={clsx(
+            "absolute h-[12px] rounded-[3px]",
+            m.faded
+              ? clsx("border border-dashed", m.tone === "buy" ? "bg-up/10 border-up/70" : "bg-down/10 border-down/70")
+              : m.tone === "buy" ? "bg-up/85" : "bg-down/85",
           )}
-          {signal.price_zone && (
-            <div className="flex items-start gap-2 min-w-0 sm:border-l sm:border-primary/15 sm:pl-6">
-              <Compass size={15} strokeWidth={2.5} className="shrink-0 mt-0.5 text-primary-dark" aria-hidden="true" />
-              <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-primary-dark shrink-0 mt-[3px]">{t("signal.priceZone")}</span>
-              <span className="min-w-0 break-words"><HighlightNumbers text={signal.price_zone} /></span>
-            </div>
-          )}
-        </div>
-
-        {hasLevels ? (
-          <>
-            {orderBlocks.map((b, bi) => (
-              <div key={b.key} className={clsx("print:break-inside-avoid", bi > 0 && "border-t-2 border-primary/20")}>
-                {/* Tiêu đề khối lệnh — chỉ khi đi ngang tách 2 chân */}
-                {b.title && (
-                  <div className={clsx("px-4 sm:px-6 pt-3 text-[12px] sm:text-[13px] font-extrabold uppercase tracking-wider", b.tone)}>{b.title}</div>
-                )}
-                {/* ═══ 3 ô số liệu lớn: Entry · Mục tiêu · Cắt lỗ ═══ */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10">
-                  <LevelTile icon={Crosshair} title={t("signal.tileEntry")} tone="text-primary-dark" rows={b.entryRows} />
-                  <LevelTile icon={Target} title={t("signal.tileTarget")} tone="text-emerald-700" rows={b.targetRows} />
-                  <LevelTile icon={ShieldCheck} title={t("signal.tileStop")} tone="text-red-600" rows={b.stopRows} />
-                </div>
-                {/* ═══ KPI + thang giá ═══ */}
-                {b.kpis.length > 0 && (
-                  <div className="border-t border-primary/10 bg-[#f8faf9] px-4 sm:px-6 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                    <div className="flex flex-wrap justify-center divide-x divide-primary/10">
-                      {b.kpis.map(k => <KpiBox key={k.label} {...k} />)}
-                    </div>
-                    {b.ladder && <SignalLadder {...b.ladder} last={lastClose} />}
-                  </div>
-                )}
+          style={{ top: axisY - 6, left: pct(m.lo), width: len(m.hi - m.lo), minWidth: 4 }}
+        />
+      ))}
+      {points.map((m, i) => (
+        <div
+          key={`p${i}`}
+          className={clsx("absolute w-[2px] rounded-full", MARK_BG[m.tone])}
+          style={m.tone === "current"
+            ? { top: axisY - 11, height: 22, left: pct(m.lo), transform: "translateX(-50%)" }
+            : { top: axisY - 6, height: 12, left: pct(m.lo), transform: "translateX(-50%)" }}
+        />
+      ))}
+      {placed.map((m, i) => {
+        const top = m.side === "above" ? (rowsAbove - 1 - m.row) * LADDER_ROW_H : axisTop + LADDER_AXIS_H + m.row * LADDER_ROW_H;
+        const [lineTop, lineBottom] = m.side === "above" ? [top + LADDER_ROW_H - 3, axisY - 7] : [axisY + 7, top + 1];
+        const cx = `${(m.c / LADDER_W) * 100}%`;
+        const pos = m.anchor === "left" ? { left: 0 } : m.anchor === "right" ? { right: 0 } : { left: cx, transform: "translateX(-50%)" };
+        return (
+          <Fragment key={`l${i}`}>
+            {lineBottom > lineTop && <div className="absolute w-px bg-border-soft" style={{ left: cx, top: lineTop, height: lineBottom - lineTop }} />}
+            <div
+              className={clsx("absolute leading-[1.2] whitespace-nowrap", m.anchor === "left" ? "text-left" : m.anchor === "right" ? "text-right" : "text-center")}
+              style={{ top, ...pos }}
+            >
+              <div className={clsx("text-[11.5px] font-bold tabular-nums", MARK_TEXT[m.tone])}>{m.value}</div>
+              <div className={clsx("text-[10.5px]", m.tone === "current" ? "font-bold text-label" : m.tone === "ref" ? "text-muted-light" : MARK_TEXT[m.tone])}>
+                {m.name}
               </div>
-            ))}
-            {/* Đi ngang: biên độ giữa 2 vùng lệnh */}
-            {rangeKpis.length > 0 && (
-              <div className="border-t-2 border-primary/20 bg-[#f8faf9] px-4 sm:px-6 py-3 print:break-inside-avoid [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                <div className="flex flex-wrap justify-center">
-                  {rangeKpis.map(k => <KpiBox key={k.label} {...k} />)}
-                </div>
-              </div>
-            )}
-          </>
-        ) : fallbackText ? (
-          <div className="px-4 sm:px-6 py-4 text-[14px] leading-[1.7] text-body whitespace-pre-line">
-            <HighlightNumbers text={fallbackText} />
-          </div>
-        ) : null}
+            </div>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
-        {/* ═══ Mốc kỹ thuật — tính từ OHLC thật 30 phiên (xem technicalLevels ở ReportDocument) ═══ */}
-        {technicalLevels && (
-          <div className="grid grid-cols-3 border-t border-primary/10 divide-x divide-primary/10">
-            {[
-              { label: t("signal.support"), value: technicalLevels.support, sub: t("signal.supportSub") },
-              { label: t("signal.resistance"), value: technicalLevels.resistance, sub: t("signal.resistanceSub") },
-              { label: t("signal.techTarget"), value: technicalLevels.target, sub: t("signal.techTargetSub") },
-            ].map(lvl => (
-              <div key={lvl.label} className="px-3 sm:px-6 py-3 text-center sm:text-left">
-                <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light">{lvl.label}</div>
-                <div className="font-extrabold tabular-nums text-label text-[18px] sm:text-[20px] leading-tight">{fp(lvl.value)}</div>
-                <div className="text-[10px] sm:text-[11px] text-muted-light">{lvl.sub}</div>
-              </div>
-            ))}
-          </div>
+// Mobile: thang giá dọc — mọi mức xếp từ cao xuống thấp (màn hẹp không đủ chỗ cho trục ngang nhiều nhãn).
+function PriceLevelList({ marks }: { marks: LadderMark[] }) {
+  const locale = useLocale();
+  const fp = (n: number) => fmtPrice(n, locale);
+  const items = [...marks].sort((a, b) => b.hi - a.hi || b.lo - a.lo);
+  return (
+    <ol className="relative sm:hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+      <span className="absolute left-[102px] top-2 bottom-2 w-[2px] bg-border" aria-hidden="true" />
+      {items.map((m, i) => {
+        const isZone = m.hi - m.lo > 0.005;
+        return (
+          <li key={i} className={clsx("relative flex items-center gap-3 py-[3px]", m.tone === "current" && "bg-surface rounded")}>
+            <span className={clsx("w-[84px] shrink-0 text-right text-[12.5px] font-bold tabular-nums", MARK_TEXT[m.tone])}>
+              {isZone ? `${fp(m.lo)}–${fp(m.hi)}` : fp(m.lo)}
+            </span>
+            <span className="relative w-[14px] shrink-0 flex justify-center" aria-hidden="true">
+              <span className={clsx(
+                "block",
+                isZone ? "w-[10px] h-[14px] rounded-[3px]" : m.tone === "current" ? "w-[14px] h-[3px]" : "w-[10px] h-[3px] rounded-full",
+                isZone && m.faded ? clsx("border border-dashed bg-background", m.tone === "buy" ? "border-up" : "border-down") : MARK_BG[m.tone],
+              )} />
+            </span>
+            <span className={clsx("min-w-0 text-[12px] leading-snug", m.tone === "current" ? "font-bold text-label" : m.tone === "ref" ? "text-muted-light" : MARK_TEXT[m.tone])}>
+              {m.names.join(" · ")}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ── Bảng lệnh ────────────────────────────────────────────────────────────────
+const ORDER_PILL: Record<Side, string> = {
+  buy: "bg-up/10 text-up border-up/25",
+  sell: "bg-down/10 text-down border-down/25",
+};
+
+function OrderPill({ leg }: { leg: Leg }) {
+  const t = useTranslations("reportDoc");
+  return (
+    <span className={clsx(
+      "inline-block rounded-full border px-2 py-[1px] text-[11.5px] font-semibold leading-[1.5] whitespace-nowrap [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+      leg.kind === "scale" ? "bg-surface text-body border-border" : ORDER_PILL[leg.side],
+    )}>
+      {t(`signal.order.${leg.kind}.${leg.side}`)}
+    </span>
+  );
+}
+
+// Thanh R:R cùng thang đo cho mọi chân lệnh (đỏ = rủi ro tới cắt lỗ, xanh = lợi nhuận tới mục tiêu).
+function RrBar({ leg, scale }: { leg: Leg; scale: number }) {
+  const W = 64;
+  if (!(leg.risk !== undefined && leg.risk > 0 && scale > 0)) return null;
+  const r = (leg.risk / scale) * W;
+  const g = leg.reward !== undefined && leg.reward > 0 ? (leg.reward / scale) * W : 0;
+  return (
+    <span className="mt-1 flex h-[5px] [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" style={{ width: W }} aria-hidden="true">
+      <span className="h-full rounded-l-[2px] bg-down" style={{ width: r }} />
+      {g > 0
+        ? <span className="h-full rounded-r-[2px] bg-up" style={{ width: g }} />
+        : <span className="h-full flex-1 rounded-r-[2px] border border-dashed border-border-soft" />}
+    </span>
+  );
+}
+
+interface LegCtx { t: ReportT; locale: string; last?: number; minRr: number; rrScale: number }
+
+// Ô số liệu của 1 chân lệnh — dùng chung cho bảng (sm+/in) và khối dọc (mobile).
+function legCells(leg: Leg, { t, locale, last, minRr, rrScale }: LegCtx) {
+  const fp = (n: number) => fmtPrice(n, locale);
+  const entryText = !leg.zone.length ? "—"
+    : leg.kind === "breakout"
+      ? `${leg.onClose ? `${t("signal.onClose")} ` : ""}${leg.side === "buy" ? ">" : "<"} ${fp(leg.zone[0])}`
+      : fmtRange(leg.zone, locale);
+  const dist = leg.entry !== undefined && last ? ((leg.entry - last) / last) * 100 : undefined;
+  const weak = leg.rr !== undefined && leg.rr < minRr;
+  return {
+    entry: (
+      <>
+        <div className="font-bold tabular-nums text-label whitespace-nowrap">{entryText}</div>
+        {dist !== undefined && (
+          <div className="text-[11px] text-muted-light tabular-nums">{t("signal.vsPrice", { pct: `${dist > 0 ? "+" : dist < 0 ? "−" : ""}${fnum(Math.abs(dist), 1, locale)}` })}</div>
         )}
+      </>
+    ),
+    target: leg.target !== undefined
+      ? <span className="font-bold tabular-nums text-up">{fp(leg.target)}</span>
+      : leg.targetUnquantified
+        ? <span className="text-[11.5px] italic text-muted-light">{t("signal.unquantified")}</span>
+        : <span className="text-muted-light">—</span>,
+    stop: leg.stop !== undefined ? <span className="font-bold tabular-nums text-down">{fp(leg.stop)}</span> : <span className="text-muted-light">—</span>,
+    rr: (
+      <>
+        <span
+          className={clsx("font-bold tabular-nums whitespace-nowrap", leg.rr === undefined ? "text-muted-light" : weak ? "text-warn" : "text-label")}
+          title={weak ? t("signal.rrWeak", { min: fnum(minRr, 1, locale) }) : undefined}
+        >
+          {leg.rr !== undefined ? `1 : ${fnum(leg.rr, 1, locale)}${weak ? " !" : ""}` : "—"}
+        </span>
+        <RrBar leg={leg} scale={rrScale} />
+      </>
+    ),
+  };
+}
 
-        {/* ═══ Cơ sở (condition) + Rủi ro chính (key_risk) ═══ */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 border-t border-primary/10 bg-[#f8faf9] [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-          <div className="px-4 sm:px-6 py-3.5 flex items-start gap-2.5">
-            <div className="mt-0.5 shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-              <Sparkles size={14} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">{t("signal.basis")}</h4>
-              <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
-                {signal.condition ? <HighlightNumbers text={signal.condition} /> : <span className="text-muted-light">—</span>}
-              </p>
-            </div>
-          </div>
-          <div className="px-4 sm:px-6 py-3.5 flex items-start gap-2.5 border-t sm:border-t-0 sm:border-l border-primary/10">
-            <div className="mt-0.5 shrink-0 w-7 h-7 rounded-full bg-red-50 flex items-center justify-center">
-              <AlertTriangle size={14} strokeWidth={2.5} className="text-red-500" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-red-600 mb-0.5">{t("signal.keyRisk")}</h4>
-              <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
-                {signal.key_risk ? <HighlightNumbers text={signal.key_risk} /> : <span className="text-muted-light">—</span>}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* ═══ Sổ phòng hộ SIM — Entry/Mục tiêu ở trên là cho bàn giao dịch. 1 hành động duy nhất
-            (content["3"].hedge_action); báo cáo cũ chưa có → hedge_note của kịch bản ngắn hạn. ═══ */}
-        {(hedgeAction || signal.hedge_note) && (
-          <div className="px-4 sm:px-6 py-3.5 flex items-start gap-2.5 border-t border-primary/10">
-            <div className="mt-0.5 shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-              <ShieldCheck size={14} strokeWidth={2.5} className="text-primary" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-0.5">
-                {t("signal.hedge")}
-                {hedgeAction && (
-                  <span className="ml-2 inline-block rounded border border-primary/30 bg-tint px-1.5 py-px text-[10px] sm:text-[11px] tracking-wider">
-                    {t(`signal.hedgeAction.${hedgeAction.action}`)}
-                  </span>
-                )}
-              </h4>
-              {hedgeAction?.core && (
-                <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body font-semibold">
-                  <HighlightNumbers text={hedgeAction.core} />
-                </p>
-              )}
-              {(hedgeAction?.text || (!hedgeAction && signal.hedge_note)) && (
-                <p className="text-[13px] sm:text-[14px] leading-[1.65] text-body">
-                  <HighlightNumbers text={hedgeAction?.text || signal.hedge_note} />
-                </p>
-              )}
-            </div>
-          </div>
+function HorizonCell({ plan, compact }: { plan: HorizonPlan; compact?: boolean }) {
+  const t = useTranslations("reportDoc");
+  const enumLabel = useEnumLabel();
+  const hk = HORIZON_KEY[plan.horizon] ?? "short";
+  const label = enumLabel(plan.horizon);
+  // Dài hạn: khung thời gian cụ thể nằm đầu "condition" ("6–12 tháng, tới hết Q3/2027").
+  const period = (hk === "long" && String(plan.sc.condition || "").match(/\d+\s*[–-]\s*\d+\s*(?:tháng|months?)/i)?.[0]) || t(`signal.period.${hk}`);
+  const trend = TREND_META[plan.dir];
+  const alt = plan.sc.probability === "Thấp" && plan.dir !== "đi ngang";
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  return (
+    <div className={clsx("min-w-0 leading-snug", compact && "flex flex-wrap items-baseline gap-x-2")}>
+      <div className="text-[13px] font-bold text-label">
+        {cap(label)}
+        <span className={clsx("text-[11px] font-normal text-muted-light", compact ? "ml-1.5" : "block")}>{period}</span>
+      </div>
+      <div className="text-[11.5px]">
+        <span className={clsx("font-semibold whitespace-nowrap", trend?.className)}>{trend?.arrow} {cap(enumLabel(plan.dir))}</span>
+        {plan.sc.probability && (
+          <span className={clsx("text-muted-light", compact ? "ml-1.5" : "block")}>{t("signal.prob", { p: enumLabel(plan.sc.probability) })}</span>
         )}
-
-        {/* ═══ Đối chiếu lệnh đang mở của các báo cáo trước với mức giá mới ═══ */}
-        {openPositions && openPositions.length > 0 && (
-          <div className="px-4 sm:px-6 py-3.5 border-t border-primary/10 bg-[#f8faf9] [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-            <h4 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-primary-dark mb-1.5">{t("signal.openPositions")}</h4>
-            <ul className="space-y-1.5 text-[13px] sm:text-[14px] leading-[1.6] text-body">
-              {openPositions.map(pos => (
-                <li key={pos.report_date}>
-                  <span className={clsx(
-                    "mr-2 inline-block rounded border px-1.5 py-px text-[10px] sm:text-[11px] font-bold tracking-wider",
-                    pos.decision ? "border-primary/30 text-primary-dark" : "border-down/30 text-down",
-                  )}>
-                    {t(`signal.decision.${pos.decision ?? "none"}`)}
-                  </span>
-                  <span className="font-semibold">
-                    {t("signal.openPosition", {
-                      side: t(pos.side === "buy" ? "signal.buy" : "signal.sell"),
-                      low: fp(pos.entry_low), high: fp(pos.entry_high), stop: fp(pos.stop),
-                      date: pos.report_date.split("-").reverse().slice(0, 2).join("/"),
-                    })}
-                  </span>
-                  {pos.text && <>{" — "}<HighlightNumbers text={pos.text} /></>}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {alt && <span className="inline-block mt-0.5 rounded border border-border px-1 text-[10px] uppercase tracking-wide text-muted-light">{t("signal.alternative")}</span>}
       </div>
     </div>
+  );
+}
+
+function ConditionCell({ sc }: { sc: Scenario }) {
+  const t = useTranslations("reportDoc");
+  return (
+    <div className="text-[12px] leading-[1.45] text-body">
+      {sc.condition ? <RichText text={sc.condition} /> : <span className="text-muted-light">—</span>}
+      {sc.key_risk && (
+        <div className="mt-1 text-down">
+          <span className="font-semibold">{t("signal.invalidation")}</span> <RichText text={sc.key_risk} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StrategyTable({ plans, last, minRr }: { plans: HorizonPlan[]; last?: number; minRr: number }) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  // Thanh R:R mọi chân dùng chung 1 thang: chân có (rủi ro + lợi nhuận) lớn nhất = toàn bộ bề rộng.
+  const rrScale = Math.max(0, ...plans.flatMap(p => p.legs).map(l => (l.risk && l.risk > 0 ? l.risk + Math.max(l.reward ?? 0, 0) : 0)));
+  const ctx: LegCtx = { t, locale, last, minRr, rrScale };
+  const th = "pb-1.5 text-[11px] font-semibold text-muted-light text-left";
+  // Không tách được mức giá nào (vd "Đứng ngoài…", dữ liệu cũ chỉ có action_plan) → hiện nguyên văn.
+  const fallback = (p: HorizonPlan): string => p.sc.trading_strategy || p.sc.action_plan || "";
+  return (
+    <>
+      {/* sm+ và khi in/xuất PDF: bảng; mobile: mỗi khung 1 khối dọc */}
+      <table className="hidden sm:table w-full table-fixed border-collapse text-[13px]">
+        <colgroup>
+          <col style={{ width: "14%" }} /><col style={{ width: "13%" }} /><col style={{ width: "14%" }} />
+          <col style={{ width: "11%" }} /><col style={{ width: "8%" }} /><col style={{ width: "12%" }} /><col />
+        </colgroup>
+        <thead>
+          <tr className="border-b border-border">
+            <th className={th}>{t("signal.col.horizon")}</th>
+            <th className={th}>{t("signal.col.order")}</th>
+            <th className={clsx(th, "text-right! pr-3")}>{t("signal.col.entry")}</th>
+            <th className={clsx(th, "text-right! pr-3")}>{t("signal.col.target")}</th>
+            <th className={clsx(th, "text-right! pr-3")}>{t("signal.col.stop")}</th>
+            <th className={th}>{t("signal.col.rr")}</th>
+            <th className={th}>{t("signal.col.condition")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {plans.map(p => {
+            const legs: (Leg | null)[] = p.legs.length ? p.legs : [null];
+            return legs.map((leg, li) => {
+              const n = leg ? legCells(leg, ctx) : null;
+              return (
+                <tr key={`${p.horizon}-${li}`} className={clsx("align-top print:break-inside-avoid", li === 0 && "border-t border-border first:border-t-0")}>
+                  {li === 0 && <td rowSpan={legs.length} className="py-2 pr-2"><HorizonCell plan={p} /></td>}
+                  {n && leg ? (
+                    <>
+                      <td className="py-2 pr-2"><OrderPill leg={leg} /></td>
+                      <td className="py-2 pr-3 text-right">{n.entry}</td>
+                      <td className="py-2 pr-3 text-right">{n.target}</td>
+                      <td className="py-2 pr-3 text-right">{n.stop}</td>
+                      <td className="py-2 pr-2">{n.rr}</td>
+                    </>
+                  ) : (
+                    <td colSpan={5} className="py-2 pr-3 text-[12px] leading-[1.45] text-body">
+                      {fallback(p) ? <RichText text={fallback(p)} /> : <span className="text-muted-light">—</span>}
+                    </td>
+                  )}
+                  {li === 0 && <td rowSpan={legs.length} className="py-2"><ConditionCell sc={p.sc} /></td>}
+                </tr>
+              );
+            });
+          })}
+        </tbody>
+      </table>
+
+      <div className="sm:hidden divide-y divide-border">
+        {plans.map(p => (
+          <div key={p.horizon} className="py-2.5 first:pt-0">
+            <HorizonCell plan={p} compact />
+            {p.legs.length ? p.legs.map((leg, li) => {
+              const n = legCells(leg, ctx);
+              return (
+                <div key={li} className="mt-2 rounded-lg border border-border px-2.5 py-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <OrderPill leg={leg} />
+                    <div className="flex flex-col items-end text-[12.5px]">{n.rr}</div>
+                  </div>
+                  <div className="mt-1.5 grid grid-cols-[1.4fr_1fr_1fr] gap-2 text-[12.5px]">
+                    <div><div className="text-[10.5px] text-muted-light">{t("signal.col.entry")}</div>{n.entry}</div>
+                    <div><div className="text-[10.5px] text-muted-light">{t("signal.col.target")}</div>{n.target}</div>
+                    <div><div className="text-[10.5px] text-muted-light">{t("signal.col.stop")}</div>{n.stop}</div>
+                  </div>
+                </div>
+              );
+            }) : (
+              <p className="mt-1.5 text-[12.5px] leading-[1.45] text-body">
+                {fallback(p) ? <RichText text={fallback(p)} /> : <span className="text-muted-light">—</span>}
+              </p>
+            )}
+            <div className="mt-2"><ConditionCell sc={p.sc} /></div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ── Phòng hộ CBAM (content["2"].cbam_estimate — services/cbam_estimate.py) ─────────────────────────────
+// Cấu trúc khóa chi phí = cbam_estimate.hedge_structure_text: MUA futures Dec ngay cho phần lõi, BÁN rải theo lịch
+// đấu giá còn lại; phần chiến thuật (≤ tactical_max_pct % phần chưa chốt) theo nhãn signal.
+function CbamHedgePlan({ est, hedgeAction }: { est: CbamEstimate; hedgeAction?: HedgeAction | null }) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const n = (x: number, d = 2) => fnum(x, d, locale);
+  const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const fixed = est.fixed_share_pct;
+  const open = est.open_share_pct ?? 100 - fixed;
+  const tmax = est.tactical_max_pct ?? 20;
+  const core = est.core_share_of_quarter_pct ?? (open * (100 - tmax)) / 100;
+  const tactical = est.tactical_share_of_quarter_pct ?? (open * tmax) / 100;
+  const year = Number(est.quarter.split(" ").pop());
+  const yy = (y: number) => String(y % 100).padStart(2, "0");
+  const contract = Number.isFinite(year) ? `Dec-${yy(year)}` : "Dec";
+  const nextContract = Number.isFinite(year) ? `Mar-${yy(year + 1)}` : "Mar";
+  const lastAuction = est.last_auction_date, expiry = est.futures_expiry;
+  const gap = est.spot_vs_qtd_pct;
+
+  const segments = [
+    { key: "fixed", pct: fixed, cls: "bg-surface-alt text-muted-light", label: t("hedge.segFixed", { pct: n(fixed, 1) }) },
+    { key: "core", pct: core, cls: "bg-primary/15 text-primary-dark", label: t("hedge.segCore", { pct: n(core, 1), contract }) },
+    {
+      key: "tactical", pct: tactical,
+      cls: est.signal === "increase" ? "bg-primary/30 text-primary-dark" : "bg-warn-tint text-warn border border-dashed border-warn/60",
+      label: t(`hedge.segTactical.${est.signal}`, { pct: n(tactical, 1) }),
+      short: t(`hedge.segTacticalShort.${est.signal}`, { pct: n(tactical, 1) }),
+    },
+  ].filter(s => s.pct > 0.05);
+
+  const notes: { icon: typeof Clock; text: string }[] = [];
+  if (open > 0.05) {
+    notes.push({
+      icon: ArrowLeftRight,
+      text: (lastAuction
+        ? t("hedge.sellPlan", { contract, left: est.auctions_total - est.auctions_done, last: dm(lastAuction) })
+        : t("hedge.sellPlanNoDate", { contract, left: est.auctions_total - est.auctions_done }))
+        + (est.upcoming?.count ? ` ${t("hedge.next7", { count: est.upcoming.count, volume: n(est.upcoming.volume_mt) })}` : ""),
+    });
+  }
+  notes.push({
+    icon: Crosshair,
+    text: t(`hedge.tactical.${est.signal_reason}`, {
+      tmax, spot: n(est.spot), qtd: est.qtd_vwap !== null ? n(est.qtd_vwap) : "—",
+      gap: gap !== null ? (est.signal_reason === "spot_near_qtd" ? `${gap > 0 ? "+" : gap < 0 ? "−" : ""}${n(Math.abs(gap))}` : n(Math.abs(gap))) : "—",
+      threshold: n(est.hedge_gap_pct, Number.isInteger(est.hedge_gap_pct) ? 0 : 1), fixed: n(fixed, 1),
+    }),
+  });
+  if (lastAuction && open > 0.05) {
+    const key = !expiry ? "noExpiry" : lastAuction === expiry ? "sameDay" : lastAuction > expiry ? "afterExpiry" : "beforeExpiry";
+    notes.push({ icon: CalendarClock, text: t(`hedge.expiry.${key}`, { contract, next: nextContract, last: dm(lastAuction), expiry: expiry ? dm(expiry) : "" }) });
+  }
+
+  return (
+    <div className="px-4 sm:px-5 py-3.5 border-t border-border print:break-inside-avoid">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2">
+        <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] font-bold text-label">
+          <ShieldCheck size={15} strokeWidth={2.5} className="text-primary-dark shrink-0" aria-hidden="true" />
+          {t("hedge.title", { quarter: est.quarter })}
+          <span className="rounded border border-primary/30 bg-tint px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wider text-primary-dark">
+            {t(`signal.hedgeAction.${est.signal}`)}
+          </span>
+        </h3>
+        <span className="text-[11.5px] text-muted-light tabular-nums">
+          {est.ci_low !== null && est.ci_high !== null
+            ? t("hedge.estimateCi", { est: n(est.estimate), level: est.ci_level, low: n(est.ci_low), high: n(est.ci_high) })
+            : t("hedge.estimate", { est: n(est.estimate) })}
+        </span>
+      </div>
+      <div className="flex h-[26px] rounded-md overflow-hidden text-[11.5px] font-semibold [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+        {segments.map((s, i) => (
+          <div
+            key={s.key}
+            className={clsx("flex items-center justify-center px-2 min-w-0", s.cls, i < segments.length - 1 ? "shrink-0" : "flex-1")}
+            style={i < segments.length - 1 ? { width: `${s.pct}%` } : undefined}
+            title={s.label}
+          >
+            {s.pct >= 7 && <span className="hidden sm:inline truncate">{"short" in s ? s.short : s.label}</span>}
+          </div>
+        ))}
+      </div>
+      {/* Mobile: thanh quá hẹp để ghi chữ trong từng đoạn → chú giải bên dưới. */}
+      <ul className="sm:hidden mt-1.5 space-y-0.5 text-[11.5px] text-body [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+        {segments.map(s => (
+          <li key={s.key} className="flex items-center gap-1.5">
+            <span className={clsx("inline-block w-3 h-3 rounded-[3px] shrink-0", s.cls)} aria-hidden="true" />
+            {s.label}
+          </li>
+        ))}
+      </ul>
+      <ul className="mt-2.5 grid sm:grid-cols-3 gap-x-4 gap-y-1.5 text-[11.5px] leading-[1.45] text-body">
+        {notes.map((note, i) => (
+          <li key={i} className="flex items-start gap-1.5">
+            <note.icon size={13} className="shrink-0 mt-[2px] text-muted-light" aria-hidden="true" />
+            <span className="tabular-nums">{note.text}</span>
+          </li>
+        ))}
+      </ul>
+      {/* Câu LLM của phần chiến thuật (chỉ khi nhãn increase/reduce — "hold" do Python viết, trùng ý dòng trên). */}
+      {est.signal !== "hold" && hedgeAction?.text && (
+        <p className="mt-1.5 text-[11.5px] leading-[1.45] text-muted-light">{stripMarkdown(hedgeAction.text)}</p>
+      )}
+    </div>
+  );
+}
+
+// Báo cáo cũ chưa có cbam_estimate: hiện nguyên văn ô phòng hộ (hedge_action hoặc hedge_note của kịch bản ngắn hạn).
+function LegacyHedgeNote({ hedgeAction, note }: { hedgeAction?: HedgeAction | null; note?: string }) {
+  const t = useTranslations("reportDoc");
+  return (
+    <div className="px-4 sm:px-5 py-3 border-t border-border">
+      <h3 className="flex flex-wrap items-center gap-2 text-[13.5px] font-bold text-label mb-1">
+        <ShieldCheck size={15} strokeWidth={2.5} className="text-primary-dark shrink-0" aria-hidden="true" />
+        {t("signal.hedge")}
+        {hedgeAction && (
+          <span className="rounded border border-primary/30 bg-tint px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wider text-primary-dark">
+            {t(`signal.hedgeAction.${hedgeAction.action}`)}
+          </span>
+        )}
+      </h3>
+      {hedgeAction?.core && <p className="text-[13px] leading-[1.55] text-body font-semibold"><HighlightNumbers text={hedgeAction.core} /></p>}
+      {(hedgeAction?.text || note) && <p className="text-[13px] leading-[1.55] text-body"><HighlightNumbers text={hedgeAction?.text || note || ""} /></p>}
+    </div>
+  );
+}
+
+function KpiTile({ title, children, className, href }: { title: string; children: React.ReactNode; className?: string; href?: string }) {
+  const cls = clsx("block rounded-lg border border-border bg-surface/40 px-3 py-2.5 min-w-0", href && "hover:border-primary/40 transition-colors", className);
+  const body = (
+    <>
+      <div className="text-[11px] font-semibold leading-tight text-muted-light mb-1">{title}</div>
+      {children}
+    </>
+  );
+  return href ? <a href={href} className={cls}>{body}</a> : <div className={cls}>{body}</div>;
+}
+
+function PositionCard({ scenarios, chartData, euaRow, forecastReview, cbamEstimate, hedgeAction, openPositions }: {
+  scenarios: Scenario[]; chartData: OhlcRow[]; euaRow?: PriceRow; forecastReview?: ForecastReview | null;
+  cbamEstimate?: CbamEstimate | null; hedgeAction?: HedgeAction | null; openPositions?: OpenPosition[];
+}) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const fp = (n: number) => fmtPrice(n, locale);
+  const signed = (n: number, d = 2) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fnum(Math.abs(n), d, locale)}`;
+
+  const lastRow = chartData.length ? chartData[chartData.length - 1] : undefined;
+  const last: number | undefined = typeof lastRow?.close === "number" ? lastRow.close
+    : typeof euaRow?.close === "number" ? euaRow.close : undefined;
+  // Hỗ trợ/kháng cự = đáy/đỉnh 30 phiên OHLC thật (= report_generator._eua_technical_levels_summary).
+  const range: [number, number] | null = chartData.length
+    ? [Math.min(...chartData.map(c => c.low)), Math.max(...chartData.map(c => c.high))] : null;
+  const plans = PLAN_HORIZONS
+    .map(h => scenarios.find(sc => sc?.horizon === h))
+    .filter((sc): sc is Scenario => !!sc)
+    .map(sc => buildPlan(sc, last));
+  const short = plans.find(p => p.horizon === "ngắn hạn")?.sc;
+  const outlook = outlookOf(short, plans.find(p => p.horizon === "trung hạn")?.sc);
+  const minRr = forecastReview?.rules?.min_rr ?? DEFAULT_MIN_RR;
+  const marks = buildLadderMarks(plans, range, last, t);
+
+  // Δ ngày/tuần: ưu tiên đúng số của Bảng giá nhanh (dòng EUA); thiếu thì tính từ chart_data cùng định nghĩa
+  // (tuần = phiên gần nhất cách ≥ 7 ngày lịch, như EuaDashboardWidget).
+  const prevClose = chartData.length > 1 ? chartData[chartData.length - 2].close : undefined;
+  const dayPct: number | undefined = typeof euaRow?.day_change_pct === "number" ? euaRow.day_change_pct
+    : last !== undefined && prevClose ? (last / prevClose - 1) * 100 : undefined;
+  const weekRow = lastRow ? [...chartData].reverse().find(c =>
+    c.date <= new Date(new Date(lastRow.date).getTime() - 7 * 86400000).toISOString().slice(0, 10)) : undefined;
+  const weekPct: number | undefined = typeof euaRow?.week_change_pct === "number" ? euaRow.week_change_pct
+    : last !== undefined && weekRow?.close ? (last / weekRow.close - 1) * 100 : undefined;
+
+  const pos = range && last !== undefined ? rangePosition(last, range[0], range[1]) : null;
+  const atr = atrTrueRange(chartData);
+  const vol = lastRow?.volume ?? 0;
+  // TB khối lượng 20 phiên LIỀN TRƯỚC, bỏ phiên volume <= 0 — cùng công thức với EuaDashboardWidget.
+  const priorVols = chartData.slice(0, -1).map(c => c.volume).filter((v): v is number => typeof v === "number" && v > 0).slice(-VOL_AVG_SESSIONS);
+  const avgVol = priorVols.length ? priorVols.reduce((a, b) => a + b, 0) / priorVols.length : 0;
+  const volPct = avgVol && vol > 0 ? (vol / avgVol - 1) * 100 : undefined;
+
+  const reviewItems = forecastReview?.items ?? [];
+  const right = reviewItems.filter(i => i.verdict === "correct").map(i => i.report_date);
+  const wrong = reviewItems.filter(i => i.verdict === "wrong").map(i => i.report_date);
+  const pending = reviewItems.length - right.length - wrong.length;
+
+  return (
+    <section className="mb-6 rounded-xl border border-border bg-background shadow-[var(--shadow-soft)] print:shadow-none overflow-hidden">
+      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 sm:px-5 pt-3.5 pb-2.5 border-b border-border">
+        <h2 className="flex items-center gap-2 text-[16px] sm:text-[17px] font-extrabold text-primary-dark">
+          <Crosshair size={18} strokeWidth={2.5} aria-hidden="true" /> {t("signal.title")}
+        </h2>
+        {lastRow?.date && (
+          <span className="text-[11.5px] text-muted-light tabular-nums">{t("signal.dataAsOf", { date: formatFullDate(lastRow.date) })}</span>
+        )}
+      </header>
+
+      <div className="px-3 sm:px-5 py-3.5 space-y-4">
+        {/* ═══ Hàng chỉ số ═══ */}
+        <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1.2fr_1fr_1fr] gap-2 print:break-inside-avoid [&_.kpi-sub]:[text-wrap:balance]">
+          <KpiTile title={t("signal.outlook")} className="col-span-2 sm:col-span-1">
+            <div className="relative mt-1.5 h-[6px] rounded-full bg-gradient-to-r from-down/45 via-border to-up/45 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+              <span className="absolute top-[-4px] h-[14px] w-[3px] rounded-full bg-label" style={{ left: `${outlook.pos}%`, transform: "translateX(-50%)" }} />
+            </div>
+            <div className="mt-1 flex justify-between text-[10px] text-muted-light"><span>{t("signal.gaugeDown")}</span><span>{t("signal.gaugeUp")}</span></div>
+            <div className={clsx("mt-0.5 text-[12.5px] font-bold leading-snug", outlook.tone)}>{t(`signal.outlookLabel.${outlook.key}`)}</div>
+          </KpiTile>
+
+          <KpiTile title={t("signal.refPrice")}>
+            <div className="text-[19px] font-bold tabular-nums leading-tight text-label">{last !== undefined ? fp(last) : "—"}</div>
+            <div className="kpi-sub text-[11px] tabular-nums leading-snug">
+              {dayPct !== undefined && <div className={dayPct >= 0 ? "text-up" : "text-down"}>{t("signal.dayPct", { pct: signed(dayPct) })}</div>}
+              {weekPct !== undefined && <div className={weekPct >= 0 ? "text-up" : "text-down"}>{t("signal.weekPct", { pct: signed(weekPct) })}</div>}
+            </div>
+          </KpiTile>
+
+          <KpiTile title={t("signal.range30")}>
+            <div className="text-[16px] font-bold tabular-nums leading-tight text-label whitespace-nowrap">{range ? fmtRange(range, locale) : "—"}</div>
+            {pos && <div className="kpi-sub text-[11px] text-body leading-snug">{t(`signal.rangePos.${pos.pos}`, { pct: fnum(pos.pct, 0, locale) })}</div>}
+            {/* Mục tiêu đo biên độ khi phá/thủng biên = report_generator._eua_technical_levels_summary */}
+            {range && (
+              <div className="kpi-sub text-[11px] text-muted-light tabular-nums leading-snug">
+                {t("signal.measured", { down: fp(range[0] - (range[1] - range[0])), up: fp(range[1] + (range[1] - range[0])) })}
+              </div>
+            )}
+          </KpiTile>
+
+          <KpiTile title={t("signal.atr", { n: ATR_SESSIONS })}>
+            <div className="text-[19px] font-bold tabular-nums leading-tight text-label">{atr !== undefined ? fp(atr) : "—"}</div>
+            {atr !== undefined && last ? <div className="kpi-sub text-[11px] text-muted-light tabular-nums leading-snug">{t("signal.atrPct", { pct: fnum((atr / last) * 100, 1, locale) })}</div> : null}
+            {volPct !== undefined && (
+              <div className="kpi-sub text-[11px] text-muted-light tabular-nums leading-snug">{t("signal.volVsAvg", { pct: signed(volPct, 1), n: priorVols.length })}</div>
+            )}
+          </KpiTile>
+
+          <KpiTile title={t("signal.track")} href={forecastReview ? "#section-forecast-review" : undefined}>
+            <div className="text-[19px] font-bold tabular-nums leading-tight text-label">
+              {right.length + wrong.length ? (
+                <>
+                  {right.length}/{right.length + wrong.length}
+                  <span className="ml-1 text-[12px] font-semibold text-muted-light">{t("signal.trackUnit")}</span>
+                </>
+              ) : "—"}
+            </div>
+            <div className="kpi-sub text-[11px] leading-snug tabular-nums">
+              {wrong.length > 0 && <div className="text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
+              {right.length > 0 && <div className="text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
+              {pending > 0 && <div className="text-muted-light">{t("signal.trackPending", { n: pending })}</div>}
+              {!reviewItems.length && <div className="text-muted-light">{t("signal.trackNone")}</div>}
+            </div>
+          </KpiTile>
+        </div>
+
+        {/* ═══ Thang giá: mọi mức của các kịch bản + giá hiện tại + biên 30 phiên ═══ */}
+        {marks.length > 1 && (
+          <div className="print:break-inside-avoid">
+            <PriceLadder marks={marks} range={range} />
+            <PriceLevelList marks={marks} />
+          </div>
+        )}
+
+        {/* ═══ Bảng lệnh theo khung thời gian ═══ */}
+        <div className="print:break-inside-avoid">
+          <StrategyTable plans={plans} last={last} minRr={minRr} />
+          <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-light [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+            <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-[5px] rounded-[2px] bg-down" aria-hidden="true" />{t("signal.legendRisk")}</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-[5px] rounded-[2px] bg-up" aria-hidden="true" />{t("signal.legendReward")}</span>
+            <span>{t("signal.legendNote", { min: fnum(minRr, 1, locale) })}</span>
+          </p>
+        </div>
+      </div>
+
+      {/* ═══ Phòng hộ CBAM — sổ phòng hộ SIM, tách khỏi lệnh của bàn giao dịch ở trên ═══ */}
+      {cbamEstimate ? (
+        <CbamHedgePlan est={cbamEstimate} hedgeAction={hedgeAction} />
+      ) : (hedgeAction || short?.hedge_note) ? (
+        <LegacyHedgeNote hedgeAction={hedgeAction} note={short?.hedge_note} />
+      ) : null}
+
+      {/* ═══ Lệnh mô phỏng còn mở từ báo cáo trước — đối chiếu với mức giá mới ═══ */}
+      {openPositions && openPositions.length > 0 && (
+        <div className="px-4 sm:px-5 py-3 border-t border-border">
+          <h3 className="text-[12.5px] font-bold text-label mb-1">{t("signal.openPositions")}</h3>
+          <ul className="space-y-1 text-[12.5px] leading-[1.55] text-body">
+            {openPositions.map(p => (
+              <li key={p.report_date}>
+                <span className={clsx(
+                  "mr-2 inline-block rounded border px-1.5 py-px text-[10px] font-bold tracking-wider",
+                  p.decision ? "border-primary/30 text-primary-dark" : "border-down/30 text-down",
+                )}>
+                  {t(`signal.decision.${p.decision ?? "none"}`)}
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {t("signal.openPosition", {
+                    side: t(p.side === "buy" ? "signal.buy" : "signal.sell"),
+                    low: fp(p.entry_low), high: fp(p.entry_high), stop: fp(p.stop),
+                    date: p.report_date.split("-").reverse().slice(0, 2).join("/"),
+                  })}
+                </span>
+                {p.text && <>{" — "}<HighlightNumbers text={p.text} /></>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1831,24 +2302,11 @@ export function ReportDocument({
   const { cleanedBlocks: analysisBlocks, watchpoints } = extractWatchpoints(blocksAfterSummary);
   const hasMarketDrivers =
     report.content["2"]?.market_drivers?.bullish?.length > 0 || report.content["2"]?.market_drivers?.bearish?.length > 0;
-  // KHUYẾN NGHỊ VỊ THẾ (đầu Phần 2) tái dùng đúng kịch bản "ngắn hạn" đã có
-  // trong trading_scenarios (Mục 3) — không cần trường dữ liệu riêng cho
-  // "hôm nay" từ backend.
-  const todaySignal = report.content["3"]?.trading_scenarios?.find((sc: any) => sc.horizon === "ngắn hạn");
-  // Kịch bản "trung hạn" → ô xu hướng 1–3 tháng trên header thẻ KHUYẾN NGHỊ VỊ THẾ.
-  const midTermSignal = report.content["3"]?.trading_scenarios?.find((sc: any) => sc.horizon === "trung hạn");
-  // Hỗ trợ/Kháng cự/Mục tiêu — tính trực tiếp từ OHLC thật 30 phiên
-  // (report.content["2"].chart_data), ĐÚNG công thức với backend
-  // services/report_generator.py::_eua_technical_levels_summary() (đỉnh/đáy
-  // 30 phiên + đo biên độ dao động cho mục tiêu breakout) — không qua LLM suy
-  // diễn. "Cắt lỗ" không có công thức xác nhận từ dữ liệu thật nên để trống
-  // (hiển thị "—") thay vì tự bịa mốc.
+  // KHUYẾN NGHỊ VỊ THẾ (đầu Phần 2) tái dùng đúng 3 kịch bản đã có trong
+  // trading_scenarios (Mục 3) + OHLC 30 phiên (chart_data) — không cần trường
+  // dữ liệu riêng từ backend (xem PositionCard).
+  const tradingScenarios: Scenario[] = report.content["3"]?.trading_scenarios ?? [];
   const chartData = report.content["2"]?.chart_data || [];
-  const technicalLevels: TechnicalLevels | null = chartData.length > 0 ? (() => {
-    const resistance = Math.max(...chartData.map((c: any) => c.high));
-    const support = Math.min(...chartData.map((c: any) => c.low));
-    return { support, resistance, target: resistance + (resistance - support) };
-  })() : null;
 
 
   return (
@@ -2218,17 +2676,16 @@ export function ReportDocument({
             icon={BarChart3}
           />
 
-          {/* KHUYẾN NGHỊ VỊ THẾ — nội dung đầu tiên của Phần 2: chiến lược trading cho
-              phiên hôm đó, tái dùng kịch bản "ngắn hạn" (+ xu hướng "trung hạn") đã có ở
-              Mục 3 (trading_scenarios) và mốc kỹ thuật từ OHLC 30 phiên — xem
-              TodaySignalCard. Giá hiện tại = giá đóng cửa phiên gần nhất trong chart_data.
-              (Đã gộp "Bảng tín hiệu nhanh" cũ vào thẻ này.) */}
-          {todaySignal && (
-            <TodaySignalCard
-              signal={todaySignal}
-              midTermSignal={midTermSignal}
-              technicalLevels={technicalLevels}
-              lastClose={chartData.length ? chartData[chartData.length - 1].close : undefined}
+          {/* KHUYẾN NGHỊ VỊ THẾ — nội dung đầu tiên của Phần 2: lệnh của cả 3 khung thời gian
+              (trading_scenarios Mục 3) trên 1 thang giá + phòng hộ CBAM — xem PositionCard.
+              Giá hiện tại = giá đóng cửa phiên gần nhất trong chart_data. */}
+          {tradingScenarios.some(sc => sc?.horizon === "ngắn hạn") && (
+            <PositionCard
+              scenarios={tradingScenarios}
+              chartData={chartData}
+              euaRow={priceRows.find((r: any) => r.code === "EUA")}
+              forecastReview={report.content["2"]?.forecast_review}
+              cbamEstimate={noPriceData ? null : report.content["2"]?.cbam_estimate}
               hedgeAction={report.content["3"]?.hedge_action}
               openPositions={report.content["3"]?.open_positions}
             />

@@ -652,51 +652,118 @@
       "headingWatch": "Watch list",
       "headingKeyDev": "Key developments"
     },
-    "trend": {
-      "up": "LEANING BULLISH",
-      "down": "LEANING BEARISH",
-      "sideways": "RANGE-BOUND"
-    },
-    "position": {
-      "up": "BUY (LONG) — following the short-term trend",
-      "down": "SELL (SHORT) — following the short-term trend",
-      "sideways": "RANGE — limit orders only"
-    },
     "ladder": {
-      "current": "Current {price}",
-      "stop": "Stop",
-      "entry": "Entry",
-      "target": "Target"
+      "current": "Current",
+      "support": "Support",
+      "resistance": "Resistance",
+      "zone": {
+        "buy": "Buy zone",
+        "sell": "Sell zone"
+      },
+      "trigger": {
+        "buy": "Buy on break",
+        "sell": "Sell on break"
+      },
+      "scale": {
+        "buy": "Accumulate",
+        "sell": "Scale out"
+      },
+      "target": {
+        "buy": "TP long",
+        "sell": "TP short",
+        "plain": "TP"
+      },
+      "stop": {
+        "buy": "SL long",
+        "sell": "SL short",
+        "plain": "SL"
+      },
+      "horizon": {
+        "mid": "mid-term",
+        "long": "long-term"
+      },
+      "withHorizon": "{name} ({horizon})"
     },
     "signal": {
-      "title": "POSITION RECOMMENDATION",
-      "confidence": "Confidence:",
-      "market": "Market:",
-      "shortTerm": "Short term (1–2 weeks):",
-      "midTerm": "Medium term (1–3 months):",
-      "position": "Position",
-      "priceZone": "Price zone",
-      "buyAround": "Buy around",
-      "sellAround": "Sell around",
-      "takeLong": "Take profit (long)",
-      "takeShort": "Take profit (short)",
-      "stopBelow": "Stop if below",
-      "stopAbove": "Stop if above",
-      "rrSub": "risk : reward",
-      "targetProfit": "Target profit",
-      "maxRisk": "Maximum risk",
-      "tradingRange": "Trading range",
-      "tileEntry": "Entry",
-      "tileTarget": "Target",
-      "tileStop": "Stop Loss",
-      "support": "Support",
-      "supportSub": "30-session low",
-      "resistance": "Resistance",
-      "resistanceSub": "30-session high",
-      "techTarget": "Technical target",
-      "techTargetSub": "on a resistance breakout",
-      "basis": "Basis",
-      "keyRisk": "Key risk",
+      "title": "EUA position recommendation",
+      "dataAsOf": "Session data {date} · unit EUR/tCO₂",
+      "outlook": "Outlook",
+      "gaugeDown": "Down",
+      "gaugeUp": "Up",
+      "outlookLabel": {
+        "up": "Leaning up",
+        "down": "Leaning down",
+        "upMidDown": "Up short-term · medium-term down",
+        "downMidUp": "Down short-term · medium-term up",
+        "neutral": "Neutral",
+        "neutralUp": "Neutral · leaning up",
+        "neutralDown": "Neutral · leaning down"
+      },
+      "refPrice": "Reference price",
+      "dayPct": "{pct}% day",
+      "weekPct": "{pct}% week",
+      "range30": "30-session range",
+      "rangePos": {
+        "above": "Price above the range",
+        "below": "Price below the range",
+        "nearTop": "Near the top ({pct}%)",
+        "nearBottom": "Near the bottom ({pct}%)",
+        "middle": "Mid-range ({pct}%)",
+        "upper": "Upper half ({pct}%)",
+        "lower": "Lower half ({pct}%)"
+      },
+      "measured": "Measured move: ↓{down} · ↑{up}",
+      "atr": "ATR {n} sessions",
+      "atrPct": "≈ {pct}% of price",
+      "volVsAvg": "Volume {pct}% vs {n}-session avg",
+      "track": "Past forecasts",
+      "trackUnit": "correct",
+      "trackWrong": "Wrong: {dates}",
+      "trackRight": "Correct: {dates}",
+      "trackPending": "{n} not yet concluded",
+      "trackNone": "No forecasts to grade yet",
+      "col": {
+        "horizon": "Horizon · direction",
+        "order": "Order",
+        "entry": "Entry",
+        "target": "Target",
+        "stop": "Stop",
+        "rr": "R:R",
+        "condition": "Condition / invalidation"
+      },
+      "period": {
+        "short": "1–2 weeks",
+        "mid": "1–3 months",
+        "long": "3–12 months"
+      },
+      "prob": "Prob. {p}",
+      "alternative": "alternative",
+      "order": {
+        "limit": {
+          "buy": "Buy limit",
+          "sell": "Sell limit"
+        },
+        "now": {
+          "buy": "Buy at market",
+          "sell": "Sell at market"
+        },
+        "breakout": {
+          "buy": "Buy on break",
+          "sell": "Sell on break"
+        },
+        "scale": {
+          "buy": "Accumulate",
+          "sell": "Scale out"
+        }
+      },
+      "onClose": "Close",
+      "vsPrice": "{pct}% vs price",
+      "unquantified": "Not quantified",
+      "rrWeak": "R:R below the 1 : {min} standard",
+      "invalidation": "Invalidation:",
+      "legendRisk": "Risk to stop",
+      "legendReward": "Reward to target",
+      "legendNote": "same scale, measured from the Entry zone midpoint (breakout orders: trigger level); standard R:R ≥ 1 : {min}. TP = target · SL = stop loss · Close = closing price · Prob. = probability.",
       "hedge": "SIM hedge book (CBAM)",
       "hedgeAction": {
         "buy_now": "BUY NOW",
@@ -715,10 +782,7 @@
         "move": "MOVE LEVELS",
         "close": "CLOSE",
         "none": "NOT REVIEWED"
-      },
-      "midAlt": "alternative: {arrow} low probability",
-      "legBuyTitle": "Buy order (lower band)",
-      "legSellTitle": "Sell order (upper band)"
+      }
     },
     "scenario": {
       "heading": "Action scenarios",
@@ -865,6 +929,40 @@
       },
       "cbamEffect": "CBAM:",
       "unverified": "Per summary, not checked against the original text"
+    },
+    "hedge": {
+      "title": "CBAM hedge {quarter}",
+      "estimateCi": "Estimated quarterly CBAM price {est} ({level}% CI: {low}–{high})",
+      "estimate": "Estimated quarterly CBAM price {est}",
+      "segFixed": "Fixed {pct}%",
+      "segCore": "Core {pct}% — BUY {contract} today",
+      "segTactical": {
+        "hold": "Tactical {pct}% — unused",
+        "increase": "Tactical {pct}% — lock more",
+        "reduce": "Tactical {pct}% — wait"
+      },
+      "segTacticalShort": {
+        "hold": "Wait {pct}%",
+        "increase": "Extra {pct}%",
+        "reduce": "Wait {pct}%"
+      },
+      "sellPlan": "Core: buy {contract} today, sell down across the {left} remaining auctions (to {last}) → net cost ≈ today's purchase price.",
+      "sellPlanNoDate": "Core: buy {contract} today, sell down across the {left} remaining auctions → net cost ≈ today's purchase price.",
+      "next7": "Next 7 days: {count} auctions / {volume} Mt.",
+      "tactical": {
+        "spot_near_qtd": "Tactical (≤{tmax}% of the open part) unused: price {spot} is {gap}% from the fixed auction VWAP {qtd}, below the ±{threshold}% threshold.",
+        "spot_below_qtd": "Tactical (≤{tmax}% of the open part): lock more now — price {spot} is {gap}% below the fixed auction VWAP {qtd} (threshold {threshold}%).",
+        "spot_above_qtd": "Tactical (≤{tmax}% of the open part): hold off — price {spot} is {gap}% above the fixed auction VWAP {qtd} (threshold {threshold}%); wait for a move back toward {qtd}.",
+        "quarter_mostly_fixed": "Tactical unused: {fixed}% of the quarter's volume is already fixed, the open part is small.",
+        "quarter_not_started": "Tactical unused: no auction yet this quarter to benchmark against.",
+        "quarter_fixed": "The whole quarter's volume is fixed — the quarterly CBAM price is effectively set."
+      },
+      "expiry": {
+        "sameDay": "{last}: the last auction of the quarter falls on the {contract} expiry — sell the final part before the expiry cut-off, or roll to {next}.",
+        "afterExpiry": "Some auctions fall after the {contract} expiry ({expiry}; last auction {last}) — hedge those with {next}.",
+        "beforeExpiry": "All remaining auctions (last on {last}) are before the {contract} expiry ({expiry}).",
+        "noExpiry": "Last auction of the quarter {last} — no {contract} expiry date configured: check the ICE calendar; anything after expiry rolls to {next}."
+      }
     }
   },
   "shellHeader": {

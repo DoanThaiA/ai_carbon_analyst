@@ -103,7 +103,9 @@ def parse_signal_levels(direction: str, entry_body: str, target_body: str, risk_
 def is_breakout_entry(direction: str, entry: str) -> bool:
     """Lệnh dừng (vào khi giá PHÁ mức) chứ không phải lệnh giới hạn. Chỉ nhận cụm có điều kiện kích hoạt
     ("mua khi đóng cửa trên X", "bán nếu thủng X", "phá đỉnh", "breakout") — chữ "trên" đứng lẻ trong
-    "Mua quanh 87,00–87,50 (trên hỗ trợ 86,90)" KHÔNG làm lệnh thành lệnh phá vỡ (bản 15/10 từng bị chấm sai vì vậy)."""
+    "Mua quanh 87,00–87,50 (trên hỗ trợ 86,90)" KHÔNG làm lệnh thành lệnh phá vỡ (bản 15/10 từng bị chấm sai vì vậy).
+    Bản port: isBreakoutEntry trong frontend/src/components/ReportDocument.tsx (nhãn "Mua/Bán khi phá" của thẻ
+    KHUYẾN NGHỊ VỊ THẾ) — sửa bên nào phải sửa cả bên kia."""
     word = r"trên|vượt|phá(?:\s+(?:lên|đỉnh))?" if direction == "tăng" else r"dưới|thủng|phá(?:\s+(?:xuống|đáy))?"
     if re.search(rf"(?:khi|nếu|sau khi|lúc)\s+(?:giá\s+)?(?:EUA\s+)?(?:đóng cửa\s+)?(?:{word})", entry, re.I):
         return True
