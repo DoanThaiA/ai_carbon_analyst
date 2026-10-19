@@ -1230,5 +1230,41 @@
     "undo": "Undo",
     "undoError": "Could not undo — the report may have been edited again.",
     "done": "Done"
+  },
+  "reportWorkflow": {
+    "ariaLabel": "Workflow of the AI agents and report review process",
+    "upgradeJenny": "upgrade Jenny",
+    "sonic": {
+      "title": "Sonic",
+      "desc": "Crawls news, prices,\nchecks sources"
+    },
+    "jenny": {
+      "title": "Jenny",
+      "desc": "Writes the daily report\n(DRAFT)"
+    },
+    "jack": {
+      "title": "Jack (Claude.ai)",
+      "desc": "QCs the release,\nscores it"
+    },
+    "clpt": {
+      "title": "Strategy Dept.",
+      "desc": "Admin edits,\napproves (if needed)"
+    },
+    "report": {
+      "title": "Report",
+      "desc": "Approved,\nshared"
+    },
+    "admin": {
+      "title": "Head of Strategy Dept. (Admin)",
+      "desc": "QC review → refine analysis & trading theses\nGood chat sessions → added to master prompt"
+    },
+    "qc": {
+      "title": "QC review",
+      "desc": "Sent to the Head\nof Strategy Dept."
+    },
+    "reader": {
+      "title": "Readers",
+      "desc": "Quote the report, ask\nthe AI, discuss"
+    }
   }
 }

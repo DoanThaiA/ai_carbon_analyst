@@ -1230,5 +1230,41 @@
     "undo": "Hoàn tác",
     "undoError": "Không hoàn tác được — báo cáo có thể đã bị sửa tiếp.",
     "done": "Xong"
+  },
+  "reportWorkflow": {
+    "ariaLabel": "Sơ đồ luồng công việc AI Agent và kiểm duyệt báo cáo",
+    "upgradeJenny": "nâng cấp Jenny",
+    "sonic": {
+      "title": "Sonic",
+      "desc": "Crawl tin, giá,\nkiểm nguồn"
+    },
+    "jenny": {
+      "title": "Jenny",
+      "desc": "Soạn báo cáo ngày\n(DRAFT)"
+    },
+    "jack": {
+      "title": "Jack (Claude.ai)",
+      "desc": "QC bản phát hành,\nchấm điểm"
+    },
+    "clpt": {
+      "title": "Phòng CLPT",
+      "desc": "Admin chỉnh sửa,\nduyệt (nếu cần)"
+    },
+    "report": {
+      "title": "Báo cáo",
+      "desc": "Đã duyệt,\ndùng chung"
+    },
+    "admin": {
+      "title": "Trưởng phòng CLPT (Admin)",
+      "desc": "Bản QC → tối ưu lý thuyết nhận định, giao dịch\nPhiên chat hay → đưa vào master prompt"
+    },
+    "qc": {
+      "title": "Bản QC",
+      "desc": "Gửi Trưởng\nphòng CLPT"
+    },
+    "reader": {
+      "title": "Người đọc",
+      "desc": "Quote báo cáo, hỏi\nthêm AI, thảo luận"
+    }
   }
 }
