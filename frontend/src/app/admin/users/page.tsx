@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import clsx from "clsx";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
+import WorkflowDiagram from "@/components/admin/WorkflowDiagram";
 
 type RelationType = "superior" | "peer";
 
@@ -107,6 +108,8 @@ export default function AdminUsersPage() {
         <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
         <p className="text-body">{t("subtitle")}</p>
       </div>
+
+      <WorkflowDiagram />
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-3">

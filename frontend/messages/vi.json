@@ -325,7 +325,25 @@
     "save": "Lưu",
     "cancel": "Huỷ",
     "edit": "Sửa",
-    "delete": "Xoá"
+    "delete": "Xoá",
+    "wf": {
+      "heading": "Quy trình làm việc",
+      "sonic": "Crawl tin, giá, kiểm nguồn",
+      "jenny": "Soạn báo cáo ngày (DRAFT)",
+      "jack": "QC bản phát hành, chấm điểm",
+      "clptRoom": "Phòng CLPT",
+      "clptRoomDesc": "Admin chỉnh sửa, duyệt (nếu cần)",
+      "report": "Báo cáo",
+      "reportDesc": "Đã duyệt, dùng chung",
+      "upgradeJenny": "nâng cấp Jenny",
+      "adminTitle": "Trưởng phòng CLPT (Admin)",
+      "adminLine1": "Bản QC → tối ưu lý thuyết nhận định, giao dịch",
+      "adminLine2": "Phiên chat hay → đưa vào master prompt",
+      "qcTitle": "Bản QC",
+      "qcDesc": "Gửi Trưởng phòng CLPT",
+      "readerTitle": "Người đọc",
+      "readerDesc": "Quote báo cáo, hỏi thêm AI, thảo luận"
+    }
   },
   "adminUsrPerformance": {
     "title": "Thống Kê Hiệu Suất",

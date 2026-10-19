@@ -325,7 +325,25 @@
     "save": "Save",
     "cancel": "Cancel",
     "edit": "Edit",
-    "delete": "Delete"
+    "delete": "Delete",
+    "wf": {
+      "heading": "Workflow",
+      "sonic": "Crawl news, prices, verify sources",
+      "jenny": "Draft the daily report (DRAFT)",
+      "jack": "QC the release, score",
+      "clptRoom": "CLPT Dept.",
+      "clptRoomDesc": "Admin edits, approves (if needed)",
+      "report": "Report",
+      "reportDesc": "Approved, shared",
+      "upgradeJenny": "upgrade Jenny",
+      "adminTitle": "Head of CLPT (Admin)",
+      "adminLine1": "QC report → refine analysis, trading insights",
+      "adminLine2": "Good chat sessions → feed into master prompt",
+      "qcTitle": "QC Report",
+      "qcDesc": "Sent to Head of CLPT",
+      "readerTitle": "Readers",
+      "readerDesc": "Quote reports, ask AI, discuss"
+    }
   },
   "adminUsrPerformance": {
     "title": "Performance Statistics",

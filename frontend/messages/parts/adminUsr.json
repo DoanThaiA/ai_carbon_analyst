@@ -30,7 +30,25 @@
       "save": "Lưu",
       "cancel": "Huỷ",
       "edit": "Sửa",
-      "delete": "Xoá"
+      "delete": "Xoá",
+      "wf": {
+        "heading": "Quy trình làm việc",
+        "sonic": "Crawl tin, giá, kiểm nguồn",
+        "jenny": "Soạn báo cáo ngày (DRAFT)",
+        "jack": "QC bản phát hành, chấm điểm",
+        "clptRoom": "Phòng CLPT",
+        "clptRoomDesc": "Admin chỉnh sửa, duyệt (nếu cần)",
+        "report": "Báo cáo",
+        "reportDesc": "Đã duyệt, dùng chung",
+        "upgradeJenny": "nâng cấp Jenny",
+        "adminTitle": "Trưởng phòng CLPT (Admin)",
+        "adminLine1": "Bản QC → tối ưu lý thuyết nhận định, giao dịch",
+        "adminLine2": "Phiên chat hay → đưa vào master prompt",
+        "qcTitle": "Bản QC",
+        "qcDesc": "Gửi Trưởng phòng CLPT",
+        "readerTitle": "Người đọc",
+        "readerDesc": "Quote báo cáo, hỏi thêm AI, thảo luận"
+      }
     },
     "en": {
       "title": "Colleagues",
@@ -62,7 +80,25 @@
       "save": "Save",
       "cancel": "Cancel",
       "edit": "Edit",
-      "delete": "Delete"
+      "delete": "Delete",
+      "wf": {
+        "heading": "Workflow",
+        "sonic": "Crawl news, prices, verify sources",
+        "jenny": "Draft the daily report (DRAFT)",
+        "jack": "QC the release, score",
+        "clptRoom": "CLPT Dept.",
+        "clptRoomDesc": "Admin edits, approves (if needed)",
+        "report": "Report",
+        "reportDesc": "Approved, shared",
+        "upgradeJenny": "upgrade Jenny",
+        "adminTitle": "Head of CLPT (Admin)",
+        "adminLine1": "QC report → refine analysis, trading insights",
+        "adminLine2": "Good chat sessions → feed into master prompt",
+        "qcTitle": "QC Report",
+        "qcDesc": "Sent to Head of CLPT",
+        "readerTitle": "Readers",
+        "readerDesc": "Quote reports, ask AI, discuss"
+      }
     }
   },
   "adminUsrPerformance": {
