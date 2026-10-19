@@ -124,7 +124,7 @@ export function Header() {
             <div className="flex items-center gap-3 border-b border-border px-4 py-3.5">
               <Image src="/jenny.jpg" alt="Jenny AI" width={36} height={36} className="h-9 w-9 rounded-full object-cover ring-2 ring-tint" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-bold text-heading leading-snug">Trung tâm điều hành carbon / Phòng CLPT / SIM</span>
+                <span className="block text-[15px] font-bold text-heading leading-tight">Jenny AI</span>
                 <span className="block text-xs text-muted-light truncate">{tNav("brandSubtitle")}</span>
               </span>
               <button

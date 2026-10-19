@@ -95,7 +95,7 @@ export function AdminSidebar() {
           {expanded && (
             // Bề rộng cố định: chữ không bị bẻ dòng liên tục trong lúc menu đang giãn ra.
             <span className="min-w-0 w-44 shrink-0">
-              <span className="block text-[15px] font-bold text-heading leading-snug">Trung tâm điều hành carbon / Phòng CLPT / SIM</span>
+              <span className="block text-[15px] font-bold text-heading leading-tight truncate">Jenny AI</span>
               <span className="block text-xs text-muted-light truncate">{t("brandSubtitle")}</span>
             </span>
           )}
