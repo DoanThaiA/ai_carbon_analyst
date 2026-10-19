@@ -32,16 +32,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import Article, BizSuggestion, Instrument, Price, Report
 from services import biz_memory
 from services.strategy_levels import is_breakout_entry
-from services.report_consistency import atr_true_range, consistency_issues
+from services.report_consistency import (
+    LEGAL_DOC_ID_RE,
+    atr_true_range,
+    consistency_issues,
+    inline_source_names,
+    inline_source_spans,
+    session_signals,
+    strip_inline_sources,
+    technical_claim_issues,
+)
 from services.report_generator import (
     CBAM_CODE,
     SECTION_TOPICS,
     TOPIC_DISPLAY_LABELS,
     CALENDAR_WINDOW_DAYS,
     STALE_NEWS_MAX_AGE_DAYS,
+    ETS_POLICY_LOOKBACK_DAYS,
+    _load_ets_dossiers,
     FUEL_NEAR_BREAKEVEN,
     _compute_recurring_calendar_events,
     fuel_spread_state,
+    fuel_threshold_far,
     _parse_event_date,
     data_matches_event,
     news_source_label,
@@ -573,6 +585,105 @@ def check_fuel_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
 
 
 _SWITCH_TO_COAL_RE = re.compile(r"(chuyển|dịch|dispatch)[^.;\n]{0,25}(sang|về)\s+(?:điện\s+)?than", re.IGNORECASE)
+# "ngưỡng theo dõi ±16 EUR/MWh", "chênh thu hẹp ≥16 EUR/MWh", "không thu hẹp quá 16 EUR/MWh", "TTF ±10%"
+_SPREAD_THRESHOLD_RE = re.compile(
+    r"(?:chênh|spread)[^.\n]{0,60}?(?:thu hẹp|±|thay đổi|quá)[^.\n]{0,25}?\d+(?:[.,]\d+)?\s*EUR/MWh"
+    r"|±\s*\d+(?:[.,]\d+)?\s*EUR/MWh|TTF\s*±\s*\d+(?:[.,]\d+)?\s*%",
+    re.IGNORECASE,
+)
+
+
+# "TTF tăng → chi phí phát điện/phòng hộ tăng → đỡ giá EUA" (bản 17/10, Cần theo dõi #5/#6) trái kênh dùng chung khi
+# chuyển đổi đã bão hòa (report_generator: "KÊNH TTF → EUA DÙNG CHUNG").
+_HEDGE_SUPPORT_RE = re.compile(
+    r"(?:phòng hộ|hedge)[^.;\n]{0,60}?(?:đỡ|hỗ trợ|duy trì|tăng)[^.;\n]{0,25}?(?:giá\s+|cầu\s+|nhu cầu\s+)?(?:phòng hộ\s+)?EUA"
+    r"|(?:đỡ|hỗ trợ)\s+(?:giá\s+|cầu\s+)?EUA[^.;\n]{0,40}?(?:phòng hộ|hedge)",
+    re.IGNORECASE,
+)
+
+
+# Bản 17/10: "nâng ngưỡng vô hiệu hóa 800 triệu → kỳ vọng cung siết lại → hỗ trợ EUA" và xếp nó làm "đối trọng" — sai chiều.
+_MSR_INVALIDATION_RE = re.compile(r"(?:nâng|tăng)\s+ngưỡng\s+vô hiệu", re.IGNORECASE)
+_MSR_INTAKE_CUT_RE = re.compile(r"(?:giảm|tạm dừng|dừng|hoãn)\s+(?:việc\s+)?chuyển[^.;\n]{0,40}?MSR", re.IGNORECASE)
+_SUPPORT_CLAIM_RE = re.compile(r"siết|hỗ trợ\s+(?:giá\s+)?EUA|đối trọng|đỡ\s+(?:giá\s+)?EUA", re.IGNORECASE)
+
+
+def check_msr_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Nâng ngưỡng vô hiệu hóa MSR / giảm chuyển hạn ngạch vào MSR đều là NỚI cung — không được viết là siết/hỗ trợ EUA
+    (trừ câu nói về việc đề nghị bị BÁC)."""
+    issues = []
+    for section, path, text in _report_texts(content):
+        for line in re.split(r"(?<=[.;])\s+|\n", text):
+            if re.search(r"\bbác\b|bị từ chối|không được thông qua", line, re.IGNORECASE):
+                continue
+            m = _MSR_INVALIDATION_RE.search(line) or _MSR_INTAKE_CUT_RE.search(line)
+            if m and _SUPPORT_CLAIM_RE.search(line[m.end():] + " " + line[:m.start()]):
+                issues.append(_issue(
+                    "scenario", section, "error",
+                    f"Chiều MSR sai: \"{m.group(0)}\" là NỚI cung (hủy ít hơn / giữ thêm hạn ngạch trên thị trường), không phải "
+                    f"siết cung/hỗ trợ EUA: \"{line.strip()[:110]}\"", path,
+                ))
+                break
+    return issues
+
+
+_UPWARD_THRESHOLD_RE = re.compile(r"(?:chưa|không)\s+(?:kéo|đẩy|đưa)\s+TTF\s+(?:tới|lên|đến|chạm)\s+ngưỡng", re.IGNORECASE)
+
+
+def check_ttf_channel(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    state = fuel_spread_state((content.get("2") or {}).get("prices") or [])
+    if not (state and state["spread"] > FUEL_NEAR_BREAKEVEN):
+        return []
+    issues = []
+    for section, path, text in _report_texts(content):
+        up = _UPWARD_THRESHOLD_RE.search(text)
+        if up:
+            issues.append(_issue(
+                "scenario", section, "warning",
+                f"\"{up.group(0)}\" ngầm hiểu có ngưỡng chiều LÊN — than đã đứng trước khí, TTF tăng thêm không đổi thứ tự huy "
+                "động; ngưỡng duy nhất là chiều xuống.", path,
+            ))
+        for line in text.split("\n"):
+            m = _HEDGE_SUPPORT_RE.search(line)
+            if m and re.search(r"TTF|khí|điện|DEBY", line, re.IGNORECASE):
+                issues.append(_issue(
+                    "scenario", section, "warning",
+                    f"Kênh TTF → EUA không thống nhất: \"{m.group(0)[:80]}\" — khi chuyển đổi đã bão hòa, chi phí/phòng hộ không "
+                    "đổi lượng cầu EUA; kênh duy nhất là công nghiệp cắt sản lượng (nghiêng giảm, cần tin xác nhận).", path,
+                ))
+                break
+    return issues
+
+
+def check_fuel_thresholds(content: Dict[str, Any], scenarios_only: bool = False) -> List[Dict[str, str]]:
+    """Ngưỡng fuel switching dạng "chênh khí − than thu hẹp ±X EUR/MWh" trong khi giá hòa vốn ở ĐẦU THẤP của dải hiệu
+    suất đội nhà máy còn xa giá EUA (fuel_threshold_far) → ngưỡng đó không đổi thứ tự huy động, mâu thuẫn chính mô hình
+    (bản 17/10: "±16 EUR/MWh ≈ TTF ±10%" trong khi TTF −10% thì giá hòa vốn vẫn ≈ 177 EUR/t, EUA 85)."""
+    state = fuel_spread_state((content.get("2") or {}).get("prices") or [])
+    if not fuel_threshold_far(state):
+        return []
+    lo = (state.get("switch_range") or (None,))[0]
+    why = (
+        f"giá EUA hòa vốn thấp nhất của đội nhà máy ≈ {_fmt(lo)} EUR/t so với EUA {_fmt(state['eua'])} — chênh thu hẹp mức này "
+        f"không đổi thứ tự huy động. Ngưỡng thật: TTF ≈ {_fmt(state['ttf_first_switch'])} EUR/MWh hoặc API2 ≈ "
+        f"{_fmt(state['api2_first_switch'])} USD/t (ngoài tầm 1–2 tuần → bỏ điều kiện fuel switching)"
+    )
+    sec3 = content.get("3") or {}
+    targets: List[tuple] = []
+    for i, sc in enumerate(sec3.get("trading_scenarios") or []):
+        if isinstance(sc, dict):
+            for k in ("condition", "key_risk", "trading_strategy"):
+                targets.append((f"3.trading_scenarios[{i}].trading_strategy", f"Kịch bản {sc.get('horizon')}", str(sc.get(k) or "")))
+    if not scenarios_only:
+        for i, b in enumerate(sec3.get("analysis_blocks") or []):
+            if isinstance(b, dict):
+                targets.append((f"3.analysis_blocks[{i}].content", str(b.get("heading") or "Mục 3"), str(b.get("content") or "")))
+    issues = []
+    for path, label, text in targets:
+        m = _SPREAD_THRESHOLD_RE.search(text)
+        if m:
+            issues.append(_issue("scenario", "3", "warning", f"{label}: ngưỡng fuel switching \"{m.group(0)[:60]}\" vô nghĩa — {why}.", path))
+    return issues
 
 
 _TRIGGER_RE = re.compile(r"(?:đóng cửa|giá|EUA)?[^.;\n]{0,15}?(trên|vượt|dưới|thủng)\s+(\d+(?:[.,]\d+)?)", re.IGNORECASE)
@@ -686,6 +797,58 @@ def check_horizon_overlap(content: Dict[str, Any]) -> List[Dict[str, str]]:
     return []
 
 
+# "**Mục tiêu:** 92,25 (+8% so với đóng cửa 85,41 ...)" — % nguyên tròn tính từ giá đóng cửa.
+LONG_TERM_ROUND_PCT_RE = re.compile(r"Mục tiêu:?\**[^\n]{0,40}?\(\s*[+\-−]\s*\d{1,2}\s*%\s*so với\s+(?:giá\s+)?đóng cửa", re.IGNORECASE)
+
+
+def check_long_term_basis(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Kịch bản DÀI HẠN (>3 tháng): (1) mục tiêu = phép đo biên độ 30 phiên là công cụ kỹ thuật ngắn hạn, không có cơ sở
+    cho khung >3 tháng; (2) cận vùng giá = đúng giá đóng cửa hôm nay là mốc không có cơ sở (bản 17/10: "Tích lũy
+    82,35–85,41" với 85,41 là đóng cửa, mục tiêu 95,29 = đo biên độ 30 phiên)."""
+    from services.strategy_levels import strategy_levels
+    chart = [c for c in (content.get("2") or {}).get("chart_data") or []
+             if isinstance(c, dict) and isinstance(c.get("high"), (int, float)) and isinstance(c.get("low"), (int, float))]
+    close = _eua_last_close(content)
+    issues = []
+    for i, sc in enumerate((content.get("3") or {}).get("trading_scenarios") or []):
+        if not isinstance(sc, dict) or sc.get("horizon") != "dài hạn":
+            continue
+        path = f"3.trading_scenarios[{i}].trading_strategy"
+        lv = strategy_levels(sc)
+        if chart and lv:
+            hi, lo = max(c["high"] for c in chart), min(c["low"] for c in chart)
+            atr = atr_true_range(chart) or 0.0
+            target = lv["target_buy"] if sc.get("direction") == "tăng" else lv["target_sell"]
+            mm = hi + (hi - lo) if sc.get("direction") == "tăng" else lo - (hi - lo)
+            if target is not None and abs(target - mm) <= max(0.25 * atr, 0.05):
+                issues.append(_issue(
+                    "scenario", "3", "warning",
+                    f"Kịch bản dài hạn: mục tiêu {_fmt(target)} = phép đo biên độ 30 phiên — công cụ kỹ thuật ngắn hạn, không phải "
+                    "cơ sở cho khung >3 tháng (dùng động lực cấu trúc: cap/LRF, MSR, phân bổ miễn phí, ETS2, rà soát ETS; "
+                    "không suy ra mức thì bỏ mức giá cụ thể).", path,
+                ))
+        m_pct = LONG_TERM_ROUND_PCT_RE.search(str(sc.get("trading_strategy") or ""))
+        if m_pct:
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Kịch bản dài hạn: mục tiêu theo % tròn so với đóng cửa (\"{m_pct.group(0)[:60]}\") — không có phương pháp; neo vào "
+                "cân đối cung–cầu (cap, MSR, rà soát ETS) hoặc dự báo đồng thuận có nguồn, không có thì ghi \"chưa đủ cơ sở định lượng\".",
+                path,
+            ))
+        zone_text = " ".join(str(sc.get(k) or "") for k in ("price_zone", "trading_strategy"))
+        if close:
+            for m in re.finditer(r"(\d+(?:[.,]\d+)?)\s*[–—-]\s*(\d+(?:[.,]\d+)?)", zone_text):
+                ends = [float(x.replace(",", ".", 1)) for x in m.groups()]
+                if any(abs(e - close) <= 0.011 for e in ends):
+                    issues.append(_issue(
+                        "scenario", "3", "warning",
+                        f"Kịch bản dài hạn: vùng {m.group(0)} lấy giá đóng cửa hôm nay ({_fmt(close)}) làm cận — mốc không có cơ "
+                        "sở cho khung >3 tháng.", path,
+                    ))
+                    break
+    return issues
+
+
 _FREE_ALLOC_RE = re.compile(r"phân bổ miễn phí[^.\n]{0,80}?(?:tới|đến|trước)\s*(?:năm\s*)?(?:2029\s*[–-]\s*)?2030", re.IGNORECASE)
 
 
@@ -748,6 +911,9 @@ def check_dev_driver_consistency(content: Dict[str, Any]) -> List[Dict[str, str]
     return issues
 
 
+_DESIGN_FLAW_MENTION_RE = re.compile(r"R\s*:\s*R|tỷ lệ lời\s*/\s*lỗ|cắt lỗ[^.]{0,40}(?:chặt|sát|gần|ATR)|thiết kế lệnh", re.IGNORECASE)
+
+
 def check_forecast_review(content: Dict[str, Any]) -> List[Dict[str, str]]:
     """Dự báo trước bị chấm SAI (content["2"].forecast_review, tính bằng Python) thì "vs_previous" phải thừa
     nhận — có đoạn đó và nhắc đúng ngày báo cáo đã dự báo sai."""
@@ -764,6 +930,13 @@ def check_forecast_review(content: Dict[str, Any]) -> List[Dict[str, str]]:
             "3.vs_previous",
         )]
     issues = []
+    if any(it.get("design_flaws") for it in wrong) and not _DESIGN_FLAW_MENTION_RE.search(text):
+        dates = ", ".join(_dm_label(it["report_date"]) for it in wrong if it.get("design_flaws"))
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            f"Dự báo sai ({dates}) có lỗi THIẾT KẾ LỆNH (R:R tại giá vào < 1,5 hoặc cắt lỗ < 0,5 ATR) nhưng \"So với báo cáo "
+            "trước\" chỉ nêu tiền đề phân tích, không nhắc lỗi lệnh.", "3.vs_previous",
+        ))
     for it in wrong:
         d = date.fromisoformat(it["report_date"])
         if not re.search(rf"\b0?{d.day}/0?{d.month}\b", text):
@@ -783,6 +956,7 @@ HEDGE_ACTIONS = ("increase", "hold", "reduce")
 LEGACY_HEDGE_ACTIONS = ("buy_now", "buy_scheduled", "defer")
 CBAM_SIGNAL_CONFLICT = {"increase": ("defer",), "reduce": ("buy_now",)}
 _PRICE_ZONE_ONLY_RE = re.compile(r"chỉ\s+(?:gom|mua)[^.;\n]{0,40}\d", re.IGNORECASE)
+_SCHEDULE_BUY_RE = re.compile(r"\bmua\b(?:\s+EUA)?\s+(?:rải|trải|theo)\s+(?:đều\s+)?(?:theo\s+)?(?:tỷ trọng\s+)?lịch\s+đấu giá", re.IGNORECASE)
 
 
 def check_hedge_action(content: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -808,6 +982,26 @@ def check_hedge_action(content: Dict[str, Any]) -> List[Dict[str, str]]:
             "scenario", "3", "warning",
             f"Hành động phòng hộ \"{ha['action']}\" ngược tín hiệu thẻ CBAM \"{sig}\" mà không giải thích.",
             "3.hedge_action",
+        ))
+    ha_text = str(ha.get("text") or "") if isinstance(ha, dict) else ""
+    if isinstance(ha, dict) and ha.get("action") == "hold" and re.search(r"\b(?:mua|khóa|khoá|gom)\b", ha_text.split(":", 1)[-1], re.I) \
+            and "không dùng" not in ha_text:
+        issues.append(_issue(
+            "scenario", "3", "error",
+            "Nhãn phòng hộ \"hold\" (thẻ CBAM: không dùng phần chiến thuật) nhưng ô phòng hộ lại khuyên mua/khóa phần chiến thuật.",
+            "3.hedge_action.text",
+        ))
+    if re.search(r"(?:dưới|thấp hơn|trên|cao hơn|so với)[^.;\n]{0,25}ước tính", ha_text, re.I):
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            "Phòng hộ so giá hiện tại với ƯỚC TÍNH giá CBAM/VWAP quý — lập luận vòng (ước tính đã gồm giá hiện tại); chỉ so với "
+            "VWAP đấu giá đã chốt.", "3.hedge_action.text",
+        ))
+    if isinstance(ha, dict) and _SCHEDULE_BUY_RE.search(str(ha.get("text") or "")):
+        issues.append(_issue(
+            "scenario", "3", "warning",
+            "Phòng hộ ghi \"mua EUA rải/theo lịch đấu giá\" — cách này không khóa được chi phí CBAM (chỉ tạo kho EUA giá vốn ≈ "
+            "VWAP); khóa chi phí = mua futures trước rồi bán rải theo lịch đấu giá còn lại.", "3.hedge_action",
         ))
     if isinstance(ha, dict) and _PRICE_ZONE_ONLY_RE.search(str(ha.get("text") or "")):
         issues.append(_issue(
@@ -946,6 +1140,14 @@ def check_scenarios(content: Dict[str, Any]) -> List[Dict[str, str]]:
                 f"Tổng hợp [{sentiment}] nhưng kịch bản ngắn hạn = {direction} (xác suất {prob or '?'}).",
                 "3.trading_scenarios",
             ))
+        elif sentiment in SENTIMENT_OPPOSITE_DIRECTION and direction == "đi ngang":
+            # Bản 17/10 (sau sửa): khung Nhận định đỏ "áp lực giảm chiếm ưu thế ngắn hạn" ngay cạnh thẻ "GIẰNG CO / ĐI NGANG".
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"Tổng hợp [{sentiment}] nhưng kịch bản ngắn hạn \"đi ngang\" — chọn 1: nhãn [TRUNG LẬP] kèm \"rủi ro nghiêng "
+                f"về phía {'giảm' if sentiment == 'TIÊU CỰC' else 'tăng'}\", hoặc đổi kịch bản ngắn hạn.",
+                "3.trading_scenarios[0].trading_strategy",
+            ))
         elif sentiment == "TRUNG LẬP" and direction in ("tăng", "giảm") and prob == "Cao":
             issues.append(_issue(
                 "scenario", "3", "info",
@@ -980,7 +1182,43 @@ def collect_source_urls(content: Dict[str, Any]) -> List[str]:
     for it in (content.get("9") or {}).get("items") or []:
         if isinstance(it, dict) and it.get("url"):
             urls.append(it["url"])
+    urls.extend(_policy_tracker_urls(content))
+    urls.extend(
+        s["source_url"] for s in (content.get("3") or {}).get("sources") or []
+        if isinstance(s, dict) and isinstance(s.get("source_url"), str)
+    )
     return urls
+
+
+def _policy_tracker_urls(content: Dict[str, Any]) -> List[str]:
+    """URL nguồn của khối theo dõi chính sách ETS/MSR (content["3"].ets_policy) — CỐ Ý lấy tin tới 21 ngày trước
+    (report_generator.ETS_POLICY_LOOKBACK_DAYS), nên không áp quy tắc "tin cũ"."""
+    return [
+        it["source_url"] for it in (content.get("3") or {}).get("ets_policy") or []
+        if isinstance(it, dict) and isinstance(it.get("source_url"), str)
+    ]
+
+
+def _section3_source_urls(content: Dict[str, Any]) -> List[str]:
+    """Nguồn Mục 3 đã trích ([N]/[HSk], content["3"].sources → Mục 9). Tin trong ngày của Mục 3 luôn nằm trong khung
+    tin, nên bài CŨ hơn khung ở đây chỉ có thể đến từ khối theo dõi chính sách ETS (quét ETS_POLICY_LOOKBACK_DAYS ngày)
+    hoặc hồ sơ ets_policy_dossiers.yaml — chỉ coi là "tin cũ" khi cũ hơn cả cửa sổ quét đó."""
+    return [
+        it["source_url"] for it in (content.get("3") or {}).get("sources") or []
+        if isinstance(it, dict) and isinstance(it.get("source_url"), str)
+    ]
+
+
+def _dossier_urls() -> Set[str]:
+    try:
+        return {_norm_url(d["source_url"]) for d in _load_ets_dossiers() if d.get("source_url")}
+    except Exception:  # yaml lỗi không được làm hỏng QC
+        return set()
+
+
+def policy_window_urls(content: Dict[str, Any]) -> Set[str]:
+    """URL hợp lệ dù ngoài khung tin trong ngày: bảng chính sách ETS, nguồn Mục 3 (khối chính sách), hồ sơ yaml."""
+    return {_norm_url(u) for u in _policy_tracker_urls(content) + _section3_source_urls(content)} | _dossier_urls()
 
 
 def check_sources(
@@ -988,13 +1226,17 @@ def check_sources(
     known_urls: Iterable[str],
     article_meta: Optional[Dict[str, Dict[str, Any]]] = None,
     stale_before: Optional[datetime] = None,
+    policy_stale_before: Optional[datetime] = None,
 ) -> List[Dict[str, str]]:
     """`known_urls`: những URL trong `collect_source_urls(content)` CÓ tồn tại ở bảng articles.
     `article_meta`: _norm_url(url) -> {"source", "published_at"} của các bài đó — kiểm thêm tin cũ
-    (đăng trước `stale_before`) và nhãn nguồn khác nhà xuất bản thật của URL."""
+    (đăng trước `stale_before`) và nhãn nguồn khác nhà xuất bản thật của URL. Nguồn Mục 3 (khối chính sách ETS)
+    chỉ là tin cũ khi đăng trước `policy_stale_before` (đầu khung tin − ETS_POLICY_LOOKBACK_DAYS; None = miễn)."""
     known = {_norm_url(u) for u in known_urls}
     meta_by_url = article_meta or {}
     issues: List[Dict[str, str]] = []
+    policy_urls = {_norm_url(u) for u in _policy_tracker_urls(content)} | _dossier_urls()
+    section3_urls = {_norm_url(u) for u in _section3_source_urls(content)} - policy_urls
 
     def _check_url(url: Optional[str], section: str, label: str, path: str, shown_source: Any = None) -> None:
         if not url:
@@ -1006,10 +1248,12 @@ def check_sources(
         if not meta:
             return
         published = meta.get("published_at")
-        if stale_before and isinstance(published, datetime):
+        norm = _norm_url(url)
+        threshold = policy_stale_before if norm in section3_urls else stale_before
+        if threshold and isinstance(published, datetime) and norm not in policy_urls:
             if published.tzinfo is None:
                 published = published.replace(tzinfo=timezone.utc)
-            if published < stale_before:
+            if published < threshold:
                 issues.append(_issue(
                     "source", section, "error",
                     f"{label}: tin CŨ — đăng {published.strftime('%d/%m/%Y')}, không phải tin trong khung báo cáo ({url}).",
@@ -1043,6 +1287,10 @@ def check_sources(
         for i, d in enumerate((drivers.get(side) if isinstance(drivers, dict) else None) or []):
             if isinstance(d, dict):
                 _check_url(d.get("source_url"), "3", f"Yếu tố {side_label} #{i + 1}", f"2.market_drivers.{side}[{i}].source_url", d.get("source_name"))
+
+    for i, it in enumerate((content.get("3") or {}).get("ets_policy") or []):
+        if isinstance(it, dict):
+            _check_url(it.get("source_url"), "3", f"Hồ sơ chính sách ETS #{i + 1}", f"3.ets_policy[{i}].source_url", it.get("source_name"))
 
     items = (content.get("9") or {}).get("items") or []
     if not items:
@@ -1125,6 +1373,20 @@ def check_calendar(content: Dict[str, Any], report_date: str) -> List[Dict[str, 
                 issues.append(_issue("calendar", "8", "warning", f"{label}: ngày {ev_date.isoformat()} nằm ngoài cửa sổ 7 ngày.", f"{path}.date"))
             elif ev_date < target and _blank(ev.get("outcome")):
                 issues.append(_issue("calendar", "8", "warning", f"{label}: đã qua ({ev_date.isoformat()}) nhưng chưa có kết quả.", f"{path}.outcome"))
+            elif ev.get("released_at") and _blank(ev.get("outcome")):
+                # Báo cáo phát hành 07:00 giờ VN ngày report_date — đã công bố trước giờ đó thì không còn là "sắp tới".
+                try:
+                    released = datetime.fromisoformat(str(ev["released_at"]))
+                except ValueError:
+                    released = None
+                publish = datetime.combine(date.fromisoformat(report_date), datetime.min.time().replace(hour=7),
+                                           tzinfo=released.tzinfo) if released and released.tzinfo else None
+                if publish and released <= publish:
+                    issues.append(_issue(
+                        "calendar", "8", "warning",
+                        f"{label}: đã công bố lúc {released.strftime('%H:%M %d/%m')} (giờ VN), trước giờ phát hành báo cáo, "
+                        "nhưng không có kết quả nên hiện ở lịch \"sắp tới\".", f"{path}.outcome",
+                    ))
 
             kind = _event_kind(name)
             if kind:
@@ -1339,6 +1601,26 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
         items.append(("4", f"Tín chỉ/CBAM #{i + 1}", f"4.bullets[{i}]", b))
     for i, d in enumerate(_market_drivers(sec2)):
         items.append(("3", f"Yếu tố thị trường #{i + 1}", f"2.market_drivers[{i}]", d))
+    # Mục 3 (Phân tích / Quan điểm thị trường / Cần theo dõi): mỗi dòng có "(Nguồn: X)" đối chiếu với các bài X trong
+    # content["3"].sources — bản chấm 17/10: số "30–40%, 50%, 20–30 USD/thùng" của tin Eni lặp 3 lần mà chưa kiểm chứng.
+    by_name: Dict[str, List[str]] = {}
+    for src in (content.get("3") or {}).get("sources") or []:
+        if isinstance(src, dict) and src.get("source_url"):
+            by_name.setdefault(str(src.get("source_name") or ""), []).append(src["source_url"])
+    # Hồ sơ chính sách (ets_policy_dossiers.yaml, trích "[HSk]" → "(Nguồn: <tên>, <ngày>)") không phải bài crawl — số
+    # trong câu trích hồ sơ được đối chiếu với chính nội dung hồ sơ.
+    dossier_text_by_name = _dossier_texts_by_name()
+    for bi, blk in enumerate((content.get("3") or {}).get("analysis_blocks") or []):
+        if not isinstance(blk, dict):
+            continue
+        for li, line in enumerate(str(blk.get("content") or "").split("\n")):
+            names = inline_source_names(line)
+            urls = [u for n in names for u in by_name.get(n, [])]
+            extra = "\n".join(t for t in (_dossier_text_for(n, dossier_text_by_name) for n in names) if t)
+            if urls:
+                items.append(("3", f"{blk.get('heading') or 'Mục 3'} — dòng {li + 1}", f"3.analysis_blocks[{bi}].content",
+                              {"text": strip_inline_sources(line), "source_urls": urls, "extra_source_text": extra,
+                               "source_name": "; ".join(dict.fromkeys(names))}))
 
     for section, label, path, it in items:
         if not isinstance(it, dict):
@@ -1354,11 +1636,13 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
         issues += _check_remaining_math(text, section, label, f"{path}.text")
         issues += _check_remaining_vs_section6(text, content, it, section, label, f"{path}.text")
         url = it.get("source_url")
-        source_text = article_texts.get(_norm_url(url)) if url else None
+        urls = it.get("source_urls") or ([url] if url else [])
+        source_text = "\n".join(t for t in (article_texts.get(_norm_url(u)) for u in urls) if t)
         if not source_text:
             continue
-        pool = _numbers_in(source_text)
-        body = _DATE_TOKEN_RE.sub(" ", re.sub(r"\*\*[^*]*\*\*", " ", text))  # bỏ ngày + nhãn in đậm đầu bullet
+        pool = _numbers_in(source_text + "\n" + str(it.get("extra_source_text") or ""))
+        # Bỏ ngày, nhãn in đậm đầu bullet và mã văn bản pháp lý ("COM(2026) 616", "Điều 29a" — định danh, không phải số liệu).
+        body = LEGAL_DOC_ID_RE.sub(" ", _DATE_TOKEN_RE.sub(" ", re.sub(r"\*\*[^*]*\*\*", " ", text)))
         missing = [
             raw for raw in _TEXT_NUM_RE.findall(body)
             if _checkable_number(raw) and not _supported(raw, pool) and not _supported(raw, report_pool)
@@ -1396,6 +1680,100 @@ _LABEL_RES = {
 }
 _PRICE_UNIT_IN_SENTENCE_RE = re.compile(r"USD|EUR|€|\$|/t\b|/tấn|/MWh|/bbl|/thùng|/MMBtu", re.IGNORECASE)
 LABEL_MIN_PRICE = 10.0  # số nhỏ (Δ%, hệ số) dễ trùng ngẫu nhiên — chỉ so các số cỡ giá
+
+
+def check_technical_claims(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Nhận định kỹ thuật trái số liệu phiên (report_consistency.session_signals): "chưa có bằng chứng cạn lực" khi
+    phiên cuối đủ 2 điều kiện cạn lực, gap dưới 0,25 ATR gắn là tín hiệu (bản 17/10: Phân tích "lực bán vẫn chiếm ưu
+    thế, chưa có bằng chứng cạn lực" trong khi phiên 16/10 biên ×0,73 ATR và khối lượng −25,8%)."""
+    sig = session_signals((content.get("2") or {}).get("chart_data") or [])
+    if not sig:
+        return []
+    texts = _report_texts(content)
+    ha = (content.get("3") or {}).get("hedge_action")
+    if isinstance(ha, dict):
+        texts.append(("3", "3.hedge_action.text", str(ha.get("text") or "")))
+    issues = []
+    for section, path, text in texts:
+        for msg in technical_claim_issues(text, sig):
+            issues.append(_issue("scenario", section, "warning", msg, path))
+    # Gap nhỏ được xếp thành 1 động lực riêng ở Mục 2 (bản 17/10: FACT "mở cửa với khoảng trống giảm" — gap 0,11 = 0,06 ATR).
+    if not sig["gap_significant"]:
+        drivers = (content.get("2") or {}).get("market_drivers") or {}
+        for side in ("bullish", "bearish"):
+            for i, d in enumerate(drivers.get(side) or [] if isinstance(drivers, dict) else []):
+                text = str(d.get("text") if isinstance(d, dict) else d or "")
+                path = f"2.market_drivers.{side}[{i}].text"
+                if re.search(r"\bgap\b|khoảng trống", text, re.IGNORECASE) and not any(it["field_path"] == path for it in issues):
+                    issues.append(_issue(
+                        "scenario", "3", "warning",
+                        f"Động lực dựa trên gap mở cửa {abs(sig['gap']):.2f} = ×{sig['gap_atr']:.2f} ATR — dưới 0,25 ATR là nhiễu, "
+                        f"không đủ làm 1 động lực: \"{text[:90]}\"", path,
+                    ))
+    return issues
+
+
+# Tên hãng tin ghi ngay trong câu ("theo TASS", "(Reuters 16/10)") phải là nhà xuất bản/hãng gốc của CHÍNH bài được
+# trích; hãng truyền thông nhà nước thì nên dẫn nguồn sơ cấp (thông cáo Hội đồng/EC).
+_AGENCY_RE = re.compile(
+    r"(?:\btheo\s+|\()\s*(TASS|RIA(?: Novosti)?|Xinhua|Tân Hoa Xã|Reuters|Bloomberg|Politico|Financial Times|FT|AFP|AP|"
+    r"Argus|Platts|S&P Global|Montel|Carbon Pulse|Euractiv|Interfax)\b",
+    re.IGNORECASE,
+)
+STATE_MEDIA = ("tass", "ria", "ria novosti", "xinhua", "tân hoa xã")
+
+
+def _dossier_texts_by_name() -> Dict[str, str]:
+    """Tên nguồn hiển thị của hồ sơ chính sách → toàn bộ chữ của hồ sơ (để đối chiếu số trong câu trích hồ sơ)."""
+    try:
+        dossiers = _load_ets_dossiers()
+    except Exception:  # yaml lỗi không được làm hỏng QC
+        return {}
+    out: Dict[str, str] = {}
+    for d in dossiers:
+        name = str(d.get("source_name") or "").strip()
+        if name:
+            out[name] = (out.get(name, "") + "\n" + " | ".join(str(v) for v in d.values() if isinstance(v, (str, int, float)))).strip()
+    return out
+
+
+def _dossier_text_for(shown_name: str, texts: Dict[str, str]) -> str:
+    """Tên hiển thị có thể kèm ngày ("S&P Global, 05/10/2026") — khớp theo tiền tố tên hồ sơ."""
+    return next((t for n, t in texts.items() if shown_name == n or shown_name.startswith(n + ",")), "")
+
+
+def check_inline_attribution(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Bản 17/10: "Đề xuất kho dự trữ khí đốt ... (TASS 16/10)" trong khi link là Politico qua cafef.vn."""
+    items: List[tuple] = []
+    for i, b in enumerate((content.get("1") or {}).get("bullets") or []):
+        if isinstance(b, dict):
+            items.append(("1", f"1.bullets[{i}].text", str(b.get("text") or ""), str(b.get("source_name") or "")))
+    sec2 = content.get("2") or {}
+    for i, d in enumerate(sec2.get("key_developments") or []):
+        if isinstance(d, dict):
+            items.append(("4", f"2.key_developments[{i}].text", f"{d.get('title') or ''} {d.get('text') or ''}", str(d.get("source_name") or "")))
+    for i, blk in enumerate((content.get("3") or {}).get("analysis_blocks") or []):
+        if isinstance(blk, dict):
+            for line in str(blk.get("content") or "").split("\n"):
+                spans = inline_source_spans(line)
+                items.append(("3", f"3.analysis_blocks[{i}].content", line, spans[0][2] if spans else ""))
+    issues = []
+    for section, path, text, label in items:
+        for m in _AGENCY_RE.finditer(text):
+            agency = m.group(1)
+            if agency.lower() in STATE_MEDIA:
+                issues.append(_issue(
+                    "source", section, "warning",
+                    f"Dẫn \"{agency}\" (truyền thông nhà nước) — nên dẫn nguồn sơ cấp (thông cáo Hội đồng/EC/chính phủ) "
+                    f"hoặc đúng nhà xuất bản của bài được trích ({label or 'không rõ'}): \"{text[:90]}\"", path,
+                ))
+            elif label and agency.lower() not in label.lower():
+                issues.append(_issue(
+                    "source", section, "warning",
+                    f"Câu ghi \"theo {agency}\" nhưng bài được trích là {label} — ghi đúng hãng gốc/nhà xuất bản (hệ thống đã gắn "
+                    f"nhãn nguồn, không cần tự ghi tên hãng): \"{text[:90]}\"", path,
+                ))
+    return issues
 
 
 def _report_texts(content: Dict[str, Any]) -> List[tuple]:
@@ -1597,7 +1975,53 @@ def check_biz(
         for field, name in (("opportunity", "cơ hội"), ("solution", "giải pháp")):
             if _blank(it.get(field)):
                 issues.append(_issue("biz", "biz", "error", f"Gợi ý dài hạn #{i + 1}: thiếu {name}.", f"{path}.{field}"))
+        # Chuẩn "đưa thành dự án thí điểm" (áp từ báo cáo có schema mới — bản cũ không có các trường này).
+        if report_date and report_date >= BIZ_QUANTIFIED_SINCE:
+            missing = [name for field, name in (("pilot", "quy mô thí điểm"), ("kpi", "KPI"), ("owner", "đơn vị phụ trách"),
+                                                ("financials", "chi phí/doanh thu ước tính")) if _blank(it.get(field))]
+            if missing:
+                issues.append(_issue("biz", "biz", "warning",
+                                     f"Gợi ý dài hạn #{i + 1}: chưa lượng hóa — thiếu {', '.join(missing)}.", path))
+        text = " ".join(str(v) for v in it.values() if isinstance(v, str))
+        for pattern, why in BIZ_OFF_LENS:
+            if re.search(pattern, text, re.IGNORECASE):
+                issues.append(_issue("biz", "biz", "warning", f"Gợi ý dài hạn #{i + 1}: {why}", path))
+        if re.search(r"≥\s*0\b|>=\s*0\b|lớn hơn 0\b|dương\b", str(it.get("kpi") or "")):
+            issues.append(_issue("biz", "biz", "info", f"Gợi ý dài hạn #{i + 1}: KPI \"≥ 0\" quá thấp — đặt theo biên lợi nhuận mục tiêu.",
+                                 f"{path}.kpi"))
+    from services.title_similarity import is_similar_title, title_tokens
+    long_tokens = [title_tokens(f"{it.get('opportunity') or ''} {it.get('solution') or ''}")
+                   for it in biz.get("long_term") or [] if isinstance(it, dict)]
+    for i, it in enumerate(short_term):
+        if not isinstance(it, dict):
+            continue
+        if long_tokens and is_similar_title(title_tokens(f"{it.get('trigger') or ''} {it.get('action') or ''}"), long_tokens):
+            issues.append(_issue("biz", "biz", "warning",
+                                 f"Gợi ý ngắn hạn #{i + 1} trùng ý với 1 gợi ý dài hạn — gộp thành 1.", f"biz.short_term[{i}]"))
+        if re.search(r"≥\s*0\b|>=\s*0\b|lớn hơn 0\b|dương\b", str(it.get("kpi") or "")):
+            issues.append(_issue("biz", "biz", "info", f"Gợi ý ngắn hạn #{i + 1}: KPI \"≥ 0\" quá thấp — đặt theo biên lợi nhuận mục tiêu.",
+                                 f"biz.short_term[{i}].kpi"))
+        if report_date and report_date >= BIZ_QUANTIFIED_SINCE and _blank(it.get("kpi")):
+            issues.append(_issue("biz", "biz", "info", f"Gợi ý ngắn hạn #{i + 1}: thiếu KPI đo được.", f"biz.short_term[{i}].kpi"))
+        text = " ".join(str(v) for v in it.values() if isinstance(v, str))
+        for pattern, why in BIZ_OFF_LENS:
+            if re.search(pattern, text, re.IGNORECASE):
+                issues.append(_issue("biz", "biz", "warning", f"Gợi ý ngắn hạn #{i + 1}: {why}", f"biz.short_term[{i}]"))
     return issues + check_biz_sources(content, suggestions)
+
+
+BIZ_QUANTIFIED_SINCE = "2026-10-18"
+# Lỗi khái niệm/lăng kính đã gặp ở bản 17/10 (report_generator.METALS_LENS_RULE).
+BIZ_OFF_LENS = (
+    (r"dấu chân carbon[^.]{0,40}Scope\s*1\s*[-–/]\s*2|Scope\s*1\s*[-–/]\s*2[^.]{0,40}dấu chân carbon sản phẩm",
+     "\"dấu chân carbon sản phẩm Scope 1-2\" sai khái niệm — phát thải nhúng CBAM/ISO 14067 gồm cả tiền chất thượng nguồn."),
+    (r"\bSAF\b|dầu ăn đã qua sử dụng|\bUCO\b", "căn cứ SAF/dầu ăn đã qua sử dụng không có đường truyền tới kinh doanh kim loại."),
+    (r"Hormuz[^.]{0,80}(?:tuyến|vận chuyển|cước)[^.]{0,40}(?:Việt Nam|EU)",
+     "tuyến Việt Nam–EU không đi qua Hormuz — kênh đúng là nguồn cung nhôm vùng Vịnh."),
+    # Bản chấm 17/10 lần 4: tiết kiệm cho khách VN tính bằng giá trị mặc định Trung Quốc — mặc định áp theo nước xuất xứ.
+    (r"mặc định\s+(?:của\s+)?(?:Trung Quốc|UAE|Bahrain)(?![^.]{0,80}(?:minh họa|chưa áp|cận trên))",
+     "dùng giá trị mặc định của nước khác để tính tiết kiệm cho khách VN — mặc định áp theo nước xuất xứ; ghi \"minh họa, chưa áp cho VN\"."),
+)
 
 
 def _listed_urls(content: Dict[str, Any]) -> Set[str]:
@@ -1625,6 +2049,8 @@ def check_biz_sources(content: Dict[str, Any], suggestions: Dict[int, Dict[str, 
                 continue
             label, path = f"Gợi ý {name} #{i + 1}", f"biz.{key}[{i}].source_url"
             url = it.get("source_url")
+            if not url and it.get("source_ref"):
+                continue  # hồ sơ chính sách admin xác nhận (ets_policy_dossiers.yaml) — kiểm chứng được qua bảng chính sách
             if not url:
                 if key == "short_term" and (
                     (suggestions.get(it.get("id")) or {}).get("trigger_rule")
@@ -1710,12 +2136,13 @@ def check_news(content: Dict[str, Any], articles: List[Dict[str, Any]]) -> tuple
         if n_used and not stats[f"sec6_{region}"]:
             issues.append(_issue("news", "6", "warning", f"Có {n_used} bài {label} trong ngày nhưng Mục Tin tức chi tiết phần {label} trống.", f"6.{region}"))
 
+    policy_ok = policy_window_urls(content)
     for url, section, label, path in cited:
         if _norm_url(url) not in window_urls:
             issues.append(_issue("news", section, "info", f"{label}: nguồn không thuộc khung tin của báo cáo (có thể là tin cũ hoặc nhập tay).", path))
     for i, it in enumerate((content.get("9") or {}).get("items") or []):
         url = it.get("url") if isinstance(it, dict) else None
-        if url and _norm_url(url) not in window_urls:
+        if url and _norm_url(url) not in window_urls and _norm_url(url) not in policy_ok:
             issues.append(_issue("news", "9", "info", f"Nguồn #{i + 1}: không thuộc khung tin của báo cáo.", f"9.items[{i}].url"))
 
     # Chỉ xét chủ đề được đưa vào prompt Mục 1/Diễn biến chính (SECTION_TOPICS["1"]) — VCM, tin
@@ -1836,6 +2263,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             article_meta[_norm_url(r.url)] = {"source": r.source, "published_at": r.published_at}
             article_texts[_norm_url(r.url)] = f"{r.title or ''}\n{r.content or ''}"
     stale_before = news_window(target_date)[0] - timedelta(days=STALE_NEWS_MAX_AGE_DAYS)
+    policy_stale_before = news_window(target_date)[0] - timedelta(days=max(ETS_POLICY_LOOKBACK_DAYS, STALE_NEWS_MAX_AGE_DAYS))
 
     biz = content.get("biz") or {}
     biz_ids = [
@@ -1856,8 +2284,10 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             + check_hedge_action(content) + check_consistency(content) + check_dev_driver_consistency(content)
             + check_scenario_basis(content) + check_horizon_overlap(content) + check_breakout_levels(content)
             + check_legislation_claims(content) + check_fact_tags(content)
+            + check_fuel_thresholds(content) + check_long_term_basis(content) + check_technical_claims(content)
+            + check_ttf_channel(content) + check_msr_direction(content)
         ),
-        "source": check_sources(content, known_urls, article_meta, stale_before),
+        "source": check_sources(content, known_urls, article_meta, stale_before, policy_stale_before) + check_inline_attribution(content),
         "fact": check_facts(content, article_texts),
         "calendar": check_calendar(content, report_date),
         "biz": check_biz(content, suggestions, valid_codes, (content.get("2") or {}).get("prices") or [], report_date),

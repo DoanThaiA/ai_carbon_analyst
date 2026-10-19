@@ -113,6 +113,15 @@ export function CbamEstimateCard({ estimate: e }: { estimate: CbamEstimate }) {
             })}
           </li>
         )}
+        {e.open_share_pct !== undefined && e.core_share_of_quarter_pct !== undefined && (
+          <li>
+            {t("hedgeHow", {
+              open: num(e.open_share_pct, locale, 1),
+              core: num(e.core_share_of_quarter_pct, locale, 1),
+              corePct: 100 - (e.tactical_max_pct ?? 20),
+            })}
+          </li>
+        )}
         {e.prev_quarter && e.prev_quarter.official !== null && (
           <li>
             {t("prevQuarter", {
@@ -123,6 +132,48 @@ export function CbamEstimateCard({ estimate: e }: { estimate: CbamEstimate }) {
           </li>
         )}
       </ul>
+
+      {e.product_exposure && e.product_exposure.length > 0 && (
+        <div className="px-3 pb-2.5">
+          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-light mb-1">{t("productTitle")}</div>
+          <ul className="space-y-0.5 text-[13px] leading-[1.5] text-body list-disc pl-4 tabular-nums">
+            {e.product_exposure.map((p) => (
+              <li key={p.key}>
+                {t("productRow", {
+                  product: t(`product.${p.key}`),
+                  cn: p.cn,
+                  embedded: num(p.embedded, locale),
+                  benchmark: num(p.benchmark, locale, 3),
+                  factor: num(p.free_allocation_factor_pct, locale, 1),
+                  cscf: num(p.cscf_pct ?? 100, locale, 0),
+                  net: num(p.net_tco2_per_t, locale, 3),
+                  cost: num(p.cost_eur_per_t, locale),
+                })}
+                {p.cost_low !== null && p.cost_high !== null &&
+                  t("productRange", { low: num(p.cost_low, locale), high: num(p.cost_high, locale) })}
+                {/* Kịch bản GIÁ TRỊ MẶC ĐỊNH (kèm markup) — so với số thực đã thẩm định. */}
+                {p.defaults && p.defaults.length > 0 && (
+                  <div className="text-[12px] text-muted-light">
+                    {t("productDefaults", {
+                      markup: p.default_markup_pct ?? 10,
+                      list: p.defaults.map((d) => `${d.origin} ${num(d.with_markup, locale, 3)} → ${num(d.cost_eur_per_t, locale)}`).join(" · "),
+                    })}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[11px] leading-[1.45] text-muted-light">
+            {t(e.product_exposure[0].benchmark_source ? "productNoteCbam" : "productNote", {
+              source: e.product_exposure[0].benchmark_source ?? "",
+              verified: e.product_exposure[0].benchmark_verified ? "" : t("productUnverified"),
+              factor: num(e.product_exposure[0].free_allocation_factor_pct, locale, 1),
+              year: e.quarter.split(" ").pop() ?? "",
+              per01: num(e.product_exposure[0].per_0_1_tco2_eur ?? 0.1 * e.estimate, locale),
+            })}
+          </p>
+        </div>
+      )}
 
       <p className="px-3 pb-2.5 text-[11.5px] leading-[1.5] text-muted-light">
         {t("method", { vol: num(e.daily_vol_pct, locale) })}

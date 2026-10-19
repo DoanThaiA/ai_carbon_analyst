@@ -23,13 +23,11 @@ from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from api.deps import async_session_maker
-from api.routers.mcp_gateway import _DESKTOP_TOOLS, execute_gateway_tool
+from api.routers.mcp_gateway import execute_gateway_tool, prompt_text_for_token, prompts_for_token, tools_for_token
 from db.models import ApiToken
 from services.claude_connect import (
-    DESKTOP_PROMPTS,
     DESKTOP_SERVER_INSTRUCTIONS,
     authenticate_token,
-    build_desktop_prompt,
     build_handoff_instructions,
     consume_handoff,
 )
@@ -71,7 +69,8 @@ _HANDOFF_HTTP_NOTE = (
 def _to_mcp_tool(defn: Dict[str, Any]) -> types.Tool:
     schema = copy.deepcopy(defn["input_schema"])
     schema.setdefault("type", "object")
-    schema.setdefault("properties", {})["report_date"] = REPORT_DATE_SCHEMA
+    # Tool QC (qc_agent) tự khai báo report_date với mô tả riêng — giữ nguyên.
+    schema.setdefault("properties", {}).setdefault("report_date", REPORT_DATE_SCHEMA)
     return types.Tool(name=defn["name"], description=defn["description"], inputSchema=schema)
 
 
@@ -85,10 +84,13 @@ def build_server() -> Server:
 
     @server.list_tools()
     async def list_tools() -> List[types.Tool]:
-        return [GET_HANDOFF_TOOL] + [_to_mcp_tool(d) for d in _DESKTOP_TOOLS]
+        token = _current_token.get()
+        tools = tools_for_token(token) if token is not None else []
+        return [GET_HANDOFF_TOOL] + [_to_mcp_tool(d) for d in tools]
 
     @server.list_prompts()
     async def list_prompts() -> List[types.Prompt]:
+        token = _current_token.get()
         return [
             types.Prompt(
                 name=p["name"],
@@ -99,15 +101,16 @@ def build_server() -> Server:
                     for a in p.get("arguments", [])
                 ],
             )
-            for p in DESKTOP_PROMPTS
+            for p in (prompts_for_token(token) if token is not None else [])
         ]
 
     @server.get_prompt()
     async def get_prompt(name: str, arguments: Optional[Dict[str, str]]) -> types.GetPromptResult:
-        text = build_desktop_prompt(name, dict(arguments or {}))
+        token = _current_token.get()
+        text = prompt_text_for_token(token, name, dict(arguments or {})) if token is not None else None
         if text is None:
             raise RuntimeError(f"Prompt không tồn tại: {name}")
-        title = next(p["title"] for p in DESKTOP_PROMPTS if p["name"] == name)
+        title = next(p["title"] for p in prompts_for_token(token) if p["name"] == name)
         return types.GetPromptResult(
             description=title,
             messages=[types.PromptMessage(role="user", content=types.TextContent(type="text", text=text))],

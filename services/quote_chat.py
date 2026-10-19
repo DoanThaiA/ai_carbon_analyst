@@ -18,6 +18,7 @@ from services import minio_service
 from services.source_reader import read_source
 from services.claude_connect import TEAM_INTRO
 from services.report_qc import qc_report_text
+from services.report_qc_review import qc_review_text
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services import cbam_estimate, forecast_review, report_lessons
@@ -565,10 +566,13 @@ def _format_cbam_estimate(est: Optional[dict]) -> str:
         + (f" ({est['spot_vs_qtd_pct']:+.2f}% so với VWAP)" if isinstance(est.get("spot_vs_qtd_pct"), (int, float)) else "")
         + (f"; biến động ngày {_num(est.get('daily_vol_pct'))}%" if est.get("daily_vol_pct") is not None else ""),
         f"- Tín hiệu phòng vệ CBAM: {_HEDGE_ACTION_VI.get(est.get('signal'), est.get('signal'))}"
-        + (f" — lý do: {reason}" if reason else "")
-        + f" (phần lõi ≥{100 - int(est.get('tactical_max_pct') or cbam_estimate.TACTICAL_MAX_PCT)}% phần chưa chốt mua theo "
-        "lịch đấu giá; chỉ phần chiến thuật mới theo quan điểm giá)",
+        + (f" — lý do: {reason}" if reason else ""),
+        "- " + (cbam_estimate.hedge_structure_text(est) if est.get("open_share_pct") is not None else
+                f"Phần lõi ≥{100 - int(est.get('tactical_max_pct') or cbam_estimate.TACTICAL_MAX_PCT)}% phần chưa chốt; chỉ "
+                "phần chiến thuật mới theo quan điểm giá."),
     ]
+    if cbam_estimate.describe_product_exposure(est):
+        lines.append(cbam_estimate.describe_product_exposure(est))
     last = est.get("last_auction")
     if last:
         lines.append(
@@ -626,6 +630,21 @@ def _format_forecast_review(block: Optional[dict]) -> str:
         lines.append(
             f"Tỷ lệ đúng {(rules or {}).get('calibration_reports', 'các')} báo cáo gần nhất đã có kết luận, theo mức xác suất: "
             + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in calib)
+            + (" — gồm báo cáo " + ", ".join(w["report_date"] for w in block["calibration_window"])
+               + " (có báo cáo đã ra khỏi bảng vì quá khung chấm)" if block.get("calibration_window") else "")
+        )
+    calib_all = [c for c in block.get("calibration_all") or [] if c.get("total")]
+    if calib_all:
+        lines.append(
+            f"Tỷ lệ đúng LŨY KẾ ({block.get('calibration_all_reports')} báo cáo đã có kết luận): "
+            + "; ".join(f"{c['probability']} {c['correct']}/{c['total']}" for c in calib_all)
+        )
+    base = block.get("baseline") or {}
+    if (base.get("model") or {}).get("total"):
+        lines.append(
+            f"Chuẩn so sánh: báo cáo đúng {base['model']['correct']}/{base['model']['total']}; dự báo ngây thơ \"luôn đi ngang\" "
+            f"{base['always_sideways']['correct']}/{base['always_sideways']['total']}; \"lặp chiều "
+            f"{base['momentum'].get('sessions')} phiên trước\" {base['momentum']['correct']}/{base['momentum']['total']}"
         )
     if rules:
         lines.append(
@@ -649,6 +668,18 @@ def _format_section3(sec: dict) -> str:
     parts = [f"{sec.get('title', 'Phân tích chuyên sâu')}\n{blocks}"]
     if sec.get("fuel_model_note"):
         parts.append(f"Giả định mô hình fuel switching: {sec['fuel_model_note']}")
+    policy = [p for p in sec.get("ets_policy") or [] if isinstance(p, dict)]
+    if policy:
+        impact_vi = {"tăng": "hỗ trợ giá EUA", "giảm": "áp lực giá EUA", "trung lập": "chưa rõ chiều"}
+        parts.append("Theo dõi chính sách ETS/MSR:\n" + "\n".join(
+            f"- {p.get('item')}: {p.get('status')} | Bước tiếp: {p.get('next_step')} | "
+            f"{'sự kiện, chưa quyết định' if p.get('kind') == 'event' else impact_vi.get(p.get('impact'), p.get('impact'))}"
+            + (f" — {p['mechanism']}" if p.get("mechanism") else "")
+            + f" ({p.get('source_name')}, {p.get('source_date')}"
+            + (": " + p["source_url"] if p.get("source_url") else "")
+            + ("; chưa đối chiếu văn bản gốc" if p.get("pinned") and p.get("verified") is False else "") + ")"
+            for p in policy
+        ))
     if sec.get("vs_previous"):
         parts.append(f"So với báo cáo trước (nguyên nhân & điều chỉnh): {sec['vs_previous']}")
     parts.append(f"Kịch bản giao dịch:\n{scenarios or '(không có)'}")
@@ -1058,7 +1089,7 @@ FORECAST_DEFAULT_SESSIONS = forecast_review.REVIEW_MAX_SESSIONS
 async def _tool_review_forecast_text(session: AsyncSession, report_date: str, sessions: int) -> str:
     """Đối chiếu dự báo ngắn hạn của 1 báo cáo published — chấm bằng ĐÚNG logic của khối "Dự báo trước: đúng hay
     sai" (services/forecast_review.py: ngưỡng %Δ + mô phỏng lệnh, khung REVIEW_MAX_SESSIONS phiên) để câu trả lời
-    không bao giờ trái với bảng trên trang đầu báo cáo. `sessions` chỉ quyết định số phiên liệt kê."""
+    không bao giờ trái với bảng "Dự báo trước" của báo cáo. `sessions` chỉ quyết định số phiên liệt kê."""
     content = (
         await session.execute(select(Report.content).where(Report.report_date == report_date, Report.status == "published"))
     ).scalar_one_or_none()
@@ -2050,7 +2081,7 @@ CLIENT_TOOLS = [
     {
         "name": "get_forecast_scorecard",
         "description": (
-            "BẢNG \"DỰ BÁO TRƯỚC: ĐÚNG HAY SAI\" ở trang đầu 1 báo cáo, đúng như người đọc thấy: kết quả chấm dự báo ngắn "
+            "BẢNG \"DỰ BÁO TRƯỚC: ĐÚNG HAY SAI\" của 1 báo cáo (nằm sau Phần 3 — Chi tiết tin tức), đúng như người đọc thấy: kết quả chấm dự báo ngắn "
             "hạn của các báo cáo gần đây (đúng/sai/đang đúng hướng/đang lệch, %Δ EUA, lệnh mô phỏng khớp/chạm cắt lỗ/chạm "
             "mục tiêu/hết hiệu lực), số báo cáo sai liên tiếp, TỶ LỆ ĐÚNG LŨY KẾ theo mức xác suất (Cao/Trung bình/Thấp), "
             "quy tắc chấm, và đoạn \"Nguyên nhân & điều chỉnh\" Jenny viết. Dùng cho 'Jenny dự báo đúng bao nhiêu', 'độ tin "
@@ -2228,6 +2259,21 @@ ADMIN_TOOLS = [
             "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo cần QC. Không truyền = báo cáo đang xem."}},
         },
     },
+    {
+        "name": "get_qc_review",
+        "description": (
+            "Đọc BIÊN BẢN QC mới nhất của 1 báo cáo do Jack chấm trên Claude (qua MCP, lưu ở hệ thống — chạy tự động "
+            "08:00 trên bản nháp): điểm tổng thang 10 + kết luận (Đạt / Đạt, cần sửa / Không đạt), điểm 7 tiêu chí, "
+            "danh sách lỗi (báo cáo ghi / nên sửa / căn cứ, số báo cáo lỗi lặp lại), ưu tiên cải thiện. Gọi khi admin "
+            "hỏi kết quả QC/biên bản QC/bản chấm của Jack, lý do báo cáo không được tự xuất bản, hoặc nhờ sửa theo bản "
+            "chấm. KHÁC jack_qc (Jack đối chiếu rule-based tức thời, không dùng AI). Giữ nguyên số liệu biên bản, "
+            "không tự thêm lỗi."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo. Không truyền = báo cáo đang xem."}},
+        },
+    },
 ]
 
 # Chặn lặp vô hạn nếu model cứ liên tục gọi tool. Báo cáo có tới 10 mục
@@ -2255,7 +2301,7 @@ class StatusEvent:
         self.message = message
 
 
-_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate")
+_DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_qc_review", "get_forecast_scorecard", "get_cbam_estimate")
 
 
 async def _execute_client_tool(
@@ -2287,7 +2333,7 @@ async def _execute_client_tool(
         cache_key = (name, tool_input.get("section"), tool_input.get("days"), tool_input.get("date"))
     elif name == "review_past_forecast":
         cache_key = (name, tool_input.get("date"), tool_input.get("sessions"))
-    elif name in ("get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate"):
+    elif name in ("get_report_overview", "jack_qc", "get_qc_review", "get_forecast_scorecard", "get_cbam_estimate"):
         cache_key = (name, tool_input.get("date"))
     elif name == "get_eua_auctions":
         cache_key = (name, tool_input.get("start_date"), tool_input.get("end_date"))
@@ -2333,7 +2379,7 @@ async def _execute_client_tool(
     # report_date (khoá của bảng reports). Có truyền `date` -> dùng nguyên ngày đó.
     if raw_date:
         target_date = raw_date
-    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_forecast_scorecard", "get_cbam_estimate"):
+    elif name in ("get_report_section", "get_biz_suggestions", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_qc_review", "get_forecast_scorecard", "get_cbam_estimate"):
         target_date = report_date
     else:
         target_date = report_data_date(report_date)
@@ -2465,6 +2511,11 @@ async def _execute_client_tool(
             if not (allow_admin_tools or allow_jack_qc):
                 return "Tool jack_qc chỉ dành cho quản trị viên."
             result = await qc_report_text(session, target_date, published_only=not allow_admin_tools)
+        elif name == "get_qc_review":
+            # Biên bản QC chỉ admin xem — MCP gateway (role user / qc_agent) không bao giờ có cờ này.
+            if not allow_admin_tools:
+                return "Tool get_qc_review chỉ dành cho quản trị viên."
+            result = await qc_review_text(session, target_date)
         else:
             return f"Tool không xác định: {name}"
     except Exception:

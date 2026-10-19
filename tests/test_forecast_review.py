@@ -103,9 +103,11 @@ def _content(vs_previous):
 def test_jack_requires_acknowledging_wrong_forecast():
     assert report_qc.check_forecast_review(_content(""))[0]["severity"] == "error"
     issues = report_qc.check_forecast_review(_content("Báo cáo hôm qua đúng chiều."))
-    assert len(issues) == 1 and "13/10" in issues[0]["message"] and "xác suất Cao" in issues[0]["message"]
+    # Lệnh 13/10 khớp 88,00, cắt lỗ 86,30, mục tiêu 88,82 → R:R tại giá khớp 0,48: lỗi THIẾT KẾ lệnh phải được nêu.
+    assert len(issues) == 2 and any("THIẾT KẾ LỆNH" in i["message"] for i in issues)
+    assert any("13/10" in i["message"] and "xác suất Cao" in i["message"] for i in issues)
     assert report_qc.check_forecast_review(_content(
-        "Dự báo tăng (xác suất Cao) của bản 13/10 đã sai: lệnh mua chạm cắt lỗ 86,30 ngày 15/10."
+        "Dự báo tăng (xác suất Cao) của bản 13/10 đã sai: lệnh mua chạm cắt lỗ 86,30 ngày 15/10; R:R tại giá khớp chỉ 0,48."
     )) == []
     assert report_qc.check_forecast_review({"2": {}, "3": {}}) == []
 
@@ -257,6 +259,7 @@ def test_calibration_uses_last_n_scored_reports_only():
         async def execute(self, _stmt):
             return _R(self.rs.pop(0))
 
-    calib = asyncio.run(fr._calibration(_S(reports, prices), "2026-09-14", "2026-09-13"))
+    calib, baseline = asyncio.run(fr._calibration(_S(reports, prices), "2026-09-14", "2026-09-13"))
+    assert baseline["model"]["total"] == 7 and baseline["always_sideways"]["total"] == 7
     cao = next(c for c in calib if c["probability"] == "Cao")
     assert cao["total"] == fr.CALIBRATION_REPORTS == 7 and cao["correct"] == 0

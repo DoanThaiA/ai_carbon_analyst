@@ -215,19 +215,19 @@ async def _dedupe_classify_store(ctx: PipelineContext, article: ExtractedArticle
     try:
         logger.debug("[CLASSIFY] Đang gọi LLM phân loại: %s", article.url)
         classification = await ctx.classifier.classify(article.title, article.text)
-        logger.debug("[CLASSIFY-OK] %s -> %s", article.url, [t.value for t in classification.topics])
+        logger.debug("[CLASSIFY-OK] %s -> %s (kênh EUA: %s)", article.url, [t.value for t in classification.topics],
+                     classification.eua_channel)
     except ClassificationError as e:
         logger.warning("[CLASSIFY-FAIL] %s: %s", article.url, e)
         return PipelineResult(
             url=article.url, status="classification_failed", content_hash=content_hash, detail=str(e),
         )
 
-    # Hot news bypass: 1 bài có thể không khớp topic thị trường nào (is_relevant=false
-    # hoặc topics=[]) nhưng vẫn khớp tiêu chí HOT NEWS (vd: 1 nước lớn tuyên bố rút
-    # khỏi decarbonization) — vẫn phải lưu lại để lên chuông thông báo, không skip.
-    if not classification.is_hot_news and (not classification.is_relevant or not classification.topics):
+    # Chỉ lưu bài có kênh tác động tới EUA (classification.EUA_CHANNELS) — kể cả tin nóng: bài không liên quan
+    # EUA thì không lưu, không lên chuông/email (trước đây tin nóng được lưu dù is_relevant=false).
+    if not classification.is_relevant or not classification.topics:
         status = "irrelevant" if not classification.is_relevant else "classification_failed"
-        detail = "Bài không liên quan energy/carbon" if not classification.is_relevant else "No topic found"
+        detail = "Bài không tác động tới EUA hay yếu tố dẫn dắt EUA" if not classification.is_relevant else "No topic found"
         logger.info("[SKIP] %s bỏ qua: %s", article.url, detail)
         return PipelineResult(
             url=article.url, status=status, content_hash=content_hash, detail=detail

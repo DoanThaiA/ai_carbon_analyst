@@ -2,8 +2,8 @@
 
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { MessageSquareText, ThumbsUp, ThumbsDown, HelpCircle, AlertCircle, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { MessageSquareText, ThumbsUp, ThumbsDown, HelpCircle, AlertCircle, ChevronLeft, ChevronRight, ArrowLeft, BookmarkPlus } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { useTranslations, useLocale } from "next-intl";
@@ -86,6 +86,7 @@ function ChatReviewsContent() {
   // ?user=<email> — "Lịch sử chat" của 1 người dùng (mở từ trang Người dùng):
   // cùng danh sách/bộ lọc đánh giá như trên, chỉ giới hạn phiên của user đó.
   const userEmail = useSearchParams().get("user") || "";
+  const router = useRouter();
   const [filter, setFilter] = useState<RatingFilter>("all");
   const [page, setPage] = useState(0);
   const [data, setData] = useState<AdminChatSessionListResponse>({ items: [], total: 0 });
@@ -136,6 +137,7 @@ function ChatReviewsContent() {
         <div>
           <h2 className="text-3xl font-bold uppercase tracking-tight text-heading mb-2">{t("title")}</h2>
           <p className="text-body">{t("subtitle")}</p>
+          <p className="mt-1 text-sm text-muted-light">{t("openHint")}</p>
         </div>
       )}
 
@@ -184,15 +186,22 @@ function ChatReviewsContent() {
                   <th className="px-4 py-3 font-semibold">{t("colRating")}</th>
                   <th className="px-4 py-3 font-semibold text-right">{t("colMessages")}</th>
                   <th className="px-4 py-3 font-semibold">{t("colUpdated")}</th>
+                  <th className="px-4 py-3 font-semibold"><span className="sr-only">{t("openSession")}</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {data.items.map((s: AdminChatSessionSummary) => {
                   const badge = RATING_BADGE[s.rating ?? "none"];
                   return (
-                    <tr key={s.id}>
+                    // Cả dòng mở trang chi tiết phiên — nơi đánh giá và bấm "Để tham khảo" cho từng câu trả lời
+                    // (trước chỉ email là link, khó nhận ra; "Xem chi tiết" chỉ mở rộng đoạn trích).
+                    <tr
+                      key={s.id}
+                      onClick={() => router.push(`/admin/chat-reviews/${s.id}`)}
+                      className="cursor-pointer hover:bg-tint/40 transition-colors"
+                    >
                       <td className="px-4 py-2.5">
-                        <Link href={`/admin/chat-reviews/${s.id}`} className="font-semibold text-label hover:text-primary-dark hover:underline">
+                        <Link href={`/admin/chat-reviews/${s.id}`} onClick={(e) => e.stopPropagation()} className="font-semibold text-label hover:text-primary-dark hover:underline">
                           {s.user_email}
                         </Link>
                       </td>
@@ -213,6 +222,16 @@ function ChatReviewsContent() {
                       </td>
                       <td className="px-4 py-2.5 text-right text-body">{s.message_count}</td>
                       <td className="px-4 py-2.5 text-body whitespace-nowrap">{format(new Date(s.updated_at), t("dateTimeFmt"), { locale: dateFnsLocale(locale) })}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <Link
+                          href={`/admin/chat-reviews/${s.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/30 text-[12px] font-semibold text-primary-dark hover:bg-tint"
+                        >
+                          <BookmarkPlus size={12} />
+                          {t("openSession")}
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })}
@@ -244,7 +263,13 @@ function ChatReviewsContent() {
                   {s.rating === "bad" && s.rating_reason && (
                     <ExpandableText text={s.rating_reason} className="text-[12px] text-muted-light" />
                   )}
-                  <p className="text-xs text-muted-light">{t("messageCount", { count: s.message_count })}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-light">{t("messageCount", { count: s.message_count })}</p>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/30 text-[12px] font-semibold text-primary-dark">
+                      <BookmarkPlus size={12} />
+                      {t("openSession")}
+                    </span>
+                  </div>
                 </Link>
               );
             })}

@@ -13,13 +13,19 @@ Q2 75,2766 / Q3 82,3185 ↔ EC 75,36 / 75,28 / 82,32 (trung bình cộng thườ
     phiên gần nhau tương quan mạnh, không coi là độc lập.
 
 Phòng vệ CBAM — 1 nhãn DUY NHẤT cho cả báo cáo (thẻ CBAM + ô phòng hộ Mục 3 dùng chung, report_generator.
-_finalize_hedge_fields): giá CBAM quý = VWAP mọi phiên đấu giá, nên phần LÕI (≥ 100 − TACTICAL_MAX_PCT % phần chưa
-chốt) luôn BÁM LỊCH ĐẤU GIÁ (mua theo tỷ trọng khối lượng từng phiên → chi phí bám VWAP), KHÔNG chờ vùng giá. Chỉ phần
-CHIẾN THUẬT (≤ TACTICAL_MAX_PCT %) là quan điểm giá — "signal" là hướng nghiêng của riêng phần này:
-  - quý đã chốt ≥ HEDGE_FIXED_SHARE_HOLD khối lượng / chưa có phiên → "hold" (chỉ bám lịch);
-  - giá hiện tại thấp hơn VWAP đã chốt ≥ HEDGE_GAP_PCT → "increase" (mua sớm phần chiến thuật);
-  - cao hơn ≥ HEDGE_GAP_PCT → "reduce" (phần chiến thuật chờ giá thấp hơn — phần lõi vẫn mua theo lịch);
+_finalize_hedge_fields). RỦI RO cần phòng: chi phí CBAM của quý = VWAP các phiên đấu giá → phần khối lượng CHƯA chốt giá
+thả nổi theo VWAP các phiên còn lại. Không làm gì thì chi phí tự bằng VWAP (không có rủi ro "lệch VWAP", chỉ có rủi ro
+GIÁ). Mua EUA rải theo lịch đấu giá KHÔNG phòng được gì — chỉ tạo thêm 1 kho EUA giá vốn ≈ VWAP, không nộp thay chứng chỉ
+CBAM và vẫn chịu rủi ro giá tới khi bán (bản 17/10 khuyến nghị đúng cách đó). Cách KHÓA chi phí: MUA futures EUA
+(Dec của năm) NGAY cho phần muốn khóa, rồi BÁN rải theo tỷ trọng lịch đấu giá còn lại → lãi/lỗ futures ≈ VWAP − giá mua,
+chi phí ròng ≈ giá mua hôm nay (sai số: chênh spot–Dec, lệch tỷ trọng). Phần LÕI (≥ 100 − TACTICAL_MAX_PCT % phần chưa
+chốt) khóa theo kế hoạch; chỉ phần CHIẾN THUẬT (≤ TACTICAL_MAX_PCT %) là quan điểm giá — "signal" là hướng của riêng phần này:
+  - quý đã chốt ≥ HEDGE_FIXED_SHARE_HOLD khối lượng / chưa có phiên → "hold" (chỉ phần lõi);
+  - giá hiện tại thấp hơn VWAP đã chốt ≥ HEDGE_GAP_PCT → "increase" (khóa thêm phần chiến thuật ngay);
+  - cao hơn ≥ HEDGE_GAP_PCT → "reduce" (phần chiến thuật chưa khóa, chờ giá thấp hơn — phần lõi vẫn khóa);
   - còn lại → "hold".
+Chi phí theo TẤN SẢN PHẨM (product_exposure): (phát thải nhúng − benchmark × hệ số phân bổ miễn phí còn lại của năm) ×
+giá CBAM ước tính — để BLĐ thấy khoản phòng hộ có đáng làm không (2026: hệ số 97,5%).
 Bản 17/10/2026 từng có thẻ CBAM "GIỮ" + Mục 3 "MUA TRẢI ĐỀU" nhưng thực chất là lệnh giới hạn "chỉ gom ở 82,35–84,00"
 → thiếu phòng hộ nếu giá không về vùng đó trong khi 77,1% khối lượng quý chưa chốt.
 Kết quả là DỮ LIỆU THUẦN (số + enum ASCII) — frontend tự dựng nhãn/câu theo ngôn ngữ, nên bản dịch
@@ -31,10 +37,16 @@ import math
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import logging
+from pathlib import Path
+
+import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import EuaAuction, Instrument, Price
+
+logger = logging.getLogger(__name__)
 
 HEDGE_FIXED_SHARE_HOLD = 0.85
 TACTICAL_MAX_PCT = 20  # tối đa phần phòng vệ dành cho quan điểm giá (lệnh giới hạn/mua sớm); phần còn lại bám lịch đấu giá
@@ -43,6 +55,36 @@ CI_LEVEL = 90
 CI_Z = 1.645
 MIN_RETURNS_FOR_VOL = 10
 UPCOMING_DAYS = 7
+
+# Tỷ lệ phân bổ miễn phí CÒN LẠI theo năm cho ngành CBAM (Chỉ thị (EU) 2023/959, Điều 10a(1a)) — nghĩa vụ CBAM được
+# khấu trừ phần phân bổ miễn phí này.
+CBAM_FREE_ALLOCATION_FACTOR = {
+    2026: 0.975, 2027: 0.95, 2028: 0.90, 2029: 0.775, 2030: 0.515, 2031: 0.39, 2032: 0.265, 2033: 0.14, 2034: 0.0,
+}
+# Tham số sản phẩm (benchmark CBAM theo mã CN, CSCF, markup giá trị mặc định, ví dụ giá trị mặc định theo xuất xứ) nằm ở
+# cbam_products.yaml — admin cập nhật. Bản 17/10 dùng nhầm benchmark ETS 2021–2025 (nhôm 1,464; gang lỏng 1,288) thay vì
+# benchmark CBAM theo mã CN (Quy định thực thi (EU) 2025/2620). Không đọc được file → dùng CBAM_PRODUCT_FALLBACK.
+CBAM_PRODUCTS_PATH = Path(__file__).resolve().parent.parent / "cbam_products.yaml"
+CBAM_PRODUCT_FALLBACK: Dict[str, Any] = {
+    "cscf": {2026: 1.0},
+    "default_markup": {2026: 0.10, 2027: 0.20, 2028: 0.30},
+    "benchmark_source": "Benchmark CBAM theo mã CN — Quy định thực thi (EU) 2025/2620",
+    "benchmark_verified": False,
+    "products": [
+        {"key": "aluminium_primary", "cn": "7601", "embedded": 1.70, "benchmark": 1.423},
+        {"key": "steel_bf_bof", "cn": "7208", "embedded": 1.80, "benchmark": 1.370},
+    ],
+    "default_examples": [],
+}
+
+
+def load_cbam_products(path: Path = CBAM_PRODUCTS_PATH) -> Dict[str, Any]:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        logger.warning("Không đọc được %s — dùng tham số CBAM sản phẩm mặc định trong code.", path, exc_info=True)
+        return CBAM_PRODUCT_FALLBACK
+    return {**CBAM_PRODUCT_FALLBACK, **{k: v for k, v in data.items() if v is not None}}
 
 
 def quarter_of(d: date) -> Tuple[int, int]:
@@ -148,7 +190,59 @@ def estimate_quarter(
         "hedge_gap_pct": HEDGE_GAP_PCT,
         "hedge_fixed_share_pct": round(HEDGE_FIXED_SHARE_HOLD * 100),
         "tactical_max_pct": TACTICAL_MAX_PCT,
+        # Lõi tính theo % KHỐI LƯỢNG QUÝ (không phải % phần chưa chốt) — "≥80% phần chưa chốt — 77,1% khối lượng" từng khó hiểu.
+        "open_share_pct": round((1 - fixed_share) * 100, 1),
+        "core_share_of_quarter_pct": round((1 - fixed_share) * (100 - TACTICAL_MAX_PCT), 1),
+        "tactical_share_of_quarter_pct": round((1 - fixed_share) * TACTICAL_MAX_PCT, 1),
     }
+
+
+def product_exposure(
+    estimate: Optional[float], ci_low: Optional[float], ci_high: Optional[float], year: int,
+    params: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Chi phí CBAM / tấn sản phẩm ở giá CBAM ước tính (và 2 đầu khoảng tin cậy): khấu trừ = hệ số CBAM × CSCF × benchmark
+    CBAM theo mã CN. Kèm kịch bản dùng GIÁ TRỊ MẶC ĐỊNH theo xuất xứ (× (1 + markup của năm)) — chênh 2–6 lần so với số thực
+    đã thẩm định là giá trị của việc thẩm định phát thải."""
+    params = params or load_cbam_products()
+    factor = CBAM_FREE_ALLOCATION_FACTOR.get(year)
+    if estimate is None or factor is None:
+        return []
+    cscf = float((params.get("cscf") or {}).get(year, 1.0))
+    markup = float((params.get("default_markup") or {}).get(year, max((params.get("default_markup") or {0: 0}).values())))
+    out = []
+    for p in params.get("products") or []:
+        deduction = factor * cscf * float(p["benchmark"])
+        net = max(0.0, float(p["embedded"]) - deduction)
+        defaults = []
+        for d in params.get("default_examples") or []:
+            if d.get("key") != p["key"] or not isinstance(d.get("default_value"), (int, float)):
+                continue
+            charged = max(0.0, d["default_value"] * (1 + markup) - deduction)
+            defaults.append({
+                "origin": d.get("origin"), "default_value": d["default_value"], "with_markup": round(d["default_value"] * (1 + markup), 3),
+                "net_tco2_per_t": round(charged, 3), "cost_eur_per_t": round(charged * estimate, 2),
+                # Giá trị mặc định áp theo NƯỚC XUẤT XỨ — chỉ dòng Việt Nam dùng được cho khách của SIM.
+                "vn": bool(d.get("vn")) or str(d.get("origin") or "").strip().lower() in ("việt nam", "vietnam", "viet nam"),
+            })
+        out.append({
+            "key": p["key"], "cn": str(p["cn"]), "route": p.get("route"), "embedded": p["embedded"], "benchmark": p["benchmark"],
+            "free_allocation_factor_pct": round(factor * 100, 1),
+            "cscf_pct": round(cscf * 100, 1),
+            "deduction_tco2_per_t": round(deduction, 3),
+            "default_markup_pct": round(markup * 100),
+            "defaults": defaults,
+            "benchmark_source": params.get("benchmark_source"),
+            "benchmark_verified": bool(params.get("benchmark_verified")),
+            "net_tco2_per_t": round(net, 3),
+            "cost_eur_per_t": round(net * estimate, 2),
+            "cost_low": round(net * ci_low, 2) if ci_low is not None else None,
+            "cost_high": round(net * ci_high, 2) if ci_high is not None else None,
+            # Độ nhạy: mỗi +0,1 tCO2/t phát thải nhúng (vd dùng giá trị mặc định thay số thực đã thẩm định) → +EUR/t.
+            "per_0_1_tco2_eur": round(0.1 * estimate, 2),
+            "assumed": True,
+        })
+    return out
 
 
 async def _auctions_between(session: AsyncSession, start: date, end: date) -> List[EuaAuction]:
@@ -198,6 +292,11 @@ async def build_cbam_estimate(
     }
 
     last = next((a for a in reversed(rows) if a.status == "successful" and a.auction_date <= as_of), None)
+    out["last_auction_date"] = max(d for d, _ in remaining).isoformat() if remaining else None
+    expiry = (load_cbam_products().get("futures_expiry") or {}).get(year)
+    out["futures_expiry"] = str(expiry) if expiry else None
+    out["product_exposure"] = product_exposure(out["estimate"], out.get("ci_low"), out.get("ci_high"), year)
+
     out["last_auction"] = {
         "date": last.auction_date.isoformat(), "platform": last.auction_name, "price": last.auction_price,
         "cover_ratio": last.cover_ratio,
@@ -226,10 +325,90 @@ async def build_cbam_estimate(
 
 
 HEDGE_LABEL_VI = {
-    "increase": "BÁM LỊCH ĐẤU GIÁ + mua sớm phần chiến thuật",
-    "hold": "BÁM LỊCH ĐẤU GIÁ",
-    "reduce": "BÁM LỊCH ĐẤU GIÁ + phần chiến thuật chờ giá thấp hơn",
+    "increase": "KHÓA LÕI BẰNG FUTURES + khóa thêm phần chiến thuật",
+    "hold": "KHÓA LÕI BẰNG FUTURES",
+    "reduce": "KHÓA LÕI BẰNG FUTURES, phần chiến thuật chưa khóa",
 }
+
+
+def _n(x: Optional[float], d: int = 2) -> str:
+    return f"{x:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".") if x is not None else "?"
+
+
+def hedge_structure_text(est: Dict[str, Any]) -> str:
+    """Câu mô tả rủi ro + cấu trúc khóa chi phí (dùng chung prompt, ô phòng hộ Mục 3, tool chat)."""
+    up = est.get("upcoming") or {}
+    nxt = f" (7 ngày tới {up['count']} phiên / {_n(up.get('volume_mt'))} triệu t)" if up.get("count") else ""
+    quarter = est.get("quarter", "quý")
+    year = str(quarter).split(" ")[-1][-2:] if str(quarter).split(" ")[-1].isdigit() else ""
+    contract = f"EUA futures Dec-{year} (ICE Endex)" if year else "EUA futures Dec (ICE Endex)"
+    last, expiry = est.get("last_auction_date"), est.get("futures_expiry")
+    dec = contract.split(" ")[2]
+
+    def _dmy(iso: str) -> str:
+        return f"{iso[8:10]}/{iso[5:7]}"
+
+    if last and expiry and last == expiry:
+        # Bản chấm 17/10: Dec-26 đáo hạn 14/12/2026 và phiên đấu giá cuối Q4 cũng 14/12 (EU) — chốt bằng dữ liệu, bỏ "nếu có".
+        expiry_note = (f" Phiên đấu giá cuối quý ({_dmy(last)}) TRÙNG ngày đáo hạn {dec}: bán phần cuối trong ngày {_dmy(last)} trước "
+                       "giờ chốt giao dịch đáo hạn, hoặc dời sang hợp đồng Mar kế tiếp nếu thanh khoản phiên đáo hạn mỏng.")
+    elif last and expiry and last > expiry:
+        expiry_note = (f" Có phiên đấu giá sau ngày đáo hạn {dec} ({_dmy(expiry)}; phiên cuối quý {_dmy(last)}): phần tương ứng các phiên "
+                       "đó khóa bằng hợp đồng Mar kế tiếp.")
+    elif last and expiry:
+        expiry_note = f" Mọi phiên đấu giá còn lại (cuối quý {_dmy(last)}) đều trước ngày đáo hạn {dec} ({_dmy(expiry)})."
+    elif last:
+        expiry_note = (f" Phiên đấu giá cuối quý: {_dmy(last)} — chưa có ngày đáo hạn {dec} trong cbam_products.yaml: kiểm lịch đáo hạn "
+                       "ICE; phần rơi sau đáo hạn chuyển sang hợp đồng Mar kế tiếp.")
+    else:
+        expiry_note = ""
+    # % tính trên NGHĨA VỤ CBAM của quý (tCO2) — tỷ trọng chưa chốt = tỷ trọng khối lượng đấu giá còn lại (trọng số VWAP);
+    # ghi "% khối lượng quý" dễ bị hiểu là khối lượng đấu giá.
+    return (
+        f"Rủi ro: {_n(est.get('open_share_pct'), 1)}% nghĩa vụ CBAM {quarter} của SIM (tCO2) chưa chốt giá (tỷ trọng theo khối lượng "
+        f"đấu giá còn lại) — chi phí phần này thả nổi theo VWAP các phiên còn lại (ước tính {_n(est.get('estimate'))} EUR/t"
+        + (f", KTC {est.get('ci_level')}%: {_n(est.get('ci_low'))}–{_n(est.get('ci_high'))}" if est.get("ci_low") is not None else "")
+        + f"). Khóa chi phí: MUA {contract} ngay cho phần lõi = {_n(est.get('core_share_of_quarter_pct'), 1)}% nghĩa vụ CBAM "
+        f"quý ({100 - int(est.get('tactical_max_pct') or TACTICAL_MAX_PCT)}% phần chưa chốt), rồi BÁN rải theo tỷ trọng lịch đấu "
+        f"giá còn lại{nxt} → lãi/lỗ futures ≈ VWAP − giá mua, chi phí ròng ≈ giá mua hôm nay. Mua EUA rải theo lịch KHÔNG "
+        "khóa được gì (chỉ tạo kho EUA giá vốn ≈ VWAP, không nộp thay chứng chỉ CBAM)." + expiry_note
+    )
+
+
+PRODUCT_NAMES_VI = {"aluminium_primary": "nhôm thỏi nguyên sinh", "steel_bf_bof": "thép lò cao"}
+
+
+def describe_product_exposure(est: Dict[str, Any]) -> str:
+    rows = est.get("product_exposure") or []
+    if not rows:
+        return ""
+    r0 = rows[0]
+    parts = []
+    for r in rows:
+        if "deduction_tco2_per_t" in r:  # công thức đầy đủ (báo cáo từ 18/10/2026)
+            formula = (f"{_n(r['embedded'])} − {_n(r['free_allocation_factor_pct'], 1)}% × CSCF {_n(r['cscf_pct'], 0)}% × "
+                       f"{_n(r['benchmark'], 3)} = {_n(r['net_tco2_per_t'], 3)} tCO2/t")
+        else:
+            formula = f"{_n(r['embedded'])} − {_n(r['benchmark'], 3)} × {_n(r['free_allocation_factor_pct'], 1)}% = {_n(r['net_tco2_per_t'], 3)} tCO2/t"
+        text = (f"{PRODUCT_NAMES_VI.get(r['key'], r['key'])} (CN {r['cn']}{' ' + r['route'] if r.get('route') else ''}): {formula} → "
+                f"≈ {_n(r['cost_eur_per_t'])} EUR/t" + (f" (KTC {_n(r['cost_low'])}–{_n(r['cost_high'])})" if r.get("cost_low") is not None else ""))
+        if r.get("defaults"):
+            text += "; nếu dùng GIÁ TRỊ MẶC ĐỊNH (+" + f"{r.get('default_markup_pct')}% markup): " + ", ".join(
+                f"{d['origin']} {_n(d['with_markup'], 3)} → ≈ {_n(d['cost_eur_per_t'])} EUR/t"
+                + ("" if d.get("vn") else " (MINH HỌA theo xuất xứ này — KHÔNG áp cho hàng xuất xứ Việt Nam)")
+                for d in r["defaults"])
+        parts.append(text)
+    src = r0.get("benchmark_source") or "benchmark CBAM theo mã CN"
+    return (
+        "- Chi phí CBAM / tấn sản phẩm (phát thải nộp là GIẢ ĐỊNH — thay bằng số thực đã thẩm định): " + "; ".join(parts)
+        + f". Nguồn benchmark: {src}" + ("" if r0.get("benchmark_verified") else " (số theo nguồn thứ cấp — CẦN ĐỐI CHIẾU Phụ lục văn bản gốc)")
+        + f". Mỗi +0,1 tCO2/t phát thải nộp ≈ +{_n(r0.get('per_0_1_tco2_eur'))} EUR/t sản phẩm; chênh lệch số thực ↔ giá trị mặc định là "
+        "luận điểm chính cho chương trình thẩm định phát thải. Giá trị mặc định áp THEO NƯỚC XUẤT XỨ"
+        + ("" if any(d.get("vn") for r in rows for d in r.get("defaults") or []) else
+           ": chưa có giá trị mặc định cho xuất xứ Việt Nam — khoản tiết kiệm cho khách VN PHẢI ghi dạng công thức \"(mặc định VN × "
+           f"{1 + (r0.get('default_markup_pct') or 0) / 100:.2f} − số thực) × giá CBAM\", số theo Trung Quốc/UAE chỉ được nêu là \"minh họa, cận "
+           "trên, chưa áp cho VN\"; KHÔNG tự đoán số VN") + "."
+    )
 
 
 def describe_for_prompt(est: Optional[Dict[str, Any]]) -> str:
@@ -250,11 +429,14 @@ def describe_for_prompt(est: Optional[Dict[str, Any]]) -> str:
         f"- Ước tính giá CBAM {est['quarter']}: {n(est['estimate'])} EUR/t"
         + (f", khoảng tin cậy {est['ci_level']}%: {n(est['ci_low'])}–{n(est['ci_high'])}" if est.get("ci_low") is not None else "")
         + ".",
-        f"- PHÒNG VỆ CBAM (nhãn DUY NHẤT của báo cáo, Python quyết định — KHÔNG tự đặt nhãn khác): {signal_vi}. Lõi "
-        f"≥{100 - est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% phần chưa chốt ({n(100 - est['fixed_share_pct'])}% khối lượng quý) mua theo tỷ "
-        "trọng lịch đấu giá để chi phí bám VWAP (= giá CBAM), KHÔNG chờ vùng giá; lệnh giới hạn/vùng giá CHỈ áp cho phần "
-        f"chiến thuật ≤{est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% và phải ghi là quan điểm giao dịch.",
+        f"- PHÒNG VỆ CBAM (nhãn DUY NHẤT của báo cáo, Python quyết định — KHÔNG tự đặt nhãn khác): {signal_vi}. "
+        + hedge_structure_text(est)
+        + f" Lệnh giới hạn/vùng giá CHỈ áp cho phần chiến thuật ≤{est.get('tactical_max_pct', TACTICAL_MAX_PCT)}% phần chưa chốt "
+        f"(= {_n(est.get('tactical_share_of_quarter_pct'), 1)}% nghĩa vụ CBAM quý) và phải ghi là quan điểm giao dịch. Khi nêu % PHẢI "
+        "ghi rõ \"% nghĩa vụ CBAM quý\" hay \"% phần chưa chốt\" (KHÔNG viết \"% khối lượng quý\" — dễ hiểu nhầm là khối lượng đấu giá).",
     ]
+    if describe_product_exposure(est):
+        lines.append(describe_product_exposure(est))
     prev = est.get("prev_quarter")
     if prev and prev.get("official") is not None:
         lines.append(f"- {prev['quarter']}: VWAP đấu giá {n(prev['vwap'])} ↔ EC công bố {n(prev['official'])} EUR/t.")

@@ -904,21 +904,24 @@ def test_session_shape_not_called_reversal():
     chart += [{"open": 87.0, "high": 87.5, "low": 86.6, "close": 87.14},
               {"open": 86.87, "high": 86.87, "low": 85.37, "close": 85.84}]
     text = _eua_session_shape(chart)
-    assert "KHÔNG được gọi là rộng" in text and "GAP GIẢM 0,27" in text and "KHÔNG gọi là \"đảo chiều\"" in text
+    # Gap 0,27 = 0,16 × ATR 1,69 (< 0,25 ATR) → nhiễu, không gọi là tín hiệu (bản chấm 17/10).
+    assert "KHÔNG được gọi là rộng" in text and "gap NHỎ" in text and "KHÔNG gọi là \"đảo chiều\"" in text
 
 
 def test_section6_split_by_subject():
-    from services.report_generator import _split_section6_by_subject
+    """Mục 6 chia theo NƠI ĐĂNG (region nguồn), không theo chủ đề — quyết định của bàn 18/10/2026."""
+    from services.report_generator import _section6_must_keep, _split_section6_by_subject
 
     intl, vn = _split_section6_by_subject([
-        {"url": "a", "region": "vietnam", "about_vietnam": False},  # cafef.vn đưa tin phí quỹ khí của Đức
-        {"url": "b", "region": "vietnam", "about_vietnam": True},
+        {"url": "a", "region": "vietnam", "about_vietnam": False},  # Reuters đăng lại trên vnexpress → vẫn nhóm Việt Nam
+        {"url": "b", "region": "vietnam"},
         {"url": "c", "region": "international"},
-        # tin chính sách carbon VN luôn ở nhóm Việt Nam dù LLM trả false (bản 17/10: nhóm VN trống dù có 3 bài)
-        {"url": "d", "region": "vietnam", "about_vietnam": False, "topics": ["Chính sách carbon VN"]},
     ])
-    assert [a["url"] for a in intl] == ["a", "c"] and [a["url"] for a in vn] == ["b", "d"]
-    assert "about_vietnam" not in intl[0]
+    assert [a["url"] for a in intl] == ["c"] and [a["url"] for a in vn] == ["a", "b"]
+    assert "about_vietnam" not in vn[0]
+    # Bài nguồn VN về chính sách carbon VN/CBAM luôn được giữ dù bản tóm tắt chấm không liên quan.
+    assert _section6_must_keep({"region": "vietnam", "topics": ["Chính sách carbon VN"]})
+    assert not _section6_must_keep({"region": "international", "topics": ["Chính sách carbon VN"]})
 
 
 def test_same_news_cannot_have_two_directions():
@@ -1014,12 +1017,3 @@ def test_free_allocation_phaseout_claim():
     assert report_qc.check_legislation_claims(c) == []
 
 
-def test_section6_vn_source_about_vietnam_stays_vn():
-    from services.report_generator import _split_section6_by_subject
-
-    intl, vn = _split_section6_by_subject([
-        {"url": "na", "region": "vietnam", "about_vietnam": False, "title": "Tỉnh Nghệ An thu hút dự án điện mặt trời"},
-        {"url": "de", "region": "vietnam", "about_vietnam": False,
-         "title": "Chính phủ Đức áp phí quỹ khí, Thủ tướng Đức bảo vệ kế hoạch"},
-    ])
-    assert [a["url"] for a in vn] == ["na"] and [a["url"] for a in intl] == ["de"]

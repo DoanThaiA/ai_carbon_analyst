@@ -79,6 +79,7 @@ const REPORT_SECTIONS = [
   { id: "section-market", labelKey: "market" },
   { id: "section-analysis", labelKey: "analysis" },
   { id: "section-news", labelKey: "news" },
+  { id: "section-forecast-review", labelKey: "forecastReview" },
   { id: "section-sources", labelKey: "sources" },
 ] as const;
 
@@ -327,16 +328,16 @@ function LevelTile({ icon: Icon, title, tone, rows }: {
   rows: { label: string; value: string; className: string }[];
 }) {
   return (
-    <div className="p-4 sm:p-5 flex flex-col">
-      <div className={clsx("flex items-center gap-2 mb-3", tone)}>
+    <div className="p-4 sm:p-5 flex flex-col print:break-inside-avoid">
+      <div className={clsx("flex items-center gap-2 mb-3 print:break-after-avoid", tone)}>
         <Icon size={16} strokeWidth={2.5} aria-hidden="true" />
         <h3 className="text-[12px] sm:text-[13px] font-extrabold uppercase tracking-wider">{title}</h3>
       </div>
       {rows.length ? (
         <div className="flex flex-col gap-2.5">
           {rows.map(r => (
-            <div key={r.label}>
-              <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light">{r.label}</div>
+            <div key={r.label} className="print:break-inside-avoid">
+              <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-light print:break-after-avoid">{r.label}</div>
               <p className={clsx("font-black tabular-nums tracking-tight leading-none text-[30px] sm:text-[36px]", r.className)}>{r.value}</p>
             </div>
           ))}
@@ -371,7 +372,10 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
   const fp = (n: number) => fmtPrice(n, locale);
   const dir: Dir = (["tăng", "giảm", "đi ngang"] as const).includes(signal.direction) ? signal.direction : "đi ngang";
   const trendMeta = TREND_META[dir];
-  const midTrendMeta = midTermSignal ? TREND_META[midTermSignal.direction] : undefined;
+  // Trung hạn xác suất "Thấp" là kịch bản THAY THẾ (vd phá biên giảm) — cơ sở vẫn là giằng co, không gọi là "nghiêng".
+  const midIsAlt = midTermSignal?.probability === "Thấp" && midTermSignal?.direction !== "đi ngang";
+  const midTrendMeta = midTermSignal ? TREND_META[midIsAlt ? "đi ngang" : midTermSignal.direction] : undefined;
+  const midAltMeta = midIsAlt ? TREND_META[midTermSignal.direction] : undefined;
   const position = trendMeta ? t(`position.${trendMeta.labelKey}`) : undefined;
   const strategy = parseStrategy(signal.trading_strategy);
   const body = (re: RegExp) => {
@@ -393,37 +397,69 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
   ];
   const targetRows = [
     ...(lv.targetBuy !== undefined ? [{ label: t("signal.takeLong"), value: fp(lv.targetBuy), className: "text-emerald-700" }] : []),
-    ...(lv.targetSell !== undefined ? [{ label: t("signal.takeShort"), value: fp(lv.targetSell), className: "text-red-600" }] : []),
+    ...(lv.targetSell !== undefined ? [{ label: t("signal.takeShort"), value: fp(lv.targetSell), className: "text-emerald-700" }] : []),
   ];
   const stopRows = [
     ...(lv.stopLower !== undefined ? [{ label: t("signal.stopBelow"), value: fp(lv.stopLower), className: "text-red-600" }] : []),
     ...(lv.stopUpper !== undefined ? [{ label: t("signal.stopAbove"), value: fp(lv.stopUpper), className: "text-red-600" }] : []),
   ];
 
-  // KPI tính TỪ chính các mức giá đã tách (không qua LLM): chỉ khi kịch bản có
-  // hướng rõ ràng và đủ Entry/Mục tiêu/Cắt lỗ đúng thứ tự.
-  let kpis: { label: string; value: string; sub?: string; className: string }[] = [];
-  let ladder: { stop: number; entry: number; target: number } | null = null;
-  if (dir !== "đi ngang" && hasEntry) {
-    const long = dir === "tăng";
-    const entry = long ? mid(lv.entryBuy) : mid(lv.entrySell);
+  // KPI tính TỪ chính các mức giá đã tách (không qua LLM): Entry = điểm giữa vùng, mục tiêu đầu tiên, cắt lỗ.
+  // Kịch bản "đi ngang" (lệnh 2 chiều) tính R/R RIÊNG cho từng chân mua/bán — trước chỉ hiện "Biên độ giao dịch" nên
+  // khối R/R biến mất ở các ngày đi ngang (bản 16/10).
+  type Kpi = { label: string; value: string; sub?: string; className: string };
+  const legKpis = (zone: number[], target: number | undefined, stop: number | undefined, long: boolean) => {
+    const entry = zone.length ? mid(zone) : undefined;
+    if (entry === undefined || Number.isNaN(entry) || target === undefined || stop === undefined) return null;
+    const reward = long ? target - entry : entry - target;
+    const risk = long ? entry - stop : stop - entry;
+    if (!(reward > 0 && risk > 0)) return null;
+    return {
+      entry, target, stop,
+      kpis: [
+        { label: "Risk / Reward", value: `1 : ${fnum(reward / risk, 1, locale)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
+        { label: t("signal.targetProfit"), value: `+${fnum((reward / entry) * 100, 1, locale)}%`, sub: `${fp(reward)} EUR/tCO₂ → ${fp(target)}`, className: "text-emerald-700" },
+        { label: t("signal.maxRisk"), value: `−${fnum((risk / entry) * 100, 1, locale)}%`, sub: `${fp(risk)} EUR/tCO₂ → ${fp(stop)}`, className: "text-red-600" },
+      ] as Kpi[],
+    };
+  };
+  // Mỗi "khối lệnh" = 3 ô Entry/Mục tiêu/Cắt lỗ + KPI R/R + thang giá. Kịch bản 1 chiều: 1 khối. Kịch bản "đi ngang" có đủ
+  // 2 chân: 2 khối riêng "Lệnh mua" / "Lệnh bán" trình bày y như kịch bản 1 chiều (yêu cầu 18/10/2026), thêm dòng biên độ.
+  type Row = { label: string; value: string; className: string };
+  type OrderBlock = {
+    key: string; title?: string; tone?: string; entryRows: Row[]; targetRows: Row[]; stopRows: Row[];
+    kpis: Kpi[]; ladder: { stop: number; entry: number; target: number } | null;
+  };
+  const block = (key: string, long: boolean, title?: string, tone?: string): OrderBlock => {
+    const zone = long ? lv.entryBuy : lv.entrySell;
     const target = long ? lv.targetBuy : lv.targetSell;
     const stop = long ? lv.stopLower : lv.stopUpper;
-    if (entry !== undefined && !Number.isNaN(entry) && target !== undefined && stop !== undefined) {
-      const reward = long ? target - entry : entry - target;
-      const risk = long ? entry - stop : stop - entry;
-      if (reward > 0 && risk > 0) {
-        ladder = { stop, entry, target };
-        kpis = [
-          { label: "Risk / Reward", value: `1 : ${(reward / risk).toFixed(1)}`, sub: t("signal.rrSub"), className: "text-primary-dark" },
-          { label: t("signal.targetProfit"), value: `+${((reward / entry) * 100).toFixed(1)}%`, sub: `${fp(reward)} EUR/tCO₂`, className: "text-emerald-700" },
-          { label: t("signal.maxRisk"), value: `−${((risk / entry) * 100).toFixed(1)}%`, sub: `${fp(risk)} EUR/tCO₂`, className: "text-red-600" },
-        ];
-      }
-    }
-  } else if (dir === "đi ngang" && lv.entryBuy.length && lv.entrySell.length) {
+    const leg = legKpis(zone, target, stop, long);
+    return {
+      key, title, tone,
+      entryRows: zone.length ? [{ label: t(long ? "signal.buyAround" : "signal.sellAround"), value: fmtRange(zone, locale), className: long ? buyCls : sellCls }] : [],
+      targetRows: target !== undefined ? [{ label: t(long ? "signal.takeLong" : "signal.takeShort"), value: fp(target), className: "text-emerald-700" }] : [],
+      stopRows: stop !== undefined ? [{ label: t(long ? "signal.stopBelow" : "signal.stopAbove"), value: fp(stop), className: "text-red-600" }] : [],
+      kpis: leg ? leg.kpis : [],
+      ladder: leg ? { stop: leg.stop, entry: leg.entry, target: leg.target } : null,
+    };
+  };
+  const twoSided = dir === "đi ngang" && lv.entryBuy.length > 0 && lv.entrySell.length > 0;
+  let orderBlocks: OrderBlock[];
+  let rangeKpis: Kpi[] = [];
+  if (twoSided) {
+    orderBlocks = [block("buy", true, t("signal.legBuyTitle"), buyCls), block("sell", false, t("signal.legSellTitle"), sellCls)];
     const lo = mid(lv.entryBuy), hi = mid(lv.entrySell);
-    if (hi > lo) kpis = [{ label: t("signal.tradingRange"), value: `${(((hi - lo) / lo) * 100).toFixed(1)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
+    if (hi > lo) rangeKpis = [{ label: t("signal.tradingRange"), value: `${fnum(((hi - lo) / lo) * 100, 1, locale)}%`, sub: `${fp(lo)} → ${fp(hi)}`, className: "text-blue-700" }];
+  } else {
+    // 1 chiều (hoặc đi ngang chỉ tách được 1 chân / dữ liệu cũ): 1 khối với mọi mức đã tách được, như trước.
+    const leg = dir === "tăng" ? legKpis(lv.entryBuy, lv.targetBuy, lv.stopLower, true)
+      : dir === "giảm" ? legKpis(lv.entrySell, lv.targetSell, lv.stopUpper, false) : null;
+    orderBlocks = [{
+      key: "single", entryRows, targetRows, stopRows,
+      kpis: leg ? leg.kpis : [],
+      ladder: leg ? { stop: leg.stop, entry: leg.entry, target: leg.target } : null,
+    }];
   }
 
   // Dữ liệu cũ (chưa có trading_strategy) chỉ có action_plan dạng câu — vẫn hiển thị.
@@ -466,6 +502,9 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
                   <div className="flex flex-col items-center leading-tight">
                     <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-white/60 font-medium">{t("signal.midTerm")}</span>
                     <strong className="font-extrabold text-white uppercase text-[14px] sm:text-[16px]">{midTrendMeta.arrow} {t(`trend.${midTrendMeta.labelKey}`)}</strong>
+                    {midAltMeta && (
+                      <span className="text-[9px] sm:text-[10px] text-white/70 font-medium">{t("signal.midAlt", { arrow: midAltMeta.arrow })}</span>
+                    )}
                   </div>
                 </>
               )}
@@ -493,20 +532,35 @@ function TodaySignalCard({ signal, midTermSignal, technicalLevels, lastClose, he
 
         {hasLevels ? (
           <>
-            {/* ═══ 3 ô số liệu lớn: Entry · Mục tiêu · Cắt lỗ ═══ */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10">
-              <LevelTile icon={Crosshair} title={t("signal.tileEntry")} tone="text-primary-dark" rows={entryRows} />
-              <LevelTile icon={Target} title={t("signal.tileTarget")} tone="text-emerald-700" rows={targetRows} />
-              <LevelTile icon={ShieldCheck} title={t("signal.tileStop")} tone="text-red-600" rows={stopRows} />
-            </div>
-
-            {/* ═══ KPI + thang giá ═══ */}
-            {kpis.length > 0 && (
-              <div className="border-t border-primary/10 bg-[#f8faf9] px-4 sm:px-6 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                <div className="flex flex-wrap justify-center divide-x divide-primary/10">
-                  {kpis.map(k => <KpiBox key={k.label} {...k} />)}
+            {orderBlocks.map((b, bi) => (
+              <div key={b.key} className={clsx("print:break-inside-avoid", bi > 0 && "border-t-2 border-primary/20")}>
+                {/* Tiêu đề khối lệnh — chỉ khi đi ngang tách 2 chân */}
+                {b.title && (
+                  <div className={clsx("px-4 sm:px-6 pt-3 text-[12px] sm:text-[13px] font-extrabold uppercase tracking-wider", b.tone)}>{b.title}</div>
+                )}
+                {/* ═══ 3 ô số liệu lớn: Entry · Mục tiêu · Cắt lỗ ═══ */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-primary/10">
+                  <LevelTile icon={Crosshair} title={t("signal.tileEntry")} tone="text-primary-dark" rows={b.entryRows} />
+                  <LevelTile icon={Target} title={t("signal.tileTarget")} tone="text-emerald-700" rows={b.targetRows} />
+                  <LevelTile icon={ShieldCheck} title={t("signal.tileStop")} tone="text-red-600" rows={b.stopRows} />
                 </div>
-                {ladder && <SignalLadder {...ladder} last={lastClose} />}
+                {/* ═══ KPI + thang giá ═══ */}
+                {b.kpis.length > 0 && (
+                  <div className="border-t border-primary/10 bg-[#f8faf9] px-4 sm:px-6 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                    <div className="flex flex-wrap justify-center divide-x divide-primary/10">
+                      {b.kpis.map(k => <KpiBox key={k.label} {...k} />)}
+                    </div>
+                    {b.ladder && <SignalLadder {...b.ladder} last={lastClose} />}
+                  </div>
+                )}
+              </div>
+            ))}
+            {/* Đi ngang: biên độ giữa 2 vùng lệnh */}
+            {rangeKpis.length > 0 && (
+              <div className="border-t-2 border-primary/20 bg-[#f8faf9] px-4 sm:px-6 py-3 print:break-inside-avoid [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                <div className="flex flex-wrap justify-center">
+                  {rangeKpis.map(k => <KpiBox key={k.label} {...k} />)}
+                </div>
               </div>
             )}
           </>
@@ -675,6 +729,9 @@ function ScenarioTabs({ horizons, byHorizon }: { horizons: string[]; byHorizon: 
       <div role="tabpanel" className="p-3 flex flex-col gap-3 text-[14.5px] leading-[1.55] text-body break-words">
         {(dirMeta || sc.probability) && (
           <div className="flex flex-wrap items-center gap-2">
+            {sc.probability === "Thấp" && sc.direction !== "đi ngang" && (
+              <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-muted-light">{t("scenario.alternative")}</span>
+            )}
             {dirMeta && (
               <span className={clsx("inline-flex items-center gap-1 font-mono text-[12px] font-bold uppercase tracking-wider rounded px-2 py-1 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
                 <DirIcon size={13} className="shrink-0" /> {t("scenario.direction", { dir: enumLabel(sc.direction) })}
@@ -1051,6 +1108,73 @@ function DismissButton({ onClick, className }: { onClick: () => void; className?
   );
 }
 
+const POLICY_IMPACT_TONE: Record<string, string> = {
+  "tăng": "text-up border-up/30 bg-up/10",
+  "giảm": "text-down border-down/30 bg-red-50",
+  "trung lập": "text-muted-light border-border bg-surface",
+};
+
+function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
+  const t = useTranslations("reportDoc");
+  return (
+    <div className="mb-5 print:break-inside-avoid">
+      <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{t("etsPolicy.title")}</h4>
+      <div className="overflow-x-auto border border-border rounded-lg">
+        <table className="w-full table-fixed border-collapse text-[13.5px]">
+          <thead>
+            <tr className="bg-tint">
+              {["item", "status", "nextStep", "impact"].map((k) => (
+                <th key={k} className={clsx(
+                  "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 border-b-2 border-primary/30",
+                  k === "impact" ? "w-[96px]" : k === "item" ? "w-[26%]" : "",
+                )}>{t(`etsPolicy.${k}`)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.map((it, i) => (
+              <tr key={i} className="align-top print:break-inside-avoid">
+                <td className="px-2 sm:px-3 py-2 font-semibold text-label break-words">
+                  {it.item}
+                  {it.source_url ? (
+                    <a href={it.source_url} target="_blank" rel="noopener noreferrer"
+                       className="block mt-0.5 text-[11.5px] font-normal text-primary hover:underline break-words">
+                      {it.source_name}{it.source_date ? ` · ${it.source_date}` : ""}
+                    </a>
+                  ) : it.source_name && (
+                    // Hồ sơ admin xác nhận (ets_policy_dossiers.yaml) có thể chưa có link.
+                    <span className="block mt-0.5 text-[11.5px] font-normal text-muted-light break-words">
+                      {it.source_name}{it.source_date ? ` · ${it.source_date}` : ""}
+                    </span>
+                  )}
+                  {it.stage && <span className="block text-[11px] font-normal text-muted-light">{it.stage}</span>}
+                  {it.pinned && it.verified === false && (
+                    <span className="block text-[11px] font-normal italic text-muted-light">{t("etsPolicy.unverified")}</span>
+                  )}
+                </td>
+                <td className="px-2 sm:px-3 py-2 text-body break-words">
+                  <RichText text={it.status || ""} />
+                  {it.cbam_effect && (
+                    <span className="block mt-0.5 text-[12px] text-primary-dark">{t("etsPolicy.cbamEffect")} {it.cbam_effect}</span>
+                  )}
+                </td>
+                <td className="px-2 sm:px-3 py-2 text-body break-words"><RichText text={it.next_step || ""} /></td>
+                <td className="px-2 sm:px-3 py-2">
+                  <span className={clsx("inline-block font-mono text-[10.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border",
+                    POLICY_IMPACT_TONE[it.impact] || POLICY_IMPACT_TONE["trung lập"])}>
+                    {t(`etsPolicy.impactLabel.${it.kind === "event" ? "event" : it.impact === "tăng" ? "up" : it.impact === "giảm" ? "down" : "neutral"}`)}
+                  </span>
+                  {it.mechanism && <span className="block mt-1 text-[11.5px] leading-[1.4] text-muted-light">{it.mechanism}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function BizRecommendationTable({
   heading,
   accent,
@@ -1058,6 +1182,7 @@ function BizRecommendationTable({
   columns,
   infoKey,
   infoLabel,
+  extras,
   onDismiss,
 }: {
   heading: string;
@@ -1068,6 +1193,8 @@ function BizRecommendationTable({
   // ra thành 1 dòng phụ ngay dưới hàng đó — bảng gọn hơn. Khi in luôn hiện.
   infoKey?: string;
   infoLabel?: string;
+  // Trường phụ hiện cùng dòng "i" (KPI, quy mô thí điểm, đơn vị phụ trách...) — báo cáo cũ không có thì bỏ qua.
+  extras?: { key: string; label: string }[];
   // Chỉ truyền ở màn hình admin: nút gỡ gợi ý (hàng phải có "id" — gợi ý ngắn hạn
   // lưu trong bộ nhớ biz_suggestions).
   onDismiss?: (id: number) => void;
@@ -1116,7 +1243,8 @@ function BizRecommendationTable({
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row, ri) => {
-                const info = infoKey ? row[infoKey] : "";
+                const extraRows = (extras || []).filter((x) => typeof row[x.key] === "string" && row[x.key].trim());
+                const info = (infoKey ? row[infoKey] : "") || (extraRows.length ? " " : "");
                 const isOpen = openInfo.has(ri);
                 return (
                   <Fragment key={ri}>
@@ -1164,8 +1292,18 @@ function BizRecommendationTable({
                       <tr className={clsx(isOpen ? "table-row" : "hidden print:table-row")}>
                         <td className="border-r border-border bg-surface" />
                         <td colSpan={columns.length} className="px-2 sm:px-3 py-2 bg-tint/50 text-[14.5px] leading-[1.5] text-body">
-                          <span className="font-bold text-primary-dark mr-1">{infoLabel || t("biz.details")}:</span>
-                          <RichText text={info} />
+                          {infoKey && row[infoKey] && (
+                            <div>
+                              <span className="font-bold text-primary-dark mr-1">{infoLabel || t("biz.details")}:</span>
+                              <RichText text={row[infoKey]} />
+                            </div>
+                          )}
+                          {extraRows.map((x) => (
+                            <div key={x.key}>
+                              <span className="font-bold text-primary-dark mr-1">{x.label}:</span>
+                              <RichText text={row[x.key]} />
+                            </div>
+                          ))}
                         </td>
                       </tr>
                     )}
@@ -1890,23 +2028,6 @@ export function ReportDocument({
             </div>
           )}
 
-          {/* So với báo cáo trước — dự báo cũ đúng/sai, giữ/đổi hướng và tiền đề đã thay đổi
-              (report_generator.py: content["3"].vs_previous). Báo cáo cũ không có → ẩn. */}
-          {/* Dự báo trước đúng/sai — bảng tính bằng Python (content["2"].forecast_review) + đoạn vs_previous
-              làm phần "nguyên nhân & điều chỉnh". Báo cáo cũ chưa có bảng → chỉ hiện vs_previous như trước. */}
-          {report.content["2"]?.forecast_review?.items?.length > 0 ? (
-            <ForecastReviewCard review={report.content["2"].forecast_review} enumLabel={enumLabel}>
-              {report.content["3"]?.vs_previous && <RichText text={report.content["3"].vs_previous} />}
-            </ForecastReviewCard>
-          ) : report.content["3"]?.vs_previous && (
-            <div className="rounded-lg border border-border bg-surface px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-              <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label mb-1">{t("body.vsPrevious")}</h3>
-              <p className="text-[14px] sm:text-[14.5px] leading-[1.55] text-body">
-                <RichText text={report.content["3"].vs_previous} />
-              </p>
-            </div>
-          )}
-
           <FramedHighlight title={t("body.execSummary")} tone="blue">
             <ul className="list-none -my-0.5">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
@@ -2259,6 +2380,12 @@ export function ReportDocument({
                     </p>
                   )}
 
+                  {/* Theo dõi chính sách ETS/MSR — khối cố định (report_generator._resolve_ets_policy, tin chính sách
+                      21 ngày). Báo cáo cũ không có → ẩn. */}
+                  {Array.isArray(report.content["3"].ets_policy) && report.content["3"].ets_policy.length > 0 && (
+                    <EtsPolicyTable items={report.content["3"].ets_policy} />
+                  )}
+
                   {report.content["3"].correlation_analysis && (
                     <div className="border-l-2 border-primary bg-tint/40 rounded-r-lg px-3 sm:px-4 py-3 my-5 space-y-2">
                       <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-1.5">{t("body.correlationTitle")}</h4>
@@ -2316,6 +2443,9 @@ export function ReportDocument({
                   const DirIcon = dirMeta?.icon;
                   return (
                     <div className="flex flex-col gap-1.5 items-start">
+                      {sc.probability === "Thấp" && sc.direction !== "đi ngang" && (
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted-light">{t("scenario.alternative")}</span>
+                      )}
                       {dirMeta && (
                         <span className={clsx("flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]", dirMeta.className)}>
                           <DirIcon size={11} className="shrink-0" /> {t("scenario.direction", { dir: enumLabel(sc.direction) })}
@@ -2520,6 +2650,10 @@ export function ReportDocument({
                     ]}
                     infoKey="reason"
                     infoLabel={t("biz.reason")}
+                    extras={[
+                      { key: "kpi", label: t("biz.kpi") },
+                      { key: "owner", label: t("biz.owner") },
+                    ]}
                     onDismiss={onDismissBizSuggestion}
                   />
                 </div>
@@ -2535,6 +2669,12 @@ export function ReportDocument({
                   // trên mobile làm mỗi ô chỉ 2–3 chữ/dòng, rất khó đọc.
                   infoKey="expectation"
                   infoLabel={t("biz.expectation")}
+                  extras={[
+                    { key: "pilot", label: t("biz.pilot") },
+                    { key: "financials", label: t("biz.financials") },
+                    { key: "kpi", label: t("biz.kpi") },
+                    { key: "owner", label: t("biz.owner") },
+                  ]}
                   onDismiss={onDismissBizSuggestion}
                 />
               </div>
@@ -2597,6 +2737,9 @@ export function ReportDocument({
               { key: "vietnam", label: t("body.vn"), empty: t("body.noNewsVn") },
             ].map(({ key, label, empty }) => {
               const items = report.content["6"][key];
+              // Có tin Việt Nam trong kỳ nhưng không bài nào đủ liên quan → nói đúng như vậy, không ghi "không có tin".
+              const vnConsidered = key === "vietnam" ? report.content["6"].vietnam_considered : 0;
+              const emptyText = vnConsidered > 0 ? t("body.noNewsVnFiltered", { n: vnConsidered }) : empty;
               return (
                 <div key={key} className="mb-4 last:mb-0">
                   <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{label}</h4>
@@ -2620,6 +2763,7 @@ export function ReportDocument({
                           </div>
                           {/* Nguồn nằm liền sau nội dung tin (cùng đoạn), chỉ xuống dòng khi hết chỗ */}
                           <p className="mt-0.5 text-[14.5px] leading-[1.4] text-body">
+                            {/* Mọi tin đều có tóm tắt (bản chấm 17/10: chỉ còn tiêu đề thì Phần 3 mất giá trị). */}
                             <RichText text={art.summary} />{" "}
                             <a
                               href={art.url}
@@ -2634,11 +2778,34 @@ export function ReportDocument({
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[14.5px] text-muted-light italic">{empty}</p>
+                    <p className="text-[14.5px] text-muted-light italic">{emptyText}</p>
                   )}
                 </div>
               );
             })}
+          </section>
+        )}
+
+        {/* DỰ BÁO TRƯỚC: ĐÚNG HAY SAI — đặt sau Phần 3 (Chi tiết tin tức), trước Nguồn tham khảo (yêu cầu 18/10/2026;
+            trước nằm trong khối điểm nhấn đầu báo cáo). */}
+        {(report.content["2"]?.forecast_review?.items?.length > 0 || report.content["3"]?.vs_previous) && (
+          <section id="section-forecast-review" className="py-5">
+            {/* So với báo cáo trước — dự báo cũ đúng/sai, giữ/đổi hướng và tiền đề đã thay đổi
+                (report_generator.py: content["3"].vs_previous). Báo cáo cũ không có → ẩn. */}
+            {/* Dự báo trước đúng/sai — bảng tính bằng Python (content["2"].forecast_review) + đoạn vs_previous
+                làm phần "nguyên nhân & điều chỉnh". Báo cáo cũ chưa có bảng → chỉ hiện vs_previous như trước. */}
+            {report.content["2"]?.forecast_review?.items?.length > 0 ? (
+              <ForecastReviewCard review={report.content["2"].forecast_review} enumLabel={enumLabel}>
+                {report.content["3"]?.vs_previous && <RichText text={report.content["3"].vs_previous} />}
+              </ForecastReviewCard>
+            ) : report.content["3"]?.vs_previous && (
+              <div className="rounded-lg border border-border bg-surface px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label mb-1">{t("body.vsPrevious")}</h3>
+                <p className="text-[14px] sm:text-[14.5px] leading-[1.55] text-body">
+                  <RichText text={report.content["3"].vs_previous} />
+                </p>
+              </div>
+            )}
           </section>
         )}
 

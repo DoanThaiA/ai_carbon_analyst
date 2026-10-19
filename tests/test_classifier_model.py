@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from crawl_news import classification as c
 
-OK_JSON = '{"topics": ["eua_ets"], "confidence": 0.9, "is_relevant": true, "is_hot_news": false}'
+OK_JSON = '{"topics": ["eua_ets"], "confidence": 0.9, "is_relevant": true, "eua_channel": "eua_direct", "is_hot_news": false}'
 
 
 class FakeMessages:
@@ -44,3 +44,26 @@ def test_refusal_falls_back_to_haiku_4_5_without_effort():
     assert [k["model"] for k in fake.calls] == ["claude-haiku-5-5", "claude-haiku-4-5"]
     assert "output_config" not in fake.calls[1]
     assert result.is_relevant
+
+
+def test_relevant_requires_eua_channel():
+    """Chỉ lưu bài chỉ ra được kênh tác động tới EUA — thiếu/bịa kênh thì coi là không liên quan, bỏ topic."""
+    r = c._parse_json_response('{"topics": ["energy_gas"], "confidence": 0.9, "is_relevant": true, "eua_channel": " GAS_EU "}')
+    assert r.is_relevant and r.eua_channel == "gas_eu" and [t.value for t in r.topics] == ["energy_gas"]
+    for extra in ("", ', "eua_channel": null', ', "eua_channel": "energy_general"'):
+        r = c._parse_json_response('{"topics": ["energy_oil"], "confidence": 0.9, "is_relevant": true' + extra + '}')
+        assert not r.is_relevant and r.topics == [] and r.eua_channel is None
+
+
+def test_hot_news_needs_relevance():
+    """Tin nóng không liên quan EUA không còn được lưu/gửi email (bỏ ngoại lệ lưu tin nóng is_relevant=false)."""
+    r = c._parse_json_response(
+        '{"topics": [], "confidence": 0.9, "is_relevant": false, "eua_channel": null, "is_hot_news": true, '
+        '"hot_news_category": "political_shock", "hot_news_reason": "Mỹ rút khỏi Thỏa thuận Paris"}'
+    )
+    assert not r.is_relevant and not r.is_hot_news and r.hot_news_reason is None
+
+
+def test_prompt_lists_every_channel():
+    for ch in c.EUA_CHANNELS:
+        assert f'"{ch}"' in c._SYSTEM_PROMPT and ch in c._JSON_INSTRUCTION

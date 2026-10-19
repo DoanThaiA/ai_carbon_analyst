@@ -34,6 +34,33 @@ export interface CbamEstimate {
   signal_reason: "quarter_fixed" | "quarter_not_started" | "quarter_mostly_fixed" | "spot_below_qtd" | "spot_above_qtd" | "spot_near_qtd";
   hedge_gap_pct: number;
   hedge_fixed_share_pct: number;
+  tactical_max_pct?: number;
+  // % theo KHỐI LƯỢNG QUÝ (báo cáo từ 18/10/2026; bản cũ không có)
+  open_share_pct?: number;
+  core_share_of_quarter_pct?: number;
+  tactical_share_of_quarter_pct?: number;
+  // Chi phí CBAM / tấn sản phẩm theo GIẢ ĐỊNH phát thải & benchmark (services/cbam_estimate.py::product_exposure)
+  product_exposure?: {
+    key: string;
+    cn: string;
+    embedded: number;
+    benchmark: number;
+    free_allocation_factor_pct: number;
+    net_tco2_per_t: number;
+    cost_eur_per_t: number;
+    cost_low: number | null;
+    cost_high: number | null;
+    per_0_1_tco2_eur?: number;
+    // Từ 18/10/2026: khấu trừ = hệ số CBAM × CSCF × benchmark CBAM theo mã CN; kịch bản giá trị mặc định.
+    route?: string | null;
+    cscf_pct?: number;
+    deduction_tco2_per_t?: number;
+    default_markup_pct?: number;
+    defaults?: { origin: string; default_value: number; with_markup: number; net_tco2_per_t: number; cost_eur_per_t: number }[];
+    benchmark_source?: string | null;
+    benchmark_verified?: boolean;
+    assumed: boolean;
+  }[];
   last_auction: { date: string; platform: string; price: number; cover_ratio: number | null } | null;
   upcoming: { count: number; volume_mt: number; first_date: string | null; last_date: string | null } | null;
   prev_quarter: { quarter: string; vwap: number | null; official: number | null } | null;
@@ -65,6 +92,13 @@ export interface ForecastReviewItem {
     exit_date: string | null;
     exit_price: number | null;
   } | null;
+  // Báo cáo từ 18/10/2026: cách chấm, lệch xa nhất trong khung, lỗi thiết kế lệnh.
+  graded_by?: "trade" | "direction" | "path";
+  max_excursion_pct?: number;
+  design_flaws?: (
+    | { kind: "low_rr"; rr: number; entry: number; risk: number; reward: number }
+    | { kind: "tight_stop"; distance: number; atr: number; atr_multiple: number; entry: number }
+  )[];
 }
 
 // Mục 3: 1 hành động duy nhất cho sổ phòng hộ SIM + đối chiếu lệnh đang mở (services/report_generator.py
@@ -95,7 +129,21 @@ export interface ForecastReview {
   wrong_in_row: number;
   // Báo cáo cũ không có 2 trường dưới.
   calibration?: { probability: string; correct: number; total: number; direction_only?: number }[];
-  rules?: { horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number; calibration_reports?: number };
+  rules?: {
+    horizon_sessions: number; direction_threshold_pct: number; sideways_max_pct: number; order_valid_sessions: number;
+    calibration_reports?: number; sideways_path_max_pct?: number; min_rr?: number; min_stop_atr?: number; method_since?: string;
+  };
+  // Báo cáo tạo nên tỷ lệ cửa sổ (có thể gồm báo cáo đã ra khỏi bảng) + tỷ lệ lũy kế — báo cáo từ 18/10/2026.
+  calibration_window?: { report_date: string; probability: string | null; verdict: string }[];
+  calibration_all?: { probability: string; correct: number; total: number; direction_only?: number }[];
+  calibration_all_reports?: number;
+  calibration_all_excluded?: number;
+  // Dự báo ngây thơ trên cùng các báo cáo đã có kết luận (services/forecast_review.py::baseline_from).
+  baseline?: {
+    model: { correct: number; total: number };
+    always_sideways: { correct: number; total: number };
+    momentum: { correct: number; total: number; sessions: number };
+  };
 }
 
 export interface ReportSummary {
@@ -259,4 +307,117 @@ export interface HandoffCreated {
   handoff_id: string;
   prompt: string;
   expires_at: string;
+}
+
+// --- Biên bản QC báo cáo (Claude/Jack gửi qua MCP) — backend api/routers/admin_qc_reviews.py, CHỈ admin ---
+
+export type QcVerdict = "pass" | "pass_with_fixes" | "fail";
+export type QcSeverity = "critical" | "major" | "minor";
+export type QcFindingStatus = "open" | "fixed" | "wont_fix";
+
+export interface QcCriterionDef {
+  key: string;
+  label: string;
+  weight: number;
+  guide: string;
+}
+
+export interface QcCriterionScore {
+  key: string;
+  label: string;
+  weight: number;
+  score: number;
+  comment: string;
+}
+
+export interface QcFinding {
+  id: number;
+  position: number;
+  severity: QcSeverity;
+  criterion: string;
+  criterion_label: string;
+  section: string | null;
+  location: string | null;
+  field_path: string | null;
+  title: string;
+  current_text: string | null;
+  expected_text: string | null;
+  evidence: string | null;
+  verification: "verified" | "partially_verified" | "unverified";
+  source_refs: { label: string; url: string }[];
+  repeat_count: number;
+  status: QcFindingStatus;
+  status_note: string | null;
+  updated_at: string | null;
+}
+
+export interface QcReviewSummary {
+  id: number;
+  report_date: string;
+  run_no: number;
+  source: string;
+  reviewer: string | null;
+  report_status: string;
+  verdict: QcVerdict;
+  claude_verdict: QcVerdict | null;
+  overall_score: number;
+  criteria: QcCriterionScore[];
+  critical_count: number;
+  major_count: number;
+  minor_count: number;
+  jack_rule_score: number | null;
+  jack_rule_issue_count: number | null;
+  summary: string;
+  strengths: string[];
+  priorities: { rank: number; text: string; expected_gain: number | null }[];
+  created_at: string | null;
+  is_stale: boolean;
+  current_report_status?: string | null;
+}
+
+export interface QcReviewDetail extends QcReviewSummary {
+  body_markdown: string | null;
+  findings: QcFinding[];
+}
+
+export interface QcReportReviews {
+  report_date: string;
+  report_status: string;
+  latest: QcReviewDetail | null;
+  history: QcReviewSummary[];
+  auto_publish: { time: string | null; allowed: boolean; reason: string };
+  criteria: QcCriterionDef[];
+}
+
+export interface QcReviewListResponse {
+  total: number;
+  items: QcReviewSummary[];
+  criteria: QcCriterionDef[];
+}
+
+export interface QcReviewStats {
+  reports: number;
+  by_verdict: Record<QcVerdict, number>;
+  avg_score: number | null;
+  trend: { report_date: string; score: number; verdict: QcVerdict }[];
+  criteria_avg: { key: string; label: string; weight: number; avg: number | null }[];
+  recurring: { fingerprint: string; reports: number; title: string; criterion: string; section: string | null }[];
+}
+
+export interface QcAgentToken {
+  id: number;
+  name: string;
+  token_prefix: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface QcAgentTokensResponse {
+  items: QcAgentToken[];
+  routine_prompt: string;
+  auto_report_time: string;
+  auto_publish_time: string | null;
 }

@@ -1,0 +1,48 @@
+# Tham số tính chi phí CBAM / tấn sản phẩm (services/cbam_estimate.py::product_exposure) — admin cập nhật tay.
+# Phần khấu trừ = hệ số CBAM (tỷ lệ phân bổ miễn phí còn lại của năm) × CSCF × benchmark CBAM của mã CN.
+# Chi phí/t = (phát thải nộp − phần khấu trừ) × giá CBAM.
+# verified: false = số lấy từ nguồn thứ cấp, CHƯA đối chiếu văn bản gốc → báo cáo ghi rõ "cần đối chiếu".
+
+# Hệ số điều chỉnh liên ngành (CSCF) theo năm — 2026: 100% (Quyết định thực thi (EU) 2026/1862, 23/07/2026).
+cscf:
+  2026: 1.0
+
+# Mức cộng thêm (markup) khi dùng GIÁ TRỊ MẶC ĐỊNH của EC thay số liệu thực đã thẩm định (Quy định thực thi (EU) 2026/1740).
+default_markup:
+  2026: 0.10
+  2027: 0.20
+  2028: 0.30
+
+# Ngày đáo hạn hợp đồng EUA futures Dec theo năm (ICE Endex) — dùng để chốt câu "phiên đấu giá cuối quý so với đáo hạn"
+# trong sổ phòng hộ. Dec-26: 14/12/2026 (theo ICE; cần kiểm giờ chốt giao dịch ngày đáo hạn).
+futures_expiry:
+  2026: "2026-12-14"
+
+benchmark_source: "Benchmark CBAM theo mã CN — Quy định thực thi (EU) 2025/2620"
+benchmark_verified: false  # số dưới đây theo nguồn thứ cấp (cbamguide, landedmath) — cần đối chiếu Phụ lục của Quy định
+
+products:
+  # embedded = GIẢ ĐỊNH phát thải nộp (tCO2/t, chỉ phát thải trực tiếp) — thay bằng số thực đã thẩm định của SIM/khách hàng.
+  - key: aluminium_primary
+    cn: "7601"
+    embedded: 1.70
+    benchmark: 1.423
+  - key: steel_bf_bof
+    cn: "7208"
+    route: "BF-BOF"
+    embedded: 1.80
+    benchmark: 1.370  # đã gồm tiền chất (không phải benchmark gang lỏng ETS 1,288)
+
+# Ví dụ giá trị MẶC ĐỊNH theo xuất xứ (tCO2/t, trước markup) — nguồn thứ cấp, minh họa khoảng cách số thực ↔ mặc định.
+# Giá trị mặc định áp THEO NƯỚC XUẤT XỨ: khách của SIM là nhà máy Việt Nam nên số Trung Quốc/UAE chỉ là MINH HỌA, không dùng
+# tính tiết kiệm cho khách. Tra Phụ lục I Quy định thực thi (EU) 2026/1740 rồi thêm dòng origin: "Việt Nam" (vn: true).
+default_examples:
+  - key: aluminium_primary
+    origin: "UAE/Bahrain"
+    default_value: 1.870
+  - key: aluminium_primary
+    origin: "Trung Quốc"
+    default_value: 3.000
+  - key: steel_bf_bof
+    origin: "Trung Quốc"
+    default_value: 3.187

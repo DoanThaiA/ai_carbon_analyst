@@ -92,6 +92,12 @@ class Settings:
     # Crawl giá/tin vẫn chạy MỖI NGÀY; admin vẫn sinh tay được bất kỳ ngày nào.
     auto_report_days: str
 
+    # Luồng tự động (giờ VN, "HH:MM"): sinh bản NHÁP lúc auto_report_time → lịch Claude QC (08:00, cấu hình ở
+    # Claude, không ở đây) gửi biên bản qua MCP → tự xuất bản lúc auto_publish_time, CHỈ chặn khi biên bản QC mới
+    # nhất kết luận Không đạt (services/report_qc_review.py::publish_gate). auto_publish_time trống = tắt tự xuất bản.
+    auto_report_time: str = "07:45"
+    auto_publish_time: str = "08:10"
+
     # Khung giờ VN KHÔNG gửi email digest Hot News, dạng "22-6" (22:00 → trước 06:00;
     # trống = gửi mọi giờ). Bài hot news trong khung này dồn lại, gửi ở đợt crawl đầu tiên
     # sau khung — nên khung phải ngắn hơn hot_news_email_max_age_hours, nếu không bài cũ
@@ -165,6 +171,8 @@ class Settings:
             hot_news_email_batch_size=int(os.environ.get("HOT_NEWS_EMAIL_BATCH_SIZE", "100")),
             app_base_url=os.environ.get("APP_BASE_URL", "").rstrip("/"),
             auto_report_days=os.environ.get("AUTO_REPORT_DAYS", "tue-sat").strip().lower() or "tue-sat",
+            auto_report_time=os.environ.get("AUTO_REPORT_TIME", "07:45").strip() or "07:45",
+            auto_publish_time=os.environ.get("AUTO_PUBLISH_TIME", "08:10").strip(),
             hot_news_email_quiet_hours=os.environ.get("HOT_NEWS_EMAIL_QUIET_HOURS", "").strip(),
             report_pdf_email_enabled=os.environ.get("REPORT_PDF_EMAIL_ENABLED", "true").lower() == "true",
             crawl_lookback_hours=int(os.environ.get("CRAWL_LOOKBACK_HOURS", "36")),

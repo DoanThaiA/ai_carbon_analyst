@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     Text,
     UniqueConstraint,
     func,
@@ -590,11 +591,15 @@ class ApiToken(Base):
     __table_args__ = (
         UniqueConstraint("token_hash", name="uq_api_tokens_token_hash"),
         Index("idx_api_tokens_user_email", "user_email"),
+        CheckConstraint("scope IN ('user', 'qc_agent')", name="ck_api_tokens_scope"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_email: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    # 'user': token cá nhân (chỉ đọc, chỉ báo cáo published). 'qc_agent': admin tạo cho lịch Claude QC 08:00 —
+    # thêm quyền đọc bản NHÁP để QC và ghi biên bản (get_qc_assignment / submit_qc_review); không gắn với bảng users.
+    scope: Mapped[str] = mapped_column(Text, nullable=False, server_default="user")
     token_hash: Mapped[str] = mapped_column(Text, nullable=False)
     token_prefix: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -681,6 +686,99 @@ class ReportQCResult(Base):
 
     def __repr__(self) -> str:
         return f"ReportQCResult(id={self.id!r}, date={self.report_date!r}, status={self.status!r})"
+
+
+class ReportQcReview(Base):
+    """1 dòng = 1 biên bản QC báo cáo do Claude (vai Jack) chấm rồi gửi qua MCP (tool `submit_qc_review`, token
+    `scope='qc_agent'`) — luồng tự động: sinh nháp 07:45 → Claude QC 08:00 → tự xuất bản 08:10 (chặn khi
+    `verdict='fail'`). Xem services/report_qc_review.py (rubric, chuẩn hóa, tính điểm).
+
+    `overall_score` (thang 10) do SERVER tính lại từ `criteria` theo trọng số rubric, không lấy số Claude tự cộng.
+    `content_hash` = hash `reports.content` lúc Claude đọc bản nháp — lệch hash hiện tại nghĩa là báo cáo đã bị sửa
+    sau lần QC (API trả `is_stale`). `run_no` tăng dần theo từng báo cáo (QC lại không ghi đè lần trước)."""
+
+    __tablename__ = "report_qc_reviews"
+    __table_args__ = (
+        CheckConstraint("verdict IN ('pass', 'pass_with_fixes', 'fail')", name="ck_report_qc_reviews_verdict"),
+        CheckConstraint("source IN ('claude_mcp', 'admin_manual')", name="ck_report_qc_reviews_source"),
+        UniqueConstraint("report_date", "run_no", name="uq_report_qc_reviews_date_run"),
+        Index("ix_report_qc_reviews_report_date", "report_date"),
+        Index("ix_report_qc_reviews_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_date: Mapped[str] = mapped_column(
+        Text, ForeignKey("reports.report_date", ondelete="CASCADE"), nullable=False
+    )
+    run_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="claude_mcp")
+    reviewer: Mapped[Optional[str]] = mapped_column(Text)  # vd "Jack (claude-opus-5-5)"
+    token_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("api_tokens.id", ondelete="SET NULL"))
+    report_status: Mapped[str] = mapped_column(Text, nullable=False)  # trạng thái báo cáo lúc QC
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    verdict: Mapped[str] = mapped_column(Text, nullable=False)
+    claude_verdict: Mapped[Optional[str]] = mapped_column(Text)  # kết luận Claude tự đề xuất (trước khi server chuẩn hóa)
+    overall_score: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False)
+    # [{"key", "label", "weight", "score" (0–10), "comment"}] — đúng thứ tự rubric
+    criteria: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    critical_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    major_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    minor_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Jack rule-based (services/report_qc.py) chạy cùng lúc trên đúng bản nháp — để đối chiếu.
+    jack_rule_score: Mapped[Optional[int]] = mapped_column(Integer)
+    jack_rule_issue_count: Mapped[Optional[int]] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    strengths: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    # [{"rank", "text", "expected_gain"}]
+    priorities: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    body_markdown: Mapped[Optional[str]] = mapped_column(Text)  # biên bản đầy đủ Claude viết (hiển thị nguyên văn)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"ReportQcReview(id={self.id!r}, date={self.report_date!r}, run={self.run_no!r}, verdict={self.verdict!r})"
+
+
+class ReportQcFinding(Base):
+    """1 lỗi/nhận xét trong 1 biên bản QC. `fingerprint` (tiêu chí + mục + từ khóa tiêu đề đã chuẩn hóa) dùng để
+    đếm `repeat_count` — số báo cáo liên tiếp gần đây có cùng lỗi (bản chấm: "lỗi nhắc lần thứ 3")."""
+
+    __tablename__ = "report_qc_findings"
+    __table_args__ = (
+        CheckConstraint("severity IN ('critical', 'major', 'minor')", name="ck_report_qc_findings_severity"),
+        CheckConstraint(
+            "verification IN ('verified', 'partially_verified', 'unverified')", name="ck_report_qc_findings_verification"
+        ),
+        CheckConstraint("status IN ('open', 'fixed', 'wont_fix')", name="ck_report_qc_findings_status"),
+        Index("ix_report_qc_findings_review_id", "review_id"),
+        Index("ix_report_qc_findings_fingerprint", "fingerprint"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    review_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("report_qc_reviews.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    severity: Mapped[str] = mapped_column(Text, nullable=False)
+    criterion: Mapped[str] = mapped_column(Text, nullable=False)  # khoá rubric (report_qc_review.QC_CRITERIA)
+    section: Mapped[Optional[str]] = mapped_column(Text)  # "1" | "2" | "3" | "4" | "6" | "8" | "9" | "biz" | "forecast" | "cbam" | "general"
+    location: Mapped[Optional[str]] = mapped_column(Text)  # vị trí người đọc thấy, vd "Cần theo dõi #1", "trang 7"
+    field_path: Mapped[Optional[str]] = mapped_column(Text)  # đường dẫn JSON trong reports.content nếu xác định được
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    current_text: Mapped[Optional[str]] = mapped_column(Text)  # báo cáo đang viết
+    expected_text: Mapped[Optional[str]] = mapped_column(Text)  # nên sửa thành
+    evidence: Mapped[Optional[str]] = mapped_column(Text)  # phép tính / số đối chiếu DB / trích nguồn
+    verification: Mapped[str] = mapped_column(Text, nullable=False, server_default="unverified")
+    source_refs: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))  # [{"label","url"}]
+    fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    repeat_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
+    status_note: Mapped[Optional[str]] = mapped_column(Text)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    def __repr__(self) -> str:
+        return f"ReportQcFinding(id={self.id!r}, review={self.review_id!r}, severity={self.severity!r})"
 
 
 class CrawlSeenUrl(Base):

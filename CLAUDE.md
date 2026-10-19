@@ -89,8 +89,12 @@ duplicate never costs an API call:
    `client.messages.create`. Input text được cắt tại `MAX_TEXT_CHARS_FOR_CLASSIFICATION = 6000`
    ký tự (tăng từ 4000 — đủ bắt được phần phân tích của bài dài). LLM trả về JSON gồm
    `topics` (1–3 giá trị từ `NewsTopic`), `confidence` (0–1), và `is_relevant` (bool).
-   - `is_relevant=false`: LLM xác nhận bài không liên quan energy/carbon — pipeline
-     trả về `status="irrelevant"` và không lưu DB.
+   - `is_relevant=true` CHỈ khi bài tác động trực tiếp tới giá/cung/cầu EUA hoặc trực tiếp lên 1 yếu tố dẫn dắt EUA,
+     và LLM phải trả `eua_channel` thuộc `EUA_CHANNELS` (eua_direct, gas_eu, coal_eu, power_eu, industry_eu, oil_shock,
+     geopolitics_energy_eu, cbam; ngoại lệ hẹp vn_carbon / carbon_link cho Mục 4 + gợi ý SIM) — thiếu/sai kênh thì
+     `_parse_json_response` ép thành không liên quan.
+   - `is_relevant=false`: pipeline trả về `status="irrelevant"` và không lưu DB — kể cả tin nóng (không còn ngoại lệ lưu
+     tin nóng không liên quan; `is_hot_news` bị ép false khi không liên quan).
    - Parse JSON lenient: strip/lowercase từng topic trước validate — topic sai
      bị skip (log warning), không raise — tránh drop bài vì whitespace/casing.
    - Lỗi API sau retry: raise `ClassificationError`; pipeline log và skip storing
@@ -157,7 +161,7 @@ so a connection isn't held idle while awaiting the Claude API.
 **Lịch crawl** (`scheduler.py`): giá 06:00 VN; tin tức đầu mỗi giờ 08:00–17:00 MỌI ngày (nhóm `vietnam` thêm đợt 06:00 VN trước báo cáo 07:00), tách
 theo `news_crawl_sources.region` (`NEWS_CRAWL_SCHEDULES`): `vietnam` theo giờ VN, `international`
 theo giờ New York (`America/New_York`, tự theo giờ mùa hè Mỹ); mỗi job `max_instances=1` +
-`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report 07:00 VN. `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
+`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report NHÁP 07:45 VN (`AUTO_REPORT_TIME`), tự xuất bản 08:10 (`AUTO_PUBLISH_TIME`, xem "Biên bản QC Claude"). `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
 Để crawl hàng giờ không gọi LLM lặp lại, URL đã xử lý nhưng KHÔNG lưu thành article
 (irrelevant, ngoài cửa sổ ngày, trùng hash, extract/classify lỗi, link Bloomberg gốc) được
 ghi vào bảng `crawl_seen_urls` (`pipeline/crawl_pipeline.py::process_source` →
@@ -249,6 +253,21 @@ hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cá
 phải sửa cả bên kia. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
 
+**Biên bản QC Claude (MCP) + tự xuất bản** (`services/report_qc_review.py`, bảng `report_qc_reviews` + `report_qc_findings`,
+migration `a9e4c7b2d5f1`): 07:45 sinh nháp → 08:00 lịch Claude (routine NGOÀI repo, prompt `QC_ROUTINE_PROMPT` / MCP prompt
+`jack_qc_review`) dùng token `api_tokens.scope='qc_agent'` (admin tạo ở `/admin/qc-results`, không gắn bảng `users`, hạn
+`QC_AGENT_TOKEN_TTL_DAYS`) gọi `get_qc_assignment` (phiếu giao + `assignment_id` = `content_hash(content)` + Jack rule-based +
+lỗi biên bản trước; `part=` đọc JSON bản nháp) rồi `submit_qc_review` → 08:10 `scheduler.run_auto_publish_job` xuất bản +
+gửi email, CHỈ chặn khi biên bản mới nhất `verdict='fail'` (`publish_gate`, quy tắc C2: chưa có biên bản vẫn xuất bản; admin
+duyệt tay không bị chặn). Server KHÔNG tin số Claude: `overall_score` = Σ điểm × trọng số `QC_CRITERIA` (7 tiêu chí, tổng 100),
+`decide_verdict` chỉ nghiêm hơn Claude (điểm < `FAIL_SCORE` hoặc critical đã kiểm chứng → fail); `assignment_id` lệch nội dung
+hiện tại → từ chối; lỗi định dạng trả văn bản liệt kê đủ để Claude gửi lại. `fingerprint` lỗi → `repeat_count` trên
+`REPEAT_LOOKBACK_REPORTS` báo cáo trước. Token qc_agent: tool QC chỉ hiện với scope này (gateway `tools_for_token`, MCP HTTP
+list_tools theo token), tool neo ngày được đọc bản nháp, jack_qc chạy trên nháp; đây là đường GHI duy nhất của gateway. Chỉ
+admin xem: `api/routers/admin_qc_reviews.py`, tool Jenny `get_qc_review` (ADMIN_TOOLS). Frontend: nút "Kết quả QC" + panel
+`QcReviewPanel` ở `/admin/reports/[date]` CHỈ khi status `draft`; trang tổng hợp `/admin/qc-results` (+ `[id]`, quản lý token,
+prompt routine). Test: `tests/test_report_qc_review.py`.
+
 **Tự sửa số học/trình bày** (`services/report_consistency.py`, hàm thuần): cuối `generate_report_content` chạy
 `apply_consistency_fixes` trên toàn bộ văn xuôi (bỏ qua `SKIP_KEYS`): tính lại nhãn "X (±p% so với đóng cửa Y)" (và
 "±p% ≈ X" trong kịch bản EUA) → sửa nhãn, giữ mức giá; sửa "nửa trên/dưới biên độ A–B", "X (giữa biên)" theo vị trí thật;
@@ -259,7 +278,7 @@ thẻ CBAM) thay cho `hedge_note` từng kịch bản (bị xoá khi sinh; báo 
 mô phỏng đang mở (`forecast_review.open_trades`) + quyết định `keep|move|close` của LLM (`merge_open_positions`) — Jack
 `check_hedge_action`. Tin Mục 3 đánh số [N]; watchpoint "Cần theo dõi" không có `[N]`/`[giá]` bị xoá
 (`_resolve_section3_citations`), nguồn đã trích vào `content["3"].sources` → Mục 9. Mục 6 chia VIỆT NAM/QUỐC TẾ theo
-`about_vietnam` của bản tóm tắt (chủ đề bài), không theo region nguồn. Δ tuyệt đối ở bảng giá tính từ giá đóng cửa kỳ
+NƠI ĐĂNG (region của nguồn crawl), không theo chủ đề bài (quyết định 18/10/2026). Δ tuyệt đối ở bảng giá tính từ giá đóng cửa kỳ
 so sánh trong DB (`_comparison_closes`), không suy ngược từ % đã làm tròn.
 Cũng tự sửa/kiểm: số phiên tăng/giảm liên tiếp của EUA (`eua_streak`/`fix_streak_claims`; prompt nhận khối "CHUỖI PHIÊN"
 kèm khối lượng TỪNG phiên trong nhịp so TB 20 phiên — không kết luận cả nhịp chỉ từ phiên cuối), mục tiêu dạng
@@ -278,7 +297,7 @@ Mốc kỹ thuật có cả mục tiêu đo biên độ chiều xuống. Jack th
 chưa xảy ra khi Tổng hợp TRUNG LẬP) và `check_horizon_overlap` (kích hoạt trung hạn nằm trong cắt lỗ ngắn hạn) — cả 2 đi vào
 vòng tự sửa kịch bản; `derived_target_issues` báo nhãn % tính từ đóng cửa khi Entry là mức kích hoạt khác. Lịch Mục 8: sự
 kiện định kỳ mang `released_at` (giờ VN) — gắn kết quả nếu đã công bố trước lúc sinh báo cáo; giờ đấu giá EEX quy đổi giờ VN
-theo Europe/Berlin. `check_facts` chấp nhận số tự tính khi phép tính a/b, a×b hiện ngay trong câu.
+theo Europe/Berlin. `check_facts` chấp nhận số tự tính khi phép tính a/b, a×b hiện ngay trong câu. Cụm "(Nguồn: …)" luôn tách bằng `report_consistency.inline_source_spans` (đếm ngoặc cân bằng — tên hồ sơ như "COM(2026) 616" có ngoặc; KHÔNG dùng regex `[^)]+`); `check_facts` bỏ số trong mã văn bản (`LEGAL_DOC_ID_RE`) và đối chiếu số câu trích hồ sơ với chính nội dung hồ sơ yaml.
 **Phòng vệ CBAM — 1 nhãn**: `cbam_estimate.signal` (increase/hold/reduce) là nhãn DUY NHẤT, dùng chung thẻ CBAM và
 `content["3"].hedge_action` (`_finalize_hedge_fields` ghi đè nhãn LLM). Phần LÕI (≥ 100 − `TACTICAL_MAX_PCT`% phần chưa
 chốt) luôn bám lịch đấu giá (chi phí bám VWAP = giá CBAM, `hedge_core_text`); vùng giá/lệnh giới hạn chỉ cho phần chiến
@@ -289,7 +308,55 @@ suy luận MÔ HÌNH (không có dữ liệu sản lượng điện) + độ nh�
 tỷ lệ đặt mua/chào bán đấu giá chỉ so với lịch sử của chính hệ thống. Mục 6 luôn giữ bài đã trích ở mục khác. Chấm dự báo:
 mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, không vào tỷ lệ đúng).
 
-**Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định trang đầu (`content["2"].forecast_review`,
+**Sửa theo bản chấm 17/10/2026** (test: `tests/test_report_review_1710.py`):
+- Fuel switching: `fuel_fleet_thresholds` — dải giá EUA hòa vốn theo hiệu suất đội nhà máy (`FUEL_FLEET_GAS_EFF`/`_COAL_EFF`) +
+  NGƯỠNG THẬT (mức TTF/API2 làm đầu thấp dải = giá EUA). Còn xa (`fuel_threshold_far`) thì cấm điều kiện/watchpoint
+  "chênh ±X EUR/MWh" — Jack `check_fuel_thresholds` (phần kịch bản đi vào vòng tự sửa).
+- Kỹ thuật (`report_consistency`): `streak_momentum` + `fix_momentum_claims` (sửa "mức giảm thu hẹp dần" sai mẫu hình),
+  `session_signals` (cạn lực = biên ≤0,8 ATR VÀ KL ≤−20%; gap < `GAP_MIN_ATR` ATR là nhiễu) — Jack `check_technical_claims`;
+  40–60% biên = "vùng giữa", không gọi nửa trên/dưới; `fix_stray_quotes`; tiêu đề gốc Mục 6 không đổi dấu thập phân.
+- Khối "Theo dõi chính sách ETS/MSR": `get_ets_policy_news` quét tin chính sách `ETS_POLICY_LOOKBACK_DAYS` (21) ngày, tiếp
+  số [N] của Mục 3, LLM trả `content["3"].ets_policy` (frontend `EtsPolicyTable`; Jack không báo "tin cũ" cho nguồn khối này).
+- Mục 8: COT EUA ICE Endex (Thứ Tư) + `policy_calendar.yaml` (admin ghi ngày họp chính sách ĐÃ xác nhận); sự kiện đã tới giờ
+  công bố mà không lấy được số → `RELEASED_NO_DATA_OUTCOME` (không còn nằm ở "sắp tới").
+- Đấu giá: tỷ lệ đặt mua/chào bán so TB 90 ngày của CÙNG nền tảng; không suy cầu từ chênh giá khớp spot ↔ futures Dec.
+- Phòng hộ CBAM: lõi = MUA futures Dec ngay rồi BÁN rải theo lịch đấu giá còn lại (`hedge_structure_text`; mua EUA rải theo
+  lịch KHÔNG khóa được gì — Jack `_SCHEDULE_BUY_RE`); % lõi ghi theo khối lượng quý (`core_share_of_quarter_pct`);
+  `product_exposure` = chi phí CBAM/tấn sản phẩm theo GIẢ ĐỊNH `CBAM_PRODUCT_ASSUMPTIONS` × `CBAM_FREE_ALLOCATION_FACTOR`.
+- Kịch bản: `_enforce_scenario_rules` (đi ngang + lệnh phá biên → đổi chiều, xác suất Thấp; chưa có dữ liệu vị thế quỹ
+  `POSITIONING_DATA_AVAILABLE=False` → tối đa "Trung bình"); Jack `check_long_term_basis` (dài hạn không dùng đo biên độ 30
+  phiên/giá đóng cửa làm cận).
+- Gợi ý SIM: `METALS_LENS_RULE` + trường `kpi/owner` (ngắn hạn), `pilot/financials/kpi/owner` (dài hạn); Jack `BIZ_OFF_LENS`.
+  Nguồn: Jack `check_inline_attribution` (tên hãng tin trong câu ≠ bài trích, truyền thông nhà nước).
+- Lần chấm 2 (test `tests/test_report_review_1710_v2.py`): `ets_policy_dossiers.yaml` = hồ sơ ETS/MSR admin xác nhận, luôn đứng
+  đầu bảng chính sách và trích bằng `[HSk]`; "Cần theo dõi" tối đa `WATCH_MAX_ITEMS`, bỏ watchpoint lặp cùng nguồn; lịch đấu giá
+  đã áp dụng không vào bảng chính sách. Nhãn "Tổng hợp" phải khớp kịch bản ngắn hạn (Jack + vòng tự sửa). Phần chiến thuật CBAM
+  do `hedge_tactical_text` chốt ("hold" = không dùng; cấm so với ước tính giá CBAM — vòng). "KÊNH TTF → EUA DÙNG CHUNG" khi bão
+  hòa (Jack `check_ttf_channel`). Dài hạn cấm mục tiêu % tròn so với đóng cửa (`LONG_TERM_ROUND_PCT_RE`, tự thay bằng "chưa đủ cơ
+  sở định lượng"). Bảng chấm hiện ngày các báo cáo trong cửa sổ (`calibration_window`) + tỷ lệ lũy kế (`calibration_all`).
+  Mục 6: bài đã trích ở mục khác chỉ hiện tiêu đề + link (`cited_elsewhere`); `vietnam_considered`. TASS/RIA... bị bỏ khỏi
+  câu (`strip_state_media`) và khỏi chuỗi nguồn gốc.
+- Lần chấm 3: `cbam_products.yaml` (benchmark CBAM theo mã CN — QĐ thực thi (EU) 2025/2620, CSCF, markup giá trị mặc định,
+  ví dụ giá trị mặc định theo xuất xứ; số đang từ nguồn thứ cấp, `benchmark_verified: false`) → `product_exposure` khấu trừ =
+  hệ số CBAM × CSCF × benchmark + kịch bản giá trị mặc định. Phòng hộ ghi "% nghĩa vụ CBAM quý", hợp đồng Dec-yy + phiên đấu giá
+  cuối quý (`last_auction_date`). Hồ sơ yaml có `cbam_effect`/`structural` (dài hạn phải 2 nhánh; gợi ý SIM nhận
+  `_biz_policy_block`, trích nguồn "HSk" → `source_ref`). `policy_calendar.yaml` hỗ trợ `outcome`; Mục 8 bỏ bản LLM trùng họp
+  đã có. TB cover ratio 90 ngày loại chính phiên đang so. Bảng chấm ghi Đ/S từng báo cáo + `calibration_drift`. Cắt cứng: Tóm
+  tắt ≤ `EXEC_SUMMARY_MAX_BULLETS`, Diễn biến chính ≤ `KEY_DEV_MAX_ITEMS`, Cần theo dõi ≤ `WATCH_MAX_ITEMS` (4).
+- Lần chấm 4 (test `tests/test_report_review_1710_v3.py`): hồ sơ yaml có `kind` (event = sự kiện, không chiều riêng),
+  `mechanism`, `verified`; prompt có khối "CƠ CHẾ MSR" (nâng ngưỡng vô hiệu hóa / giảm chuyển vào MSR = NỚI cung) + Jack
+  `check_msr_direction`. Bảng chính sách hiển thị "Tác động lên giá EUA". Mẫu số lũy kế = báo cáo có kết luận Đúng/Sai
+  (`calibration_all_excluded` tách riêng), chấm lại toàn bộ theo quy tắc từ `SCORING_METHOD_SINCE`. Thẻ "Dự báo trước" CHỈ hiện
+  bảng + tỷ lệ cửa sổ 7 báo cáo + "Nguyên nhân & điều chỉnh" (lũy kế/chuẩn so sánh/quy tắc vẫn tính, chỉ dùng trong prompt).
+  Giá trị mặc định CBAM áp theo nước xuất xứ (số TQ/UAE = minh họa; `vn: true` khi admin thêm số VN). `futures_expiry` trong
+  cbam_products.yaml chốt câu đáo hạn Dec. Fuel: không có ngưỡng TTF chiều lên (Jack `_UPWARD_THRESHOLD_RE`). Mục 1 nhận
+  `_exec_policy_block` (bắt buộc bullet "Chính sách ETS"). `_trim_section3_blocks` bỏ "Quan điểm thị trường" chỉ lặp nguồn bảng
+  chính sách + gạch đầu dòng thừa. Mục 6 luôn có tóm tắt; bài nguồn VN về chính sách carbon VN/CBAM luôn giữ
+  (`_section6_must_keep`). Jack `check_facts` kiểm cả số trong Mục 3 với bài nguồn (`content["3"].sources`).
+- `frontend/messages/parts/*.json` đang CŨ hơn `vi.json`/`en.json` (đã sửa thẳng file gộp) — KHÔNG chạy
+  `scripts/merge-messages.mjs` khi chưa đồng bộ parts, sẽ mất key.
+
+**Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định ngay sau Phần 3 — Chi tiết tin tức (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
 chấm `REVIEW_MAX_REPORTS` báo cáo gần nhất có kịch bản ngắn hạn (còn trong `REVIEW_MAX_SESSIONS` phiên): %Δ EUA luỹ kế từ giá
 báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi biên độ phiên chạm vùng Entry, lệnh giới hạn mở gap qua vùng khớp tại giá mở;
@@ -302,8 +369,11 @@ dừng/giới hạn phân biệt bằng `strategy_levels.is_breakout_entry` (ch�
 chữ "trên" lẻ không tính); lệnh giới hạn khớp do mở gap thì xét cắt lỗ theo đáy/đỉnh của chính phiên đó; đủ N phiên chưa
 khớp là `expired` ngay. Bảng hiện MỌI báo cáo còn trong khung (`REVIEW_MAX_ITEMS`). Jack
 `check_forecast_review`: có dự báo SAI mà `vs_previous` trống → error, không nhắc ngày báo cáo sai → warning.
+Từ 18/10/2026: "đi ngang" chấm cả hành trình (`SIDEWAYS_PATH_MAX_PCT`), mỗi dòng có `graded_by` (trade/direction/path),
+`design_flaws` (R:R tại giá khớp < `MIN_RR`, cắt lỗ < `MIN_STOP_ATR` ATR — Jack đòi `vs_previous` nêu) và khối `baseline`
+(dự báo ngây thơ "luôn đi ngang"/"lặp chiều 5 phiên" trên cùng các báo cáo đã có kết luận; `_calibration` trả tuple).
 Tool chat/MCP: `get_forecast_scorecard` đọc nguyên khối này từ báo cáo published; `review_past_forecast` chấm 1 báo cáo bằng
-CHÍNH `forecast_review.evaluate_forecast` (khung `REVIEW_MAX_SESSIONS`) — không tự chấm riêng, để không trái với bảng trang đầu.
+CHÍNH `forecast_review.evaluate_forecast` (khung `REVIEW_MAX_SESSIONS`) — không tự chấm riêng, để không trái với bảng "Dự báo trước".
 
 **Nhãn nguồn tin**: `news_source_label` = nhà xuất bản thật (domain URL), KHÔNG ghi kèm nguồn cấu hình crawl (kênh thu tin,
 vd Bloomberg). Tóm tắt Mục 6 trả thêm `origin` (hãng gốc khi bài dẫn lại, vd "Zelenskyy told the FT" trên Politico) →
