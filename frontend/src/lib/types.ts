@@ -61,6 +61,9 @@ export interface CbamEstimate {
     benchmark_verified?: boolean;
     assumed: boolean;
   }[];
+  // Phiên đấu giá cuối quý + ngày đáo hạn futures Dec (cbam_products.yaml) — báo cáo từ 18/10/2026.
+  last_auction_date?: string | null;
+  futures_expiry?: string | null;
   last_auction: { date: string; platform: string; price: number; cover_ratio: number | null } | null;
   upcoming: { count: number; volume_mt: number; first_date: string | null; last_date: string | null } | null;
   prev_quarter: { quarter: string; vwap: number | null; official: number | null } | null;
