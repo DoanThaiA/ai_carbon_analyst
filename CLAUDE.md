@@ -299,7 +299,13 @@ chênh khí − than, ĐỐI XỨNG — khi than đã rẻ hơn khí rõ rệt (
 trung lập; giả định mô hình hiển thị cho người đọc ở `content["3"].fuel_model_note`. Crack spread gasoil kèm mức tuyệt
 đối + TB 60 phiên (`_crack_spread_history`) để không suy "biên giảm → hạ công suất" khi biên vẫn rất cao.
 "Diễn biến chính" `impact` = chiều RÒNG lên EUA (không phải hợp đồng năng lượng), prompt nhận khối fuel switching; Jack báo
-tiền đề "chuyển sang than → EUA tăng" khi đã bão hòa. Prompt Mục 2/3 nhận kết quả đấu giá EEX gần nhất
+tiền đề "chuyển sang than → EUA tăng" khi đã bão hòa.
+Từ 20/10/2026: khung `eua_causal_chains.FUEL_SWITCHING` có bước (0) BẮT BUỘC xác định VÙNG (bão hòa / sát hòa vốn / khí rẻ hơn)
+trước nhánh (1)/(2)/(5) — POWER_EUA_TWO_WAY (a), OIL_GASOIL (1), GEOPOLITICS (a), WEATHER, RELATIVE_FUEL_ECONOMICS,
+CONFLICT_RESOLUTION đều điều kiện theo vùng (hedge theo SẢN LƯỢNG, giá điện không quyết định nhiên liệu đốt). Jenny chat nhận
+vùng qua `fuel_regime_brief` (dòng "TRẠNG THÁI FUEL SWITCHING" trong get_market_prices + get_report_section Mục 2). Jack
+`check_coal_switch_premise` quét Mục 1/Phân tích/instrument_notes/kịch bản/biz (Mục 3 đi vào vòng tự sửa); `check_fuel_direction`
+thêm "điện Đức tăng" (không do RES/phụ tải) và "than cạnh tranh hơn" ở cột tăng. Test: `tests/test_fuel_switching_saturation.py`. Prompt Mục 2/3 nhận kết quả đấu giá EEX gần nhất
 (`_latest_auction_summary`). ATR = TB True Range 14 phiên (`report_consistency.atr_true_range`, dùng chung bộ sinh + Jack).
 Mốc kỹ thuật có cả mục tiêu đo biên độ chiều xuống. Jack thêm `check_scenario_basis` (trung/dài hạn có chiều chỉ dựa ngưỡng
 chưa xảy ra khi Tổng hợp TRUNG LẬP) và `check_horizon_overlap` (kích hoạt trung hạn nằm trong cắt lỗ ngắn hạn) — cả 2 đi vào

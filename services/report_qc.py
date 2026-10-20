@@ -528,6 +528,9 @@ _API2_DOWN_RE = re.compile(r"(API ?2|giá than|than ARA)[^.;\n]{0,40}?(giảm|h�
 _GAS_MENTION_RE = re.compile(r"TTF|khí|chênh|spread", re.IGNORECASE)
 
 
+_POWER_UP_RE = re.compile(r"(điện Đức|giá điện|DEBY1?)[^.;\n]{0,50}?(tăng|leo|bật|đẩy lên|cao hơn|nhích)", re.IGNORECASE)
+# Điện tăng vì cần THÊM điện nhiệt (lượng phát thải tăng) — hợp lệ ở mọi vùng chuyển đổi.
+_THERMAL_VOLUME_RE = re.compile(r"\bRES\b|gió|mặt trời|nắng|thủy điện|hạt nhân|phụ tải|nhu cầu điện|lặng gió|rét|nắng nóng", re.IGNORECASE)
 _TTF_UP_RE = re.compile(r"(TTF|giá khí|khí đốt|nguồn cung khí)[^.;\n]{0,50}?(tăng|leo|đẩy lên|cao hơn|rủi ro|gián đoạn)", re.IGNORECASE)
 _SPREAD_RE = re.compile(r"chênh|spread", re.IGNORECASE)
 _WIDEN_RE = re.compile(r"mở rộng|nới rộng|tăng lên|widen", re.IGNORECASE)
@@ -571,6 +574,13 @@ def check_fuel_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
             elif side == "bullish" and saturated and _TTF_UP_RE.search(text) and not _SPREAD_RE.search(text):
                 _add(side, i, text, f"than đã rẻ hơn khí rõ rệt (chênh ≈ {state['spread']:+.0f} EUR/MWh, chuyển đổi bão hòa) — "
                                     "TTF tăng/rủi ro cung khí không còn nâng cầu EUA qua fuel switching")
+            elif side == "bullish" and saturated and _POWER_UP_RE.search(text) and not _THERMAL_VOLUME_RE.search(text):
+                _add(side, i, text, f"chuyển đổi khí→than đã bão hòa (chênh ≈ {state['spread']:+.0f} EUR/MWh) — điện Đức tăng đồng "
+                                    "pha nhiên liệu không đổi lượng phát thải; chỉ điện tăng vì THÊM điện nhiệt (RES thấp, phụ tải "
+                                    "cao, thiếu hạt nhân/thủy điện) mới hỗ trợ cầu EUA")
+            elif side == "bullish" and saturated and _COAL_FAVOURED_RE.search(text) and not _SATURATION_ACK_RE.search(text):
+                _add(side, i, text, f"than đã đứng trước khí trong thứ tự huy động (chênh ≈ {state['spread']:+.0f} EUR/MWh) — "
+                                    "\"chuyển sang than/than cạnh tranh hơn\" không còn tạo thêm cầu EUA")
     if saturated:
         for i, d in enumerate((content.get("2") or {}).get("key_developments") or []):
             text = str(d.get("text") or "") if isinstance(d, dict) else ""
@@ -650,6 +660,64 @@ def check_ttf_channel(content: Dict[str, Any]) -> List[Dict[str, str]]:
                     "scenario", section, "warning",
                     f"Kênh TTF → EUA không thống nhất: \"{m.group(0)[:80]}\" — khi chuyển đổi đã bão hòa, chi phí/phòng hộ không "
                     "đổi lượng cầu EUA; kênh duy nhất là công nghiệp cắt sản lượng (nghiêng giảm, cần tin xác nhận).", path,
+                ))
+                break
+    return issues
+
+
+# Tiền đề "TTF/điện Đức tăng → chuyển sang than → cầu EUA tăng" (bản chấm 20/10/2026): khi chuyển đổi khí→than đã bão hòa
+# thì vế đầu không dẫn tới vế sau. Bắt theo CÂU: có tác nhân khí/điện tăng + dịch sang than (hoặc "than cạnh tranh hơn") +
+# kết luận EUA tăng/được hỗ trợ — câu tự phủ định ("không còn", "bão hòa", "trung lập") là câu ĐÚNG, bỏ qua.
+_GAS_POWER_UP_RE = re.compile(
+    r"(?:TTF|giá khí|khí đốt|\bgas\b|LNG|nguồn cung khí|điện Đức|giá điện|DEBY1?)[^.;\n]{0,50}?"
+    r"(?:tăng|leo|bật|đẩy lên|cao hơn|nhích|vọt|↑|rủi ro|gián đoạn|thiếu)"
+    r"|(?:rủi ro|gián đoạn|thiếu hụt|cắt giảm)\s+(?:nguồn cung\s+)?(?:khí|LNG|\bgas\b|TTF)",
+    re.IGNORECASE,
+)
+_COAL_FAVOURED_RE = re.compile(
+    r"(?:chuyển|dịch|dispatch|huy động|quay)[^.;\n]{0,25}?(?:sang|về|thêm)\s+(?:điện\s+|nhà máy\s+)?than"
+    r"|than\s+(?:cạnh tranh|rẻ)\s+hơn|đốt\s+(?:thêm|nhiều)\s+than|điện than\s+tăng",
+    re.IGNORECASE,
+)
+_EUA_UP_CLAIM_RE = re.compile(
+    r"(?:cầu|nhu cầu)\s+(?:mua\s+)?EUA\s*(?:tăng|↑|cao hơn)|(?:hỗ trợ|đỡ|nâng|kéo)\s+(?:giá\s+|cầu\s+|nhu cầu\s+)?EUA"
+    r"|EUA\s*(?:tăng|↑)|phát thải\s*(?:tăng|↑)",
+    re.IGNORECASE,
+)
+_SATURATION_ACK_RE = re.compile(r"bão hòa|không còn|không tạo thêm|không (?:đổi|làm)|trung lập|chưa đủ|không phải", re.IGNORECASE)
+
+
+def _coal_switch_premise(line: str) -> bool:
+    return bool(
+        _GAS_POWER_UP_RE.search(line) and _COAL_FAVOURED_RE.search(line) and _EUA_UP_CLAIM_RE.search(line)
+        and not _SATURATION_ACK_RE.search(line)
+    )
+
+
+def check_coal_switch_premise(content: Dict[str, Any], section3_only: bool = False) -> List[Dict[str, str]]:
+    """Khi than đã rẻ hơn khí rõ rệt (chuyển đổi bão hòa theo mô hình chi phí biên), MỌI câu dùng chuỗi "TTF/điện Đức tăng
+    → chuyển sang than → cầu EUA tăng" là sai tiền đề — check_fuel_direction chỉ quét động lực Mục 2 + Diễn biến chính, đây
+    quét phần còn lại (Mục 1, Phân tích, instrument_notes, kịch bản, gợi ý SIM). `section3_only` cho vòng tự sửa Mục 3."""
+    state = fuel_spread_state((content.get("2") or {}).get("prices") or [])
+    if not (state and state["spread"] > FUEL_NEAR_BREAKEVEN):
+        return []
+    targets = [t for t in _report_texts(content) if not t[1].startswith(("2.key_developments", "2.market_drivers"))]
+    for i, sc in enumerate((content.get("3") or {}).get("trading_scenarios") or []):
+        if isinstance(sc, dict):
+            for k in ("condition", "key_risk", "trading_strategy"):
+                targets.append(("3", f"3.trading_scenarios[{i}].{k}", str(sc.get(k) or "")))
+    if section3_only:
+        targets = [t for t in targets if t[1].startswith("3.")]
+    issues = []
+    for section, path, text in targets:
+        for line in re.split(r"(?<=[.;])\s+|\n", text):
+            if _coal_switch_premise(line):
+                issues.append(_issue(
+                    "scenario", section, "error",
+                    f"Tiền đề sai \"TTF/điện tăng → chuyển sang than → cầu EUA tăng\": than đã rẻ hơn khí rõ rệt (chênh khí − than "
+                    f"≈ {state['spread']:+.0f} EUR/MWh, chuyển đổi khí→than đã bão hòa) nên TTF/điện Đức tăng là TRUNG LẬP với cầu "
+                    f"EUA — chỉ TTF giảm về ≈ {_fmt(state['ttf_first_switch'])} EUR/MWh mới đổi thứ tự huy động: "
+                    f"\"{line.strip()[:110]}\"", path,
                 ))
                 break
     return issues
@@ -2285,7 +2353,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             + check_scenario_basis(content) + check_horizon_overlap(content) + check_breakout_levels(content)
             + check_legislation_claims(content) + check_fact_tags(content)
             + check_fuel_thresholds(content) + check_long_term_basis(content) + check_technical_claims(content)
-            + check_ttf_channel(content) + check_msr_direction(content)
+            + check_ttf_channel(content) + check_coal_switch_premise(content) + check_msr_direction(content)
         ),
         "source": check_sources(content, known_urls, article_meta, stale_before, policy_stale_before) + check_inline_attribution(content),
         "fact": check_facts(content, article_texts),

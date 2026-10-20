@@ -35,6 +35,7 @@ from services.report_generator import (
     EUA_VOLUME_SESSIONS_FOR_AVG,
     EUA_VOLUME_SPIKE_PCT,
     EUA_VOLUME_DROP_PCT,
+    fuel_regime_brief,
 )
 
 logger = logging.getLogger(__name__)
@@ -287,7 +288,7 @@ async def _tool_market_prices_text(session: AsyncSession, target_date: str, requ
     else:
         date_note = ""
     return (
-        f"{date_note}\n{prices_text}\n"
+        f"{date_note}\n{prices_text}\n{fuel_regime_brief(prices)}\n"
         f"LƯU Ý: hệ thống có dữ liệu giá thật cho {TRACKED_INSTRUMENTS_LABEL}, "
         "và giá tham chiếu CBAM Certificate (EUR/tCO2, chốt theo quý, KHÔNG có Δ ngày/Δ tuần — hỏi 'giá CBAM' "
         "thì trả lời đúng con số CBAM ở trên kèm ngày chốt/ghi chú, KHÔNG nói hệ thống không theo dõi CBAM, "
@@ -514,6 +515,7 @@ def _format_section2(sec: dict) -> str:
     extra = "".join(
         f"\n\n{block}" for block in (
             f"Ghi chú bảng giá:\n{notes}" if notes else "",
+            fuel_regime_brief(sec.get("prices") or []) if sec.get("prices") else "",
             _format_cbam_estimate(sec.get("cbam_estimate")) if sec.get("cbam_estimate") else "",
             _format_forecast_review(sec.get("forecast_review")) if sec.get("forecast_review") else "",
         ) if block
@@ -1490,7 +1492,9 @@ trong câu trả lời cho người dùng — chỉ dùng nội bộ để suy l
 
 {gb("INFERENCE_RULES", overrides)}
 
-FUEL SWITCHING — chuỗi logic quan trọng nhất (luôn áp dụng):
+FUEL SWITCHING — chuỗi logic quan trọng nhất (luôn áp dụng, BẮT ĐẦU từ bước (0) xác định vùng — số liệu vùng nằm ở dòng
+"TRẠNG THÁI FUEL SWITCHING" trong kết quả get_market_prices / get_report_section Mục 2; câu hỏi về chiều tác động của
+TTF/than/điện Đức lên EUA mà chưa có dòng này thì gọi get_market_prices trước khi kết luận):
 {gb("FUEL_SWITCHING", overrides)}
 
 KHUNG CHI TIẾT THEO KÊNH — KHÔNG có sẵn ở đây, tra bằng tool get_eua_framework(blocks=[...]) khi câu hỏi

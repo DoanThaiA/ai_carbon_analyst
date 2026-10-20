@@ -2086,6 +2086,48 @@ def _fleet_threshold_line(st: Dict[str, Any]) -> str:
     return text
 
 
+def fuel_regime(state: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Vùng chuyển đổi nhiên liệu theo chênh khí − than: "saturated" (than rẻ hơn rõ rệt — TTF tăng thêm không tạo thêm
+    điện than), "near" (sát hòa vốn — chuỗi giá tương đối áp dụng), "gas_cheaper" (khí rẻ hơn rõ rệt); None = thiếu giá."""
+    if not state:
+        return None
+    if state["spread"] > FUEL_NEAR_BREAKEVEN:
+        return "saturated"
+    return "near" if state["spread"] >= -FUEL_NEAR_BREAKEVEN else "gas_cheaper"
+
+
+def fuel_regime_brief(prices: List[Dict]) -> str:
+    """Bản rút gọn của _fuel_switching_spread_summary cho Jenny chat (tool get_market_prices / get_report_section Mục 2) —
+    khung FUEL_SWITCHING bắt Jenny xác định VÙNG trước khi suy luận "TTF tăng → ...", nhưng chat không có khối spread."""
+    st = fuel_spread_state(prices)
+    regime = fuel_regime(st)
+    if not regime:
+        return ("TRẠNG THÁI FUEL SWITCHING: thiếu giá TTF/API2/EUA — không xác định được vùng chuyển đổi; chỉ nêu chiều "
+                "theo %Δ kèm \"chưa tính spread\", KHÔNG mặc định \"TTF tăng → chuyển sang than → cầu EUA tăng\".")
+    head = (f"TRẠNG THÁI FUEL SWITCHING (ước tính theo mô hình chi phí biên, CCGT {FUEL_GAS_EFF:.0%}/than {FUEL_COAL_EFF:.0%}): "
+            f"chênh chi phí phát điện khí − than ≈ {_vn_num(st['spread'], 0, sign=True)} EUR/MWh")
+    rng = st.get("switch_range")
+    if rng and rng[0] is not None:
+        head += f", giá EUA hòa vốn theo đội nhà máy ≈ {_vn_num(rng[0], 0)}–{_vn_num(rng[1], 0)} EUR/t (EUA {_vn_num(st['eua'])})"
+    if regime == "saturated":
+        body = (
+            "→ chuyển đổi khí→than ĐÃ BÃO HÒA: than đã đứng trước khí trong thứ tự huy động, nên TTF tăng / điện Đức tăng "
+            "đồng pha nhiên liệu / rủi ro cung khí TRUNG LẬP với cầu EUA (không tạo thêm điện than; chi phí/phòng hộ cao hơn "
+            "không đổi lượng cầu EUA) — TUYỆT ĐỐI KHÔNG suy luận \"TTF/điện Đức tăng → chuyển sang than → cầu EUA tăng\". "
+            f"Kênh còn hiệu lực: TTF GIẢM về ≈ {_vn_num(st['ttf_first_switch'], 1)} EUR/MWh "
+            f"({_vn_num(st['ttf_first_move_pct'], 0, sign=True)}%) mới bắt đầu dispatch sang khí → áp lực giảm EUA; TTF tăng kéo "
+            "dài → công nghiệp cắt sản lượng → cầu EUA giảm (chỉ khi có tin xác nhận); RES thấp/phụ tải cao → thêm điện nhiệt "
+            "→ cầu EUA tăng."
+        )
+    elif regime == "near":
+        body = ("→ SÁT điểm hòa vốn: dispatch nhạy với giá — TTF tăng/API2 giảm → than cạnh tranh hơn → cầu EUA tăng; TTF "
+                "giảm/API2 tăng → cầu EUA giảm.")
+    else:
+        body = ("→ khí rẻ hơn than rõ rệt: TTF giảm/API2 tăng thêm không đổi thứ tự (trung lập); chỉ TTF tăng mạnh/API2 giảm "
+                "mạnh kéo chênh về 0 mới hỗ trợ cầu EUA.")
+    return f"{head} {body}"
+
+
 def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
     """Chi phí phát điện biên (EUR/MWh điện) của than và khí gồm cả chi phí EUA, và giá EUA
     hòa vốn chuyển đổi (switching price) — tính từ TTF, API2, EUA có trong bảng giá.
@@ -3384,11 +3426,11 @@ B. "analysis_blocks": mảng gồm "heading" và "content". Heading "Phân tích
       ĐỘ DÀI RIÊNG CHO HEADING NÀY: KHÔNG áp dụng giới hạn 1–2 câu của "QUY TẮC ĐỘ DÀI CHUNG" ở trên (mỗi gạch có thể dài hơn 2 câu nếu cần đủ Δ ngày/Δ tuần + kết luận), NHƯNG PHẢI súc tích, trực diện theo đúng "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên — không câu mở đầu/đệm/chuyển tiếp thừa, không lặp lại nguyên văn nội dung đã nêu ở "instrument_notes" (chỉ nhắc lại khi trực tiếp làm căn cứ cho kết luận trong chính câu đó), và KHÔNG diễn giải lại từng bước cơ chế/logic suy luận.
       QUY TẮC SUY LUẬN NỘI BỘ CHO NHÓM 1 (Năng lượng & nhiên liệu hóa thạch) — áp dụng cho MỌI mã/sự kiện đã có ghi chú ở "instrument_notes" nhóm này để XÁC ĐỊNH đúng chiều/mức độ tác động (đây là cơ sở suy luận NỘI BỘ, không phải văn mẫu để chép lại nguyên văn vào "content" — xem "NGUYÊN TẮC TRÌNH BÀY BẮT BUỘC" ở trên). LƯU Ý: tên chuỗi/nhánh viết HOA bên dưới (FUEL_SWITCHING, POWER_EUA_TWO_WAY, OIL_GASOIL, GEOPOLITICS_SUPPLY_CHAIN, "nhánh (a)"...) CHỈ để bạn xác định ĐÚNG cơ chế cần áp dụng — TUYỆT ĐỐI KHÔNG chép các tên này, và TUYỆT ĐỐI KHÔNG diễn giải lại các bước (i)-(v) này bằng lời trong "content"; "content" chỉ chứa SỐ LIỆU + KẾT LUẬN đã áp dụng đúng các bước này, không mô tả quá trình suy luận:
         (i) ĐỐI CHIẾU KHUNG THỜI GIAN: so Δ ngày VÀ Δ tuần của chính mã đó. ĐỒNG THUẬN (cùng chiều) → xác nhận xu hướng bền vững, đủ cơ sở kết luận dứt khoát chiều tác động EUA. MÂU THUẪN (trái chiều) → nêu rõ đây là tín hiệu ngắn hạn/chưa đủ mạnh, cần thêm phiên xác nhận, KHÔNG được chốt chiều tác động EUA dứt khoát.
-        (ii) GAS/THAN → áp dụng FUEL_SWITCHING: đây là cơ chế GIÁ TƯƠNG ĐỐI, không phải giá tuyệt đối của riêng 1 nhiên liệu — Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than. BẮT BUỘC dựa vào khối "SPREAD THAN–KHÍ" đã tính sẵn: nếu than đã rẻ hơn khí rõ rệt (chênh dương lớn, không có điểm hòa vốn) thì chuyển đổi nhiên liệu có thể đã chạm trần → tác động BIÊN của TTF tăng thêm lên cầu EUA yếu (chỉ qua chi phí/hedge) và còn có kênh ngược (công nghiệp cắt sản lượng → cầu EUA giảm); khi đó KHÔNG xếp "TTF tăng" là động lực tăng (ở BẤT KỲ đâu trong mục này, kể cả "Cần theo dõi"/kịch bản). Than dùng cho fuel switching EU là API2 (CIF ARA) — API4 (Richards Bay)/NEWC là chuẩn châu Á, KHÔNG dùng làm căn cứ dispatch EU. Ghi con số là "ước tính theo mô hình chi phí biên" (KHÔNG ghi "ước tính thô"/"chưa kiểm chứng"); vẫn chưa có vị thế quỹ/đấu giá EEX/MSR nên KHÔNG chốt hướng dứt khoát chỉ từ tương quan 1 tuần.
+        (ii) GAS/THAN → áp dụng FUEL_SWITCHING, BƯỚC ĐẦU TIÊN là đọc "KẾT LUẬN DÙNG CHUNG" của khối "SPREAD THAN–KHÍ" để biết đang ở VÙNG nào — chỉ SAU đó mới chọn chiều: (1) "ĐÃ BÃO HÒA" (than đã rẻ hơn khí rõ rệt) → TTF tăng, điện Đức tăng đồng pha nhiên liệu, rủi ro cung khí, API2 tăng/giảm nhẹ, chênh mở rộng đều TRUNG LẬP với cầu EUA qua kênh này (than đã đứng trước khí trong thứ tự huy động, TTF tăng thêm KHÔNG tạo thêm điện than) — TUYỆT ĐỐI KHÔNG viết "TTF/điện Đức tăng → chuyển sang than → cầu EUA tăng" hay "than cạnh tranh hơn → hỗ trợ EUA"; chỉ còn chiều XUỐNG (TTF về NGƯỠNG THẬT) và kênh ngược công nghiệp cắt sản lượng (cần tin xác nhận); (2) "SÁT điểm hòa vốn" → mới áp chuỗi giá tương đối: Gas tăng (than không đổi/tăng ít hơn) → than cạnh tranh hơn → dispatch dịch sang than → phát thải & cầu EUA tăng; Gas giảm HOẶC Than tăng (2 tín hiệu CÙNG CHIỀU, không phải trái chiều) → gas cạnh tranh hơn → dispatch dịch sang gas → phát thải & cầu EUA giảm; (3) "khí rẻ hơn than rõ rệt" → theo đúng kết luận của khối. TUYỆT ĐỐI KHÔNG suy luận "than tăng → đốt than nhiều hơn" (sai chiều kinh tế — giá than tăng một mình làm than kém cạnh tranh hơn, không phải được đốt nhiều hơn); chỉ kết luận than được đốt nhiều hơn khi tin tức xác nhận rõ nguyên nhân khác (gas gián đoạn, RES thấp, sự cố hạ tầng) khiến cầu than tăng kéo giá than tăng theo, không suy đoán từ riêng chiều giá than. Ở vùng (1), KHÔNG xếp "TTF tăng" là động lực tăng ở BẤT KỲ đâu trong mục này (kể cả "Cần theo dõi"/kịch bản/điều kiện kích hoạt), và chi phí phát điện/phòng hộ cao hơn KHÔNG phải kênh đỡ EUA (theo "KÊNH TTF → EUA DÙNG CHUNG"). Than dùng cho fuel switching EU là API2 (CIF ARA) — API4 (Richards Bay)/NEWC là chuẩn châu Á, KHÔNG dùng làm căn cứ dispatch EU. Ghi con số là "ước tính theo mô hình chi phí biên" (KHÔNG ghi "ước tính thô"/"chưa kiểm chứng"); vẫn chưa có vị thế quỹ/đấu giá EEX/MSR nên KHÔNG chốt hướng dứt khoát chỉ từ tương quan 1 tuần.
         (iii) ĐIỆN ĐỨC (DEBY1) → áp dụng ĐÚNG nhánh (a) của POWER_EUA_TWO_WAY: nếu DEBY1 biến động đồng pha với gas/than → kết luận điện tăng do chi phí nhiên liệu cao hơn; lượng EUA utility phòng hộ theo SẢN LƯỢNG đã bán, không tăng chỉ vì giá điện/khí tăng — khi khối SPREAD THAN–KHÍ ghi "ĐÃ BÃO HÒA" thì điện tăng đồng pha nhiên liệu là TRUNG LẬP với cầu EUA (theo "KÊNH TTF → EUA DÙNG CHUNG"), KHÔNG viết "duy trì/tăng nhu cầu phòng hộ EUA" — kênh hedge/chi phí này TÁCH BIỆT với việc thực tế đốt nhiên liệu nào, KHÔNG gộp chung "than+điện cùng tăng" thành kết luận "đốt than nhiều hơn". CHỈ được quy nguyên nhân "RES thấp" khi có dữ liệu/tin tức THỰC SỰ xác nhận RES thấp trong ngày — nếu KHÔNG có dữ liệu RES, PHẢI nêu rõ "không có dữ liệu RES trong ngày để xác nhận nhánh này" thay vì mặc định suy diễn.
         (iv) DẦU/GASOIL → áp dụng OIL_GASOIL: đối chiếu Δ ngày/Δ tuần của Brent/WTI theo đúng bước (i) trước khi kết luận fuel switching qua kênh dầu-khí (mâu thuẫn giữa 2 khung thời gian → tín hiệu ngắn hạn chưa đủ mạnh, cần thêm phiên xác nhận, chưa kết luận). Gasoil crack spread thu hẹp/mở rộng → nêu tác động lên cầu diesel/công nghiệp nặng và cầu EUA từ kênh công nghiệp đó, tách riêng khỏi kết luận fuel switching qua gas.
         (v) ĐỊA CHÍNH TRỊ — có 2 kênh TÁCH BIỆT trong GEOPOLITICS_SUPPLY_CHAIN, phải xác định đúng kênh trước khi suy luận:
-            - Xung đột/sanctions/OPEC+/gián đoạn năng lượng vật lý (Trung Đông/Nga/Iran/Venezuela, eo biển vận chuyển...) → áp dụng ĐÚNG nhánh (a), BẮT BUỘC đi qua đủ bước cung → giá gas/dầu trước khi vào kết luận EUA: nếu Δ tuần của gas/dầu CHƯA xác nhận xu hướng tăng do sự kiện đó (vd giá dầu tuần vẫn giảm), CHỈ được ghi nhận đây là "rủi ro cung/giá tiềm ẩn", TUYỆT ĐỐI KHÔNG kết luận thẳng sự kiện địa chính trị đã đẩy tăng cầu EUA khi thiếu xác nhận giá.
+            - Xung đột/sanctions/OPEC+/gián đoạn năng lượng vật lý (Trung Đông/Nga/Iran/Venezuela, eo biển vận chuyển...) → áp dụng ĐÚNG nhánh (a), BẮT BUỘC đi qua đủ bước cung → giá gas/dầu trước khi vào kết luận EUA: nếu Δ tuần của gas/dầu CHƯA xác nhận xu hướng tăng do sự kiện đó (vd giá dầu tuần vẫn giảm), CHỈ được ghi nhận đây là "rủi ro cung/giá tiềm ẩn", TUYỆT ĐỐI KHÔNG kết luận thẳng sự kiện địa chính trị đã đẩy tăng cầu EUA khi thiếu xác nhận giá. Kể cả khi giá khí ĐÃ tăng, bước "giá khí tăng → chuyển sang than → cầu EUA tăng" CHỈ đúng khi khối SPREAD THAN–KHÍ KHÔNG ghi "ĐÃ BÃO HÒA"; bão hòa → sự kiện làm khí tăng là TRUNG LẬP với EUA qua kênh nhiên liệu.
             - Thay đổi chính phủ/định hướng chính sách khí hậu/quyết định thương mại quốc tế (KHÔNG phải gián đoạn năng lượng vật lý) → áp dụng ĐÚNG nhánh (b), đi qua kênh kỳ vọng thị trường/hoạt động công nghiệp, KHÔNG bắt buộc đi qua bước giá gas/dầu như nhánh (a) — CHỈ nêu khi tin tức nêu rõ sự kiện và hướng tác động cụ thể, không suy diễn chung chung.
       GỘP GAS–THAN–ĐIỆN ĐỨC THÀNH 1 GẠCH DUY NHẤT: khi Gas (TTF), Than (Newcastle/API2) và Điện Đức (DEBY1) CÙNG có ghi chú ở "instrument_notes" Nhóm 1 và cơ chế fuel-switching/POWER_EUA_TWO_WAY thực sự áp dụng được (theo bước (ii)/(iii) ở trên) — KHÔNG viết 3 gạch đầu dòng riêng cho từng mã, mà GỘP thành ĐÚNG 1 gạch đầu dòng duy nhất "**Fuel switching (Gas–Than–Điện Đức):**", nêu Δ ngày/Δ tuần của cả 3 mã thật ngắn gọn (lấy từ "DỮ LIỆU GIÁ") rồi đi thẳng tới 1 kết luận chiều dispatch và tác động EUA — không diễn giải lại cơ chế giá tương đối. Mã nào không có tin/giá đáng chú ý thì bỏ qua khỏi gạch này; nếu chỉ 1-2 trong 3 mã có mặt thì viết riêng như các mã khác trong Nhóm 1, không ép gộp.
       QUY TẮC NHÓM: CHỈ phân tích nhóm nào ĐÃ có ghi chú ở "instrument_notes" (nhóm không có ghi chú thì cũng không có gì để phân tích ở đây — bỏ qua tương ứng). SAU KHI áp BỘ LỌC BẮT BUỘC ở trên, nếu 1 nhóm không còn yếu tố nào có tác động thực → BỎ QUA HOÀN TOÀN nhóm đó ở "Phân tích" (không viết dòng "Tên nhóm:" cho nhóm đó), kể cả khi nhóm đó có ghi chú ở "instrument_notes".
@@ -3711,8 +3753,8 @@ def _scenario_math_issues(sec3: Dict[str, Any], chart_data: List[Dict], prices: 
     """Lỗi số học của "trading_scenarios" (R:R, điều kiện ↔ Entry, cắt lỗ sát đáy/đỉnh phiên, sai
     phía) — dùng ĐÚNG bộ kiểm tra của Jack QC (services/report_qc.py) để bản sinh ra qua được QC."""
     from services.report_qc import (  # import muộn: report_qc import module này
-        check_breakout_levels, check_fuel_thresholds, check_horizon_overlap, check_long_term_basis, check_scenario_basis,
-        check_scenarios,
+        check_breakout_levels, check_coal_switch_premise, check_fuel_thresholds, check_horizon_overlap, check_long_term_basis,
+        check_scenario_basis, check_scenarios,
     )
 
     content = {"2": {"chart_data": chart_data, "prices": prices}, "3": sec3}
@@ -3724,7 +3766,7 @@ def _scenario_math_issues(sec3: Dict[str, Any], chart_data: List[Dict], prices: 
     ] + [it["message"] for it in derived_target_issues(sec3, close, _technical_level_values(chart_data))] + [
         it["message"] for it in check_scenario_basis({"3": sec3}, close) + check_horizon_overlap({"3": sec3})
         + check_breakout_levels(content) + check_fuel_thresholds(content, scenarios_only=True)
-        + check_long_term_basis(content)
+        + check_long_term_basis(content) + check_coal_switch_premise(content, section3_only=True)
     ]
 
 
