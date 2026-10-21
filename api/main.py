@@ -36,6 +36,7 @@ from api.routers import (
     feedback,
     hot_news,
     mcp_gateway,
+    prices,
     quote_chat,
     upload,
 )
@@ -82,6 +83,7 @@ app.include_router(admin_news_sources.router)
 app.include_router(admin_users.router)
 app.include_router(admin_reports.router)
 app.include_router(admin_prices.router)
+app.include_router(prices.router)
 app.include_router(admin_stats.router)
 app.include_router(admin_chat_reviews.router)
 app.include_router(admin_qc_reviews.router)

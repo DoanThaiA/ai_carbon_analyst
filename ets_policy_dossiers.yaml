@@ -7,7 +7,9 @@
 #   status:      lập trường/tiến độ — CHỈ ghi điều nguồn ĐÃ ĐỌC nêu
 #   next_step:   bước kế tiếp + mốc (không rõ thì "Chưa có lịch xác nhận")
 #   impact:      chiều tác động lên GIÁ EUA nếu hồ sơ được thông qua: tăng | giảm | trung lập
-#   mechanism:   cơ chế dẫn tới chiều đó (cung/cầu) — báo cáo PHẢI dùng đúng chiều + cơ chế này ở mọi mục
+#   mechanism:   cơ chế KHI HỒ SƠ ĐƯỢC THÔNG QUA dẫn tới chiều `impact` (cung/cầu) — báo cáo PHẢI dùng đúng chiều + cơ chế này
+#                ở mọi mục; KHÔNG viết nhánh ngược chiều vào đây (bảng hiện ngay dưới nhãn chiều → người đọc tưởng nhãn sai)
+#   mechanism_if_rejected: (tuỳ chọn) nhánh hồ sơ bị BÁC / không được thông qua — hiển thị thành dòng riêng "Nếu bị bác: …"
 #   cbam_effect: (tuỳ chọn) tác động lên chi phí CBAM của nhà xuất khẩu (SIM/khách hàng)
 #   supply_mt:   quy mô nguồn cung liên quan (triệu hạn ngạch) nếu nguồn nêu — dùng để xếp thứ tự
 #   structural:  true = hồ sơ cấu trúc ảnh hưởng lộ trình dài hạn (cap/MSR/phân bổ miễn phí) → kịch bản dài hạn phải chia 2 nhánh
@@ -21,7 +23,8 @@ dossiers:
     status: "Văn bản 30/09/2026 gửi Ủy ban châu Âu nêu 5 đề nghị: dừng cắt phân bổ miễn phí cho ngành CBAM và rà soát benchmark; giảm/tạm dừng chuyển khoảng 190 triệu hạn ngạch vào MSR (09/2026–08/2027, ≈39% khối lượng đấu giá 1 năm); hạn chế truyền chi phí carbon vào giá điện; tăng minh bạch thị trường; hoãn ETS2"
     next_step: "Chưa được Hội đồng châu Âu 15–16/10 kết luận; dời sang Hội đồng châu Âu tháng 12/2026"
     impact: "giảm"
-    mechanism: "Giảm/tạm dừng chuyển hạn ngạch vào MSR → giữ thêm hạn ngạch trên thị trường đấu giá → NỚI cung; nếu Hội đồng BÁC đề nghị → cung đấu giá giữ lộ trình → hỗ trợ EUA"
+    mechanism: "Giảm/tạm dừng chuyển hạn ngạch vào MSR → giữ thêm hạn ngạch trên thị trường đấu giá → NỚI cung → áp lực giá EUA"
+    mechanism_if_rejected: "Hội đồng BÁC đề nghị → cung đấu giá giữ lộ trình → hỗ trợ EUA"
     cbam_effect: "Nếu được chấp nhận: phân bổ miễn phí giữ lâu hơn → chi phí CBAM thấp hơn"
     supply_mt: 190
     structural: true

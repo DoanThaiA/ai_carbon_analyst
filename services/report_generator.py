@@ -3,7 +3,7 @@ import re
 import logging
 from datetime import datetime, timedelta, timezone, date, time as dtime
 from zoneinfo import ZoneInfo
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from urllib.parse import quote, urlparse
 import asyncio
 from pathlib import Path
@@ -1044,6 +1044,27 @@ ETS_POLICY_MAX_ITEMS = 6
 _APPLIED_CALENDAR_RE = re.compile(r"^\s*lịch\s+đấu giá", re.IGNORECASE)
 
 
+# Nhánh ngược chiều "nếu hồ sơ bị BÁC" viết dính vào cuối câu cơ chế ("…→ NỚI cung; nếu Hội đồng BÁC đề nghị → … → hỗ trợ
+# EUA") làm người đọc thấy chữ "hỗ trợ" ngay dưới nhãn "Áp lực EUA" (bản 21/10/2026) — tách thành `mechanism_if_rejected`.
+# frontend ReportDocument.tsx::splitPolicyMechanism dùng cùng quy tắc cho báo cáo cũ — sửa bên nào sửa cả bên kia.
+_REJECTED_BRANCH_RE = re.compile(
+    r"[;.]\s*(?:còn\s+)?(?:nếu|khi)\s+(?=[^;.]*?(?:\bbác\b|bị từ chối|không được (?:thông qua|chấp nhận)))",
+    re.IGNORECASE,
+)
+
+
+def split_policy_mechanism(text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """"A → NỚI cung; nếu Hội đồng BÁC → B" → ("A → NỚI cung", "Hội đồng BÁC → B"). Không có nhánh bị bác → (text, None)."""
+    t = str(text or "").strip()
+    if not t:
+        return None, None
+    m = _REJECTED_BRANCH_RE.search(t)
+    if not m:
+        return t, None
+    main, rejected = t[:m.start()].strip(), t[m.end():].strip()
+    return (main or None), (rejected[:1].upper() + rejected[1:] if rejected else None)
+
+
 def _load_ets_dossiers(path: Path = ETS_DOSSIERS_PATH) -> List[Dict[str, Any]]:
     """Hồ sơ ETS/MSR đang mở do admin xác nhận (ets_policy_dossiers.yaml) — xếp theo quy mô nguồn cung giảm dần."""
     try:
@@ -1056,6 +1077,8 @@ def _load_ets_dossiers(path: Path = ETS_DOSSIERS_PATH) -> List[Dict[str, Any]]:
         if not isinstance(d, dict) or d.get("closed") or not str(d.get("item") or "").strip():
             continue
         impact = str(d.get("impact") or "").strip().lower()
+        mechanism, rejected = split_policy_mechanism(d.get("mechanism"))
+        rejected = str(d.get("mechanism_if_rejected") or "").strip() or rejected
         out.append({
             "item": str(d["item"]).strip(),
             "stage": str(d.get("stage") or "").strip(),
@@ -1066,7 +1089,8 @@ def _load_ets_dossiers(path: Path = ETS_DOSSIERS_PATH) -> List[Dict[str, Any]]:
             "cbam_effect": str(d.get("cbam_effect") or "").strip() or None,
             "structural": bool(d.get("structural")),
             "kind": "event" if str(d.get("kind") or "").strip().lower() == "event" else "dossier",
-            "mechanism": str(d.get("mechanism") or "").strip() or None,
+            "mechanism": mechanism,
+            "mechanism_if_rejected": rejected,
             "verified": bool(d.get("verified")),
             "source_name": str(d.get("source_name") or "admin").strip(),
             "source_url": str(d.get("source_url") or "").strip() or None,
@@ -1086,6 +1110,7 @@ def _ets_policy_prompt_block(nums: List[int], index_lookup: Dict[int, Dict], dos
     pinned = "\n".join(
         f"[{k}] {d['item']} ({d['stage'] or 'chưa rõ giai đoạn'}): {d['status']} | Bước tiếp: {d['next_step']} | "
         f"CHIỀU GIÁ EUA ĐÃ CHỐT: {d['impact']}" + (f" — cơ chế: {d['mechanism']}" if d.get("mechanism") else "")
+        + (f" | nếu hồ sơ bị BÁC: {d['mechanism_if_rejected']}" if d.get("mechanism_if_rejected") else "")
         + (" | SỰ KIỆN (không phải hồ sơ)" if d.get("kind") == "event" else "")
         + (f" | quy mô ~{d['supply_mt']:g} triệu hạn ngạch" if d.get("supply_mt") else "")
         + (f" | tác động CBAM: {d['cbam_effect']}" if d.get("cbam_effect") else "")
@@ -1126,8 +1151,10 @@ sách ĐANG MỞ, mỗi hồ sơ 1 object (gộp nhiều bài cùng hồ sơ th�
   - "stage": giai đoạn — "đề xuất" | "đang đàm phán" | "đã thông qua" (chưa áp dụng);
   - "next_step": bước kế tiếp + mốc thời gian nếu bài nêu (vd "đàm phán ba bên, mục tiêu xong trước cuối 2026"); bài không nêu → "Chưa có lịch xác nhận";
   - "impact": chiều tác động lên GIÁ EUA nếu được thông qua: "tăng" / "giảm" / "trung lập" (chưa rõ, hoặc là sự kiện chưa có quyết định);
-  - "mechanism": 1 câu cơ chế (cung hay cầu thay đổi thế nào) — theo đúng "CƠ CHẾ MSR" ở trên; KHÔNG gọi "nới cung" cho thay đổi
-    chỉ tác động phía CẦU (vd kéo dài phân bổ miễn phí không đổi tổng cap — là giảm cầu mua của ngành CBAM);
+  - "mechanism": 1 câu cơ chế KHI HỒ SƠ ĐƯỢC THÔNG QUA (cung hay cầu thay đổi thế nào), kết luận PHẢI cùng chiều "impact" —
+    theo đúng "CƠ CHẾ MSR" ở trên; KHÔNG gọi "nới cung" cho thay đổi chỉ tác động phía CẦU (vd kéo dài phân bổ miễn phí không
+    đổi tổng cap — là giảm cầu mua của ngành CBAM); KHÔNG viết nhánh ngược chiều vào đây;
+  - "mechanism_if_rejected": (tuỳ chọn) 1 câu nhánh hồ sơ bị BÁC/không được thông qua (thường ngược chiều "impact");
   - "source_index": số [N] có thật.
 QUY TẮC: (1) hồ sơ đang chờ quyết định trong khung kịch bản PHẢI có 1 watchpoint riêng ở "Cần theo dõi" (ghi "chưa có kết quả" nếu bài
 chưa xác nhận); (2) điều kiện kịch bản dạng "không có quyết định chính sách EU mới về nguồn cung" PHẢI nêu ĐÚNG hồ sơ cụ thể ở đây;
@@ -1225,12 +1252,14 @@ def _resolve_ets_policy(items: Any, index_lookup: Dict[int, Dict], dossiers: Opt
             logger.warning("[REPORT] Mục 3: hồ sơ chính sách ETS không có nguồn hợp lệ — bỏ: %s", str(it.get("item"))[:100])
             continue
         impact = str(it.get("impact") or "").strip().lower()
+        mechanism, rejected = split_policy_mechanism(it.get("mechanism"))
         out.append({
             "item": str(it["item"]).strip(),
             "status": str(it.get("status") or "").strip(),
             "next_step": str(it.get("next_step") or "").strip() or "Chưa có lịch xác nhận",
             "stage": str(it.get("stage") or "").strip(),
-            "mechanism": str(it.get("mechanism") or "").strip() or None,
+            "mechanism": mechanism,
+            "mechanism_if_rejected": str(it.get("mechanism_if_rejected") or "").strip() or rejected,
             "impact": impact if impact in ETS_POLICY_IMPACTS else "trung lập",
             "source_name": art["source"],
             "source_url": art["url"],

@@ -12,6 +12,7 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
 import type { CbamEstimate, ForecastReview, HedgeAction, OpenPosition, Report } from "@/lib/types";
+import PriceIndexPanel from "@/components/PriceIndexPanel";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
@@ -1585,6 +1586,19 @@ const POLICY_IMPACT_TONE: Record<string, string> = {
   "trung lập": "text-muted-light border-border bg-surface",
 };
 
+// Tách nhánh "nếu hồ sơ bị BÁC" khỏi câu cơ chế (báo cáo cũ viết dính: "…→ NỚI cung; nếu Hội đồng BÁC đề nghị → … → hỗ trợ
+// EUA", hiện ngay dưới nhãn "Áp lực EUA" nên trông như nhãn sai). Port 1-1 report_generator.split_policy_mechanism — sửa cả 2.
+const REJECTED_BRANCH_RE = /[;.]\s*(?:còn\s+)?(?:nếu|khi)\s+(?=[^;.]*?(?:(?<![\p{L}])bác(?![\p{L}])|bị từ chối|không được (?:thông qua|chấp nhận)))/iu;
+
+function splitPolicyMechanism(it: Record<string, any>): [string | null, string | null] {
+  const text = String(it.mechanism || "").trim();
+  const explicit = String(it.mechanism_if_rejected || "").trim() || null;
+  const m = text ? REJECTED_BRANCH_RE.exec(text) : null;
+  if (!m) return [text || null, explicit];
+  const rest = text.slice(m.index + m[0].length).trim();
+  return [text.slice(0, m.index).trim() || null, explicit || (rest ? rest[0].toUpperCase() + rest.slice(1) : null)];
+}
+
 function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
   const t = useTranslations("reportDoc");
   return (
@@ -1597,7 +1611,7 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
               {["item", "status", "nextStep", "impact"].map((k) => (
                 <th key={k} className={clsx(
                   "text-left font-mono text-[10px] uppercase tracking-wider text-primary-dark px-2 sm:px-3 py-2 border-b-2 border-primary/30",
-                  k === "impact" ? "w-[96px]" : k === "item" ? "w-[26%]" : "",
+                  k === "impact" ? "w-[110px] sm:w-[170px]" : k === "item" ? "w-[26%]" : "",
                 )}>{t(`etsPolicy.${k}`)}</th>
               ))}
             </tr>
@@ -1635,7 +1649,24 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
                     POLICY_IMPACT_TONE[it.impact] || POLICY_IMPACT_TONE["trung lập"])}>
                     {t(`etsPolicy.impactLabel.${it.kind === "event" ? "event" : it.impact === "tăng" ? "up" : it.impact === "giảm" ? "down" : "neutral"}`)}
                   </span>
-                  {it.mechanism && <span className="block mt-1 text-[11.5px] leading-[1.4] text-muted-light">{it.mechanism}</span>}
+                  {(() => {
+                    const [main, rejected] = splitPolicyMechanism(it);
+                    return (
+                      <>
+                        {main && (
+                          <span className="block mt-1 text-[11.5px] leading-[1.4] text-muted-light">
+                            {it.kind !== "event" && <span className="font-semibold text-label">{t("etsPolicy.ifAdopted")} </span>}
+                            {main}
+                          </span>
+                        )}
+                        {rejected && (
+                          <span className="block mt-1 pt-1 border-t border-dashed border-border text-[11.5px] leading-[1.4] text-muted-light">
+                            <span className="font-semibold text-label">{t("etsPolicy.ifRejected")} </span>{rejected}
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </td>
               </tr>
             ))}
@@ -2542,8 +2573,10 @@ export function ReportDocument({
               <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
             )}
 
-            {/* Bảng giá full-width */}
-            <div className="overflow-x-auto border border-border rounded-lg">
+            {/* Trái: Bảng giá nhanh · Phải: biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất"). Màn hẹp xếp
+                chồng; khi in/PDF chỉ giữ bảng giá full-width (biểu đồ cần gọi API + tương tác). */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch print:block">
+            <div className="overflow-x-auto border border-border rounded-lg self-start w-full">
               <table className="w-full sm:table-fixed border-collapse font-mono text-[14.5px]">
                 <thead>
                   <tr>
@@ -2620,6 +2653,11 @@ export function ReportDocument({
                   })}
                 </tbody>
               </table>
+            </div>
+            <PriceIndexPanel
+              reportDate={report.report_date}
+              tableCodes={priceRows.map((r: any) => String(r.code || "")).filter(Boolean)}
+            />
             </div>
           </div>
           )}

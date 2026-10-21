@@ -50,6 +50,7 @@ from services.report_generator import (
     STALE_NEWS_MAX_AGE_DAYS,
     ETS_POLICY_LOOKBACK_DAYS,
     _load_ets_dossiers,
+    split_policy_mechanism,
     FUEL_NEAR_BREAKEVEN,
     _compute_recurring_calendar_events,
     fuel_spread_state,
@@ -634,6 +635,39 @@ def check_msr_direction(content: Dict[str, Any]) -> List[Dict[str, str]]:
                     f"siết cung/hỗ trợ EUA: \"{line.strip()[:110]}\"", path,
                 ))
                 break
+    return issues
+
+
+# Nhãn chiều của bảng "Theo dõi chính sách ETS/MSR" phải khớp KẾT LUẬN của câu cơ chế nhánh "được thông qua" (bản 21/10/2026:
+# nhãn "Áp lực EUA" mà câu cơ chế kết thúc "… → hỗ trợ EUA" vì dính nhánh "nếu bị bác"). Cụm phủ định ("KHÔNG phải yếu tố
+# siết cung/hỗ trợ EUA") không tính.
+_POLICY_OPPOSITE_RE = {
+    "giảm": re.compile(r"siết\s+(?:lại\s+)?cung|SIẾT|hỗ trợ\s+(?:giá\s+)?EUA|đỡ\s+(?:giá\s+)?EUA|(?:đẩy|kéo)\s+(?:giá\s+)?EUA\s+(?:tăng|lên)", re.IGNORECASE),
+    "tăng": re.compile(r"nới\s+(?:lỏng\s+)?cung|NỚI|áp lực\s+(?:lên\s+)?(?:giá\s+)?EUA|(?:đẩy|kéo)\s+(?:giá\s+)?EUA\s+(?:giảm|xuống)", re.IGNORECASE),
+}
+_NEGATION_BEFORE_RE = re.compile(r"(?:không|chứ không|chẳng)\b[^→;]{0,30}$", re.IGNORECASE)
+
+
+def check_ets_policy_impact(content: Dict[str, Any]) -> List[Dict[str, str]]:
+    issues = []
+    for i, it in enumerate((content.get("3") or {}).get("ets_policy") or []):
+        if not isinstance(it, dict) or it.get("kind") == "event":
+            continue
+        rx = _POLICY_OPPOSITE_RE.get(str(it.get("impact") or "").strip().lower())
+        main, _ = split_policy_mechanism(it.get("mechanism"))
+        if not rx or not main:
+            continue
+        for m in rx.finditer(main):
+            if _NEGATION_BEFORE_RE.search(main[:m.start()]):
+                continue
+            label = "Áp lực EUA" if it["impact"].strip().lower() == "giảm" else "Hỗ trợ EUA"
+            issues.append(_issue(
+                "scenario", "3", "error",
+                f"Bảng chính sách ETS: hồ sơ \"{str(it.get('item') or '')[:60]}\" gắn nhãn \"{label}\" nhưng cơ chế khi được thông "
+                f"qua lại kết luận \"{m.group(0)}\": \"{main[:120]}\" — sửa nhãn hoặc cơ chế cho cùng chiều.",
+                f"3.ets_policy[{i}].mechanism",
+            ))
+            break
     return issues
 
 
@@ -2354,6 +2388,7 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             + check_legislation_claims(content) + check_fact_tags(content)
             + check_fuel_thresholds(content) + check_long_term_basis(content) + check_technical_claims(content)
             + check_ttf_channel(content) + check_coal_switch_premise(content) + check_msr_direction(content)
+            + check_ets_policy_impact(content)
         ),
         "source": check_sources(content, known_urls, article_meta, stale_before, policy_stale_before) + check_inline_attribution(content),
         "fact": check_facts(content, article_texts),

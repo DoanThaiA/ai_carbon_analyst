@@ -23,6 +23,7 @@ from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services import cbam_estimate, forecast_review, report_lessons
 from services.report_generator import (
+    split_policy_mechanism,
     report_data_date,
     _compute_recurring_calendar_events,
     get_prices_for_report,
@@ -657,6 +658,12 @@ def _format_forecast_review(block: Optional[dict]) -> str:
     return "\n".join(lines)
 
 
+
+def _policy_branches(p: Dict[str, Any]) -> tuple:
+    """(cơ chế khi hồ sơ được thông qua, nhánh bị bác) — báo cáo cũ viết dính 2 nhánh trong "mechanism"."""
+    main, rejected = split_policy_mechanism(p.get("mechanism"))
+    return main, (str(p.get("mechanism_if_rejected") or "").strip() or rejected)
+
 def _format_section3(sec: dict) -> str:
     blocks = "\n\n".join(
         f"{b.get('heading', '')}: {b.get('content', '')}" for b in sec.get("analysis_blocks") or []
@@ -676,7 +683,10 @@ def _format_section3(sec: dict) -> str:
         parts.append("Theo dõi chính sách ETS/MSR:\n" + "\n".join(
             f"- {p.get('item')}: {p.get('status')} | Bước tiếp: {p.get('next_step')} | "
             f"{'sự kiện, chưa quyết định' if p.get('kind') == 'event' else impact_vi.get(p.get('impact'), p.get('impact'))}"
-            + (f" — {p['mechanism']}" if p.get("mechanism") else "")
+            + "".join(
+                f" — {label}{text}"
+                for label, text in zip(("nếu thông qua: ", "nếu bị bác: "), _policy_branches(p)) if text
+            )
             + f" ({p.get('source_name')}, {p.get('source_date')}"
             + (": " + p["source_url"] if p.get("source_url") else "")
             + ("; chưa đối chiếu văn bản gốc" if p.get("pinned") and p.get("verified") is False else "") + ")"

@@ -1,21 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, BarChart3 } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle } from "lucide-react";
 import clsx from "clsx";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
+import {
+  CbamQuality, CbamRangeChart, ChatQuality, ForecastItem, ForecastQuality, NEUTRAL, RateBars, SERIES_1, SERIES_3,
+  SignedBars, STATUS_BAD, STATUS_GOOD, STATUS_WARN, StackedBars, fmtFull, fmtNum,
+} from "./QualityCharts";
 
 // Thống kê hiệu suất Jenny — theo từng báo cáo ngày đã phát hành: lượt xem và
 // lượt hỏi đáp (GET /api/admin/stats/performance, api/routers/admin_stats.py).
 // 2 số đo khác thang đo → 2 biểu đồ cột RIÊNG cùng trục ngày (không dùng biểu đồ
-// 2 trục y), kèm hàng ô số tổng quan và bảng số liệu.
+// 2 trục y), kèm hàng ô số tổng quan. Bên dưới là 3 nhóm chỉ số chất lượng (QualityCharts.tsx): hỏi đáp theo
+// đánh giá + đưa vào tham khảo, dự báo ngắn hạn đúng/sai, ước tính giá CBAM ↔ giá chốt quý.
 
 type PerfItem = { report_date: string; views: number; unique_viewers: number; questions: number; sessions: number };
 type PerfResponse = {
   days: number;
   totals: { reports: number; views: number; unique_viewers: number; questions: number; sessions: number };
   items: PerfItem[];
+  chat_quality: ChatQuality;
+  forecast: ForecastQuality;
+  cbam: CbamQuality;
 };
 
 const RANGES = [14, 30, 90];
@@ -28,11 +37,6 @@ const COLOR_QUESTIONS = "#eb6834";
 function fmtDay(iso: string) {
   const [, m, d] = iso.split("-");
   return `${d}/${m}`;
-}
-
-function fmtFull(iso: string) {
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
 }
 
 // Trần trục y = 4 × bước "tròn" (1-2-5 × 10^n, tối thiểu 1) → 5 vạch lưới luôn là
@@ -268,40 +272,9 @@ export default function AdminPerformancePage() {
             />
           </div>
 
-          {/* Bảng số liệu — đọc chính xác từng con số (mới nhất lên đầu) */}
-          <div className="bg-background border border-border rounded-2xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-light text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 font-semibold">{tr("colReportDate")}</th>
-                  <th className="px-4 py-3 font-semibold text-right">{tr("views")}</th>
-                  <th className="px-4 py-3 font-semibold text-right">{tr("colViewers")}</th>
-                  <th className="px-4 py-3 font-semibold text-right">{tr("questions")}</th>
-                  <th className="px-4 py-3 font-semibold text-right">{tr("colSessions")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-muted-light">
-                      <BarChart3 size={32} className="mx-auto mb-2 text-muted" />
-                      {tr("noPublished")}
-                    </td>
-                  </tr>
-                ) : (
-                  [...items].reverse().map((it) => (
-                    <tr key={it.report_date}>
-                      <td className="px-4 py-2.5 font-semibold text-label whitespace-nowrap">{fmtFull(it.report_date)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{it.views}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{it.unique_viewers}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{it.questions}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{it.sessions}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {data && <ChatQualitySection q={data.chat_quality} loading={loading} />}
+          {data && <ForecastSection f={data.forecast} loading={loading} />}
+          {data && <CbamSection c={data.cbam} loading={loading} />}
 
           <p className="text-[12px] text-muted-light">
             {tr("footnote")}
@@ -309,5 +282,194 @@ export default function AdminPerformancePage() {
         </>
       ) : null}
     </div>
+  );
+}
+
+function SectionHeader({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="pt-2">
+      <h3 className="text-xl font-bold text-heading">{title}</h3>
+      <p className="text-[13px] text-muted-light mt-0.5">{desc}</p>
+    </div>
+  );
+}
+
+function pctOrDash(v: number | null) {
+  return v === null ? "—" : `${fmtNum(v, 0)}%`;
+}
+
+function ChatQualitySection({ q, loading }: { q: ChatQuality; loading: boolean }) {
+  const tr = useTranslations("adminUsrPerformance");
+  const t = q.totals;
+  return (
+    <section className={clsx("space-y-4 transition-opacity", loading && "opacity-60")}>
+      <SectionHeader title={tr("chatQualityTitle")} desc={tr("chatQualityDesc")} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile label={tr("qaSessions")} value={t.sessions} hint={tr("ratedShare", { pct: pctOrDash(t.rated_share_pct) })} />
+        <StatTile label={tr("goodRate")} value={pctOrDash(t.good_rate_pct)} hint={tr("goodBadCount", { good: t.good, bad: t.bad })} />
+        <StatTile label={tr("ratingBad")} value={t.bad} hint={tr("unratedCount", { n: t.unrated })} />
+        <StatTile label={tr("examples")} value={t.examples} hint={tr("examplesHint")} />
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <StackedBars
+          title={tr("ratingByReport")}
+          items={q.items}
+          emptyText={tr("noChatInRange")}
+          series={[
+            { key: "good", label: tr("ratingGood"), color: STATUS_GOOD, value: (it) => it.good },
+            { key: "bad", label: tr("ratingBad"), color: STATUS_BAD, value: (it) => it.bad },
+            { key: "unrated", label: tr("ratingNone"), color: NEUTRAL, value: (it) => it.unrated },
+          ]}
+          tooltip={(it) => <div className="text-muted-light">{tr("examplesCount", { n: it.examples })}</div>}
+        />
+        <StackedBars
+          title={tr("examplesByReport")}
+          subtitle={tr("examplesHint")}
+          items={q.items}
+          emptyText={tr("noExamplesInRange")}
+          series={[{ key: "examples", label: tr("examples"), color: SERIES_3, value: (it) => it.examples }]}
+        />
+      </div>
+      {q.recent_bad.length > 0 && (
+        <div className="bg-background border border-border rounded-2xl p-4">
+          <h4 className="text-[14px] font-bold text-heading">{tr("recentBad")}</h4>
+          <ul className="mt-2 divide-y divide-border text-[13px]">
+            {q.recent_bad.map((b) => (
+              <li key={b.session_id} className="py-2 flex gap-3">
+                <span className="shrink-0 font-semibold text-label tabular-nums">{fmtFull(b.report_date)}</span>
+                <span className="text-body min-w-0 break-words">{b.reason || tr("noReason")}</span>
+              </li>
+            ))}
+          </ul>
+          <Link href="/admin/chat-history" className="inline-block mt-2 text-[13px] font-semibold text-primary-dark hover:underline">
+            {tr("openChatHistory")}
+          </Link>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const VERDICT_COLOR: Record<ForecastItem["verdict"], string> = {
+  correct: STATUS_GOOD, wrong: STATUS_BAD, direction_only: STATUS_WARN, pending: NEUTRAL,
+};
+const ENUM_KEY: Record<string, string> = {
+  "tăng": "up", "giảm": "down", "đi ngang": "sideways", "Cao": "high", "Trung bình": "medium", "Thấp": "low",
+};
+
+function ForecastSection({ f, loading }: { f: ForecastQuality; loading: boolean }) {
+  const tr = useTranslations("adminUsrPerformance");
+  const te = useTranslations("reportDoc.enum");
+  const tv = useTranslations("forecastReview");
+  const en = (v: string | null) => (v && ENUM_KEY[v] ? te(ENUM_KEY[v]) : v ?? "—");
+  const t = f.totals;
+  const b = f.baseline;
+  return (
+    <section className={clsx("space-y-4 transition-opacity", loading && "opacity-60")}>
+      <SectionHeader title={tr("forecastTitle")} desc={tr("forecastDesc", { n: f.horizon_sessions })} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile label={tr("hitRate")} value={pctOrDash(t.hit_rate_pct)} hint={tr("correctWrong", { correct: t.correct, wrong: t.wrong })} />
+        <StatTile label={tr("forecastsScored")} value={t.reports} hint={tr("pendingCount", { pending: t.pending, dirOnly: t.direction_only })} />
+        <StatTile label={tr("highConfMiss")} value={t.high_confidence_miss} hint={tr("designFlaws", { n: t.design_flaws })} />
+        <StatTile label={tr("fillRate")} value={t.trades ? `${fmtNum((t.trades_filled / t.trades) * 100, 0)}%` : "—"} hint={tr("fillCount", { filled: t.trades_filled, total: t.trades })} />
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <SignedBars
+          title={tr("forecastByReport")}
+          subtitle={tr("forecastByReportSub")}
+          items={f.items}
+          value={(it) => it.change_pct}
+          colorOf={(it) => VERDICT_COLOR[it.verdict]}
+          guides={[1, -1]}
+          legend={[
+            { label: tv("verdict.correct"), color: STATUS_GOOD },
+            { label: tv("verdict.wrong"), color: STATUS_BAD },
+            { label: tv("verdict.direction_only"), color: STATUS_WARN },
+            { label: tr("pending"), color: NEUTRAL },
+          ]}
+          emptyText={tr("noForecasts")}
+          tooltip={(it) => (
+            <>
+              <div className="font-semibold text-label">{tr("tooltipReport", { date: fmtFull(it.report_date) })}</div>
+              <div className="text-body">{tr("forecastLine", { direction: en(it.direction), probability: en(it.probability) })}</div>
+              <div className="flex items-center gap-1.5 text-body">
+                <span className="inline-block w-2 h-2 rounded-sm" style={{ background: VERDICT_COLOR[it.verdict] }} aria-hidden="true" />
+                <b>{tv(`verdict.${it.raw_verdict}`)}</b>
+                {it.graded_by && <span className="text-muted-light">· {tv(`gradedBy.${it.graded_by}`)}</span>}
+              </div>
+              <div className="text-muted-light tabular-nums">{tr("euaMove", { pct: fmtNum(it.change_pct, 2, true), n: it.sessions })}</div>
+            </>
+          )}
+        />
+        <div className="grid grid-cols-1 gap-4">
+          <RateBars
+            title={tr("calibrationTitle")}
+            subtitle={tr("calibrationSub")}
+            emptyText={tr("noFinalForecasts")}
+            rows={f.calibration.map((c) => ({
+              label: en(c.probability), correct: c.correct, total: c.total, color: SERIES_1,
+              note: c.direction_only ? tr("dirOnlyNote", { n: c.direction_only }) : undefined,
+            }))}
+          />
+          <RateBars
+            title={tr("baselineTitle")}
+            subtitle={tr("baselineSub")}
+            emptyText={tr("noFinalForecasts")}
+            rows={[
+              { label: tr("baselineModel"), ...b.model, color: SERIES_1 },
+              { label: tr("baselineSideways"), ...b.always_sideways, color: NEUTRAL },
+              { label: tr("baselineMomentum", { n: b.momentum.sessions }), correct: b.momentum.correct, total: b.momentum.total, color: NEUTRAL },
+            ]}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CbamSection({ c, loading }: { c: CbamQuality; loading: boolean }) {
+  const tr = useTranslations("adminUsrPerformance");
+  const t = c.totals;
+  const scored = c.items.filter((i) => i.error_pct !== null);
+  return (
+    <section className={clsx("space-y-4 transition-opacity", loading && "opacity-60")}>
+      <SectionHeader title={tr("cbamTitle")} desc={tr("cbamDesc")} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile label={tr("cbamMape")} value={t.mape_pct === null ? "—" : `${fmtNum(t.mape_pct, 2)}%`} hint={tr("cbamScored", { n: t.scored, total: t.reports })} />
+        <StatTile label={tr("cbamBias")} value={t.bias_pct === null ? "—" : `${fmtNum(t.bias_pct, 2, true)}%`} hint={tr("cbamBiasHint")} />
+        <StatTile label={tr("cbamInCiRate", { level: t.ci_level })} value={pctOrDash(t.in_ci_pct)} hint={tr("cbamInCiCount", { n: t.in_ci, total: t.ci_total, level: t.ci_level })} />
+        <StatTile
+          label={tr("cbamQuarters")}
+          value={c.quarters.length}
+          hint={c.quarters.map((q) => `${q.quarter}: ${q.actual !== null ? fmtNum(q.actual, 2) : tr("cbamBasis.pending")}`).join(" · ") || undefined}
+        />
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <CbamRangeChart data={c} title={tr("cbamRangeTitle")} subtitle={tr("cbamRangeSub")} emptyText={tr("noCbam")} />
+        <SignedBars
+          title={tr("cbamErrorTitle")}
+          subtitle={tr("cbamErrorSub")}
+          items={scored}
+          value={(it) => it.error_pct ?? 0}
+          colorOf={(it) => (it.in_ci ? STATUS_GOOD : STATUS_BAD)}
+          legend={[
+            { label: tr("cbamInCi"), color: STATUS_GOOD },
+            { label: tr("cbamOutCi"), color: STATUS_BAD },
+          ]}
+          emptyText={tr("noCbamScored")}
+          tooltip={(it) => (
+            <>
+              <div className="font-semibold text-label">{tr("tooltipReport", { date: fmtFull(it.report_date) })} · {it.quarter}</div>
+              <div className="text-body tabular-nums">{tr("cbamEstimate")}: <b>{fmtNum(it.estimate, 2)}</b> → {tr("cbamActual")}: <b>{fmtNum(it.actual, 2)}</b></div>
+              <div className="flex items-center gap-1.5 text-body tabular-nums">
+                <span className="inline-block w-2 h-2 rounded-sm" style={{ background: it.in_ci ? STATUS_GOOD : STATUS_BAD }} aria-hidden="true" />
+                {tr("cbamError")}: <b>{fmtNum(it.error_pct, 2, true)}%</b> · {it.in_ci ? tr("cbamInCi") : tr("cbamOutCi")}
+              </div>
+              <div className="text-muted-light">{tr(`cbamBasis.${it.actual_basis}`)}</div>
+            </>
+          )}
+        />
+      </div>
+    </section>
   );
 }

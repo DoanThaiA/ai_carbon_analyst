@@ -1,7 +1,8 @@
 """
 Thống kê hiệu suất Jenny (trang /admin/performance): theo từng báo cáo ngày đã
 phát hành — lượt xem (bảng report_views, ghi ở api/main.py::get_report_by_date,
-chỉ đếm role 'user') và lượt hỏi đáp Quote Chat (chat_sessions + chat_messages).
+chỉ đếm role 'user') và lượt hỏi đáp Quote Chat (chat_sessions + chat_messages), kèm
+chỉ số chất lượng hỏi đáp / dự báo ngắn hạn / dự báo CBAM (services/performance_stats.py).
 """
 from datetime import datetime, timedelta, timezone
 
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_admin, get_db
 from db.models import ChatMessage, ChatSession, Report, ReportView
+from services.performance_stats import build_cbam_quality, build_chat_quality, build_forecast_quality
 
 router = APIRouter(
     prefix="/api/admin/stats",
@@ -28,14 +30,16 @@ async def performance_stats(
 ):
     """Mỗi báo cáo đã phát hành trong `days` ngày gần nhất (theo report_date):
     views (lượt mở, đã gộp mở lại trong 30 phút), unique_viewers (số người xem),
-    questions (số câu hỏi người dùng gửi Jenny), sessions (số phiên hỏi đáp)."""
+    questions (số câu hỏi người dùng gửi Jenny), sessions (số phiên hỏi đáp); chat_quality (đánh giá phiên +
+    đưa vào tham khảo), forecast (kịch bản ngắn hạn đúng/sai), cbam (ước tính giá CBAM ↔ giá chốt quý)."""
     since = (datetime.now(TZ_VN).date() - timedelta(days=days - 1)).isoformat()
 
-    report_dates = list((await session.execute(
-        select(Report.report_date)
+    reports = list((await session.execute(
+        select(Report)
         .where(Report.status == "published", Report.report_date >= since)
         .order_by(Report.report_date)
     )).scalars().all())
+    report_dates = [r.report_date for r in reports]
 
     views = {
         row.report_date: row
@@ -92,4 +96,7 @@ async def performance_stats(
             "sessions": sum(i["sessions"] for i in items),
         },
         "items": items,
+        "chat_quality": await build_chat_quality(session, since, report_dates),
+        "forecast": await build_forecast_quality(session, reports),
+        "cbam": await build_cbam_quality(session, reports, datetime.now(TZ_VN).date()),
     }
