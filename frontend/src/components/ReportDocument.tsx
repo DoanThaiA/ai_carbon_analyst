@@ -7,7 +7,7 @@ import {
   Clock, CalendarRange, Compass, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Menu, X, Trash2,
-  Leaf, Calendar, RefreshCw, ArrowLeftRight, CalendarClock
+  Leaf, Calendar, RefreshCw, ArrowLeftRight, CalendarClock, ClipboardCheck
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
@@ -1025,7 +1025,7 @@ function PositionCard({ scenarios, chartData, euaRow, forecastReview, cbamEstima
 
   return (
     <section className="mb-6 rounded-xl border border-border bg-background shadow-[var(--shadow-soft)] print:shadow-none overflow-hidden">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 sm:px-5 pt-3.5 pb-2.5 border-b border-border">
+      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 sm:px-5 pt-3.5 pb-2.5 border-b border-border print:break-after-avoid">
         <h2 className="flex items-center gap-2 text-[16px] sm:text-[17px] font-extrabold text-primary-dark">
           <Crosshair size={18} strokeWidth={2.5} aria-hidden="true" /> {t("signal.title")}
         </h2>
@@ -1098,8 +1098,9 @@ function PositionCard({ scenarios, chartData, euaRow, forecastReview, cbamEstima
           </div>
         )}
 
-        {/* ═══ Bảng lệnh theo khung thời gian ═══ */}
-        <div className="print:break-inside-avoid">
+        {/* ═══ Bảng lệnh theo khung thời gian ═══ — KHÔNG giữ nguyên khối khi in (cả bảng bị đẩy sang trang sau, để trống
+            1/3 trang); từng hàng đã không bị cắt đôi (tr) và tên cột lặp lại ở trang sau. */}
+        <div>
           <StrategyTable plans={plans} last={last} minRr={minRr} />
           <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-light [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
             <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-[5px] rounded-[2px] bg-down" aria-hidden="true" />{t("signal.legendRisk")}</span>
@@ -1415,10 +1416,10 @@ function isPositiveDelta(value: string) {
 // Class "report-heading" dùng chung để CSS in ấn (globals.css) nhận diện, ép
 // không ngắt trang ngay sau heading.
 
-function PartHeading({ eyebrow, title, icon: Icon }: { eyebrow?: string; title: string; icon: typeof Sparkles }) {
+function PartHeading({ eyebrow, title, icon: Icon, className }: { eyebrow?: string; title: string; icon: typeof Sparkles; className?: string }) {
   const label = eyebrow ? `${eyebrow}: ${title}` : title;
   return (
-    <div className="report-heading relative mb-6 print:break-after-avoid">
+    <div className={clsx("report-heading relative mb-6 print:break-after-avoid", className)}>
       <div className="flex items-center gap-3">
         <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary-dark text-white shrink-0 shadow-[0_2px_10px_rgba(15,95,90,0.28)]">
           <Icon size={19} strokeWidth={2.25} />
@@ -1500,9 +1501,29 @@ function SubHeading({ children }: { children: React.ReactNode }) {
 
 // Danh sách chấm tròn dùng chung cho các mục bullet trong Phần 2 (thay cho
 // gạch đầu dòng "-").
-function DotBullets({ items, render }: { items: any[]; render: (item: any, i: number) => React.ReactNode }) {
+// Nguồn tin đặt NGAY CUỐI nội dung (cùng dòng) — inline-block nên cả cụm "Nguồn: X ↗" chỉ xuống dòng khi phần còn lại
+// của dòng không đủ chỗ (yêu cầu 21/10/2026; trước nằm riêng 1 dòng dưới nội dung). Đặt BÊN TRONG đoạn văn chứa nội dung.
+function InlineSource({ name, url, className }: { name: string; url?: string | null; className?: string }) {
+  const t = useTranslations("reportDoc");
+  const cls = clsx("inline-block max-w-full font-mono text-[11px] leading-[1.4]", className);
   return (
-    <ul className="list-none space-y-2.5">
+    <>
+      {" "}
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className={clsx(cls, "text-primary hover:underline")}>
+          {t("body.source")} {name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
+        </a>
+      ) : (
+        <span className={clsx(cls, "text-muted-light")}>{t("body.source")} {name}</span>
+      )}
+    </>
+  );
+}
+
+// twoCol: màn rộng (xl) chia 2 cột để dòng chữ không quá dài khi báo cáo trải hết bề ngang — không áp dụng khi in.
+function DotBullets({ items, render, twoCol }: { items: any[]; render: (item: any, i: number) => React.ReactNode; twoCol?: boolean }) {
+  return (
+    <ul className={clsx("list-none space-y-2.5", twoCol && "xl:grid xl:grid-cols-2 xl:gap-x-10 xl:gap-y-2.5 xl:space-y-0")}>
       {items.map((item, i) => (
         <li key={i} className="flex gap-2.5">
           <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-black shrink-0" aria-hidden="true" />
@@ -1602,7 +1623,9 @@ function splitPolicyMechanism(it: Record<string, any>): [string | null, string |
 function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
   const t = useTranslations("reportDoc");
   return (
-    <div className="mb-5 print:break-inside-avoid">
+    // Không giữ nguyên khối khi in: bảng nhiều hồ sơ không vừa phần còn lại của trang thì bị đẩy cả bảng sang trang sau,
+    // để trống — từng hàng đã không bị cắt đôi (tr) và tên cột lặp lại ở trang sau.
+    <div className="mb-5">
       <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{t("etsPolicy.title")}</h4>
       <div className="overflow-x-auto border border-border rounded-lg">
         <table className="w-full table-fixed border-collapse text-[13.5px]">
@@ -1621,16 +1644,17 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
               <tr key={i} className="align-top print:break-inside-avoid">
                 <td className="px-2 sm:px-3 py-2 font-semibold text-label break-words">
                   {it.item}
+                  {/* Nguồn liền sau tên hồ sơ, chỉ xuống dòng khi hết chỗ (inline-block). */}
                   {it.source_url ? (
-                    <a href={it.source_url} target="_blank" rel="noopener noreferrer"
-                       className="block mt-0.5 text-[11.5px] font-normal text-primary hover:underline break-words">
+                    <>{" "}<a href={it.source_url} target="_blank" rel="noopener noreferrer"
+                       className="inline-block max-w-full text-[11.5px] font-normal text-primary hover:underline break-words">
                       {it.source_name}{it.source_date ? ` · ${it.source_date}` : ""}
-                    </a>
+                    </a></>
                   ) : it.source_name && (
                     // Hồ sơ admin xác nhận (ets_policy_dossiers.yaml) có thể chưa có link.
-                    <span className="block mt-0.5 text-[11.5px] font-normal text-muted-light break-words">
+                    <>{" "}<span className="inline-block max-w-full text-[11.5px] font-normal text-muted-light break-words">
                       {it.source_name}{it.source_date ? ` · ${it.source_date}` : ""}
-                    </span>
+                    </span></>
                   )}
                   {it.stage && <span className="block text-[11px] font-normal text-muted-light">{it.stage}</span>}
                   {it.pinned && it.verified === false && (
@@ -2125,7 +2149,9 @@ function TrendDot({ up }: { up: boolean }) {
   );
 }
 
-function EuaDashboardWidget({ report }: { report: Report }) {
+// printHeading: tiêu đề Phần 1 CHỈ hiện khi in, nằm chung khối "không cắt" với biểu đồ — Chrome không dời tiêu đề
+// (break-after: avoid) theo biểu đồ khi biểu đồ không vừa phần còn lại của trang, để tiêu đề trơ cuối trang 1.
+function EuaDashboardWidget({ report, printHeading }: { report: Report; printHeading?: React.ReactNode }) {
   const locale = useLocale();
   const t = useTranslations("reportDoc");
   const chartData = report.content["2"]?.chart_data || [];
@@ -2172,8 +2198,12 @@ function EuaDashboardWidget({ report }: { report: Report }) {
     // Khung nền xám chỉ dùng trên màn hình >= sm. Mobile bỏ khung để các thẻ dùng hết
     // bề ngang; khi in bỏ hẳn (nền xám + break-inside-avoid của từng tầng từng để lại
     // 1 dải xám cuối trang khi biểu đồ bị đẩy sang trang sau).
-    <div className="flex flex-col gap-3 sm:gap-4 sm:bg-surface-alt sm:border sm:border-border sm:rounded-xl sm:p-5 sm:shadow-[var(--shadow-soft)] print:bg-transparent! print:border-0! print:p-0! print:shadow-none! print:gap-3!">
-      {/* Tầng 1 — Biểu đồ nến, full chiều ngang */}
+    // In: block thay vì flex — Chrome không áp "break-after: avoid" của tiêu đề Phần 1 cho chỗ ngắt TRONG khung
+    // flex, nên biểu đồ bị đẩy sang trang sau còn tiêu đề nằm trơ cuối trang trước.
+    <div className="flex flex-col gap-3 sm:gap-4 sm:bg-surface-alt sm:border sm:border-border sm:rounded-xl sm:p-5 sm:shadow-[var(--shadow-soft)] print:bg-transparent! print:border-0! print:p-0! print:shadow-none! print:block! print:space-y-3">
+      {/* Tầng 1 — Biểu đồ nến, full chiều ngang (khi in kèm tiêu đề Phần 1 trong cùng khối không cắt) */}
+      <div className="min-w-0 print:break-inside-avoid">
+      {printHeading && <div className="hidden print:block">{printHeading}</div>}
       <div className="bg-background border border-border rounded-xl p-3.5 sm:p-5 shadow-sm min-w-0 print:p-4! print:shadow-none! print:break-inside-avoid">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 mb-4 pb-4 border-b border-border">
           <div className="flex items-center gap-3 min-w-0">
@@ -2206,6 +2236,7 @@ function EuaDashboardWidget({ report }: { report: Report }) {
 
         <CandlestickChart report={report} />
       </div>
+      </div>
 
       {/* Tầng 2 — Số liệu */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:break-inside-avoid">
@@ -2234,14 +2265,15 @@ function EuaDashboardWidget({ report }: { report: Report }) {
         <div className="flex items-center gap-2 text-primary-dark font-bold text-[14px] mb-4">
           <div className="p-1.5 rounded-full bg-tint"><Info size={16} /></div> {t("dash.insight")}
         </div>
+        {/* Cùng thứ tự với 4 ô số liệu phía trên: Phiên gần nhất → 7 ngày → 30 phiên → khối lượng. */}
         <div className="grid md:grid-cols-2 gap-x-8 gap-y-3.5 text-[13px] text-body">
-          <div className="flex items-start gap-2.5">
-            <TrendDot up={sevenDayChange >= 0} />
-            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.trend7Label")}</strong> {t("dash.trend7", { dir: sevenDayChange >= 0 ? t("dash.up") : t("dash.down"), abs: fnum(Math.abs(sevenDayChange), 2, locale), pct: `${sevenDayChangePct > 0 ? "+" : ""}${fnum(sevenDayChangePct, 2, locale)}` })}</div>
-          </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={lastClose >= dayOpen} />
             <div className="leading-snug"><strong className="text-label font-bold">{t("dash.lastSessionLabel")}</strong> {t("dash.lastSession", { open: fnum(dayOpen, 2, locale), high: fnum(dayHigh, 2, locale), low: fnum(dayLow, 2, locale), close: fnum(lastClose, 2, locale), dir: lastClose >= dayOpen ? t("dash.up") : t("dash.down"), range: fnum(dayRange, 2, locale), pct: fnum(dayRangePct, 1, locale) })}</div>
+          </div>
+          <div className="flex items-start gap-2.5">
+            <TrendDot up={sevenDayChange >= 0} />
+            <div className="leading-snug"><strong className="text-label font-bold">{t("dash.trend7Label")}</strong> {t("dash.trend7", { dir: sevenDayChange >= 0 ? t("dash.up") : t("dash.down"), abs: fnum(Math.abs(sevenDayChange), 2, locale), pct: `${sevenDayChangePct > 0 ? "+" : ""}${fnum(sevenDayChangePct, 2, locale)}` })}</div>
           </div>
           <div className="flex items-start gap-2.5">
             <TrendDot up={monthChange >= 0} />
@@ -2268,6 +2300,12 @@ function StatTile({ icon, label, value, sub, valueClass, subClass }: {
       <div className={clsx("text-[11.5px] tabular-nums", subClass ?? "text-muted-light font-medium")}>{sub}</div>
     </div>
   );
+}
+
+// 1 gợi ý kinh doanh của báo cáo trước vừa tới tình huống kích hoạt (content["biz"].reminders — services/biz_memory.py).
+interface BizReminder {
+  id?: number; suggested_date: string; action: string; trigger: string;
+  outcome?: string; evidence?: string; source_name?: string; source_url?: string;
 }
 
 /**
@@ -2322,6 +2360,11 @@ export function ReportDocument({
   const [showAnalysis, setShowAnalysis] = useState(true);
   // Khung "Jenny cập nhật đề xuất trước đây" thu vào nút "i" — bấm mới mở (in PDF luôn hiện nội dung, ẩn nút).
   const [showReminders, setShowReminders] = useState(false);
+  // Mục "Review dự báo và khuyến nghị": bảng chấm dự báo + gợi ý kinh doanh cũ vừa tới tình huống kích hoạt.
+  const hasForecastReview = report.content["2"]?.forecast_review?.items?.length > 0;
+  const bizReminders: BizReminder[] = report.content["biz"]?.reminders ?? [];
+  const remindersContradicted = bizReminders.filter(r => r.outcome === "contradicted").length;
+  const remindersHappened = bizReminders.length - remindersContradicted;
 
   // Rút dòng "**Tổng hợp:**" (kết luận chung giá EUA) ra khỏi các block phân
   // tích để đưa lên đầu báo cáo, làm phần "Nhận định" trong khối "🚨 ĐIỂM
@@ -2341,15 +2384,14 @@ export function ReportDocument({
 
 
   return (
-    // max-w-[210mm]: khổ A4 — trên màn hình rộng báo cáo hiển thị như 1 trang PDF
-    // thật (căn giữa, có viền/bóng đổ), thay vì kéo giãn hết chiều ngang trình
-    // duyệt. Khi in (@media print trong globals.css), khổ A4 thật (@page) luôn
-    // hẹp hơn 210mm (đã trừ margin) nên max-width này không co hẹp thêm nội dung in.
+    // Màn hình: báo cáo trải hết bề ngang (yêu cầu 21/10/2026, trước giới hạn khổ A4 210mm); từ lg/xl các khối
+    // xếp nhiều cột để dòng chữ không quá dài. Khi in/xuất PDF, Chrome dàn lại theo bề rộng trang A4 (~718px, xem
+    // @page trong globals.css) nên mọi bố cục lg:/xl: không áp dụng — bản in vẫn 1 cột như cũ.
     // Mobile (< sm): báo cáo tràn sát 2 mép màn hình (-mx-4 bù đúng px-4 của <main>
     // trong app/layout.tsx), bỏ viền/bo góc/bóng của card — trước đây lề <main> +
     // viền card + lề nội dung + lề khung FramedHighlight cộng dồn, chữ trong khung
     // chỉ còn ~77% bề ngang màn hình 375px. Lề đọc giờ chỉ còn px-4 của nội dung.
-    <div className="report-shell max-w-[210mm] mx-auto max-sm:-mx-4 bg-background text-foreground font-sans leading-[1.5] rounded-2xl max-sm:rounded-none border border-border max-sm:border-x-0 shadow-[var(--shadow-soft)] max-sm:shadow-none overflow-hidden mb-10">
+    <div className="report-shell w-full max-sm:-mx-4 max-sm:w-auto bg-background text-foreground font-sans leading-[1.5] rounded-2xl max-sm:rounded-none border border-border max-sm:border-x-0 shadow-[var(--shadow-soft)] max-sm:shadow-none overflow-hidden mb-10">
 
       {/* Banner Stavian — 1 khối nền liền (không tách 2 nửa gradient ngược chiều,
           vốn tạo 1 đường nối lộ rõ ở giữa): hàng trên logo + ngày phát hành,
@@ -2518,7 +2560,8 @@ export function ReportDocument({
           )}
 
           <FramedHighlight title={t("body.execSummary")} tone="blue">
-            <ul className="list-none -my-0.5">
+            {/* Màn rộng: 2 cột (mỗi bullet không bị cắt giữa 2 cột); in/PDF giữ 1 cột. */}
+            <ul className="list-none -my-0.5 xl:columns-2 xl:gap-x-10">
               {report.content["1"]?.bullets?.map((bullet: any, i: number) => {
                 const b: string = typeof bullet === "string" ? bullet : bullet.text || "";
                 const isMatch = b.includes(':');
@@ -2528,23 +2571,14 @@ export function ReportDocument({
                 const sourceUrl = typeof bullet === "object" ? bullet.source_url : null;
 
                 return (
-                  <li key={i} className="py-1 text-[14.5px]">
+                  <li key={i} className="py-1 text-[14.5px] break-inside-avoid">
                     <p className="text-foreground leading-[1.3]">
                       <span className={clsx("font-mono text-[10.5px] border rounded-[3px] px-1 py-px mr-2", tagColorClass(tag.trim()))}>
                         {tag.trim().substring(0, 15)}
                       </span>
                       <RichText text={text.trim()} />
+                      {sourceName && <InlineSource name={sourceName} url={sourceUrl} />}
                     </p>
-                    {sourceName && (
-                      <a
-                        href={sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 inline-block font-mono text-[11px] text-primary hover:underline"
-                      >
-                        {t("body.source")} {sourceName} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
-                      </a>
-                    )}
                   </li>
                 );
               })}
@@ -2558,9 +2592,17 @@ export function ReportDocument({
             khoảng trắng dài phía trên khi 1 khối lớn bị đẩy nguyên sang trang
             sau vì không đủ chỗ còn lại trên trang hiện tại. */}
         <section id="section-market" className="py-5">
-          <PartHeading eyebrow={t("body.part", { n: 1 })} title={t("body.marketTitle")} icon={LineChart} />
+          {/* Có biểu đồ: khi in, tiêu đề Phần 1 được in bên trong khối biểu đồ (EuaDashboardWidget.printHeading) để
+              không bị bỏ lại cuối trang 1 — bản này chỉ hiện trên màn hình. */}
+          <PartHeading
+            eyebrow={t("body.part", { n: 1 })} title={t("body.marketTitle")} icon={LineChart}
+            className={chartData.length > 0 ? "print:hidden" : undefined}
+          />
 
-          <EuaDashboardWidget report={report} />
+          <EuaDashboardWidget
+            report={report}
+            printHeading={<PartHeading eyebrow={t("body.part", { n: 1 })} title={t("body.marketTitle")} icon={LineChart} />}
+          />
 
           {noPriceData ? (
             <div className="mt-5 rounded-lg border border-border bg-tint/40 px-3.5 py-3 text-[14.5px] leading-[1.5] text-body">
@@ -2573,9 +2615,9 @@ export function ReportDocument({
               <p className="font-mono text-[11px] text-muted-light -mt-3 mb-4">{report.content["2"].price_timestamp}</p>
             )}
 
-            {/* Trái: Bảng giá nhanh · Phải: biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất"). Màn hẹp xếp
-                chồng; khi in/PDF chỉ giữ bảng giá full-width (biểu đồ cần gọi API + tương tác). */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch print:block">
+            {/* Bảng giá nhanh, bên dưới là biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — xếp dọc ở mọi bề rộng
+                (yêu cầu 21/10/2026, trước đặt song song từ md). Khi in/PDF chỉ giữ bảng giá (biểu đồ cần gọi API + tương tác). */}
+            <div className="flex flex-col gap-4 print:block">
             <div className="overflow-x-auto border border-border rounded-lg self-start w-full">
               <table className="w-full sm:table-fixed border-collapse font-mono text-[14.5px]">
                 <thead>
@@ -2678,6 +2720,7 @@ export function ReportDocument({
             <div className="mt-6">
               <SubHeading>{t("body.keyDev")}</SubHeading>
               <DotBullets
+                twoCol
                 items={keyDevelopmentItems}
                 render={(d: any) => (
                   // Định dạng: **Tiêu đề bài báo**: tóm tắt + tác động EUA (Nguồn, ngày).
@@ -2749,17 +2792,8 @@ export function ReportDocument({
                               d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : d.tag === "CLAIM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
                             )}>{d.tag}</span>
                             <RichText text={d.text} />
+                            {d.source_url && <InlineSource name={d.source_name} url={d.source_url} className="text-[10.5px]" />}
                           </p>
-                          {d.source_url && (
-                            <a
-                              href={d.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
-                            >
-                              {t("body.source")} {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
-                            </a>
-                          )}
                         </div>
                       ))
                     ) : (
@@ -2781,17 +2815,8 @@ export function ReportDocument({
                               d.tag === "FACT" ? "bg-up/10 text-up border border-up/30" : d.tag === "CLAIM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
                             )}>{d.tag}</span>
                             <RichText text={d.text} />
+                            {d.source_url && <InlineSource name={d.source_name} url={d.source_url} className="text-[10.5px]" />}
                           </p>
-                          {d.source_url && (
-                            <a
-                              href={d.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 inline-block font-mono text-[10.5px] text-primary hover:underline"
-                            >
-                              {t("body.source")} {d.source_name} <ExternalLink size={10} className="inline -mt-0.5" aria-hidden="true" />
-                            </a>
-                          )}
                         </div>
                       ))
                     ) : (
@@ -2807,7 +2832,7 @@ export function ReportDocument({
             <div className="mb-6">
               <SubHeading>{t("body.analysis")}</SubHeading>
               {report.content["3"].title && (
-                <p className="-mt-2.5 mb-4 ml-[38px] text-[12px] text-muted-light italic">{report.content["3"].title}</p>
+                <p className="-mt-2.5 mb-4 ml-[38px] text-[12px] text-muted-light italic print:break-after-avoid">{report.content["3"].title}</p>
               )}
 
               {(analysisBlocks?.length > 0 || report.content["3"].correlation_analysis) && (
@@ -2829,8 +2854,11 @@ export function ReportDocument({
                       {block.heading !== "Phân tích" && (
                         <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary mb-1.5">{enumLabel(block.heading)}</h4>
                       )}
-                      <div className="space-y-1.5">
-                        {(block.content || "").split("\n").filter((line: string) => line.trim()).map((line: string, j: number) => {
+                      {(() => {
+                        const lines: string[] = (block.content || "").split("\n").filter((line: string) => line.trim());
+                        const isGroupHeadline = (line: string) =>
+                          block.heading === "Phân tích" && GROUP_HEADLINE_PREFIXES.some((p) => line.trim().startsWith(p));
+                        const renderLine = (line: string, j: number) => {
                           // Backend đôi khi tự chèn gạch đầu dòng thô ("- ...", có thể kèm
                           // dấu cách/tab thừa hoặc en-dash "–") cho từng mã/ý trong 1 nhóm,
                           // ở BẤT KỲ heading nào (Diễn biến chính, Phân tích...) — đổi hiển
@@ -2840,9 +2868,9 @@ export function ReportDocument({
                           // Mục 3 / heading "Phân tích": dòng đầu mỗi nhóm gộp sẵn "Tên nhóm:
                           // <kết luận>" (xem ĐỊNH DẠNG trong _prompt_section3) — đóng khung nổi
                           // bật NGUYÊN dòng này thay vì hiện như chữ thường.
-                          if (block.heading === "Phân tích" && GROUP_HEADLINE_PREFIXES.some((p) => trimmed.startsWith(p))) {
+                          if (isGroupHeadline(line)) {
                             return (
-                              <div key={j} className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2">
+                              <div key={j} className="rounded-md border border-primary/30 bg-tint/60 px-3 py-2 print:break-after-avoid">
                                 <p className="text-[14.5px] leading-[1.5] font-bold text-primary-dark">
                                   <RichText text={trimmed} />
                                 </p>
@@ -2861,8 +2889,31 @@ export function ReportDocument({
                               </div>
                             </div>
                           );
-                        })}
-                      </div>
+                        };
+                        // Nhóm theo dòng tiêu đề-kết luận (Năng lượng / Hạn ngạch / Chính sách): màn rộng (xl) mỗi nhóm
+                        // 1 cột cạnh nhau; màn hẹp và khi in vẫn xếp dọc như cũ.
+                        const groups: { start: number; lines: string[] }[] = [];
+                        lines.forEach((line, j) => {
+                          if (isGroupHeadline(line) || !groups.length) groups.push({ start: j, lines: [line] });
+                          else groups[groups.length - 1].lines.push(line);
+                        });
+                        const headlineGroups = groups.filter((g) => isGroupHeadline(g.lines[0])).length;
+                        if (headlineGroups < 2) {
+                          return <div className="space-y-1.5">{lines.map(renderLine)}</div>;
+                        }
+                        return (
+                          <div className={clsx(
+                            "space-y-1.5 xl:space-y-0 xl:grid xl:gap-x-6 xl:gap-y-4 xl:items-start",
+                            headlineGroups >= 3 ? "xl:grid-cols-3" : "xl:grid-cols-2",
+                          )}>
+                            {groups.map((g) => (
+                              <div key={g.start} className={clsx("space-y-1.5", !isGroupHeadline(g.lines[0]) && "xl:col-span-full")}>
+                                {g.lines.map((line, k) => renderLine(line, g.start + k))}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
 
@@ -3061,79 +3112,8 @@ export function ReportDocument({
           {report.content["biz"] && (
             <div className="mb-6">
               <SubHeading>{report.content["biz"].title}</SubHeading>
-              <div className="flex flex-col gap-6">
-                {/* Jenny nhắc lại — CHỈ gợi ý ở báo cáo trước (trong 10 ngày) mà tình huống
-                    kích hoạt vừa xảy ra hôm nay (services/biz_memory.py). Gợi ý chưa kích hoạt
-                    (`tracking`) vẫn được backend lưu/theo dõi nhưng không hiện ra báo cáo. */}
-                {report.content["biz"].reminders?.length > 0 && (
-                  <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                    <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-                      <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-                      <div className="flex-1 min-w-0 text-[14px] sm:text-[15px] font-bold text-label">{t("biz.remindersTitle")}</div>
-                      <button
-                        type="button"
-                        onClick={() => setShowReminders((v) => !v)}
-                        aria-expanded={showReminders}
-                        aria-label={showReminders ? t("biz.hideReminders") : t("biz.showReminders")}
-                        title={showReminders ? t("biz.hide") : t("biz.viewDetails")}
-                        className={clsx(
-                          "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full border transition-colors print:hidden",
-                          showReminders
-                            ? "bg-primary text-white border-primary"
-                            : "text-primary border-primary/40 bg-background hover:bg-tint"
-                        )}
-                      >
-                        <Info size={13} strokeWidth={2.5} aria-hidden="true" />
-                      </button>
-                    </div>
-                    <ul className={clsx("list-none divide-y divide-warn/20 border-t border-warn/30", showReminders ? "block" : "hidden print:block")}>
-                      {report.content["biz"].reminders.map((r: any, i: number) => (
-                        <li key={i} className="px-3.5 py-3 space-y-1.5">
-                          <div className="flex items-start gap-2">
-                            <p className="flex-1 min-w-0 text-[14.5px] leading-[1.5] text-foreground">
-                              {t("biz.suggestedOn")} <b>{formatFullDate(r.suggested_date)}</b> {t("biz.suggested")} <b><RichText text={r.action} /></b>
-                            </p>
-                            {onDismissBizSuggestion && typeof r.id === "number" && (
-                              <DismissButton onClick={() => onDismissBizSuggestion(r.id)} className="shrink-0" />
-                            )}
-                          </div>
-                          <p className="text-[14.5px] leading-[1.5] text-body">
-                            <span className="font-semibold">{t("biz.trigger")}</span> <RichText text={r.trigger} />
-                          </p>
-                          {r.outcome === "contradicted" ? (
-                            <p className="text-[14.5px] leading-[1.5] font-semibold text-down">
-                              {t("biz.contradicted")}{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
-                            </p>
-                          ) : (
-                            <p className="text-[14.5px] leading-[1.5] font-semibold text-up">
-                              {t("biz.happened")}{r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
-                            </p>
-                          )}
-                          {r.source_name && (
-                            r.source_url ? (
-                              <a
-                                href={r.source_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11.5px] text-blue-700 underline decoration-blue-700/40 underline-offset-2 hover:text-blue-900"
-                              >
-                                {t("body.source")} {r.source_name} <ExternalLink size={10} aria-hidden="true" />
-                              </a>
-                            ) : (
-                              <span className="text-[11.5px] text-muted-light">{t("body.source")} {r.source_name}</span>
-                            )
-                          )}
-                          <p className="text-[14.5px] italic text-warn font-semibold">
-                            {r.outcome === "contradicted"
-                              ? t("biz.contradictedFollow")
-                              : t("biz.askDone")}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
+              {/* Màn rộng: Ngắn hạn | Dài hạn cạnh nhau; màn hẹp và khi in xếp dọc. */}
+              <div className="flex flex-col gap-6 xl:grid xl:grid-cols-2 xl:items-start">
                 <div>
                   <BizRecommendationTable
                     heading={t("biz.shortTerm")}
@@ -3199,7 +3179,7 @@ export function ReportDocument({
                   .slice()
                   .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
                 return (
-                  <div className="space-y-5">
+                  <div className={clsx("space-y-5", results.length > 0 && upcoming.length > 0 && "xl:grid xl:grid-cols-2 xl:gap-x-8 xl:space-y-0 xl:items-start")}>
                     {results.length > 0 && (
                       <div>
                         <h4 className="font-mono text-[10.5px] font-bold uppercase tracking-widest text-label mb-2">{t("events.results")}</h4>
@@ -3239,9 +3219,10 @@ export function ReportDocument({
                 <div key={key} className="mb-4 last:mb-0">
                   <h4 className="font-mono text-[11.5px] font-bold uppercase tracking-widest text-primary-dark mb-2">{label}</h4>
                   {items?.length > 0 ? (
-                    <div className="space-y-2.5">
+                    // Màn rộng: tin xếp 2 cột. Khi in mỗi tin giữ nguyên khối (tiêu đề không tách khỏi tóm tắt).
+                    <div className="space-y-2.5 xl:space-y-0 xl:grid xl:grid-cols-2 xl:gap-x-10 xl:gap-y-3">
                       {items.map((art: any, i: number) => (
-                        <div key={i} className="pb-2.5 border-b border-border-soft last:border-b-0 last:pb-0">
+                        <div key={i} className="pb-2.5 border-b border-border-soft last:border-b-0 last:pb-0 print:break-inside-avoid">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                             <p className="text-[14.5px] font-semibold text-label leading-[1.3]">{i + 1}. {art.title}</p>
                             {art.topics?.map((topic: string, ti: number) => (
@@ -3281,26 +3262,100 @@ export function ReportDocument({
           </section>
         )}
 
-        {/* DỰ BÁO TRƯỚC: ĐÚNG HAY SAI — đặt sau Phần 3 (Chi tiết tin tức), trước Nguồn tham khảo (yêu cầu 18/10/2026;
-            trước nằm trong khối điểm nhấn đầu báo cáo). */}
-        {(report.content["2"]?.forecast_review?.items?.length > 0 || report.content["3"]?.vs_previous) && (
+        {/* REVIEW DỰ BÁO VÀ KHUYẾN NGHỊ — mục riêng sau Phần 3 (Chi tiết tin tức), trước Nguồn tham khảo (yêu cầu 21/10/2026),
+            gồm 2 phần: (1) Dự báo trước: đúng hay sai (bảng chấm kịch bản ngắn hạn) và (2) Jenny cập nhật đề xuất trước đây
+            (gợi ý kinh doanh của báo cáo trước vừa tới tình huống kích hoạt — trước nằm đầu khối Gợi ý kinh doanh, Phần 2). */}
+        {(hasForecastReview || report.content["3"]?.vs_previous || bizReminders.length > 0) && (
           <section id="section-forecast-review" className="py-5">
-            {/* So với báo cáo trước — dự báo cũ đúng/sai, giữ/đổi hướng và tiền đề đã thay đổi
-                (report_generator.py: content["3"].vs_previous). Báo cáo cũ không có → ẩn. */}
-            {/* Dự báo trước đúng/sai — bảng tính bằng Python (content["2"].forecast_review) + đoạn vs_previous
-                làm phần "nguyên nhân & điều chỉnh". Báo cáo cũ chưa có bảng → chỉ hiện vs_previous như trước. */}
-            {report.content["2"]?.forecast_review?.items?.length > 0 ? (
-              <ForecastReviewCard review={report.content["2"].forecast_review} enumLabel={enumLabel}>
-                {report.content["3"]?.vs_previous && <RichText text={report.content["3"].vs_previous} />}
-              </ForecastReviewCard>
-            ) : report.content["3"]?.vs_previous && (
-              <div className="rounded-lg border border-border bg-surface px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label mb-1">{t("body.vsPrevious")}</h3>
-                <p className="text-[14px] sm:text-[14.5px] leading-[1.55] text-body">
-                  <RichText text={report.content["3"].vs_previous} />
-                </p>
+            <PartHeading title={t("body.reviewTitle")} icon={ClipboardCheck} />
+
+            {/* Màn rộng: 2 phần cạnh nhau; màn hẹp và khi in xếp dọc. */}
+            <div className={clsx(
+              (hasForecastReview || report.content["3"]?.vs_previous) && bizReminders.length > 0 && "xl:grid xl:grid-cols-2 xl:gap-x-6 xl:items-start",
+            )}>
+            {(hasForecastReview || report.content["3"]?.vs_previous) && (
+              <div className="mb-6 last:mb-0 xl:mb-0">
+                <SubHeading>{t("body.reviewForecast")}</SubHeading>
+                {/* Dự báo trước đúng/sai — bảng tính bằng Python (content["2"].forecast_review) + đoạn vs_previous
+                    làm phần "nguyên nhân & điều chỉnh". Báo cáo cũ chưa có bảng → chỉ hiện vs_previous như trước. */}
+                {hasForecastReview ? (
+                  <ForecastReviewCard review={report.content["2"].forecast_review} enumLabel={enumLabel} showTitle={false}>
+                    {report.content["3"]?.vs_previous && <RichText text={report.content["3"].vs_previous} />}
+                  </ForecastReviewCard>
+                ) : (
+                  <div className="rounded-lg border border-border bg-surface px-3.5 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                    <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label mb-1">{t("body.vsPrevious")}</h3>
+                    <p className="text-[14px] sm:text-[14.5px] leading-[1.55] text-body">
+                      <RichText text={report.content["3"].vs_previous} />
+                    </p>
+                  </div>
+                )}
               </div>
             )}
+
+            {bizReminders.length > 0 && (
+              <div>
+                <SubHeading>{t("biz.remindersTitle")}</SubHeading>
+                {/* Jenny nhắc lại — CHỈ gợi ý ở báo cáo trước (trong 10 ngày) mà tình huống
+                    kích hoạt vừa xảy ra hôm nay (services/biz_memory.py). Gợi ý chưa kích hoạt
+                    (`tracking`) vẫn được backend lưu/theo dõi nhưng không hiện ra báo cáo. */}
+                <div className="rounded-lg border-2 border-warn/50 bg-warn-tint overflow-hidden [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                  <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                    <img src="/jenny.jpg" alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                    {/* Tiêu đề đã nằm ở SubHeading phía trên → dòng này tóm tắt số đề xuất theo kết quả. */}
+                    <div className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-[14px] sm:text-[14.5px]">
+                      <span className="font-bold text-label">{t("biz.remindersSummary", { n: bizReminders.length })}</span>
+                      {remindersHappened > 0 && <span className="font-semibold text-up">✓ {t("biz.remindersHappened", { n: remindersHappened })}</span>}
+                      {remindersContradicted > 0 && <span className="font-semibold text-down">✗ {t("biz.remindersContradicted", { n: remindersContradicted })}</span>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowReminders((v) => !v)}
+                      aria-expanded={showReminders}
+                      aria-label={showReminders ? t("biz.hideReminders") : t("biz.showReminders")}
+                      title={showReminders ? t("biz.hide") : t("biz.viewDetails")}
+                      className={clsx(
+                        "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full border transition-colors print:hidden",
+                        showReminders
+                          ? "bg-primary text-white border-primary"
+                          : "text-primary border-primary/40 bg-background hover:bg-tint"
+                      )}
+                    >
+                      <Info size={13} strokeWidth={2.5} aria-hidden="true" />
+                    </button>
+                  </div>
+                  <ul className={clsx("list-none divide-y divide-warn/20 border-t border-warn/30", showReminders ? "block" : "hidden print:block")}>
+                    {bizReminders.map((r, i) => (
+                      <li key={i} className="px-3.5 py-3 space-y-1.5">
+                        <div className="flex items-start gap-2">
+                          <p className="flex-1 min-w-0 text-[14.5px] leading-[1.5] text-foreground">
+                            {t("biz.suggestedOn")} <b>{formatFullDate(r.suggested_date)}</b> {t("biz.suggested")} <b><RichText text={r.action} /></b>
+                          </p>
+                          {onDismissBizSuggestion && typeof r.id === "number" && (
+                            <DismissButton onClick={() => onDismissBizSuggestion(r.id as number)} className="shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-[14.5px] leading-[1.5] text-body">
+                          <span className="font-semibold">{t("biz.trigger")}</span> <RichText text={r.trigger} />
+                        </p>
+                        {/* Nguồn nằm liền cuối câu kết quả (cùng dòng), chỉ xuống dòng khi hết chỗ. */}
+                        <p className={clsx("text-[14.5px] leading-[1.5] font-semibold", r.outcome === "contradicted" ? "text-down" : "text-up")}>
+                          {t(r.outcome === "contradicted" ? "biz.contradicted" : "biz.happened")}
+                          {r.evidence ? <>: <span className="font-normal text-foreground"><RichText text={r.evidence} /></span></> : "."}
+                          {r.source_name && <InlineSource name={r.source_name} url={r.source_url} className="font-normal" />}
+                        </p>
+                        <p className="text-[14.5px] italic text-warn font-semibold">
+                          {r.outcome === "contradicted"
+                            ? t("biz.contradictedFollow")
+                            : t("biz.askDone")}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+            </div>
           </section>
         )}
 
@@ -3327,9 +3382,9 @@ export function ReportDocument({
                 // Không hiện tiêu đề nhóm: 1 danh sách liền, đánh số liên tục theo thứ tự Phần 3.
                 const entries = [...groups.flatMap((g) => g.entries), ...others];
                 return (
-                  <ul className="space-y-1.5">
+                  <ul className="space-y-1.5 xl:columns-2 xl:gap-x-10">
                     {entries.map((it: any, i: number) => (
-                      <li key={it.url} className="font-mono text-[12px] leading-[1.5] text-muted-light">
+                      <li key={it.url} className="font-mono text-[12px] leading-[1.5] text-muted-light break-inside-avoid">
                         {i + 1}. [{it.source}]{" "}
                         <a
                           href={it.url}

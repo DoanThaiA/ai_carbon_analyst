@@ -524,6 +524,7 @@
   },
   "cbamEstimate": {
     "title": "Ước tính giá CBAM {quarter}",
+    "subtitle": "Giá chứng chỉ CBAM của quý = VWAP mọi phiên đấu giá EUA sơ cấp trên EEX · dữ liệu đến {date}",
     "signalLabel": "Phòng vệ CBAM",
     "signal": {
       "increase": "Khóa lõi + khóa thêm",
@@ -536,8 +537,9 @@
     "auctionsDone": "{done}/{total} phiên đấu giá trong quý",
     "spot": "Giá EUA hiện tại",
     "spotVsQtd": "{pct}% so với VWAP đã chốt",
-    "fixedShare": "Đã chốt {pct}% khối lượng quý",
+    "fixedShare": "Đã chốt <b>{pct}% khối lượng quý</b>",
     "volume": "{done}/{total} triệu tấn",
+    "detailsTitle": "Thông tin chi tiết",
     "signalWhy": "Vì sao",
     "reason": {
       "quarter_fixed": "Toàn bộ phiên đấu giá của quý đã diễn ra — giá quý coi như đã chốt, chờ EC công bố.",
@@ -547,23 +549,31 @@
       "spot_above_qtd": "Giá EUA hiện tại cao hơn VWAP đã chốt {gap}% (ngưỡng {threshold}%) → phần chiến thuật (≤20% phần chưa chốt) chưa khóa, chờ giá về gần VWAP; phần lõi vẫn khóa theo kế hoạch.",
       "spot_near_qtd": "Giá EUA hiện tại lệch VWAP đã chốt {gap}% (dưới ngưỡng {threshold}%) — chỉ khóa phần lõi theo kế hoạch, không dùng phần chiến thuật."
     },
-    "lastAuction": "Phiên gần nhất {date} ({platform}): giá khớp {price} EUR/t",
+    "rowLastAuction": "Phiên gần nhất",
+    "lastAuction": "{date} ({platform}): giá khớp {price} EUR/t",
     "cover": "tỷ lệ đặt mua/chào bán {ratio}",
+    "rowUpcoming": "Phiên sắp tới",
     "upcoming": "7 ngày tới: {count} phiên ({from}–{to}), tổng {volume} triệu tấn",
-    "prevQuarter": "Kiểm chứng phương pháp — {quarter}: VWAP đấu giá {vwap} ↔ EC công bố {official} EUR/t",
-    "method": "Giá CBAM do EC công bố theo quý = trung bình gia quyền khối lượng (VWAP) giá khớp của mọi phiên đấu giá EUA sơ cấp trên EEX trong quý. Phần chưa đấu giá giả định bằng giá EUA hiện tại; khoảng tin cậy theo biến động ngày thực tế {vol}% của EUA (random walk). Đây là ước tính, không phải giá chính thức.",
-    "hedgeHow": "Cách khóa: {open}% nghĩa vụ CBAM quý (tCO₂, tỷ trọng theo khối lượng đấu giá còn lại) chưa chốt giá, thả nổi theo VWAP các phiên còn lại. Mua futures EUA Dec ngay cho phần lõi = {core}% nghĩa vụ CBAM quý ({corePct}% phần chưa chốt), rồi bán rải theo tỷ trọng lịch đấu giá còn lại → lãi/lỗ futures ≈ VWAP − giá mua, chi phí ròng ≈ giá mua hôm nay. Mua EUA rải theo lịch không khóa được chi phí.",
-    "productTitle": "Chi phí CBAM / tấn sản phẩm (giả định — thay bằng số liệu phát thải thực đã thẩm định)",
-    "productRow": "{product} (CN {cn}): {embedded} − {factor}% × CSCF {cscf}% × {benchmark} = {net} tCO₂/t → ≈ {cost} EUR/t",
-    "productRange": " (KTC: {low}–{high})",
+    "rowHedge": "Cách khóa",
+    "hedgeHow": "{open}% nghĩa vụ CBAM quý (tCO₂, tỷ trọng theo khối lượng đấu giá còn lại) chưa chốt giá, thả nổi theo VWAP các phiên còn lại. Mua futures EUA Dec ngay cho phần lõi = {core}% nghĩa vụ CBAM quý ({corePct}% phần chưa chốt), rồi bán rải theo tỷ trọng lịch đấu giá còn lại → lãi/lỗ futures ≈ VWAP − giá mua, chi phí ròng ≈ giá mua hôm nay. Mua EUA rải theo lịch không khóa được chi phí.",
+    "rowMethodCheck": "Kiểm chứng phương pháp",
+    "prevQuarter": "{quarter}: VWAP đấu giá {vwap} ↔ EC công bố {official} EUR/t",
+    "productTitle": "Chi phí CBAM / tấn sản phẩm",
+    "productAssumed": "Phát thải nộp là giả định — thay bằng số thực đã thẩm định.",
     "product": {
       "aluminium_primary": "Nhôm thỏi nguyên sinh",
       "steel_bf_bof": "Thép lò cao (BF-BOF)"
     },
-    "productNote": "Chỉ tính phát thải trực tiếp (phạm vi CBAM của nhôm/thép); hệ số phân bổ miễn phí còn lại {factor}% năm {year}. Cảnh báo: (1) benchmark dùng ở đây là giai đoạn 2021–2025 — benchmark 2026–2030 đã cập nhật và thường thấp hơn nên chi phí thực tế có thể cao hơn (chưa đối chiếu theo từng mã CN); (2) dùng giá trị mặc định của EC thay số liệu thực đã thẩm định thường làm chi phí cao hơn đáng kể — mỗi +0,1 tCO₂/t phát thải nhúng ≈ +{per01} EUR/t sản phẩm.",
+    "productCost": "{cost} EUR/t",
+    "productRange": "(KTC: {low}–{high})",
+    "formulaLegend": "phát thải nộp − hệ số CBAM × CSCF × benchmark CBAM theo mã CN",
     "productDefaults": "Nếu dùng giá trị mặc định (+{markup}% markup): {list} EUR/t",
-    "productUnverified": " (số theo nguồn thứ cấp — cần đối chiếu Phụ lục văn bản gốc)",
-    "productNoteCbam": "Khấu trừ = hệ số CBAM {factor}% năm {year} × CSCF × benchmark CBAM theo mã CN ({source}{verified}). Chỉ tính phát thải trực tiếp (phạm vi CBAM của nhôm/thép); phát thải nộp là giả định. Mỗi +0,1 tCO₂/t ≈ +{per01} EUR/t sản phẩm — chênh lệch số thực ↔ giá trị mặc định là giá trị của việc thẩm định phát thải."
+    "productDefaultsIllustrative": "Giá trị mặc định áp theo nước xuất xứ — số trên chỉ minh họa, không áp cho hàng xuất xứ Việt Nam.",
+    "notesTitle": "Ghi chú",
+    "method": "Giá CBAM do EC công bố theo quý = trung bình gia quyền khối lượng (VWAP) giá khớp của mọi phiên đấu giá EUA sơ cấp trên EEX trong quý. Phần chưa đấu giá giả định bằng giá EUA hiện tại; khoảng tin cậy theo biến động ngày thực tế {vol}% của EUA (random walk). Đây là ước tính, không phải giá chính thức.",
+    "productNote": "Chỉ tính phát thải trực tiếp (phạm vi CBAM của nhôm/thép); hệ số phân bổ miễn phí còn lại {factor}% năm {year}. Cảnh báo: (1) benchmark dùng ở đây là giai đoạn 2021–2025 — benchmark 2026–2030 đã cập nhật và thường thấp hơn nên chi phí thực tế có thể cao hơn (chưa đối chiếu theo từng mã CN); (2) dùng giá trị mặc định của EC thay số liệu thực đã thẩm định thường làm chi phí cao hơn đáng kể — mỗi +0,1 tCO₂/t phát thải nhúng ≈ +{per01} EUR/t sản phẩm.",
+    "productNoteCbam": "Khấu trừ = hệ số CBAM {factor}% năm {year} × CSCF × benchmark CBAM theo mã CN ({source}{verified}). Chỉ tính phát thải trực tiếp (phạm vi CBAM của nhôm/thép); phát thải nộp là giả định. Mỗi +0,1 tCO₂/t ≈ +{per01} EUR/t sản phẩm — chênh lệch số thực ↔ giá trị mặc định là giá trị của việc thẩm định phát thải.",
+    "productUnverified": " (số theo nguồn thứ cấp — cần đối chiếu Phụ lục văn bản gốc)"
   },
   "chatLib": {
     "docNotSupported": "\"{name}\": chưa hỗ trợ file .doc — vui lòng lưu lại dưới dạng .docx.",
@@ -704,7 +714,7 @@
       "open": "Mở menu điều hướng",
       "close": "Đóng menu điều hướng",
       "toc": "Mục lục",
-      "forecastReview": "Dự báo trước: đúng hay sai"
+      "forecastReview": "Review dự báo và khuyến nghị"
     },
     "enum": {
       "shortTerm": "ngắn hạn",
@@ -904,7 +914,10 @@
       "kpi": "KPI",
       "owner": "Đơn vị phụ trách",
       "pilot": "Thí điểm",
-      "financials": "Chi phí / doanh thu ước tính"
+      "financials": "Chi phí / doanh thu ước tính",
+      "remindersSummary": "Jenny rà lại {n} đề xuất trước đây",
+      "remindersHappened": "{n} đã xảy ra",
+      "remindersContradicted": "{n} diễn ra ngược đề xuất"
     },
     "chart": {
       "updating": "Đang cập nhật dữ liệu...",
@@ -983,7 +996,9 @@
       "sourcesTitle": "Nguồn tham khảo",
       "noSources": "Không có nguồn tin tức trong 48h qua.",
       "footer": "Báo cáo nội bộ, tổng hợp tự động có kiểm duyệt. Không phải khuyến nghị đầu tư.",
-      "noNewsVnFiltered": "Có {n} tin Việt Nam trong kỳ nhưng không bài nào đủ liên quan tới EUA/CBAM/chính sách carbon để đưa vào báo cáo."
+      "noNewsVnFiltered": "Có {n} tin Việt Nam trong kỳ nhưng không bài nào đủ liên quan tới EUA/CBAM/chính sách carbon để đưa vào báo cáo.",
+      "reviewTitle": "Review dự báo và khuyến nghị",
+      "reviewForecast": "Dự báo trước: đúng hay sai"
     },
     "etsPolicy": {
       "title": "Theo dõi chính sách ETS/MSR (21 ngày)",

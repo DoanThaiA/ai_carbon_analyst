@@ -373,7 +373,9 @@ mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, khôn
 - `frontend/messages/parts/*.json` đang CŨ hơn `vi.json`/`en.json` (đã sửa thẳng file gộp) — KHÔNG chạy
   `scripts/merge-messages.mjs` khi chưa đồng bộ parts, sẽ mất key.
 
-**Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định ngay sau Phần 3 — Chi tiết tin tức (`content["2"].forecast_review`,
+**Dự báo trước: đúng hay sai** (`services/forecast_review.py`): khối cố định ngay sau Phần 3 — Chi tiết tin tức, là phần 1 của mục
+"Review dự báo và khuyến nghị" (`#section-forecast-review`; phần 2 = "Jenny cập nhật đề xuất trước đây" = `content["biz"].reminders`, chuyển từ
+khối Gợi ý kinh doanh xuống đây ngày 21/10/2026) (`content["2"].forecast_review`,
 frontend `ForecastReviewCard.tsx`, đoạn `content["3"].vs_previous` nằm bên trong làm "Nguyên nhân & điều chỉnh"). Python
 chấm `REVIEW_MAX_REPORTS` báo cáo gần nhất có kịch bản ngắn hạn (còn trong `REVIEW_MAX_SESSIONS` phiên): %Δ EUA luỹ kế từ giá
 báo cáo đó in + mô phỏng lệnh của thẻ chiến lược (khớp khi biên độ phiên chạm vùng Entry, lệnh giới hạn mở gap qua vùng khớp tại giá mở;

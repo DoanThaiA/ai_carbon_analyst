@@ -524,6 +524,7 @@
   },
   "cbamEstimate": {
     "title": "CBAM price estimate {quarter}",
+    "subtitle": "Quarterly CBAM certificate price = VWAP of all primary EUA auctions on EEX · data to {date}",
     "signalLabel": "CBAM hedge",
     "signal": {
       "increase": "Lock core + extra",
@@ -536,8 +537,9 @@
     "auctionsDone": "{done}/{total} auctions this quarter",
     "spot": "Current EUA price",
     "spotVsQtd": "{pct}% vs. VWAP to date",
-    "fixedShare": "{pct}% of quarterly volume fixed",
+    "fixedShare": "<b>{pct}% of quarterly volume</b> fixed",
     "volume": "{done}/{total} Mt",
+    "detailsTitle": "Details",
     "signalWhy": "Why",
     "reason": {
       "quarter_fixed": "All auctions of the quarter are done — the quarterly price is effectively fixed, awaiting EC publication.",
@@ -547,23 +549,31 @@
       "spot_above_qtd": "EUA is {gap}% above the fixed VWAP (threshold {threshold}%) → leave the tactical part (≤20% of the unfixed volume) unlocked until the price nears the VWAP; the core is still locked as planned.",
       "spot_near_qtd": "EUA is {gap}% from the fixed VWAP (below the {threshold}% threshold) — lock the core share as planned; no tactical part."
     },
-    "lastAuction": "Latest auction {date} ({platform}): clearing price EUR {price}/t",
+    "rowLastAuction": "Latest auction",
+    "lastAuction": "{date} ({platform}): clearing price EUR {price}/t",
     "cover": "cover ratio {ratio}",
+    "rowUpcoming": "Upcoming auctions",
     "upcoming": "Next 7 days: {count} auctions ({from}–{to}), {volume} Mt in total",
-    "prevQuarter": "Method check — {quarter}: auction VWAP {vwap} ↔ EC published EUR {official}/t",
-    "method": "The EC's quarterly CBAM price = volume-weighted average (VWAP) of clearing prices of all primary EUA auctions on EEX in the quarter. Volumes not yet auctioned are assumed at the current EUA price; the confidence interval uses the EUA's realised daily volatility of {vol}% (random walk). This is an estimate, not the official price.",
-    "hedgeHow": "How to lock: {open}% of the quarter's CBAM obligation (tCO₂, weighted by remaining auction volume) is not yet priced and floats with the VWAP of the remaining auctions. Buy Dec EUA futures now for the core = {core}% of the quarterly CBAM obligation ({corePct}% of the unfixed part), then sell them down in line with the remaining auction schedule → futures P&L ≈ VWAP − purchase price, net cost ≈ today's purchase price. Buying EUAs along the schedule does not lock the cost.",
-    "productTitle": "CBAM cost per tonne of product (assumed — replace with verified actual emissions)",
-    "productRow": "{product} (CN {cn}): {embedded} − {factor}% × CSCF {cscf}% × {benchmark} = {net} tCO₂/t → ≈ EUR {cost}/t",
-    "productRange": " (CI: {low}–{high})",
+    "rowHedge": "How to lock",
+    "hedgeHow": "{open}% of the quarter's CBAM obligation (tCO₂, weighted by remaining auction volume) is not yet priced and floats with the VWAP of the remaining auctions. Buy Dec EUA futures now for the core = {core}% of the quarterly CBAM obligation ({corePct}% of the unfixed part), then sell them down in line with the remaining auction schedule → futures P&L ≈ VWAP − purchase price, net cost ≈ today's purchase price. Buying EUAs along the schedule does not lock the cost.",
+    "rowMethodCheck": "Method check",
+    "prevQuarter": "{quarter}: auction VWAP {vwap} ↔ EC published EUR {official}/t",
+    "productTitle": "CBAM cost per tonne of product",
+    "productAssumed": "Reported emissions are assumed — replace with verified actual figures.",
     "product": {
       "aluminium_primary": "Unwrought primary aluminium",
       "steel_bf_bof": "Blast-furnace steel (BF-BOF)"
     },
-    "productNote": "Direct emissions only (CBAM scope for aluminium/steel); remaining free-allocation factor {factor}% in {year}. Caveats: (1) these are 2021–2025 benchmarks — the 2026–2030 benchmarks have been updated and are usually lower, so the actual cost may be higher (not yet checked by CN code); (2) using EC default values instead of verified actual emissions usually raises the cost significantly — every +0.1 tCO₂/t of embedded emissions ≈ +EUR {per01}/t of product.",
+    "productCost": "EUR {cost}/t",
+    "productRange": "(CI: {low}–{high})",
+    "formulaLegend": "reported emissions − CBAM factor × CSCF × CBAM benchmark by CN code",
     "productDefaults": "With default values (+{markup}% mark-up): {list} EUR/t",
-    "productUnverified": " (secondary-source figures — check against the regulation's annex)",
-    "productNoteCbam": "Deduction = CBAM factor {factor}% in {year} × CSCF × CBAM benchmark by CN code ({source}{verified}). Direct emissions only (CBAM scope for aluminium/steel); reported emissions are assumed. Every +0.1 tCO₂/t ≈ +EUR {per01}/t of product — the gap between actual and default values is what emission verification is worth."
+    "productDefaultsIllustrative": "Default values apply by country of origin — these figures are illustrative only and do not apply to Vietnamese-origin goods.",
+    "notesTitle": "Notes",
+    "method": "The EC's quarterly CBAM price = volume-weighted average (VWAP) of clearing prices of all primary EUA auctions on EEX in the quarter. Volumes not yet auctioned are assumed at the current EUA price; the confidence interval uses the EUA's realised daily volatility of {vol}% (random walk). This is an estimate, not the official price.",
+    "productNote": "Direct emissions only (CBAM scope for aluminium/steel); remaining free-allocation factor {factor}% in {year}. Caveats: (1) these are 2021–2025 benchmarks — the 2026–2030 benchmarks have been updated and are usually lower, so the actual cost may be higher (not yet checked by CN code); (2) using EC default values instead of verified actual emissions usually raises the cost significantly — every +0.1 tCO₂/t of embedded emissions ≈ +EUR {per01}/t of product.",
+    "productNoteCbam": "Deduction = CBAM factor {factor}% in {year} × CSCF × CBAM benchmark by CN code ({source}{verified}). Direct emissions only (CBAM scope for aluminium/steel); reported emissions are assumed. Every +0.1 tCO₂/t ≈ +EUR {per01}/t of product — the gap between actual and default values is what emission verification is worth.",
+    "productUnverified": " (secondary-source figures — check against the regulation's annex)"
   },
   "chatLib": {
     "docNotSupported": "\"{name}\": .doc files are not supported — please re-save as .docx.",
@@ -704,7 +714,7 @@
       "open": "Open navigation menu",
       "close": "Close navigation menu",
       "toc": "Contents",
-      "forecastReview": "Previous forecasts: right or wrong"
+      "forecastReview": "Forecast & recommendation review"
     },
     "enum": {
       "shortTerm": "short term",
@@ -904,7 +914,10 @@
       "kpi": "KPI",
       "owner": "Owner",
       "pilot": "Pilot",
-      "financials": "Estimated cost / revenue"
+      "financials": "Estimated cost / revenue",
+      "remindersSummary": "Jenny reviewed {n} earlier suggestions",
+      "remindersHappened": "{n} happened",
+      "remindersContradicted": "{n} went against the suggestion"
     },
     "chart": {
       "updating": "Updating data...",
@@ -983,7 +996,9 @@
       "sourcesTitle": "References",
       "noSources": "No news sources in the past 48 hours.",
       "footer": "Internal report, automatically compiled and reviewed. Not investment advice.",
-      "noNewsVnFiltered": "{n} Vietnam articles were reviewed this period, but none was relevant enough to EUA/CBAM/carbon policy to include."
+      "noNewsVnFiltered": "{n} Vietnam articles were reviewed this period, but none was relevant enough to EUA/CBAM/carbon policy to include.",
+      "reviewTitle": "Forecast & recommendation review",
+      "reviewForecast": "Previous forecasts: right or wrong"
     },
     "etsPolicy": {
       "title": "EU ETS/MSR policy tracker (21 days)",

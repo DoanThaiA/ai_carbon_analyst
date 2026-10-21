@@ -56,7 +56,8 @@ export interface CbamEstimate {
     cscf_pct?: number;
     deduction_tco2_per_t?: number;
     default_markup_pct?: number;
-    defaults?: { origin: string; default_value: number; with_markup: number; net_tco2_per_t: number; cost_eur_per_t: number }[];
+    // vn: giá trị mặc định của xuất xứ Việt Nam — các xuất xứ khác chỉ là MINH HỌA (mặc định áp theo nước xuất xứ).
+    defaults?: { origin: string; default_value: number; with_markup: number; net_tco2_per_t: number; cost_eur_per_t: number; vn?: boolean }[];
     benchmark_source?: string | null;
     benchmark_verified?: boolean;
     assumed: boolean;

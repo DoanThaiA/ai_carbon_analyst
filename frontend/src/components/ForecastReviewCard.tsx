@@ -38,24 +38,30 @@ export function ForecastReviewCard({
   review,
   enumLabel,
   children,
+  showTitle = true,
 }: {
   review: ForecastReview;
   enumLabel: (v: string | null | undefined) => string;
   children?: ReactNode;
+  // false khi nơi gọi đã có tiêu đề riêng (mục "Review dự báo và khuyến nghị") — chỉ giữ cảnh báo sai liên tiếp.
+  showTitle?: boolean;
 }) {
   const t = useTranslations("forecastReview");
   const locale = useLocale();
+  const wrongStreak = review.wrong_in_row >= 2;
 
   return (
     // Khi in: KHÔNG giữ nguyên khối (bảng dài, có calibration/quy tắc chấm → không vừa phần còn lại của trang thì bị đẩy
     // nguyên sang trang sau, để trống trang trước) — chỉ giữ không cắt đôi từng dòng/từng phần.
     <div className="rounded-lg border border-border bg-white overflow-hidden print:overflow-visible [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-surface border-b border-border">
-        <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label">{t("title")}</h3>
-        {review.wrong_in_row >= 2 && (
-          <span className="text-[11px] font-bold text-down">{t("wrongInRow", { n: review.wrong_in_row })}</span>
-        )}
-      </div>
+      {(showTitle || wrongStreak) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-surface border-b border-border">
+          {showTitle && <h3 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-[0.15em] text-label">{t("title")}</h3>}
+          {wrongStreak && (
+            <span className="text-[11px] font-bold text-down">{t("wrongInRow", { n: review.wrong_in_row })}</span>
+          )}
+        </div>
+      )}
 
       <ul className="divide-y divide-border">
         {review.items.map((it) => {
