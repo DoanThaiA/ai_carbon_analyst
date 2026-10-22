@@ -1100,7 +1100,8 @@
       "dDay": "Δ ngày",
       "dWeek": "Δ tuần",
       "dayLabel": "Ngày",
-      "weekLabel": "Tuần"
+      "weekLabel": "Tuần",
+      "note": "Lưu ý"
     },
     "keyDev": {
       "impact": {

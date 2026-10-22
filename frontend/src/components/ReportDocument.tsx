@@ -2835,9 +2835,36 @@ function DeltaCell({ text, label }: { text?: string; label?: string }) {
   );
 }
 
+// Dấu "!" cạnh tên hợp đồng khi mã có lưu ý (phiên không giao dịch, điều chỉnh hồi tố, giá chốt CBAM) — BẤM mới hiện
+// nội dung ngay dưới tên, bấm lần nữa để ẩn; bản in luôn hiện. Cam = cảnh báo dữ liệu, xanh = thông tin (CBAM).
+function NoteMark({ notes, warn }: { notes: string[]; warn: boolean }) {
+  const t = useTranslations("reportDoc");
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        aria-label={t("market.note")}
+        className={clsx(
+          "ml-1.5 inline-grid h-[18px] w-[18px] place-items-center rounded-full align-middle text-[11.5px] font-extrabold leading-none text-white transition-opacity hover:opacity-80 print:hidden",
+          warn ? "bg-warn" : "bg-primary",
+          open && "ring-2 ring-black/15",
+        )}
+      >
+        !
+      </button>
+      <div className={clsx("mt-1 text-[12.5px] font-normal leading-[1.45]", warn ? "text-warn" : "text-body", open ? "block" : "hidden print:block")}>
+        {notes.map((n, i) => <div key={i}>{n}</div>)}
+      </div>
+    </>
+  );
+}
+
 // Bảng giá nhanh: mỗi mã 1 dòng theo đúng thứ tự bảng gốc (không chia nhóm) — dòng kẻ sọc xen kẽ + vạch ngăn rõ để mắt
 // không nhảy dòng; Δ chỉ hiện số (không vẽ thanh). Ghi chú chất lượng dữ liệu + giá chốt CBAM nằm ở
-// dòng phụ ngay dưới mã, cùng màu nền với dòng của mã đó.
+// sau dấu "!" cạnh tên hợp đồng (bấm mới hiện).
 function MarketBoard({ rows }: { rows: any[] }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
@@ -2862,8 +2889,8 @@ function MarketBoard({ rows }: { rows: any[] }) {
             // Báo cáo cũ có thể đã nối thêm ghi chú LLM phía sau — chỉ lấy phần "Giá chốt…"
             ? String(r.note).match(/^Giá chốt theo quý, tại ngày .*?\d{4}(?:, ngày chốt giá tiếp theo .*?\d{4})?|^Quarterly (?:settlement|closing|fixed) price.*?\d{4}(?:, next .*?\d{4})?/i)?.[0] ?? r.note
             : null;
-          const hasNote = !!(r.no_trade || r.revision || cbamNote);
-          // Mỗi mã 1 <tbody>: dòng giá + dòng ghi chú cùng nền, vạch ngăn đặt dưới cả cụm; khi in không tách cụm.
+          const notes = [r.no_trade && t("body.noTrade"), r.revision, cbamNote].filter(Boolean) as string[];
+          // Mỗi mã 1 <tbody> (nền sọc + vạch ngăn); lưu ý của mã nằm sau dấu "!" cạnh tên (NoteMark).
           return (
             <tbody
               key={idx}
@@ -2889,9 +2916,10 @@ function MarketBoard({ rows }: { rows: any[] }) {
                   ) : (
                     r.name
                   )}
+                  {notes.length > 0 && <NoteMark notes={notes} warn={!!(r.no_trade || r.revision)} />}
                 </td>
                 <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <div className="text-[17px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
+                  <div className="text-[16px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
                   {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
                 </td>
                 <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dday} /></td>
@@ -2905,23 +2933,6 @@ function MarketBoard({ rows }: { rows: any[] }) {
                   )}
                 </td>
               </tr>
-              {hasNote && (
-                <tr>
-                  <td colSpan={5} className="px-3 pb-3 pt-0">
-                    {/* Chú thích chất lượng dữ liệu (report_generator.py): phiên không có giao dịch (giá danh
-                        nghĩa) / nguồn điều chỉnh hồi tố giá phiên trước; dòng CBAM: giá chốt theo quý. */}
-                    {(r.no_trade || r.revision) && (
-                      <div className="text-[13px] leading-[1.45] text-warn">
-                        {r.no_trade && <div>⚠ {t("body.noTrade")}</div>}
-                        {r.revision && <div>⚠ {r.revision}</div>}
-                      </div>
-                    )}
-                    {cbamNote && (
-                      <div className="inline-block rounded-md border border-primary/15 bg-background/80 px-2.5 py-1.5 text-[13px] leading-[1.45] text-body">{cbamNote}</div>
-                    )}
-                  </td>
-                </tr>
-              )}
             </tbody>
           );
         })}
@@ -3452,10 +3463,10 @@ export function ReportDocument({
                 {content["2"]?.no_price_notice || t("body.noPriceFallback")}
               </div>
             ) : priceRows.length > 0 && (
-              // Bảng giá nhanh (dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá — ngang từ khung báo cáo ≥ 768px
-              // (@3xl), rất rộng chia 7/5. Khi in/PDF chỉ giữ bảng giá.
-              <div className="grid gap-5 @3xl/report:grid-cols-2 @6xl/report:grid-cols-12">
-                <div className="min-w-0 @6xl/report:col-span-7">
+              // Bảng giá nhanh hẹp (5/12, dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá rộng (7/12) — ngang từ khung báo
+              // cáo ≥ 768px (@3xl). Khi in/PDF chỉ giữ bảng giá.
+              <div className="grid gap-5 @3xl/report:grid-cols-12">
+                <div className="min-w-0 @3xl/report:col-span-5">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
@@ -3463,7 +3474,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                <div className="flex min-w-0 flex-col @6xl/report:col-span-5 print:hidden">{indexPanel}</div>
+                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 print:hidden">{indexPanel}</div>
               </div>
             )}
 

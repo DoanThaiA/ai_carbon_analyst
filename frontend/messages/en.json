@@ -1100,7 +1100,8 @@
       "dDay": "Δ day",
       "dWeek": "Δ week",
       "dayLabel": "Day",
-      "weekLabel": "Week"
+      "weekLabel": "Week",
+      "note": "Note"
     },
     "keyDev": {
       "impact": {
