@@ -5,7 +5,8 @@ import type { Report } from "./types";
 // thông báo. Chỉ đổi phần HIỂN THỊ — sửa/QC luôn làm trên `content` tiếng Việt.
 export function localizeReport(report: Report, locale: string): { report: Report; fallback: boolean } {
   if (locale !== "en") return { report, fallback: false };
-  if (report.content_en) return { report: { ...report, content: report.content_en }, fallback: false };
+  // Giữ content tiếng Việt ở content_vi: mức giá của thẻ KHUYẾN NGHỊ VỊ THẾ luôn đọc từ bản gốc (xem PositionCard).
+  if (report.content_en) return { report: { ...report, content: report.content_en, content_vi: report.content }, fallback: false };
   return { report, fallback: true };
 }
 

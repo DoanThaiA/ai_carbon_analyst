@@ -226,7 +226,7 @@
         "low": "Low",
         "headingAnalysis": "Analysis",
         "headingWatch": "Watch list",
-        "headingKeyDev": "Key developments"
+        "headingKeyDev": "Key Market Insights"
       },
       "trend": {
         "up": "LEANING BULLISH",
@@ -354,7 +354,7 @@
         "lower": "below"
       },
       "masthead": {
-        "title": "DAILY CARBON MARKET NEWS",
+        "title": "Daily carbon market news",
         "reporter": "Reported by: Jenny AI · Development Strategy Department",
         "date": "{month} {day}, {year}"
       },
@@ -374,7 +374,7 @@
         "dWeek": "Δ Week:",
         "vsPrevious": "Versus the previous report",
         "noTrade": "No trading this session (open = high = low = close) — nominal price; the daily change does not reflect market movement.",
-        "keyDev": "Key developments",
+        "keyDev": "Key Market Insights",
         "part2NoPrice": "News impact analysis",
         "part2": "Analysis and trading recommendations",
         "drivers": "Market drivers",

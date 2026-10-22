@@ -1,6 +1,7 @@
 {
  "shellHeader": {
   "vi": {
+   "title": "Trung tâm điều hành carbon / Phòng CLPT / SIM",
    "admin": "Quản Trị",
    "adminTitle": "Trang Quản Trị",
    "connectClaude": "Kết nối Claude",
@@ -10,6 +11,7 @@
    "closeMenu": "Đóng menu"
   },
   "en": {
+   "title": "Carbon Operations Center / Development Strategy Dept. / SIM",
    "admin": "Admin",
    "adminTitle": "Admin Console",
    "connectClaude": "Connect Claude",

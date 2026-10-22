@@ -740,7 +740,7 @@
       "low": "Low",
       "headingAnalysis": "Analysis",
       "headingWatch": "Watch list",
-      "headingKeyDev": "Key developments"
+      "headingKeyDev": "Key Market Insights"
     },
     "ladder": {
       "current": "Current",
@@ -961,7 +961,7 @@
       "lower": "below"
     },
     "masthead": {
-      "title": "DAILY CARBON MARKET NEWS",
+      "title": "Daily carbon market news",
       "reporter": "Reported by: Jenny AI · Development Strategy Department",
       "date": "{month} {day}, {year}"
     },
@@ -981,7 +981,7 @@
       "dWeek": "Δ Week:",
       "vsPrevious": "Versus the previous report",
       "noTrade": "No trading this session (open = high = low = close) — nominal price; the daily change does not reflect market movement.",
-      "keyDev": "Key developments",
+      "keyDev": "Key Market Insights",
       "part2NoPrice": "News impact analysis",
       "part2": "Analysis and trading recommendations",
       "drivers": "Market drivers",
@@ -1064,6 +1064,7 @@
     }
   },
   "shellHeader": {
+    "title": "Carbon Operations Center / Development Strategy Dept. / SIM",
     "admin": "Admin",
     "adminTitle": "Admin Console",
     "connectClaude": "Connect Claude",
@@ -1330,7 +1331,7 @@
     "sectionGeneral": "Whole report",
     "sectionNumber": "Section {n}",
     "section_biz": "SIM suggestions",
-    "section_dev": "Key developments",
+    "section_dev": "Key Market Insights",
     "section_forecast": "Previous forecast",
     "section_cbam": "CBAM",
     "section_ets_policy": "ETS policy",
@@ -1576,8 +1577,8 @@
     "sectionShort_1": "S1",
     "section_2": "Section 2 — Market drivers",
     "sectionShort_2": "S2",
-    "section_dev": "Key developments",
-    "sectionShort_dev": "Key developments",
+    "section_dev": "Key Market Insights",
+    "sectionShort_dev": "Key Market Insights",
     "section_3": "Section 3 — In-depth analysis",
     "sectionShort_3": "S3",
     "section_4": "Section 4 — Carbon credits & CBAM",

@@ -95,7 +95,7 @@ SENTIMENT_TAGS = {"TÍCH CỰC": "POSITIVE", "TRUNG LẬP": "NEUTRAL", "TIÊU C�
 FIXED_STRINGS: Dict[str, str] = {
     "Tóm tắt điều hành": "Executive summary",
     "Bảng giá nhanh": "Price snapshot",
-    "Diễn biến chính": "Key developments",
+    "Diễn biến chính": "Key Market Insights",
     "Phân tích các yếu tố năng lượng tương quan, chính sách ảnh hưởng đến giá EUA":
         "Analysis of related energy factors and policies affecting EUA prices",
     "Phân tích tác động của tin tức tới EUA (không có phiên giao dịch)":
@@ -231,7 +231,8 @@ The web page looks for a few exact English markers, so render these exactly: **T
 **Kết luận:** → **Conclusion:**, [TÍCH CỰC]/[TRUNG LẬP]/[TIÊU CỰC] → [POSITIVE]/[NEUTRAL]/[NEGATIVE], \
 **Mục tiêu:** → **Target:**, **Quản trị rủi ro:** → **Risk management:**, **Entry:** stays **Entry:**, and \
 lines starting "Năng lượng & nhiên liệu hóa thạch:" / "Hạn ngạch & tín chỉ carbon:" / "Chính sách:" → \
-"Energy & fossil fuels:" / "Allowances & carbon credits:" / "Policy:"."""
+"Energy & fossil fuels:" / "Allowances & carbon credits:" / "Policy:". The section "Diễn biến chính" is called \
+"Key Market Insights"."""
 
 
 class ClaudeTranslator(Translator):

@@ -976,8 +976,8 @@ function KpiTile({ title, children, className, href }: { title: string; children
   return href ? <a href={href} className={cls}>{body}</a> : <div className={cls}>{body}</div>;
 }
 
-function PositionCard({ scenarios, chartData, euaRow, forecastReview, cbamEstimate, hedgeAction, openPositions }: {
-  scenarios: Scenario[]; chartData: OhlcRow[]; euaRow?: PriceRow; forecastReview?: ForecastReview | null;
+function PositionCard({ scenarios, levelScenarios, chartData, euaRow, forecastReview, cbamEstimate, hedgeAction, openPositions }: {
+  scenarios: Scenario[]; levelScenarios?: Scenario[]; chartData: OhlcRow[]; euaRow?: PriceRow; forecastReview?: ForecastReview | null;
   cbamEstimate?: CbamEstimate | null; hedgeAction?: HedgeAction | null; openPositions?: OpenPosition[];
 }) {
   const t = useTranslations("reportDoc");
@@ -991,10 +991,13 @@ function PositionCard({ scenarios, chartData, euaRow, forecastReview, cbamEstima
   // Hỗ trợ/kháng cự = đáy/đỉnh 30 phiên OHLC thật (= report_generator._eua_technical_levels_summary).
   const range: [number, number] | null = chartData.length
     ? [Math.min(...chartData.map(c => c.low)), Math.max(...chartData.map(c => c.high))] : null;
+  // Bản tiếng Anh: mức giá/loại lệnh (thang giá, bảng lệnh) tách từ kịch bản TIẾNG VIỆT cùng khung (`levelScenarios`
+  // = content_vi) — câu chiến lược tiếng Anh do Claude viết tự do, parser từ khoá đọc sai; câu chữ hiển thị vẫn
+  // lấy từ bản tiếng Anh (plan.sc).
   const plans = PLAN_HORIZONS
     .map(h => scenarios.find(sc => sc?.horizon === h))
     .filter((sc): sc is Scenario => !!sc)
-    .map(sc => buildPlan(sc, last));
+    .map(sc => ({ ...buildPlan(levelScenarios?.find(v => v?.horizon === sc.horizon) ?? sc, last), sc }));
   const short = plans.find(p => p.horizon === "ngắn hạn")?.sc;
   const outlook = outlookOf(short, plans.find(p => p.horizon === "trung hạn")?.sc);
   const minRr = forecastReview?.rules?.min_rr ?? DEFAULT_MIN_RR;
@@ -2437,7 +2440,7 @@ export function ReportDocument({
           <div className="h-px bg-white/15 mt-4 sm:mt-5 mb-4 sm:mb-5" />
 
           <div className="text-[11px] sm:text-[12px] font-semibold tracking-[0.2em] uppercase text-[#8fd9a8] mb-1.5">
-            Carbon Market Daily News
+            Daily carbon market news
           </div>
           <h1 className="text-[21px] sm:text-[28px] font-extrabold tracking-[0.2px] leading-[1.2] [text-wrap:balance]">
             {t("masthead.title")}
@@ -2764,6 +2767,7 @@ export function ReportDocument({
           {tradingScenarios.some(sc => sc?.horizon === "ngắn hạn") && (
             <PositionCard
               scenarios={tradingScenarios}
+              levelScenarios={report.content_vi?.["3"]?.trading_scenarios}
               chartData={chartData}
               euaRow={priceRows.find((r: any) => r.code === "EUA")}
               forecastReview={report.content["2"]?.forecast_review}

@@ -8,6 +8,9 @@ export interface Report {
   // Bản dịch tiếng Anh của content (services/report_translation.py) — null khi chưa dịch
   // hoặc bản dịch đã cũ so với content hiện tại.
   content_en?: any | null;
+  // Chỉ có ở phía client khi đang xem bản tiếng Anh (lib/reportLocale.ts::localizeReport): `content` gốc tiếng Việt —
+  // thẻ KHUYẾN NGHỊ VỊ THẾ đọc mức giá từ đây vì câu chiến lược tiếng Anh do Claude viết tự do, parser không tin được.
+  content_vi?: any | null;
   error_message?: string | null;
   created_at: string;
   published_at: string | null;

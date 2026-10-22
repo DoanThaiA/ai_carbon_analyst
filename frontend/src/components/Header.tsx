@@ -65,7 +65,7 @@ export function Header() {
           <Image src="/jenny.jpg" alt="Jenny AI" width={36} height={36} className="h-9 w-9 rounded-full object-cover shrink-0 border border-white/20" />
           <div className="w-[1px] h-5 bg-white/25 mx-1 shrink-0"></div>
           <h1 className="text-base sm:text-xl font-extrabold tracking-tight text-white truncate">
-            Trung tâm điều hành carbon / Phòng CLPT / SIM
+            {t("title")}
           </h1>
         </Link>
         <div className="flex items-center gap-3 shrink-0">
