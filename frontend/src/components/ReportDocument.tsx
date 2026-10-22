@@ -2750,8 +2750,10 @@ function SectionNav({ tabs, quote }: { tabs: { id: string; label: string }[]; qu
                 data-target={tab.id}
                 onClick={() => go(tab.id)}
                 aria-current={on ? "location" : undefined}
+                // Báo cáo rộng (≥ 768px): các tab giãn ra lấp đầy thanh (không để trống giữa tab và ô giá EUA);
+                // hẹp hơn: giữ bề rộng tự nhiên + cuộn ngang.
                 className={clsx(
-                  "relative shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-3 text-[13.5px] font-semibold transition-colors",
+                  "relative shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-3 text-center text-[13.5px] font-semibold transition-colors @3xl/report:flex-auto",
                   on ? "text-primary-dark" : "text-muted-light hover:text-label",
                 )}
               >
@@ -2761,7 +2763,7 @@ function SectionNav({ tabs, quote }: { tabs: { id: string; label: string }[]; qu
             );
           })}
         </div>
-        {quote && <div className="hidden shrink-0 items-center @4xl/report:flex">{quote}</div>}
+        {quote && <div className="hidden shrink-0 items-center border-l border-border pl-4 @4xl/report:flex">{quote}</div>}
       </div>
     </nav>
   );
@@ -2835,29 +2837,49 @@ function DeltaCell({ text, label }: { text?: string; label?: string }) {
   );
 }
 
-// Dấu "!" cạnh tên hợp đồng khi mã có lưu ý (phiên không giao dịch, điều chỉnh hồi tố, giá chốt CBAM) — BẤM mới hiện
-// nội dung ngay dưới tên, bấm lần nữa để ẩn; bản in luôn hiện. Cam = cảnh báo dữ liệu, xanh = thông tin (CBAM).
-function NoteMark({ notes, warn }: { notes: string[]; warn: boolean }) {
+// Ô tên hợp đồng: tên (link nguồn giá) + dấu "!" sát ngay bên phải khi mã có lưu ý (phiên không giao dịch, điều chỉnh
+// hồi tố, giá chốt CBAM) — BẤM mới hiện nội dung dưới tên, bấm lần nữa để ẩn; bản in luôn hiện nội dung.
+function ContractName({ row, notes }: { row: any; notes: string[] }) {
   const t = useTranslations("reportDoc");
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-        aria-label={t("market.note")}
-        className={clsx(
-          "ml-1.5 inline-grid h-[18px] w-[18px] place-items-center rounded-full align-middle text-[11.5px] font-extrabold leading-none text-white transition-opacity hover:opacity-80 print:hidden",
-          warn ? "bg-warn" : "bg-primary",
-          open && "ring-2 ring-black/15",
+      <div className="flex items-start gap-1.5">
+        {row.source_url ? (
+          // Link kiểu quen thuộc (xanh dương + gạch chân + icon ↗) để nhận ra được là bấm được (cả trên mobile).
+          <a
+            href={row.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t("body.viewPriceAt", { name: row.name })}
+            className="min-w-0 text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900 transition-colors"
+          >
+            {row.name}
+            <ExternalLink size={11} className="ml-1 -mt-0.5 inline-block align-middle" aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="min-w-0">{row.name}</span>
         )}
-      >
-        !
-      </button>
-      <div className={clsx("mt-1 text-[12.5px] font-normal leading-[1.45]", warn ? "text-warn" : "text-body", open ? "block" : "hidden print:block")}>
-        {notes.map((n, i) => <div key={i}>{n}</div>)}
+        {notes.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen(v => !v)}
+            aria-expanded={open}
+            aria-label={t("market.note")}
+            className={clsx(
+              "mt-[2px] grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-warn text-[11.5px] font-extrabold leading-none text-white transition-opacity hover:opacity-80 print:hidden",
+              open && "ring-2 ring-black/15",
+            )}
+          >
+            !
+          </button>
+        )}
       </div>
+      {notes.length > 0 && (
+        <div className={clsx("mt-1 text-[12.5px] font-normal leading-[1.45] text-body", open ? "block" : "hidden print:block")}>
+          {notes.map((n, i) => <div key={i}>{n}</div>)}
+        </div>
+      )}
     </>
   );
 }
@@ -2876,10 +2898,10 @@ function MarketBoard({ rows }: { rows: any[] }) {
         <thead>
           <tr className="border-b-2 border-primary/25 bg-tint">
             <th className={clsx(th, "w-[34%] @xl:w-[30%]")}>{t("body.contract")}</th>
-            <th className={clsx(th, "text-right!")}>{t("body.price")}</th>
-            <th className={clsx(th, "hidden w-[27%] @xl:table-cell")}>{t("market.dDay")}</th>
-            <th className={clsx(th, "hidden w-[27%] @xl:table-cell")}>{t("market.dWeek")}</th>
-            <th className={clsx(th, "@xl:hidden")}>{t("body.change")}</th>
+            <th className={clsx(th, "text-center!")}>{t("body.price")}</th>
+            <th className={clsx(th, "hidden w-[27%] text-center! @xl:table-cell")}>{t("market.dDay")}</th>
+            <th className={clsx(th, "hidden w-[27%] text-center! @xl:table-cell")}>{t("market.dWeek")}</th>
+            <th className={clsx(th, "text-center! @xl:hidden")}>{t("body.change")}</th>
           </tr>
         </thead>
         {rows.map((r: any, idx: number) => {
@@ -2890,7 +2912,7 @@ function MarketBoard({ rows }: { rows: any[] }) {
             ? String(r.note).match(/^Giá chốt theo quý, tại ngày .*?\d{4}(?:, ngày chốt giá tiếp theo .*?\d{4})?|^Quarterly (?:settlement|closing|fixed) price.*?\d{4}(?:, next .*?\d{4})?/i)?.[0] ?? r.note
             : null;
           const notes = [r.no_trade && t("body.noTrade"), r.revision, cbamNote].filter(Boolean) as string[];
-          // Mỗi mã 1 <tbody> (nền sọc + vạch ngăn); lưu ý của mã nằm sau dấu "!" cạnh tên (NoteMark).
+          // Mỗi mã 1 <tbody> (nền sọc + vạch ngăn); lưu ý của mã nằm sau dấu "!" cạnh tên (ContractName).
           return (
             <tbody
               key={idx}
@@ -2901,30 +2923,15 @@ function MarketBoard({ rows }: { rows: any[] }) {
             >
               <tr className="align-middle">
                 <td className="px-3 py-3 text-[15px] font-semibold leading-snug text-label">
-                  {r.source_url ? (
-                    // Link kiểu quen thuộc (xanh dương + gạch chân + icon ↗) để nhận ra được là bấm được (cả trên mobile).
-                    <a
-                      href={r.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={t("body.viewPriceAt", { name: r.name })}
-                      className="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900 transition-colors"
-                    >
-                      {r.name}
-                      <ExternalLink size={11} className="ml-1 -mt-0.5 inline-block align-middle" aria-hidden="true" />
-                    </a>
-                  ) : (
-                    r.name
-                  )}
-                  {notes.length > 0 && <NoteMark notes={notes} warn={!!(r.no_trade || r.revision)} />}
+                  <ContractName row={r} notes={notes} />
                 </td>
-                <td className="px-3 py-3 text-right whitespace-nowrap">
+                <td className="px-3 py-3 text-center whitespace-nowrap">
                   <div className="text-[16px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
                   {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
                 </td>
-                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dday} /></td>
-                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dweek} /></td>
-                <td className="px-3 py-3 @xl:hidden">
+                <td className="hidden px-3 py-3 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
+                <td className="hidden px-3 py-3 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
+                <td className="px-3 py-3 text-center @xl:hidden">
                   {r.dday === "-" && r.dweek === "-" ? <span className="text-muted-light">—</span> : (
                     <div className="space-y-1.5">
                       <DeltaCell text={r.dday} label={t("market.dayLabel")} />
@@ -3190,8 +3197,7 @@ function AnalysisBlocks({ blocks }: { blocks: any[] }) {
 }
 
 // Phần 3 — tin chi tiết theo NƠI ĐĂNG: Quốc tế rồi Việt Nam (2 nhóm nối tiếp — số tin 2 nhóm thường lệch nhau nên không
-// đặt 2 cột cạnh nhau). Mỗi nhóm: lưới thẻ 2 cột khi báo cáo rộng, thẻ cùng hàng cao bằng nhau, tin lẻ cuối trải hết hàng.
-// Khi in (1 cột) thẻ trở lại dạng danh sách kẻ dòng.
+// đặt 2 cột cạnh nhau). Mỗi nhóm: danh sách DỌC trải hết bề rộng trang, các tin ngăn bằng vạch kẻ (không chia ô/thẻ).
 function NewsColumns({ section }: { section: any }) {
   const t = useTranslations("reportDoc");
   const regions = [
@@ -3212,15 +3218,12 @@ function NewsColumns({ section }: { section: any }) {
               {items.length > 0 && <span className="text-[12.5px] text-muted-light">{t("news.count", { n: items.length })}</span>}
             </div>
             {items.length > 0 ? (
-              <ol className="list-none grid gap-3 @3xl/report:grid-cols-2 print:gap-4">
+              <ol className="list-none">
                 {items.map((art: any, i: number) => (
                   // Khi in mỗi tin giữ nguyên khối (tiêu đề không tách khỏi tóm tắt).
                   <li
                     key={i}
-                    className={clsx(
-                      "grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 rounded-xl border border-border bg-background p-3.5 transition-colors hover:border-primary/40 print:break-inside-avoid print:rounded-none print:border-x-0 print:border-t-0 print:px-0 print:pt-0 print:pb-4 print:last:border-b-0",
-                      items.length % 2 === 1 && i === items.length - 1 && "@3xl/report:col-span-2",
-                    )}
+                    className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 border-b border-border py-4 first:pt-1 last:border-b-0 print:break-inside-avoid"
                   >
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[12.5px] font-bold tabular-nums text-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">{i + 1}</span>
                     <div className="min-w-0">
