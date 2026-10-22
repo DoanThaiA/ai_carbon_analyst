@@ -228,22 +228,35 @@ def test_thousands_with_area_units():
     assert dict(zip(tokens, en)) == {"9.000 m²": "9,000 m²", "81.4400 EUR/tCO2": "81.4400 EUR/tCO2"}
 
 
-# ── Dịch nguyên chuỗi (ClaudeTranslator) ─────────────────────────────────────────────────
-from services.report_translation import _whole_string_ok, english_numbers  # noqa: E402
+# ── Luồng Claude: LLM dịch MỌI chữ hiển thị, không bảng cứng, không ghép mảnh ─────────────
+import unicodedata  # noqa: E402
+
+from services.report_translation import english_numbers, translation_problems  # noqa: E402
+
+
+def _ascii(text):
+    """"Bản dịch" giả: bỏ dấu tiếng Việt — giữ nguyên dòng, gạch đầu dòng, **, số."""
+    return unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D")).encode("ascii", "ignore").decode()
 
 
 class _WholeTranslator(Translator):
-    """Giả lập LLM dịch nguyên chuỗi: tra bảng, chuỗi lạ thì bọc <...> (giống _FakeTranslator)."""
+    """Giả lập LLM: tra bảng theo chuỗi đã đổi số, chuỗi lạ thì trả bản bỏ dấu; `retry` = bảng cho lần dịch lại."""
 
     whole_strings = True
 
-    def __init__(self, table):
-        self.table = table
+    def __init__(self, table=None, retry=None):
+        self.table = table or {}
+        self.retry = retry or {}
         self.calls = []
+        self.notes = []
 
     async def translate_batch(self, texts):
         self.calls.append(list(texts))
-        return [self.table.get(t, f"<{t}>") for t in texts]
+        return [self.table.get(t, _ascii(t)) for t in texts]
+
+    async def retranslate(self, text, note):
+        self.notes.append(note)
+        return self.retry.get(text, self.table.get(text, _ascii(text)))
 
 
 def test_english_numbers_converts_before_sending():
@@ -252,39 +265,77 @@ def test_english_numbers_converts_before_sending():
     assert english_numbers("ngày 13/10/2026 theo 15/2025/NĐ-CP") == "ngày 13/10/2026 theo 15/2025/NĐ-CP"
 
 
-def test_whole_string_accepted_when_structure_and_numbers_kept():
-    src = "**Tổng hợp:** [TÍCH CỰC] Giá EUA tăng 1,5%\n- Khí TTF giảm"
-    good = "**Summary:** [POSITIVE] EUA prices rose 1.5%\n- TTF gas fell"
-    fake = _WholeTranslator({english_numbers(src): good})
-    out = asyncio.run(translate_report_content({"text": src}, fake))
-    assert out["text"] == good
-    assert len(fake.calls) == 1  # không cần đường cắt mảnh
+def test_llm_translates_every_display_string_without_fixed_tables():
+    content = {
+        "1": {"title": "Tóm tắt điều hành", "bullets": ["Giá EUA tăng 1,5%"]},
+        "3": {"analysis_blocks": [{"heading": "Phân tích", "content": "Giá tăng"},
+                                  {"heading": "Quan điểm thị trường", "content": "Giá giảm"}],
+              "trading_scenarios": []},
+        "6": {"articles": [{"title": "Tin", "topics": ["Khí gas"], "url": "https://x.test/a"}]},
+        "8": {"events": [{"event": "Họp", "impact": "Cao", "outcome": "Chưa có thông tin kết quả xác nhận"}]},
+        "ets_policy": [{"source_name": "Ủy ban châu Âu", "source": "Reuters"}],
+        "knowledge_used": {"1": [{"text": "đoạn tài liệu"}]},
+    }
+    fake = _WholeTranslator({"Tóm tắt điều hành": "Executive Summary", "Quan điểm thị trường": "Market View",
+                             "Khí gas": "Natural gas"})
+    out = asyncio.run(translate_report_content(content, fake))
+    sent = [t for call in fake.calls for t in call]
+    # Tiêu đề mục, tiêu đề khối, nhãn chủ đề, tên nguồn đều do LLM dịch (không qua FIXED_STRINGS/TOPIC_LABELS_EN).
+    assert {"Tóm tắt điều hành", "Quan điểm thị trường", "Khí gas", "Ủy ban châu Âu", "Giá EUA tăng 1.5%"} <= set(sent)
+    assert out["1"]["title"] == "Executive Summary"
+    assert out["3"]["analysis_blocks"][1]["heading"] == "Market View"
+    assert out["6"]["articles"][0]["topics"] == ["Natural gas"]
+    # Enum/lính gác frontend so sánh === và tài liệu tri thức nội bộ giữ nguyên.
+    assert out["3"]["analysis_blocks"][0]["heading"] == "Phân tích"
+    assert out["8"]["events"][0]["impact"] == "Cao"
+    assert out["8"]["events"][0]["outcome"] == "Chưa có thông tin kết quả xác nhận"
+    assert out["knowledge_used"] == content["knowledge_used"]
+    assert len(fake.calls) == 1 and not fake.notes
 
 
-def test_whole_string_rejected_falls_back_to_fragments():
+def test_translation_problems_checks():
+    src = "**Tổng hợp:** [TÍCH CỰC] Giá EUA tăng 1,5% (https://x.test/a)\n- Khí TTF giảm"
+    pre = english_numbers(src)
+    good = "**Summary:** [POSITIVE] EUA prices rose 1.5% (https://x.test/a)\n- TTF gas fell"
+    assert translation_problems(src, pre, good) == ([], [])
+    hard = lambda out: translation_problems(src, pre, out)[0]  # noqa: E731
+    assert any("**Summary:**" in p for p in hard(good.replace("**Summary:**", "**Overall:**")))
+    assert any("[POSITIVE]" in p for p in hard(good.replace("[POSITIVE]", "")))
+    assert any("1.6" in p for p in hard(good.replace("1.5%", "1.6%")))
+    assert hard(good.replace("1.5%", "1,5%"))                       # chưa đổi kiểu số
+    assert any("lines" in p for p in hard(good.replace("\n", " ")))
+    assert any("URL" in p for p in hard(good.replace("https://x.test/a", "link")))
+    assert translation_problems("Chính sách: siết chặt", "Chính sách: siết chặt", "Policy: tightening") == ([], [])
+    assert translation_problems("Chính sách: siết chặt", "Chính sách: siết chặt", "Policies: tightening")[0]
+    assert translation_problems("Giá tăng theo 15/2025/NĐ-CP", "Giá tăng theo 15/2025/NĐ-CP",
+                                "Prices rose under 15/2025/NĐ-CP") == ([], [])
+    assert translation_problems("Giá tăng", "Giá tăng", "Prices tăng")[1]   # còn chữ Việt = lỗi mềm
+
+
+def test_rejected_translation_is_retried_with_feedback():
     src = "**Tổng hợp:** [TÍCH CỰC] Giá EUA tăng 1,5%"
     pre = english_numbers(src)
-    assert not _whole_string_ok(src, pre, "**Overall:** [POSITIVE] EUA rose 1.5%")   # mất neo
-    assert not _whole_string_ok(src, pre, "**Summary:** [POSITIVE] EUA rose 1.6%")   # sai số
-    assert not _whole_string_ok(src, pre, "**Summary:** [POSITIVE] EUA rose 1,5%")   # chưa đổi kiểu số
-    assert not _whole_string_ok("- a\n- b", "- a\n- b", "- a b")                       # mất dòng
-    fake = _WholeTranslator({pre: "**Overall:** EUA rose 1.5%"})
+    fake = _WholeTranslator({pre: "**Overall:** [POSITIVE] EUA rose 1.5%"},
+                            retry={pre: "**Summary:** [POSITIVE] EUA rose 1.5%"})
     out = asyncio.run(translate_report_content({"text": src}, fake))
-    assert out["text"].startswith("**Summary:** [POSITIVE] ")  # neo vẫn đúng nhờ đường cắt mảnh
+    assert out["text"] == "**Summary:** [POSITIVE] EUA rose 1.5%"
+    assert "**Summary:**" in fake.notes[0] and "**Overall:**" in fake.notes[0]
 
 
-def test_free_text_headings_and_source_names_translated():
-    content = {"3": {"analysis_blocks": [
-        {"heading": "Phân tích", "content": "Giá tăng"},
-        {"heading": "Rủi ro nguồn cung", "content": "Giá giảm"},
-        {"heading": "Quan điểm thị trường", "content": "x"},
-    ]}, "ets_policy": [{"source_name": "Ủy ban châu Âu", "source": "Reuters"}]}
-    out, _ = _tr(content)
-    blocks = out["3"]["analysis_blocks"]
-    assert blocks[0]["heading"] == "Phân tích"  # frontend so sánh ===
-    assert blocks[1]["heading"] == "<Rủi ro nguồn cung>"
-    assert blocks[2]["heading"] == "Market view"
-    assert out["ets_policy"][0] == {"source_name": "<Ủy ban châu Âu>", "source": "Reuters"}
+def test_still_broken_after_retries_keeps_vietnamese():
+    src = "**Tổng hợp:** Giá EUA tăng 1,5%"
+    fake = _WholeTranslator({english_numbers(src): "**Overall:** EUA rose 1.5%"})
+    out = asyncio.run(translate_report_content({"text": src}, fake))
+    assert out["text"] == src
+    assert len(fake.notes) == 2  # LLM_RETRIES
+
+
+def test_soft_problem_only_is_accepted_after_retries():
+    src = "Giá tăng tại Quảng Ninh"
+    fake = _WholeTranslator({src: "Prices rose in Quảng Ninh"})
+    out = asyncio.run(translate_report_content({"text": src}, fake))
+    assert out["text"] == "Prices rose in Quảng Ninh"
+    assert len(fake.notes) == 2
 
 
 # ── Thẻ KHUYẾN NGHỊ VỊ THẾ phải giữ nguyên khi dịch ────────────────────────────────────
@@ -303,9 +354,8 @@ class _CardTranslator(_WholeTranslator):
     GOOD = "**Entry:** Sell on a close below 78.5\n**Target:** 75.5\n**Risk management:** Stop-loss if above 81.0 within 2 sessions"
 
     def __init__(self, good=True):
-        super().__init__({})
+        super().__init__()
         self.good = good
-        self.notes = []
 
     async def translate_batch(self, texts):
         return [self.BAD if t.startswith("**Entry:**") else "If prices hold below 80.0" for t in texts]
@@ -334,3 +384,33 @@ def test_position_card_falls_back_to_vietnamese_when_still_broken():
     sc = out["3"]["trading_scenarios"][0]
     assert sc["trading_strategy"] == _SC["trading_strategy"]
     assert position_card_plan(sc) == position_card_plan(_SC)
+
+
+def test_dates_may_be_written_in_english_words():
+    # Log 22/10/2026: 18 đoạn bị loại oan vì Claude viết "December 2026" cho "tháng 12/2026".
+    ok = [
+        ("dời sang Hội đồng tháng 12/2026, gửi ngày 30/09/2026", "pushed to the December 2026 Council, sent on 30 September 2026"),
+        ("Hội đồng châu Âu 15–16/10 chưa kết luận", "The 15–16 October European Council reached no conclusion"),
+        ("từ 01/01/2031", "from 1 January 2031"),
+        ("lần đầu từ giữa tháng 5", "for the first time since mid-May"),
+        ("Triland ngày 2026-10-21", "Triland on 21 October 2026"),
+        ("theo 15/2025/NĐ-CP và Q3/2026", "under 15/2025/NĐ-CP and Q3/2026"),
+    ]
+    for vi, en in ok:
+        assert translation_problems(vi, english_numbers(vi), en)[0] == [], vi
+    vi = "gửi ngày 30/09/2026"
+    assert translation_problems(vi, english_numbers(vi), "sent on 30 August 2026")[0]   # sai tháng
+    assert translation_problems(vi, english_numbers(vi), "sent on 31 September 2026")[0]  # sai ngày
+
+
+def test_card_feedback_explains_hyphenated_counts():
+    from services.report_translation import card_differences
+    vi = {"direction": "đi ngang",
+          "trading_strategy": "**Entry:** Tích lũy dần quanh 82,35 (đáy 30 phiên)\n**Mục tiêu:** chưa đủ cơ sở định lượng\n"
+                              "**Quản trị rủi ro:** Cắt lỗ nếu đóng cửa dưới 80,50"}
+    bad = {**vi, "trading_strategy": "**Entry:** Gradually accumulate around 82.35 (30-session low)\n"
+                                     "**Target:** no quantitative basis yet\n**Risk management:** Stop-loss on a close below 80.50"}
+    good = {**bad, "trading_strategy": bad["trading_strategy"].replace("(30-session low)", "(low of the last 30 sessions)")}
+    assert position_card_plan(good) == position_card_plan(vi)
+    diffs = card_differences(position_card_plan(vi), position_card_plan(bad))
+    assert len(diffs) == 1 and "30-session" in diffs[0]
