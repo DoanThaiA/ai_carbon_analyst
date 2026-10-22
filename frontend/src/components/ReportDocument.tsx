@@ -2823,40 +2823,24 @@ function ExecSummary({ bullets }: { bullets: any[] }) {
   );
 }
 
-// Δ ngày / Δ tuần của 1 mã: chuỗi gốc của Bảng giá nhanh ("+0,30% (+0,26)") + thanh lệch trái/phải quanh vạch 0, cùng
-// thang cho mọi mã trong cột để so độ lớn bằng mắt.
-function DeltaCell({ text, pct, scale, label }: { text?: string; pct?: number; scale: number; label?: string }) {
+// Δ ngày / Δ tuần của 1 mã: chỉ số — chuỗi gốc của Bảng giá nhanh ("+0,30% (+0,26)"), xanh tăng / đỏ giảm.
+function DeltaCell({ text, label }: { text?: string; label?: string }) {
   const locale = useLocale();
   if (!text || text === "-") return <span className="text-muted-light">—</span>;
-  const up = isPositiveDelta(text);
-  const w = pct !== undefined && scale > 0 ? Math.min(Math.abs(pct) / scale, 1) * 50 : 0;
   return (
-    // Số và thanh cùng 1 dòng khi ô đủ rộng (bảng hết bề rộng báo cáo), ô hẹp thì thanh xuống dòng dưới số.
-    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      {/* Bề rộng số cố định → thanh của mọi dòng cùng cột bắt đầu (và có vạch 0) thẳng hàng. */}
-      <div className={clsx("min-w-[8.75rem] text-[13.5px] font-bold tabular-nums whitespace-nowrap", up ? "text-up" : "text-down")}>
-        {label && <span className="mr-1 text-[12px] font-semibold text-muted-light">{label}</span>}
-        {formatDelta(text, locale)}
-      </div>
-      <div className="relative h-[6px] min-w-[72px] max-w-[220px] flex-1 basis-[96px] rounded-full bg-surface-alt [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true">
-        <span className="absolute inset-y-[-2px] left-1/2 w-px bg-border-soft" />
-        <span className={clsx("absolute inset-y-0 rounded-full", up ? "bg-up" : "bg-down")} style={up ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }} />
-      </div>
+    <div className={clsx("text-[13.5px] font-bold tabular-nums whitespace-nowrap", isPositiveDelta(text) ? "text-up" : "text-down")}>
+      {label && <span className="mr-1 text-[12px] font-semibold text-muted-light">{label}</span>}
+      {formatDelta(text, locale)}
     </div>
   );
 }
 
 // Bảng giá nhanh: mỗi mã 1 dòng theo đúng thứ tự bảng gốc (không chia nhóm) — dòng kẻ sọc xen kẽ + vạch ngăn rõ để mắt
-// không nhảy dòng; Δ là thứ người đọc tìm nên Δ được vẽ thành thanh. Ghi chú chất lượng dữ liệu + giá chốt CBAM nằm ở
+// không nhảy dòng; Δ chỉ hiện số (không vẽ thanh). Ghi chú chất lượng dữ liệu + giá chốt CBAM nằm ở
 // dòng phụ ngay dưới mã, cùng màu nền với dòng của mã đó.
 function MarketBoard({ rows }: { rows: any[] }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
-  const pcts = rows.map((r: any) => ({ day: deltaPct(r?.day_change_pct, r?.dday), week: deltaPct(r?.week_change_pct, r?.dweek) }));
-  const ceilScale = (vals: (number | undefined)[], min: number) =>
-    Math.max(min, Math.ceil(Math.max(0, ...vals.map(v => Math.abs(v ?? 0)))));
-  const dayScale = ceilScale(pcts.map(p => p.day), 1);
-  const weekScale = ceilScale(pcts.map(p => p.week), 2);
   const th = "px-3 py-2.5 text-left text-[12px] font-bold uppercase tracking-wider text-primary-dark";
 
   return (
@@ -2910,13 +2894,13 @@ function MarketBoard({ rows }: { rows: any[] }) {
                   <div className="text-[17px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
                   {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
                 </td>
-                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dday} pct={pcts[idx]?.day} scale={dayScale} /></td>
-                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dweek} pct={pcts[idx]?.week} scale={weekScale} /></td>
+                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dday} /></td>
+                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dweek} /></td>
                 <td className="px-3 py-3 @xl:hidden">
                   {r.dday === "-" && r.dweek === "-" ? <span className="text-muted-light">—</span> : (
                     <div className="space-y-1.5">
-                      <DeltaCell text={r.dday} pct={pcts[idx]?.day} scale={dayScale} label={t("market.dayLabel")} />
-                      <DeltaCell text={r.dweek} pct={pcts[idx]?.week} scale={weekScale} label={t("market.weekLabel")} />
+                      <DeltaCell text={r.dday} label={t("market.dayLabel")} />
+                      <DeltaCell text={r.dweek} label={t("market.weekLabel")} />
                     </div>
                   )}
                 </td>
