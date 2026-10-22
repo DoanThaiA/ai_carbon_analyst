@@ -279,7 +279,9 @@ xác suất, vùng giá, lệnh R:R tính từ điểm giữa vùng Entry / lệ
 chiến lược) và thanh phòng hộ CBAM dựng từ `cbam_estimate` (không đọc câu `hedge_action.core`). Xem bản tiếng Anh: mức giá/loại lệnh vẫn
 tách từ kịch bản tiếng Việt (`content_vi` do `lib/reportLocale.ts` giữ lại), câu chữ lấy bản Anh. Bố cục nhiều cột của trang báo cáo theo
 container query `@container/report` (bề rộng thật của báo cáo, không theo viewport); in A4 (~650px) tự về 1 cột — thêm khối mới thì giữ quy
-ước này và `print:` cho phần thu gọn. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
+ước này và `print:` cho phần thu gọn. Khối đứng cùng hàng phải cao bằng nhau (yêu cầu 22/10/2026): lưới để mặc định stretch, không thêm
+`items-start`; cặp khối chữ dài dùng khung `PANEL`; danh sách thẻ (nhóm Phân tích, Cần theo dõi, tin Phần 3) xếp lưới 2 cột theo hàng
+thay vì 2 cột chảy độc lập; biểu đồ chỉ số giá (`PriceIndexPanel`) tự giãn bằng biểu đồ nến bên cạnh. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
 
 **Biên bản QC Claude (MCP) + tự xuất bản** (`services/report_qc_review.py`, bảng `report_qc_reviews` + `report_qc_findings`,

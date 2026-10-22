@@ -1100,15 +1100,7 @@
       "dDay": "Δ day",
       "dWeek": "Δ week",
       "dayLabel": "Day",
-      "weekLabel": "Week",
-      "cat": {
-        "carbon": "Carbon",
-        "gas": "Gas",
-        "oil": "Oil",
-        "coal": "Coal",
-        "power": "Power",
-        "other": "Other"
-      }
+      "weekLabel": "Week"
     },
     "keyDev": {
       "impact": {

@@ -129,7 +129,7 @@ export function CbamEstimateCard({ estimate: e }: { estimate: CbamEstimate }) {
         {/* Tới lg (và khi in khổ A4 ~700px): "Thông tin chi tiết" và chi phí sản phẩm xếp dọc — chia 2 cột ở bề rộng đó
             làm đoạn "Cách khóa" dài 8 dòng và công thức sản phẩm gãy dòng. Màn rộng (xl, báo cáo trải hết bề ngang):
             chi tiết | sản phẩm cạnh nhau, sản phẩm xếp 1 cột. */}
-        <div className={clsx("space-y-3", products.length > 0 && "xl:space-y-0 xl:grid xl:grid-cols-[1.3fr_1fr] xl:gap-3 xl:items-start")}>
+        <div className={clsx("space-y-3", products.length > 0 && "xl:space-y-0 xl:grid xl:grid-cols-[1.3fr_1fr] xl:gap-3")}>
           {/* ═══ Thông tin chi tiết ═══ */}
           <div className="rounded-xl border border-border px-3.5 py-3">
             <h4 className="flex items-center gap-2 mb-2.5 text-[14.5px] font-extrabold text-primary-dark">

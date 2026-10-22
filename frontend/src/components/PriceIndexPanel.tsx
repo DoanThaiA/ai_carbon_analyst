@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, X } from "lucide-react";
 import clsx from "clsx";
@@ -45,6 +45,9 @@ function useHistory(reportDate: string, days: number) {
   return { data, error };
 }
 
+// Biểu đồ cao tối thiểu (khung đứng riêng) — khi khung được kéo cao bằng khối bên cạnh, biểu đồ giãn theo (xem chartH).
+const MIN_CHART_H = 260;
+
 // `cbamEstimate`: thẻ CBAM của chính báo cáo (content["2"].cbam_estimate) — vẽ mốc ước tính cuối quý cạnh đường VWAP.
 export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }: {
   reportDate: string; tableCodes: string[]; cbamEstimate?: CbamEstimate | null;
@@ -54,6 +57,23 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
   const colorOf = useColorOf(data?.instruments);
   const [selected, setSelected] = useState<string[] | null>(null);
   const [open, setOpen] = useState(false);
+  // Khung đặt cạnh biểu đồ nến EUA được kéo cao bằng khối đó: đo chỗ trống thật của vùng biểu đồ (vùng này không góp
+  // chiều cao vì nội dung nằm absolute) rồi trừ phần chú giải bên dưới biểu đồ → biểu đồ lấp đầy, 2 khối cao bằng nhau.
+  const areaRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [chartH, setChartH] = useState(MIN_CHART_H);
+  useEffect(() => {
+    const area = areaRef.current, inner = innerRef.current;
+    if (!area || !inner) return;
+    const update = () => setChartH(prev => {
+      const legend = Math.max(0, inner.scrollHeight - prev);
+      return Math.max(MIN_CHART_H - 40, Math.floor(area.clientHeight - legend));
+    });
+    const ro = new ResizeObserver(update);
+    ro.observe(area);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [data]);
 
   const available = (data?.instruments ?? []).filter((i) => i.series.length > 1).map((i) => i.code);
   const codes = selected ?? defaultSelection(available, tableCodes);
@@ -72,23 +92,23 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
         onClick={() => data && setOpen(true)}
         onKeyDown={(e) => { if (data && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpen(true); } }}
         aria-label={t("openCompare")}
-        className="group h-full flex flex-col border border-border rounded-lg p-3 cursor-pointer transition-colors hover:border-primary/50 hover:bg-tint/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 print:hidden"
+        className="group h-full flex flex-col rounded-xl border border-border bg-background p-3.5 sm:p-4 cursor-pointer transition-colors hover:border-primary/50 hover:bg-tint/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 print:hidden"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="text-primary-dark font-bold text-[11px] uppercase tracking-wider">{t("title")}</div>
+            <div className="text-primary-dark font-bold text-[13px] uppercase tracking-[0.08em]">{t("title")}</div>
             {data?.latest_date && (
-              <div className="font-mono text-[10.5px] text-muted-light mt-0.5">
+              <div className="text-[12px] text-muted-light mt-0.5">
                 {t("subtitle", { n: PANEL_DAYS, date: fmtFull(data.latest_date) })}
               </div>
             )}
           </div>
-          <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-primary-dark group-hover:underline">
+          <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-primary-dark group-hover:underline">
             <Maximize2 size={12} aria-hidden="true" /> {t("compare")}
           </span>
         </div>
         {/* Chú giải tĩnh — đổi mã trong popup */}
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11.5px] text-body">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[12.5px] text-body">
           {codes.map((c) => (
             <span key={c} className="inline-flex items-center gap-1.5 font-semibold">
               <span className="w-2 h-2 rounded-full" style={{ background: colorOf[c] }} aria-hidden="true" />
@@ -96,12 +116,14 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
             </span>
           ))}
         </div>
-        <div className="mt-1 flex-1 min-h-[240px]">
-          {data ? (
-            <CompareChart instruments={data.instruments} colorOf={colorOf} selected={codes} vwap={data.auction_vwap} cbam={cbamEstimate} height={260} />
-          ) : (
-            <div className="h-[260px] rounded-md bg-surface animate-pulse" />
-          )}
+        <div ref={areaRef} className="relative mt-1 flex-1 min-h-[310px]">
+          <div ref={innerRef} className="absolute inset-x-0 top-0">
+            {data ? (
+              <CompareChart instruments={data.instruments} colorOf={colorOf} selected={codes} vwap={data.auction_vwap} cbam={cbamEstimate} height={chartH} />
+            ) : (
+              <div className="rounded-md bg-surface animate-pulse" style={{ height: chartH }} />
+            )}
+          </div>
         </div>
       </div>
       {/* Portal ra body: báo cáo là container query (.report-shell) nên "position: fixed" bên trong có thể bị giới hạn

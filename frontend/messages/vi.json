@@ -1100,15 +1100,7 @@
       "dDay": "Δ ngày",
       "dWeek": "Δ tuần",
       "dayLabel": "Ngày",
-      "weekLabel": "Tuần",
-      "cat": {
-        "carbon": "Carbon",
-        "gas": "Khí đốt",
-        "oil": "Dầu",
-        "coal": "Than",
-        "power": "Điện",
-        "other": "Khác"
-      }
+      "weekLabel": "Tuần"
     },
     "keyDev": {
       "impact": {
