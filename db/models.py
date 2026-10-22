@@ -708,7 +708,7 @@ class ReportQCResult(Base):
 
 class ReportQcReview(Base):
     """1 dòng = 1 biên bản QC báo cáo do Claude (vai Jack) chấm rồi gửi qua MCP (tool `submit_qc_review`, token
-    `scope='qc_agent'`) — luồng tự động: sinh nháp 07:45 → Claude QC 08:00 → tự xuất bản 08:10 (chặn khi
+    `scope='qc_agent'`) — luồng tự động: sinh nháp 07:00 → Claude QC 08:00 → tự xuất bản 08:10 (chặn khi
     `verdict='fail'`). Xem services/report_qc_review.py (rubric, chuẩn hóa, tính điểm).
 
     `overall_score` (thang 10) do SERVER tính lại từ `criteria` theo trọng số rubric, không lấy số Claude tự cộng.

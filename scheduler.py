@@ -13,7 +13,7 @@ Script chạy ngầm 24/7, tự động kích hoạt các tác vụ độc lập
                                                - intl_news_crawl: region='international', giờ New York
                                                  (≈ 19:00/20:00 → 04:00/05:00 giờ VN, tuỳ giờ mùa hè Mỹ)
                                              Cờ is_noon_crawl không còn ảnh hưởng lịch tự động.
-  3. auto_report_job        07:45 VN       — CHỈ thứ 3 → thứ 7 (cấu hình AUTO_REPORT_DAYS / AUTO_REPORT_TIME)
+  3. auto_report_job        07:00 VN       — CHỈ thứ 3 → thứ 7 (cấu hình AUTO_REPORT_DAYS / AUTO_REPORT_TIME)
                                       tự động sinh 1 báo cáo NHÁP/ngày bằng Claude, lưu report_date = HÔM NAY
                                       (VN) — dữ liệu vẫn là giá/tin của hôm qua, xem
                                       services/report_generator.py::report_data_date
@@ -342,7 +342,7 @@ async def main() -> None:
     from core.config import Settings
     cfg = Settings.from_env()
     auto_report_days = cfg.auto_report_days
-    report_h, report_m = _parse_hhmm(cfg.auto_report_time, "07:45")
+    report_h, report_m = _parse_hhmm(cfg.auto_report_time, "07:00")
     scheduler.add_job(
         run_auto_report_job,
         trigger=CronTrigger(day_of_week=auto_report_days, hour=report_h, minute=report_m, timezone="Asia/Ho_Chi_Minh"),

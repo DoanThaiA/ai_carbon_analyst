@@ -1,6 +1,6 @@
 """Biên bản QC báo cáo do Claude (vai Jack) chấm qua MCP — bảng `report_qc_reviews` + `report_qc_findings`.
 
-Luồng tự động mỗi ngày (giờ VN): 07:45 sinh bản nháp (scheduler `auto_report_job`) → 08:00 lịch Claude (routine,
+Luồng tự động mỗi ngày (giờ VN): 07:00 sinh bản nháp (scheduler `auto_report_job`) → 08:00 lịch Claude (routine,
 token `scope='qc_agent'`) gọi `get_qc_assignment` đọc bản nháp + kết quả Jack rule-based, chấm theo rubric chuẩn
 `QC_CRITERIA`, rồi `submit_qc_review` gửi biên bản → 08:10 `auto_publish_job` tự xuất bản, CHỈ chặn khi biên bản mới
 nhất có `verdict='fail'` (không có biên bản QC vẫn xuất bản — quyết định C2).
@@ -406,7 +406,7 @@ async def qc_assignment_text(session: AsyncSession, report_date: Optional[str], 
     report = await _pick_report(session, report_date)
     if report is None:
         return (f"KHÔNG CÓ BÁO CÁO NGÀY {report_date} để QC. Nếu đang trong khung 08:00–08:08, thử lại sau 2 phút "
-                "(bản nháp sinh lúc 07:45).")
+                "(bản nháp sinh lúc 07:00).")
     if report.status == "generating":
         return (f"Báo cáo ngày {report.report_date} ĐANG ĐƯỢC SINH (status=generating) — chưa QC được. "
                 "Đợi 2 phút rồi gọi lại get_qc_assignment.")

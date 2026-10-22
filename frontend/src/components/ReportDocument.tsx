@@ -2507,7 +2507,7 @@ function formatVietnameseDateFull(dateStr: string) {
 // "Nhận định thị trường" cũ (câu đó chỉ nhắc lại đúng các số này). Báo cáo hẹp/in: xếp dọc, ô số 2 cột.
 // printHeading: tiêu đề Phần 1 CHỈ hiện khi in, nằm chung khối "không cắt" với biểu đồ — Chrome không dời tiêu đề
 // (break-after: avoid) theo biểu đồ khi biểu đồ không vừa phần còn lại của trang, để tiêu đề trơ cuối trang 1.
-function EuaDashboardWidget({ report, printHeading, aside }: { report: Report; printHeading?: React.ReactNode; aside?: React.ReactNode }) {
+function EuaDashboardWidget({ report, printHeading }: { report: Report; printHeading?: React.ReactNode }) {
   const locale = useLocale();
   const t = useTranslations("reportDoc");
   const chartData = report.content["2"]?.chart_data || [];
@@ -2552,10 +2552,11 @@ function EuaDashboardWidget({ report, printHeading, aside }: { report: Report; p
   const loc = locale === "en" ? "en-US" : "vi-VN";
   const sign = (n: number) => (n > 0 ? "+" : "");
 
+  // Biểu đồ nến | 5 ô tóm tắt nằm ngang từ khung báo cáo ≥ 768px (@3xl) — ô tóm tắt xếp dọc, giãn đều theo chiều cao
+  // biểu đồ. Hẹp hơn: ô tóm tắt xuống dưới (2 cột). Bản in: 1 cột như cũ.
   return (
-    <div className="space-y-4 print:space-y-3">
-      <div className={clsx("grid gap-4 print:block", aside && "@5xl/report:grid-cols-12")}>
-        <div className={clsx("flex min-w-0 flex-col print:break-inside-avoid", aside && "@5xl/report:col-span-7")}>
+    <div className="grid gap-4 @3xl/report:grid-cols-12 print:block print:space-y-3">
+      <div className="flex min-w-0 flex-col @3xl/report:col-span-8 print:break-inside-avoid">
           {printHeading && <div className="hidden print:block">{printHeading}</div>}
           <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
@@ -2589,11 +2590,9 @@ function EuaDashboardWidget({ report, printHeading, aside }: { report: Report; p
 
             <CandlestickChart report={report} />
           </div>
-        </div>
-        {aside && <div className="min-w-0 @5xl/report:col-span-5 print:hidden">{aside}</div>}
       </div>
 
-      <div className="grid gap-3 @2xl/report:grid-cols-2 @5xl/report:grid-cols-5 print:grid-cols-2 print:break-inside-avoid">
+      <div className="grid min-w-0 gap-2.5 @2xl/report:grid-cols-2 @3xl/report:col-span-4 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:grid-cols-2 print:break-inside-avoid">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
@@ -2636,7 +2635,7 @@ function EuaDashboardWidget({ report, printHeading, aside }: { report: Report; p
               pct: `${sign(volChangePct)}${fnum(volChangePct, 1, locale)}`,
             })) : null,
           ]}
-          className="@2xl/report:col-span-2 @5xl/report:col-span-1 print:col-span-2"
+          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:col-span-2"
         />
       </div>
     </div>
@@ -3462,7 +3461,6 @@ export function ReportDocument({
             <EuaDashboardWidget
               report={report}
               printHeading={<PartHeading eyebrow={t("body.part", { n: 1 })} title={t("body.marketTitle")} icon={LineChart} />}
-              aside={indexPanel}
             />
 
             {noPriceData ? (
@@ -3470,10 +3468,10 @@ export function ReportDocument({
                 {content["2"]?.no_price_notice || t("body.noPriceFallback")}
               </div>
             ) : priceRows.length > 0 && (
-              // Bảng giá nhanh hết bề rộng; báo cáo không có biểu đồ nến thì biểu đồ chỉ số giá nằm cạnh bảng (cao bằng
-              // bảng). Khi in/PDF chỉ giữ bảng giá.
-              <div className={clsx("grid gap-5", chartData.length === 0 && "@5xl/report:grid-cols-12")}>
-                <div className={clsx("min-w-0", chartData.length === 0 && "@5xl/report:col-span-7")}>
+              // Bảng giá nhanh (dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá — ngang từ khung báo cáo ≥ 768px
+              // (@3xl), rất rộng chia 7/5. Khi in/PDF chỉ giữ bảng giá.
+              <div className="grid gap-5 @3xl/report:grid-cols-2 @6xl/report:grid-cols-12">
+                <div className="min-w-0 @6xl/report:col-span-7">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
@@ -3481,7 +3479,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                {chartData.length === 0 && <div className="min-w-0 @5xl/report:col-span-5 print:hidden">{indexPanel}</div>}
+                <div className="flex min-w-0 flex-col @6xl/report:col-span-5 print:hidden">{indexPanel}</div>
               </div>
             )}
 

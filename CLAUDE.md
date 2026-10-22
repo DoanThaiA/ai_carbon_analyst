@@ -161,7 +161,7 @@ so a connection isn't held idle while awaiting the Claude API.
 **Lịch crawl** (`scheduler.py`): giá 06:00 VN; tin tức đầu mỗi giờ 08:00–17:00 MỌI ngày (nhóm `vietnam` thêm đợt 06:00 VN trước báo cáo 07:00), tách
 theo `news_crawl_sources.region` (`NEWS_CRAWL_SCHEDULES`): `vietnam` theo giờ VN, `international`
 theo giờ New York (`America/New_York`, tự theo giờ mùa hè Mỹ); mỗi job `max_instances=1` +
-`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report NHÁP 07:45 VN (`AUTO_REPORT_TIME`), tự xuất bản 08:10 (`AUTO_PUBLISH_TIME`, xem "Biên bản QC Claude"). `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
+`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report NHÁP 07:00 VN (`AUTO_REPORT_TIME`), tự xuất bản 08:10 (`AUTO_PUBLISH_TIME`, xem "Biên bản QC Claude"). `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
 Để crawl hàng giờ không gọi LLM lặp lại, URL đã xử lý nhưng KHÔNG lưu thành article
 (irrelevant, ngoài cửa sổ ngày, trùng hash, extract/classify lỗi, link Bloomberg gốc) được
 ghi vào bảng `crawl_seen_urls` (`pipeline/crawl_pipeline.py::process_source` →
@@ -281,11 +281,11 @@ tách từ kịch bản tiếng Việt (`content_vi` do `lib/reportLocale.ts` gi
 container query `@container/report` (bề rộng thật của báo cáo, không theo viewport); in A4 (~650px) tự về 1 cột — thêm khối mới thì giữ quy
 ước này và `print:` cho phần thu gọn. Khối đứng cùng hàng phải cao bằng nhau (yêu cầu 22/10/2026): lưới để mặc định stretch, không thêm
 `items-start`; cặp khối chữ dài dùng khung `PANEL`; danh sách thẻ (nhóm Phân tích, Cần theo dõi, tin Phần 3) xếp lưới 2 cột theo hàng
-thay vì 2 cột chảy độc lập; biểu đồ chỉ số giá (`PriceIndexPanel`) tự giãn bằng biểu đồ nến bên cạnh. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
+thay vì 2 cột chảy độc lập; Phần 1: biểu đồ nến EUA | 5 ô tóm tắt xếp dọc (giãn theo chiều cao biểu đồ), Bảng giá nhanh dạng gọn | biểu đồ chỉ số giá (`PriceIndexPanel` tự giãn bằng bảng) — ngang từ khung ≥ 768px (`@3xl/report`). Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
 
 **Biên bản QC Claude (MCP) + tự xuất bản** (`services/report_qc_review.py`, bảng `report_qc_reviews` + `report_qc_findings`,
-migration `a9e4c7b2d5f1`): 07:45 sinh nháp → 08:00 lịch Claude (routine NGOÀI repo, prompt `QC_ROUTINE_PROMPT` / MCP prompt
+migration `a9e4c7b2d5f1`): 07:00 sinh nháp → 08:00 lịch Claude (routine NGOÀI repo, prompt `QC_ROUTINE_PROMPT` / MCP prompt
 `jack_qc_review`) dùng token `api_tokens.scope='qc_agent'` (admin tạo ở `/admin/qc-results`, không gắn bảng `users`, hạn
 `QC_AGENT_TOKEN_TTL_DAYS`) gọi `get_qc_assignment` (phiếu giao + `assignment_id` = `content_hash(content)` + Jack rule-based +
 lỗi biên bản trước; `part=` đọc JSON bản nháp) rồi `submit_qc_review` → 08:10 `scheduler.run_auto_publish_job` xuất bản +
