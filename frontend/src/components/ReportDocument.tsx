@@ -1410,10 +1410,13 @@ function KeyFigures({ cbamEstimate, rows, review, showTrack, className }: {
   const locale = useLocale();
   const n2 = (x: number) => fnum(x, 2, locale);
   const drivers = pickDrivers(rows);
+  // Ô "Dự báo trước": chỉ liệt kê ngày Sai / Đúng / Đang theo dõi — không hiện tỷ lệ (Sai chốt ngay khi chạm cắt lỗ
+  // còn Đúng phải chờ chạm mục tiêu/hết khung, nên tỷ lệ giữa khung luôn nghiêng về Sai, dễ hiểu nhầm).
+  // "direction_only" (đúng hướng, lệnh không khớp) xếp vào Đúng; on_track/diverging/… = Đang theo dõi.
   const items = review?.items ?? [];
-  const right = items.filter(i => i.verdict === "correct").map(i => i.report_date);
+  const right = items.filter(i => i.verdict === "correct" || i.verdict === "direction_only").map(i => i.report_date);
   const wrong = items.filter(i => i.verdict === "wrong").map(i => i.report_date);
-  const pending = items.length - right.length - wrong.length;
+  const watching = items.filter(i => !right.includes(i.report_date) && !wrong.includes(i.report_date)).map(i => i.report_date);
   return (
     <div className={clsx("@container min-w-0", className)}>
       <div className="grid gap-x-8 gap-y-5 @xl:grid-cols-2 @3xl:grid-cols-[3fr_2fr]">
@@ -1469,12 +1472,9 @@ function KeyFigures({ cbamEstimate, rows, review, showTrack, className }: {
             {items.length > 0 && review && <ForecastStrip review={review} />}
             <div className="mt-2 space-y-0.5 text-[12.5px] leading-snug tabular-nums">
               {!items.length && <div className="text-muted-light">{t("signal.trackNone")}</div>}
-              {right.length + wrong.length > 0 && (
-                <div className="font-bold text-label">{right.length}/{right.length + wrong.length} {t("signal.trackUnit")}</div>
-              )}
-              {wrong.length > 0 && <div className="text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
-              {right.length > 0 && <div className="text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
-              {pending > 0 && <div className="text-muted-light">{t("signal.trackPending", { n: pending })}</div>}
+              {wrong.length > 0 && <div className="font-semibold text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
+              {right.length > 0 && <div className="font-semibold text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
+              {watching.length > 0 && <div className="text-muted-light">{t("signal.trackWatching", { dates: joinDayMonth(watching) })}</div>}
             </div>
           </div>
         )}

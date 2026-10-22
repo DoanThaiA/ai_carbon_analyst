@@ -807,10 +807,9 @@
       "atrPct": "≈ {pct}% of price",
       "volVsAvg": "Volume {pct}% vs {n}-session avg",
       "track": "Past forecasts",
-      "trackUnit": "correct",
       "trackWrong": "Wrong: {dates}",
       "trackRight": "Correct: {dates}",
-      "trackPending": "{n} not yet concluded",
+      "trackWatching": "Watching: {dates}",
       "trackNone": "No forecasts to grade yet",
       "col": {
         "horizon": "Horizon · direction",

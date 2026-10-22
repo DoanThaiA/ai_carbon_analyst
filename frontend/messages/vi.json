@@ -807,10 +807,9 @@
       "atrPct": "≈ {pct}% giá",
       "volVsAvg": "KL {pct}% so TB {n} phiên",
       "track": "Dự báo trước",
-      "trackUnit": "đúng",
       "trackWrong": "Sai: {dates}",
       "trackRight": "Đúng: {dates}",
-      "trackPending": "{n} chưa có kết luận",
+      "trackWatching": "Đang theo dõi: {dates}",
       "trackNone": "Chưa có dự báo để chấm",
       "col": {
         "horizon": "Khung · hướng",
