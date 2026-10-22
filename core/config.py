@@ -110,8 +110,11 @@ class Settings:
     # Gửi email PDF báo cáo cho user ngay sau khi admin duyệt (services/report_email.py).
     # Cần APP_BASE_URL (trang frontend để Chromium render PDF) + Resend đã cấu hình.
     report_pdf_email_enabled: bool = True
-    # Bản tiếng Anh của báo cáo (services/report_translation.py) — dịch máy bằng LibreTranslate
-    # (Argos, tự host, không gọi LLM). URL trống = tắt dịch, báo cáo chỉ có tiếng Việt.
+    # Bản tiếng Anh của báo cáo (services/report_translation.py). "claude" (mặc định) = dịch bằng
+    # Claude theo nguyên đoạn (`report_translation_model`); "libretranslate" = Argos tự host (không
+    # gọi LLM, chất lượng thấp hơn — cần LIBRETRANSLATE_URL); "off" = tắt, báo cáo chỉ có tiếng Việt.
+    report_translation_provider: str = "claude"
+    report_translation_model: str = "claude-sonnet-5-5"
     libretranslate_url: str = ""
     libretranslate_api_key: str = ""
 
@@ -176,6 +179,12 @@ class Settings:
             hot_news_email_quiet_hours=os.environ.get("HOT_NEWS_EMAIL_QUIET_HOURS", "").strip(),
             report_pdf_email_enabled=os.environ.get("REPORT_PDF_EMAIL_ENABLED", "true").lower() == "true",
             crawl_lookback_hours=int(os.environ.get("CRAWL_LOOKBACK_HOURS", "36")),
+            report_translation_provider=(
+                os.environ.get("REPORT_TRANSLATION_PROVIDER", "claude").strip().lower() or "claude"
+            ),
+            report_translation_model=(
+                os.environ.get("REPORT_TRANSLATION_MODEL", "claude-sonnet-5-5").strip() or "claude-sonnet-5-5"
+            ),
             libretranslate_url=os.environ.get("LIBRETRANSLATE_URL", "").strip().rstrip("/"),
             libretranslate_api_key=os.environ.get("LIBRETRANSLATE_API_KEY", "").strip(),
         )

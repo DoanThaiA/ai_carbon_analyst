@@ -226,3 +226,111 @@ def test_thousands_with_area_units():
     from services.report_translation import mask_segment
     _, tokens, en = mask_segment("đám cháy rộng 9.000 m², giá 81.4400 EUR/tCO2")
     assert dict(zip(tokens, en)) == {"9.000 m²": "9,000 m²", "81.4400 EUR/tCO2": "81.4400 EUR/tCO2"}
+
+
+# ── Dịch nguyên chuỗi (ClaudeTranslator) ─────────────────────────────────────────────────
+from services.report_translation import _whole_string_ok, english_numbers  # noqa: E402
+
+
+class _WholeTranslator(Translator):
+    """Giả lập LLM dịch nguyên chuỗi: tra bảng, chuỗi lạ thì bọc <...> (giống _FakeTranslator)."""
+
+    whole_strings = True
+
+    def __init__(self, table):
+        self.table = table
+        self.calls = []
+
+    async def translate_batch(self, texts):
+        self.calls.append(list(texts))
+        return [self.table.get(t, f"<{t}>") for t in texts]
+
+
+def test_english_numbers_converts_before_sending():
+    assert english_numbers("Bán quanh 79,0–79,5 EUR/tCO2, giảm -0,3%") == "Bán quanh 79.0–79.5 EUR/tCO2, giảm -0.3%"
+    assert english_numbers("120.900 tấn, xem https://x.test/a,1") == "120,900 tấn, xem https://x.test/a,1"
+    assert english_numbers("ngày 13/10/2026 theo 15/2025/NĐ-CP") == "ngày 13/10/2026 theo 15/2025/NĐ-CP"
+
+
+def test_whole_string_accepted_when_structure_and_numbers_kept():
+    src = "**Tổng hợp:** [TÍCH CỰC] Giá EUA tăng 1,5%\n- Khí TTF giảm"
+    good = "**Summary:** [POSITIVE] EUA prices rose 1.5%\n- TTF gas fell"
+    fake = _WholeTranslator({english_numbers(src): good})
+    out = asyncio.run(translate_report_content({"text": src}, fake))
+    assert out["text"] == good
+    assert len(fake.calls) == 1  # không cần đường cắt mảnh
+
+
+def test_whole_string_rejected_falls_back_to_fragments():
+    src = "**Tổng hợp:** [TÍCH CỰC] Giá EUA tăng 1,5%"
+    pre = english_numbers(src)
+    assert not _whole_string_ok(src, pre, "**Overall:** [POSITIVE] EUA rose 1.5%")   # mất neo
+    assert not _whole_string_ok(src, pre, "**Summary:** [POSITIVE] EUA rose 1.6%")   # sai số
+    assert not _whole_string_ok(src, pre, "**Summary:** [POSITIVE] EUA rose 1,5%")   # chưa đổi kiểu số
+    assert not _whole_string_ok("- a\n- b", "- a\n- b", "- a b")                       # mất dòng
+    fake = _WholeTranslator({pre: "**Overall:** EUA rose 1.5%"})
+    out = asyncio.run(translate_report_content({"text": src}, fake))
+    assert out["text"].startswith("**Summary:** [POSITIVE] ")  # neo vẫn đúng nhờ đường cắt mảnh
+
+
+def test_free_text_headings_and_source_names_translated():
+    content = {"3": {"analysis_blocks": [
+        {"heading": "Phân tích", "content": "Giá tăng"},
+        {"heading": "Rủi ro nguồn cung", "content": "Giá giảm"},
+        {"heading": "Quan điểm thị trường", "content": "x"},
+    ]}, "ets_policy": [{"source_name": "Ủy ban châu Âu", "source": "Reuters"}]}
+    out, _ = _tr(content)
+    blocks = out["3"]["analysis_blocks"]
+    assert blocks[0]["heading"] == "Phân tích"  # frontend so sánh ===
+    assert blocks[1]["heading"] == "<Rủi ro nguồn cung>"
+    assert blocks[2]["heading"] == "Market view"
+    assert out["ets_policy"][0] == {"source_name": "<Ủy ban châu Âu>", "source": "Reuters"}
+
+
+# ── Thẻ KHUYẾN NGHỊ VỊ THẾ phải giữ nguyên khi dịch ────────────────────────────────────
+from services.strategy_levels import position_card_plan  # noqa: E402
+
+_SC = {"horizon": "ngắn hạn", "direction": "giảm", "probability": "Cao",
+       "condition": "Nếu giá giữ dưới 80,0",
+       "trading_strategy": "**Entry:** Bán khi đóng cửa dưới 78,5\n**Mục tiêu:** 75,5\n**Quản trị rủi ro:** Cắt lỗ nếu trên 81,0 trong 2 phiên"}
+
+
+class _CardTranslator(_WholeTranslator):
+    """Lần đầu dịch chiến lược làm lệch thẻ (bỏ "close below" → lệnh giới hạn, "over 2" → cắt lỗ sai);
+    lần dịch lại theo góp ý thì đúng."""
+
+    BAD = "**Entry:** Sell at 78.5\n**Target:** 75.5\n**Risk management:** Stop-loss over 2 sessions above 81.0"
+    GOOD = "**Entry:** Sell on a close below 78.5\n**Target:** 75.5\n**Risk management:** Stop-loss if above 81.0 within 2 sessions"
+
+    def __init__(self, good=True):
+        super().__init__({})
+        self.good = good
+        self.notes = []
+
+    async def translate_batch(self, texts):
+        return [self.BAD if t.startswith("**Entry:**") else "If prices hold below 80.0" for t in texts]
+
+    async def retranslate(self, text, note):
+        self.notes.append(note)
+        return self.GOOD if self.good else self.BAD
+
+
+def test_position_card_parser_reads_english_like_vietnamese():
+    en = {**_SC, "condition": "If prices hold below 80.0", "trading_strategy": _CardTranslator.GOOD}
+    assert position_card_plan(en) == position_card_plan(_SC)
+    assert position_card_plan(_SC)["legs"][0]["kind"] == "breakout"
+    assert position_card_plan({**_SC, "trading_strategy": _CardTranslator.BAD}) != position_card_plan(_SC)
+
+
+def test_broken_position_card_is_retranslated_with_feedback():
+    fake = _CardTranslator()
+    out = asyncio.run(translate_report_content({"3": {"trading_scenarios": [_SC]}}, fake))
+    assert out["3"]["trading_scenarios"][0]["trading_strategy"] == _CardTranslator.GOOD
+    assert fake.notes and "position-card" in fake.notes[0]
+
+
+def test_position_card_falls_back_to_vietnamese_when_still_broken():
+    out = asyncio.run(translate_report_content({"3": {"trading_scenarios": [_SC]}}, _CardTranslator(good=False)))
+    sc = out["3"]["trading_scenarios"][0]
+    assert sc["trading_strategy"] == _SC["trading_strategy"]
+    assert position_card_plan(sc) == position_card_plan(_SC)

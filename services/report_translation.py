@@ -1,8 +1,11 @@
 """Bản tiếng Anh của báo cáo ngày — dịch máy `reports.content` → `reports.content_en`.
 
-Dùng LibreTranslate (Argos Translate, tự host — service `libretranslate` trong
-docker-compose.yml), KHÔNG gọi LLM. Chất lượng vi→en ở mức "đọc hiểu được", đủ dùng tạm;
-muốn đổi sang dịch vụ khác (Cohere/Azure/Google...) chỉ cần thêm 1 lớp con `Translator`.
+Mặc định dịch bằng Claude (`ClaudeTranslator`, `REPORT_TRANSLATION_PROVIDER=claude`): mỗi chuỗi
+được dịch NGUYÊN VẸN (cả đoạn, giữ markdown/neo), số đã đổi sẵn sang kiểu Anh trước khi gửi, kết quả
+chỉ được nhận khi qua `_whole_string_ok` (đủ dòng, đủ gạch đầu dòng, đủ neo/URL, y nguyên tập con số);
+chuỗi không qua kiểm tra thì rơi về đường cắt mảnh + che số bên dưới (cùng máy dịch).
+`REPORT_TRANSLATION_PROVIDER=libretranslate` = LibreTranslate (Argos, tự host, không gọi LLM — chỉ đi
+đường cắt mảnh, chất lượng "đọc hiểu được").
 
 Nguyên tắc dịch (frontend `ReportDocument.tsx` vẫn TÁCH CHUỖI trên bản dịch — xem các
 regex song ngữ ở đó và `report_qc.parse_strategy`):
@@ -30,25 +33,33 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence
 
+import anthropic
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.config import Settings
 from db.models import Report
+from services.strategy_levels import position_card_plan
 
 logger = logging.getLogger(__name__)
 
 # Khoá giữ nguyên tiếng Việt — giá trị enum/định danh mà frontend/QC so sánh trực tiếp.
+# Tên nguồn/tên mã/tiêu đề khối KHÔNG nằm đây: chỉ để hiển thị, nên vẫn dịch khi có chữ Việt
+# (vd source_name "Ủy ban châu Âu, COM(2026) 616", tiêu đề khối Mục 3 do LLM tự đặt).
 PROTECTED_KEYS = frozenset({
-    "horizon", "direction", "probability", "impact", "tag", "heading", "category", "code", "name",
-    "url", "source_url", "source_name", "source", "date", "datetime_vn", "source_date", "published_date",
+    "horizon", "direction", "probability", "impact", "tag", "category", "code",
+    "url", "source_url", "date", "datetime_vn", "source_date", "published_date",
     "price_date", "price_time", "region", "type", "role", "op", "id", "trigger_rule", "field_path",
     "topics", "model", "price", "dday", "dweek",
 })
-# Khối máy đọc (tham chiếu đoạn tài liệu tri thức — services/knowledge.py) — giữ nguyên cả nhánh, không dịch.
 UNTRANSLATED_SUBTREES = frozenset({"knowledge_used", "knowledge_ref"})
 
+ENUM_HEADINGS = frozenset({"Phân tích", "Cần theo dõi", "Diễn biến chính"})
+
+
+def _protected(key: Optional[str], value: str) -> bool:
+    return key in PROTECTED_KEYS or (key == "heading" and value in ENUM_HEADINGS)
 # Chuỗi "lính gác" mà frontend/backend so khớp nguyên văn — không dịch.
 KEEP_VERBATIM = frozenset({
     "Chưa có thông tin kết quả xác nhận",
@@ -94,6 +105,7 @@ FIXED_STRINGS: Dict[str, str] = {
     "Chi tiết các tin tức chính": "Key news in detail",
     "Lịch sự kiện 7 ngày tới": "Events calendar — next 7 days",
     "Nguồn tham khảo": "References",
+    "Quan điểm thị trường": "Market view",
     "Gợi ý kinh doanh & giải pháp cho SIM": "Business suggestions & solutions for SIM",
     "Không có diễn biến trọng yếu.": "No significant developments.",
     "Không thể sinh nội dung tự động.": "Content could not be generated automatically.",
@@ -139,9 +151,17 @@ class TranslationError(RuntimeError):
 
 
 class Translator(ABC):
+    # True = máy dịch đủ tốt để dịch nguyên chuỗi (giữ markdown/neo theo hướng dẫn) — xem
+    # `translate_whole_strings`. Argos thì không: chỉ đi đường cắt mảnh.
+    whole_strings = False
+
     @abstractmethod
     async def translate_batch(self, texts: Sequence[str]) -> List[str]:
         """Dịch vi→en, trả về đúng số phần tử và đúng thứ tự của `texts`."""
+
+    async def retranslate(self, text: str, note: str) -> Optional[str]:
+        """Dịch lại 1 chuỗi kèm góp ý vì sao bản trước bị loại. Máy dịch không nhận góp ý → None."""
+        return None
 
 
 class LibreTranslateTranslator(Translator):
@@ -178,10 +198,162 @@ class LibreTranslateTranslator(Translator):
         raise TranslationError(f"LibreTranslate lỗi sau {TRANSLATE_MAX_ATTEMPTS} lần: {last_error}")
 
 
+# ── Claude ─────────────────────────────────────────────────────────────────────────────
+CLAUDE_BATCH_MAX_CHARS = 8000   # tổng ký tự nguồn / 1 lần gọi — đủ ngữ cảnh, output không bị cắt
+CLAUDE_BATCH_MAX_ITEMS = 60
+CLAUDE_CONCURRENCY = 4
+CLAUDE_MAX_TOKENS = 16000
+CLAUDE_EFFORT = "low"  # dịch có hướng dẫn rõ — không cần suy luận sâu
+
+_CLAUDE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "translations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}, "text": {"type": "string"}},
+                "required": ["id", "text"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["translations"],
+    "additionalProperties": False,
+}
+
+
+def _claude_system_prompt() -> str:
+    labels = "\n".join(
+        [f"- **{k[:1].upper() + k[1:]}:** → **{v}:**" for k, v in GLOSSARY.items() if k.lower() != v.lower()]
+        + [f"- [{k}] → [{v}]" for k, v in SENTIMENT_TAGS.items()]
+        + [f"- line prefix \"{p}\" → \"{GLOSSARY[p[:-1].lower()]}:\"" for p in GROUP_PREFIXES]
+        + [f"- \"{k[:1].upper() + k[1:]}:\" (before/after →) → \"{v}:\"" for k, v in ARROW_LABELS.items()]
+    )
+    terms = "\n".join(f"- {k} → {v}" for k, v in TERMS.items())
+    return f"""You are a senior financial translator for a carbon & energy derivatives research desk. \
+You translate a Vietnamese daily market report (EU ETS / EUA, gas TTF, coal API2, power, oil, CBAM, \
+Vietnam carbon market) into polished, idiomatic English as written by a professional commodities \
+analyst (Reuters / Argus / ICIS style) — not word-for-word.
+
+You receive JSON {{"segments": [{{"id": n, "text": "..."}}]}}, in document order (neighbouring \
+segments give context). Return EVERY id exactly once with its English translation.
+
+Hard rules (the output is parsed by software — breaking them discards your translation):
+1. Keep the exact layout: same number of lines (\\n), same bullet/numbering prefix at the start of \
+each line ("- ", "• ", "1. "), same number of ** bold markers. Translate text inside **bold**.
+2. Numbers are already in English format — copy every number exactly as written (no rounding, no \
+spelling out, no adding or dropping numbers, keep +/− signs). Do not invent figures. Dates stay \
+dd/mm/yyyy as written. Vietnamese magnitude words: "tỷ" = billion, "triệu" = million, "nghìn" = \
+thousand; "đồng" = VND.
+3. Keep unchanged: URLs, tickers/codes (EUA, TTF, API2, NEWC, Brent, WTI, CBAM, MSR, EEX, ICE, \
+Dec-26, Cal-27…), units (EUR/tCO2, USD/bbl, EUR/MWh…; "tấn" → t, "thùng" → bbl), legal document \
+numbers (e.g. 15/2025/NĐ-CP, COM(2026) 616), placeholders such as X0X or [3].
+4. Fixed labels MUST be rendered exactly like this (frontend parses them):
+{labels}
+5. Terminology:
+{terms}
+- phiên → session; biên độ → range; vùng → zone; mức kích hoạt → trigger level; kịch bản → scenario; \
+đi ngang → sideways / range-bound; ngắn hạn / trung hạn / dài hạn → short-term / medium-term / \
+long-term; xác suất → probability; phòng hộ / phòng vệ → hedge / hedging; đấu giá → auction; \
+tỷ lệ đặt mua/chào bán → auction cover ratio; giá đóng cửa → closing price; hỗ trợ → support; \
+đỉnh / đáy → high / low; khối lượng → volume; chênh lệch → spread; chuyển đổi nhiên liệu → fuel \
+switching; hòa vốn → breakeven; bão hòa → saturated; nghĩa vụ CBAM → CBAM obligation; \
+tín chỉ carbon → carbon credits; Bộ Công Thương → Ministry of Industry and Trade; \
+Bộ Nông nghiệp và Môi trường → Ministry of Agriculture and Environment.
+6. "(Nguồn: X)" → "(Source: X)"; keep publisher names as written.
+7. Output English only — no Vietnamese words left except proper names that have no English form.
+8. Trading-strategy lines (**Entry:** / **Target:** / **Risk management:**) and scenario conditions are \
+read by a parser that looks for keywords, so phrase them literally:
+- mua → Buy/buy, bán → Sell/sell ("Mua quanh X" → "Buy around X", "Bán quanh X" → "Sell around X"). \
+Never write buy/sell/long/short where the Vietnamese has no mua/bán.
+- Breakout entries: "khi/nếu đóng cửa trên X" → "on a close above X"; "khi/nếu đóng cửa dưới X" → \
+"on a close below X"; "khi giá vượt/phá X" → "on a break above X"; "khi giá thủng/phá xuống X" → \
+"on a break below X". A plain "quanh X" is NOT a breakout — never add "break"/"close above" to it.
+- tích lũy / mua dần / mua rải → accumulate; bán dần / bán rải → scale out; \
+"chưa đủ cơ sở định lượng" → "no quantitative basis yet".
+- In the Risk management line, use above/over/below/under ONLY directly before a stop level \
+(trên X → above X, dưới X → below X); never elsewhere in that line (write "within 3 sessions", \
+not "over 3 sessions").
+- Keep the same clause separators as the source: same commas, semicolons and " / " — do not add or \
+remove any. Keep every price level in the same order. "6–12 tháng" → "6–12 months".
+9. If the input has a "reviewer_note", your previous translation of that segment was rejected — fix \
+exactly the problem it describes."""
+
+
+class ClaudeTranslator(Translator):
+    """Dịch bằng Claude — lô theo thứ tự tài liệu (có ngữ cảnh), JSON có cấu trúc, chạy song song."""
+
+    whole_strings = True
+
+    def __init__(self, api_key: str, model: str):
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=TRANSLATE_MAX_ATTEMPTS)
+        self._model = model
+        self._system = _claude_system_prompt()
+        self._sem = asyncio.Semaphore(CLAUDE_CONCURRENCY)
+
+    async def translate_batch(self, texts: Sequence[str]) -> List[str]:
+        batches: List[List[int]] = []
+        size = 0
+        for i, t in enumerate(texts):
+            if not batches or size + len(t) > CLAUDE_BATCH_MAX_CHARS or len(batches[-1]) >= CLAUDE_BATCH_MAX_ITEMS:
+                batches.append([])
+                size = 0
+            batches[-1].append(i)
+            size += len(t)
+        out = list(texts)  # id bị thiếu trong kết quả → giữ nguyên gốc (kiểm tra phía sau sẽ loại)
+        results = await asyncio.gather(*(self._call([texts[i] for i in b]) for b in batches))
+        for b, res in zip(batches, results):
+            for local_id, text in res.items():
+                if 0 <= local_id < len(b):
+                    out[b[local_id]] = text
+        return out
+
+    async def retranslate(self, text: str, note: str) -> Optional[str]:
+        return (await self._call([text], note=note)).get(0)
+
+    async def _call(self, chunk: List[str], note: Optional[str] = None) -> Dict[int, str]:
+        body: Dict[str, Any] = {"segments": [{"id": i, "text": t} for i, t in enumerate(chunk)]}
+        if note:
+            body["reviewer_note"] = note
+        payload = json.dumps(body, ensure_ascii=False)
+        async with self._sem:
+            try:
+                response = await self._client.beta.messages.create(
+                    model=self._model,
+                    max_tokens=CLAUDE_MAX_TOKENS,
+                    system=self._system,
+                    messages=[{"role": "user", "content": payload}],
+                    output_config={
+                        "effort": CLAUDE_EFFORT,
+                        "format": {"type": "json_schema", "schema": _CLAUDE_OUTPUT_SCHEMA},
+                    },
+                    betas=["server-side-fallback-2026-07-01"],
+                    fallbacks="default",
+                )
+            except anthropic.APIError as exc:
+                raise TranslationError(f"Claude lỗi: {exc}") from exc
+        if response.stop_reason == "refusal":
+            logger.warning("[TRANSLATE] Claude từ chối lô %d đoạn (refusal) — các đoạn đó đi đường dự phòng.", len(chunk))
+            return {}
+        if response.stop_reason == "max_tokens":
+            logger.warning("[TRANSLATE] Lô %d đoạn bị cắt do max_tokens — các đoạn thiếu sẽ đi đường dự phòng.", len(chunk))
+        raw = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+        try:
+            items = json.loads(raw)["translations"]
+            return {int(it["id"]): str(it["text"]) for it in items}
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.warning("[TRANSLATE] Claude trả JSON lỗi (%s) — lô %d đoạn đi đường dự phòng.", exc, len(chunk))
+            return {}
+
+
 def build_translator(settings: Settings) -> Optional[Translator]:
-    if not settings.libretranslate_url:
-        return None
-    return LibreTranslateTranslator(settings.libretranslate_url, settings.libretranslate_api_key)
+    provider = settings.report_translation_provider
+    if provider == "claude" and settings.anthropic_api_key:
+        return ClaudeTranslator(settings.anthropic_api_key, settings.report_translation_model)
+    if provider == "libretranslate" and settings.libretranslate_url:
+        return LibreTranslateTranslator(settings.libretranslate_url, settings.libretranslate_api_key)
+    return None
 
 
 def content_hash(content: Optional[dict]) -> str:
@@ -299,26 +471,42 @@ def split_for_translation(text: str) -> List[Part]:
     return parts
 
 
-def _collect(node: Any, key: Optional[str], out: List[str]) -> None:
+def _collect(node: Any, key: Optional[str], out: List[str], whole: Optional[Dict[str, str]] = None) -> None:
     if isinstance(node, dict):
         for k, v in node.items():
-            if k not in UNTRANSLATED_SUBTREES:
-                _collect(v, k, out)
+            _collect(v, k, out, whole)
     elif isinstance(node, list):
         for v in node:
-            _collect(v, key, out)
-    elif isinstance(node, str) and key not in PROTECTED_KEYS:
+            _collect(v, key, out, whole)
+    elif isinstance(node, str) and not _protected(key, node) and not (whole and node in whole):
         out.extend(t for needs, t in split_for_translation(node) if needs)
 
 
-def _rebuild(node: Any, key: Optional[str], mt: Dict[str, str]) -> Any:
+def _collect_whole(node: Any, key: Optional[str], out: List[str]) -> None:
+    """Chuỗi cần dịch nguyên vẹn (theo thứ tự tài liệu — Claude dùng các đoạn liền kề làm ngữ cảnh)."""
     if isinstance(node, dict):
-        return {k: (v if k in UNTRANSLATED_SUBTREES else _rebuild(v, k, mt)) for k, v in node.items()}
+        for k, v in node.items():
+            _collect_whole(v, k, out)
+    elif isinstance(node, list):
+        for v in node:
+            _collect_whole(v, key, out)
+    elif (
+        isinstance(node, str) and not _protected(key, node) and node not in KEEP_VERBATIM
+        and node.strip() not in FIXED_STRINGS and _has_vietnamese(node)
+    ):
+        out.append(node)
+
+
+def _rebuild(node: Any, key: Optional[str], mt: Dict[str, str], whole: Optional[Dict[str, str]] = None) -> Any:
+    if isinstance(node, dict):
+        return {k: _rebuild(v, k, mt, whole) for k, v in node.items()}
     if isinstance(node, list):
-        return [_rebuild(v, key, mt) for v in node]
+        return [_rebuild(v, key, mt, whole) for v in node]
     if isinstance(node, str) and key == "topics":
         return TOPIC_LABELS_EN.get(node, node)
-    if isinstance(node, str) and key not in PROTECTED_KEYS:
+    if isinstance(node, str) and not _protected(key, node):
+        if whole and node in whole:
+            return whole[node]
         return "".join(mt.get(t, t) if needs else t for needs, t in split_for_translation(node))
     return node
 
@@ -605,11 +793,151 @@ async def translate_segments(segments: Sequence[str], translator: Translator) ->
     return result
 
 
+# ── Dịch nguyên chuỗi (Claude) ─────────────────────────────────────────────────────────
+# Dịch cả đoạn cho câu văn tự nhiên và đúng ngữ cảnh (đường cắt mảnh làm câu rời rạc). Rủi ro
+# là LLM làm vỡ cấu trúc frontend phải đọc hoặc lệch số — nên số được đổi SẴN sang kiểu Anh
+# trước khi gửi (máy chỉ việc chép), và bản dịch chỉ được nhận khi `_whole_string_ok`.
+_URL_SPLIT_RE = re.compile(r"(https?://\S+)")
+
+
+def english_numbers(text: str) -> str:
+    """Đổi số kiểu Việt sang kiểu Anh tại chỗ ("79,5" → "79.5", "120.900 tấn" → "120,900 t"),
+    cùng quy tắc với đường che số (`_en_token`); URL giữ nguyên."""
+    pieces = _URL_SPLIT_RE.split(text)
+    for i in range(0, len(pieces), 2):
+        piece = pieces[i]
+        pieces[i] = _MASK_RE.sub(
+            lambda m: _en_token(m.group(0), text, m.string[m.end():]) if re.search(r"\d", m.group(0)) else m.group(0),
+            piece,
+        )
+    return "".join(pieces)
+
+
+def _whole_string_ok(source: str, pre: str, out: str) -> bool:
+    """Bản dịch nguyên chuỗi giữ được cấu trúc mà frontend/QC tách chuỗi: cùng số dòng, cùng tiền
+    tố gạch đầu dòng, cùng số dấu **, đủ các neo cố định (nhãn bold trong GLOSSARY, [POSITIVE]...,
+    tiền tố nhóm, URL) theo đúng thứ tự trong từng dòng, và tập con số y hệt bản đã đổi số `pre`."""
+    if not out or not out.strip():
+        return False
+    src_lines, out_lines = source.split("\n"), out.split("\n")
+    if len(src_lines) != len(out_lines):
+        return False
+    for sl, ol in zip(src_lines, out_lines):
+        if sl.count("**") != ol.count("**"):
+            return False
+        bullet = _BULLET_RE.match(sl)
+        if bullet and not ol.startswith(bullet.group(1)):
+            return False
+        pos = 0
+        for needs, t in _line_parts(sl):
+            t = t.strip()
+            if needs or not _LETTER_RE.search(t):
+                continue
+            i = ol.find(t, pos)
+            if i < 0:
+                return False
+            pos = i + len(t)
+    return Counter(_DIGITS_RE.findall(out)) == Counter(_DIGITS_RE.findall(pre))
+
+
+async def translate_whole_strings(strings: Sequence[str], translator: Translator) -> Dict[str, str]:
+    """{chuỗi gốc: bản dịch} cho các chuỗi dịch nguyên vẹn đạt kiểm tra (thử 2 lần). Chuỗi không
+    có trong kết quả sẽ đi đường cắt mảnh."""
+    unique = list(dict.fromkeys(strings))
+    pre = {s: english_numbers(s) for s in unique}
+    done: Dict[str, str] = {}
+    pending = unique
+    for _attempt in range(2):
+        if not pending:
+            break
+        outs = await translator.translate_batch([pre[s] for s in pending])
+        still = []
+        for s, out in zip(pending, outs):
+            out = out.strip("\n") if out else out
+            if _whole_string_ok(s, pre[s], out):
+                done[s] = out
+            else:
+                still.append(s)
+        pending = still
+    if pending:
+        logger.warning(
+            "[TRANSLATE] %d/%d chuỗi dịch nguyên vẹn không đạt kiểm tra cấu trúc/số — dịch theo mảnh:\n  %s",
+            len(pending), len(unique), "\n  ".join(p[:160] for p in pending),
+        )
+    return done
+
+
+# ── Thẻ KHUYẾN NGHỊ VỊ THẾ ──────────────────────────────────────────────────────────────
+# Frontend dựng thẻ bằng cách đọc TỪ KHOÁ trong trading_strategy/condition (buy/sell, above/below, close above,
+# accumulate...) — câu dịch đúng nghĩa vẫn có thể làm thẻ đọc sai mức giá/loại lệnh. Nên thẻ dựng từ bản dịch
+# (`position_card_plan`, port parser frontend) phải Y HỆT thẻ dựng từ bản tiếng Việt; lệch thì dịch lại kèm góp
+# ý, vẫn lệch thì giữ nguyên văn tiếng Việt của trường đó (parser đọc được tiếng Việt — thẻ luôn đúng).
+CARD_FIELDS = ("trading_strategy", "condition")
+CARD_RETRIES = 2
+
+
+def _scenario_pairs(vi: Any, en: Any):
+    if isinstance(vi, dict) and isinstance(en, dict):
+        if isinstance(vi.get("trading_strategy"), str):
+            yield vi, en
+        for k, v in vi.items():
+            yield from _scenario_pairs(v, en.get(k))
+    elif isinstance(vi, list) and isinstance(en, list):
+        for a, b in zip(vi, en):
+            yield from _scenario_pairs(a, b)
+
+
+async def _fix_position_cards(content: dict, out: dict, translator: Translator) -> None:
+    for vi, en in _scenario_pairs(content, out):
+        want = position_card_plan(vi)
+        for field in CARD_FIELDS:
+            if not isinstance(vi.get(field), str) or position_card_plan(en) == want:
+                break
+            src, pre = vi[field], english_numbers(vi[field])
+            fixed = False
+            for _ in range(CARD_RETRIES):
+                got = position_card_plan(en)
+                note = (
+                    f"Your translation of this {field} made the position-card parser read "
+                    f"{json.dumps(got, ensure_ascii=False)} but the Vietnamese reads "
+                    f"{json.dumps(want, ensure_ascii=False)}. Previous translation:\n{en.get(field)}\n"
+                    "Follow rule 8 exactly."
+                )
+                cand = await translator.retranslate(pre, note)
+                if not cand or not _whole_string_ok(src, pre, cand.strip("\n")):
+                    continue
+                if position_card_plan({**en, field: cand.strip("\n")}) == want:
+                    en[field] = cand.strip("\n")
+                    fixed = True
+                    break
+            if not fixed and position_card_plan({**en, field: src}) == want:
+                logger.warning("[TRANSLATE] Thẻ vị thế (%s, %s): bản dịch %s làm lệch thẻ — giữ tiếng Việt.",
+                               vi.get("horizon"), vi.get("direction"), field)
+                en[field] = src
+        if position_card_plan(en) != want:
+            logger.warning("[TRANSLATE] Thẻ vị thế (%s) lệch — giữ tiếng Việt cả chiến lược lẫn điều kiện.", vi.get("horizon"))
+            for field in CARD_FIELDS:
+                if isinstance(vi.get(field), str):
+                    en[field] = vi[field]
+
+
 async def translate_report_content(content: dict, translator: Translator) -> dict:
     """Bản dịch tiếng Anh của `content` (cùng cấu trúc). Raise TranslationError nếu máy dịch lỗi."""
+    whole: Dict[str, str] = {}
+    if translator.whole_strings:
+        strings: List[str] = []
+        _collect_whole(content, None, strings)
+        whole = await translate_whole_strings(strings, translator)
     segments: List[str] = []
-    _collect(content, None, segments)
-    return _rebuild(content, None, await translate_segments(segments, translator))
+    _collect(content, None, segments, whole)
+    out = _rebuild(content, None, await translate_segments(segments, translator), whole)
+    await _fix_position_cards(content, out, translator)
+    left: List[str] = []
+    _collect_whole(out, None, left)
+    if left:
+        logger.warning("[TRANSLATE] Bản tiếng Anh còn %d chuỗi có chữ Việt:\n  %s",
+                       len(left), "\n  ".join(t[:160] for t in left))
+    return out
 
 
 async def ensure_report_translation(

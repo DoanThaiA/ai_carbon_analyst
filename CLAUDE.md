@@ -176,11 +176,13 @@ dùng prompt `news_only`, Mục 3 không có `instrument_notes`/`trading_scenari
 `no_price_data`/`no_price_notice` để frontend (`ReportDocument.tsx`/`ReportEditor.tsx`), Jenny và Jack QC ẩn/bỏ qua phần giá.
 Lưu ý `AUTO_REPORT_DAYS` mặc định `tue-sat` — muốn tự sinh báo cáo CN/T2 phải đặt lại trong `.env`.
 
-**Bản tiếng Anh của báo cáo** (`services/report_translation.py`): dịch máy `reports.content` → `reports.content_en`
-bằng LibreTranslate/Argos tự host (service `libretranslate` trong docker-compose, `LIBRETRANSLATE_URL`; trống = tắt), KHÔNG
-gọi LLM. Chạy sau khi sinh báo cáo, sau khi admin sửa (PUT/gỡ gợi ý biz) và trước khi gửi email publish; lỗi dịch chỉ log.
+**Bản tiếng Anh của báo cáo** (`services/report_translation.py`): dịch `reports.content` → `reports.content_en`.
+`REPORT_TRANSLATION_PROVIDER=claude` (mặc định, `ClaudeTranslator`, model `REPORT_TRANSLATION_MODEL`, mặc định Sonnet 5.5 effort low): dịch NGUYÊN chuỗi theo
+lô có ngữ cảnh, số đổi sẵn sang kiểu Anh (`english_numbers`) rồi chỉ nhận khi `_whole_string_ok` (đủ dòng/gạch đầu dòng/`**`/
+neo GLOSSARY/URL, tập số y hệt) — chuỗi trượt rơi về đường cắt mảnh + che số bên dưới. Thẻ KHUYẾN NGHỊ VỊ THẾ: `_fix_position_cards` so `strategy_levels.position_card_plan` (port buildPlan/buildLeg/isBreakoutEntry của `ReportDocument.tsx` — sửa parser bên nào phải sửa cả bên kia) giữa bản Việt và bản Anh của từng kịch bản; lệch → dịch lại kèm góp ý (`retranslate`), vẫn lệch → giữ tiếng Việt trường đó. `=libretranslate` = Argos tự host
+(`LIBRETRANSLATE_URL`, không gọi LLM, chỉ đường cắt mảnh); `=off` = tắt. Chạy sau khi sinh báo cáo, sau khi admin sửa (PUT/gỡ gợi ý biz) và trước khi gửi email publish; lỗi dịch chỉ log.
 `content_en_source_hash` = hash của `content` lúc dịch → lệch thì `fresh_content_en()` trả None (API trả `content_en: null`,
-web hiện bản tiếng Việt kèm thông báo). Khoá enum (`PROTECTED_KEYS`: horizon/direction/impact/heading/...) giữ tiếng Việt,
+web hiện bản tiếng Việt kèm thông báo). Khoá enum (`PROTECTED_KEYS`: horizon/direction/impact/... + tiêu đề khối `ENUM_HEADINGS`) giữ tiếng Việt (tên nguồn/tên mã/tiêu đề khối khác vẫn dịch),
 frontend tự đổi nhãn; neo cấu trúc (`**Tổng hợp:**`, `[TÍCH CỰC]`, tiền tố nhóm Mục 3, `**Mục tiêu:**`...) dịch bằng
 `GLOSSARY` cố định — các regex trong `ReportDocument.tsx` và `report_qc.parse_strategy` nhận cả 2 ngôn ngữ; thêm neo mới
 phải cập nhật cả 3 nơi. Email publish kèm 2 PDF (vi + `-en.pdf`, `render_report_pdf(lang="en")` đặt cookie `NEXT_LOCALE`).

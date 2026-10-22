@@ -1,6 +1,6 @@
 """
 Dịch bù bản tiếng Anh cho báo cáo ngày (bình thường tự chạy sau khi sinh/sửa/duyệt báo cáo —
-xem services/report_translation.py). Dùng khi LibreTranslate tạm lỗi lúc sinh, hoặc để dịch
+xem services/report_translation.py). Dùng khi máy dịch (Claude/LibreTranslate) tạm lỗi lúc sinh, khi đổi máy dịch, hoặc để dịch
 các báo cáo có từ trước khi có tính năng này.
 
 Usage:
@@ -35,7 +35,10 @@ async def _main(args: argparse.Namespace) -> None:
     settings = Settings.from_env()
     translator = build_translator(settings)
     if translator is None:
-        raise SystemExit("LIBRETRANSLATE_URL chưa được cấu hình.")
+        raise SystemExit(
+            "Chưa cấu hình máy dịch: REPORT_TRANSLATION_PROVIDER=claude cần ANTHROPIC_API_KEY, "
+            "=libretranslate cần LIBRETRANSLATE_URL."
+        )
 
     if args.sample:
         print((await translate_report_content({"text": args.sample}, translator))["text"])
