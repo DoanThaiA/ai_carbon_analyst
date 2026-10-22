@@ -46,6 +46,8 @@ PROTECTED_KEYS = frozenset({
     "price_date", "price_time", "region", "type", "role", "op", "id", "trigger_rule", "field_path",
     "topics", "model", "price", "dday", "dweek",
 })
+# Khối máy đọc (tham chiếu đoạn tài liệu tri thức — services/knowledge.py) — giữ nguyên cả nhánh, không dịch.
+UNTRANSLATED_SUBTREES = frozenset({"knowledge_used", "knowledge_ref"})
 
 # Chuỗi "lính gác" mà frontend/backend so khớp nguyên văn — không dịch.
 KEEP_VERBATIM = frozenset({
@@ -300,7 +302,8 @@ def split_for_translation(text: str) -> List[Part]:
 def _collect(node: Any, key: Optional[str], out: List[str]) -> None:
     if isinstance(node, dict):
         for k, v in node.items():
-            _collect(v, k, out)
+            if k not in UNTRANSLATED_SUBTREES:
+                _collect(v, k, out)
     elif isinstance(node, list):
         for v in node:
             _collect(v, key, out)
@@ -310,7 +313,7 @@ def _collect(node: Any, key: Optional[str], out: List[str]) -> None:
 
 def _rebuild(node: Any, key: Optional[str], mt: Dict[str, str]) -> Any:
     if isinstance(node, dict):
-        return {k: _rebuild(v, k, mt) for k, v in node.items()}
+        return {k: (v if k in UNTRANSLATED_SUBTREES else _rebuild(v, k, mt)) for k, v in node.items()}
     if isinstance(node, list):
         return [_rebuild(v, key, mt) for v in node]
     if isinstance(node, str) and key == "topics":

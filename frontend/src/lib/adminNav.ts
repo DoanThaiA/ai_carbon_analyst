@@ -1,7 +1,7 @@
 import {
   FileText, Radar, Newspaper, Users, MessageSquareText, MessagesSquare, BrainCircuit, Sparkles,
   MessageSquareWarning, ClipboardList, BarChart3, LineChart, CalendarCheck, TrendingUp, Database,
-  Lightbulb, Handshake, MessageCircleHeart, ClipboardCheck
+  Lightbulb, Handshake, MessageCircleHeart, ClipboardCheck, BookOpen
 } from "lucide-react";
 
 // Điều hướng admin — dùng chung giữa sidebar desktop (components/admin/AdminSidebar.tsx),
@@ -67,6 +67,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     icon: Lightbulb,
     tone: "amber",
     items: [
+      // Tài liệu tri thức (.pdf/.docx) cho báo cáo + Jenny chat — services/knowledge.py.
+      { href: "/admin/knowledge", labelKey: "knowledge", icon: BookOpen },
       { href: "/admin/quote-chat-examples", labelKey: "chatExamples", icon: Sparkles },
       { href: "/admin/chat-reviews", labelKey: "chatReviews", icon: MessageSquareText },
       { href: "/admin/chat-history", labelKey: "chatHistory", icon: MessagesSquare },

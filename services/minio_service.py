@@ -20,6 +20,7 @@ from datetime import timedelta
 from typing import Optional
 
 from core.config import Settings
+from services.knowledge_extraction import KNOWLEDGE_MAX_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,51 @@ def generate_presigned_upload_url(file_name: str, content_type: str, size: int) 
     file_key = f"quote-chat/{uuid.uuid4().hex}{ext}"
     upload_url = _get_client().presigned_put_object(bucket, file_key, expires=PRESIGNED_URL_EXPIRY)
     return PresignedUpload(upload_url=upload_url, file_key=file_key)
+
+
+# Tài liệu tri thức của Jenny (services/knowledge.py) — chỉ admin tải lên, chung bucket nhưng prefix riêng.
+# GET /api/upload/view-url (mọi user đăng nhập) TỪ CHỐI prefix này; admin tải file qua /api/admin/knowledge.
+KNOWLEDGE_PREFIX = "knowledge/"
+_KNOWLEDGE_EXT_BY_MEDIA_TYPE = {PDF_MEDIA_TYPE: ".pdf", DOCX_MEDIA_TYPE: ".docx"}
+
+
+def validate_knowledge_upload(file_name: str, content_type: str, size: int) -> None:
+    """Lớp UX (client khai báo) — lớp chặn thật nằm ở services/knowledge.py::create_document (dung lượng thật trên
+    MinIO + magic bytes)."""
+    if content_type == LEGACY_DOC_MEDIA_TYPE or file_name.lower().endswith(".doc"):
+        raise InvalidAttachmentError(
+            "Hệ thống chưa hỗ trợ file .doc (định dạng Word cũ) — vui lòng lưu lại dưới dạng .docx rồi thử lại."
+        )
+    expected_ext = _KNOWLEDGE_EXT_BY_MEDIA_TYPE.get(content_type)
+    if not expected_ext or not file_name.lower().endswith(expected_ext):
+        raise InvalidAttachmentError("Chỉ nhận tài liệu PDF hoặc Word (.docx).")
+    if size > KNOWLEDGE_MAX_BYTES:
+        raise InvalidAttachmentError(
+            f"File \"{file_name}\" vượt quá dung lượng cho phép ({KNOWLEDGE_MAX_BYTES // (1024 * 1024)}MB)."
+        )
+
+
+def generate_knowledge_upload_url(file_name: str, content_type: str, size: int) -> PresignedUpload:
+    validate_knowledge_upload(file_name, content_type, size)
+    file_key = f"{KNOWLEDGE_PREFIX}{uuid.uuid4().hex}{_KNOWLEDGE_EXT_BY_MEDIA_TYPE[content_type]}"
+    upload_url = _get_client().presigned_put_object(_get_bucket(), file_key, expires=PRESIGNED_URL_EXPIRY)
+    return PresignedUpload(upload_url=upload_url, file_key=file_key)
+
+
+def object_size(file_key: str) -> Optional[int]:
+    """Dung lượng THẬT của object trên MinIO (None nếu không tồn tại)."""
+    try:
+        return _get_client().stat_object(_get_bucket(), file_key).size
+    except Exception:
+        logger.warning("[MINIO] Không tìm thấy object %s.", file_key)
+        return None
+
+
+def remove_object(file_key: str) -> None:
+    try:
+        _get_client().remove_object(_get_bucket(), file_key)
+    except Exception:
+        logger.warning("[MINIO] Không xoá được object %s.", file_key, exc_info=True)
 
 
 def check_uploaded_object(file_key: str, expected_media_type: str) -> Optional[str]:

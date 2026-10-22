@@ -29,8 +29,8 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Article, BizSuggestion, Instrument, Price, Report
-from services import biz_memory
+from db.models import Article, BizSuggestion, Instrument, KnowledgeDocument, Price, Report
+from services import biz_memory, knowledge
 from services.strategy_levels import is_breakout_entry
 from services.report_consistency import (
     LEGAL_DOC_ID_RE,
@@ -1399,6 +1399,8 @@ def check_sources(
         issues.append(_issue("source", "9", "warning", "Mục Nguồn tham khảo trống.", "9.items"))
     seen: Set[str] = set()
     for i, it in enumerate(items):
+        if isinstance(it, dict) and it.get("kind") == "knowledge":
+            continue  # tài liệu tri thức admin tải lên — không có URL công khai (check_knowledge_refs kiểm riêng)
         url = it.get("url") if isinstance(it, dict) else None
         path = f"9.items[{i}]"
         if not url:
@@ -1683,11 +1685,51 @@ def _check_remaining_vs_section6(
     return issues
 
 
-def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[Dict[str, str]]:
+def knowledge_chunk_ids(content: Dict[str, Any]) -> Set[int]:
+    """chunk_id của mọi đoạn tài liệu tri thức đã đưa vào prompt (content["knowledge_used"]) / được trích."""
+    ids: Set[int] = set()
+    for entries in (content.get("knowledge_used") or {}).values():
+        for e in entries or []:
+            if isinstance(e, dict) and isinstance(e.get("chunk_id"), int):
+                ids.add(e["chunk_id"])
+    for src in (content.get("3") or {}).get("sources") or []:
+        if isinstance(src, dict) and src.get("source_type") == "knowledge":
+            ids.update(c for c in src.get("chunk_ids") or [] if isinstance(c, int))
+    return ids
+
+
+def check_knowledge_refs(content: Dict[str, Any], doc_states: Dict[int, str]) -> List[Dict[str, str]]:
+    """Tài liệu tri thức được trích phải còn trong hệ thống (`doc_states`: doc_id -> 'active' | 'inactive' | 'deleted';
+    thiếu = không tồn tại). Đã xoá → không kiểm chứng được nguồn (warning); đã tắt → info."""
+    issues: List[Dict[str, str]] = []
+    for d in knowledge.cited_documents(content):
+        state = doc_states.get(d["doc_id"], "deleted")
+        if state == "deleted":
+            issues.append(_issue(
+                "source", "9", "warning",
+                f"Tài liệu tham khảo \"{d['title']}\" (#{d['doc_id']}) đã bị xoá khỏi hệ thống — nguồn không còn kiểm chứng được.",
+                "9.items",
+            ))
+        elif state == "inactive":
+            issues.append(_issue(
+                "source", "9", "info",
+                f"Tài liệu tham khảo \"{d['title']}\" (#{d['doc_id']}) đang bị tắt/hết hiệu lực nhưng vẫn được trích.",
+                "9.items",
+            ))
+    return issues
+
+
+def check_facts(
+    content: Dict[str, Any], article_texts: Dict[str, str], knowledge_texts: Optional[Dict[int, str]] = None,
+) -> List[Dict[str, str]]:
     """Mọi con số trong câu CÓ trích nguồn (Tóm tắt, Diễn biến chính, Mục 4, yếu tố thị trường) phải có
     trong chính bài nguồn (`article_texts`: _norm_url -> tiêu đề + nội dung bài). Số lấy từ bảng giá /
     khối ước tính CBAM của báo cáo được miễn (bullet hay kèm giá phiên). Bài không có trong DB → bỏ qua
-    (check_sources đã báo URL lạ). Bullet tự ghi "số liệu chưa khớp" → gợi ý dùng nguồn rõ hơn."""
+    (check_sources đã báo URL lạ). Bullet tự ghi "số liệu chưa khớp" → gợi ý dùng nguồn rõ hơn.
+    Nguồn là tài liệu tri thức (`knowledge_ref` của bullet / nguồn Mục 3 source_type='knowledge') → đối chiếu với
+    chữ của đúng các đoạn đã đưa vào prompt (`knowledge_texts`: chunk_id -> nội dung; đoạn không còn — tài liệu
+    đã xoá/xử lý lại — thì bỏ qua)."""
+    knowledge_texts = knowledge_texts or {}
     issues: List[Dict[str, str]] = []
     sec2 = content.get("2") or {}
     report_pool = _numbers_in(" ".join(
@@ -1706,9 +1748,12 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
     # Mục 3 (Phân tích / Quan điểm thị trường / Cần theo dõi): mỗi dòng có "(Nguồn: X)" đối chiếu với các bài X trong
     # content["3"].sources — bản chấm 17/10: số "30–40%, 50%, 20–30 USD/thùng" của tin Eni lặp 3 lần mà chưa kiểm chứng.
     by_name: Dict[str, List[str]] = {}
+    knowledge_by_title: Dict[str, List[int]] = {}
     for src in (content.get("3") or {}).get("sources") or []:
         if isinstance(src, dict) and src.get("source_url"):
             by_name.setdefault(str(src.get("source_name") or ""), []).append(src["source_url"])
+        elif isinstance(src, dict) and src.get("source_type") == "knowledge":
+            knowledge_by_title.setdefault(str(src.get("source_name") or ""), []).extend(src.get("chunk_ids") or [])
     # Hồ sơ chính sách (ets_policy_dossiers.yaml, trích "[HSk]" → "(Nguồn: <tên>, <ngày>)") không phải bài crawl — số
     # trong câu trích hồ sơ được đối chiếu với chính nội dung hồ sơ.
     dossier_text_by_name = _dossier_texts_by_name()
@@ -1719,10 +1764,15 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
             names = inline_source_names(line)
             urls = [u for n in names for u in by_name.get(n, [])]
             extra = "\n".join(t for t in (_dossier_text_for(n, dossier_text_by_name) for n in names) if t)
-            if urls:
+            # Nhãn tài liệu tri thức = "<tên tài liệu>, tr. N" (knowledge.source_label) — khớp theo tiền tố tên.
+            kb_text = "\n".join(
+                knowledge_texts[cid] for n in names for title, cids in knowledge_by_title.items()
+                if title and (n == title or n.startswith(title + ",")) for cid in cids if cid in knowledge_texts
+            )
+            if urls or kb_text:
                 items.append(("3", f"{blk.get('heading') or 'Mục 3'} — dòng {li + 1}", f"3.analysis_blocks[{bi}].content",
                               {"text": strip_inline_sources(line), "source_urls": urls, "extra_source_text": extra,
-                               "source_name": "; ".join(dict.fromkeys(names))}))
+                               "knowledge_text": kb_text, "source_name": "; ".join(dict.fromkeys(names))}))
 
     for section, label, path, it in items:
         if not isinstance(it, dict):
@@ -1740,6 +1790,11 @@ def check_facts(content: Dict[str, Any], article_texts: Dict[str, str]) -> List[
         url = it.get("source_url")
         urls = it.get("source_urls") or ([url] if url else [])
         source_text = "\n".join(t for t in (article_texts.get(_norm_url(u)) for u in urls) if t)
+        kref = it.get("knowledge_ref")
+        kb_text = str(it.get("knowledge_text") or "") + (
+            "\n" + knowledge_texts.get(kref.get("chunk_id"), "") if isinstance(kref, dict) else ""
+        )
+        source_text = (source_text + "\n" + kb_text).strip()
         if not source_text:
             continue
         pool = _numbers_in(source_text + "\n" + str(it.get("extra_source_text") or ""))
@@ -2378,6 +2433,14 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             suggestions[s.id] = {"trigger_rule": s.trigger_rule, "status": s.status, "first_report_date": s.first_report_date}
     valid_codes = {c.upper() for c in (await session.execute(select(Instrument.code))).scalars()}
     news_issues, news_stats = check_news(content, await _load_window_articles(session, target_date))
+    knowledge_texts = await knowledge.chunk_texts(session, knowledge_chunk_ids(content))
+    cited_doc_ids = [d["doc_id"] for d in knowledge.cited_documents(content)]
+    doc_states: Dict[int, str] = {}
+    if cited_doc_ids:
+        for d in (await session.execute(select(KnowledgeDocument).where(KnowledgeDocument.id.in_(cited_doc_ids)))).scalars():
+            doc_states[d.id] = "deleted" if d.status == "deleted" else (
+                "active" if knowledge.is_applicable(d, date.fromisoformat(target_date), "report") else "inactive"
+            )
 
     issues_by_check = {
         "price": check_prices(content, db_prices, latest_price_date, report_date) + check_instrument_labels(content),
@@ -2390,8 +2453,11 @@ async def run_report_qc(session: AsyncSession, report_date: str, content: Dict[s
             + check_ttf_channel(content) + check_coal_switch_premise(content) + check_msr_direction(content)
             + check_ets_policy_impact(content)
         ),
-        "source": check_sources(content, known_urls, article_meta, stale_before, policy_stale_before) + check_inline_attribution(content),
-        "fact": check_facts(content, article_texts),
+        "source": (
+            check_sources(content, known_urls, article_meta, stale_before, policy_stale_before)
+            + check_inline_attribution(content) + check_knowledge_refs(content, doc_states)
+        ),
+        "fact": check_facts(content, article_texts, knowledge_texts),
         "calendar": check_calendar(content, report_date),
         "biz": check_biz(content, suggestions, valid_codes, (content.get("2") or {}).get("prices") or [], report_date),
         "news": news_issues,

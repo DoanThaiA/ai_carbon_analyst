@@ -450,3 +450,40 @@ async def quarter_to_date_auction_vwap(session: AsyncSession, as_of_str: str) ->
     rows = [a for a in await _auctions_between(session, q_start, as_of) if a.status == "successful" and a.auction_price]
     avg = vwap([(a.auction_price, a.volume) for a in rows])
     return (round(avg, 2) if avg is not None else None), len(rows)
+
+
+def cumulative_quarter_vwap(rows: Sequence[Tuple[date, float, float]]) -> List[Dict[str, Any]]:
+    """rows: (ngày, giá khớp, khối lượng) các phiên đấu giá thành công. Trả VWAP LŨY KẾ từ đầu quý tới hết
+    từng ngày có phiên (cùng cách EC tính giá CBAM quý), đặt lại khi sang quý mới — 1 dòng/ngày dù ngày đó
+    có nhiều phiên (EU + DE/PL)."""
+    out: List[Dict[str, Any]] = []
+    cur_q = None
+    pv = vol = 0.0
+    sessions = 0
+    by_day: Dict[date, List[Tuple[float, float]]] = {}
+    for d, p, v in rows:
+        if p and v:
+            by_day.setdefault(d, []).append((p, v))
+    for d in sorted(by_day):
+        q = quarter_of(d)
+        if q != cur_q:
+            cur_q, pv, vol, sessions = q, 0.0, 0.0, 0
+        for p, v in by_day[d]:
+            pv += p * v
+            vol += v
+            sessions += 1
+        out.append({"date": d.isoformat(), "vwap": round(pv / vol, 2), "quarter": quarter_label(*q), "sessions": sessions})
+    return out
+
+
+async def auction_vwap_series(session: AsyncSession, since: date, until: date) -> List[Dict[str, Any]]:
+    """VWAP đấu giá lũy kế theo quý cho các ngày trong [since, until] — tính từ đầu quý chứa `since` để
+    điểm đầu cửa sổ không bị thiếu các phiên trước đó của cùng quý. Dùng cho đường VWAP ở biểu đồ
+    "So sánh hiệu suất"."""
+    q_start, _ = quarter_bounds(*quarter_of(since))
+    rows = [
+        (a.auction_date, a.auction_price, a.volume)
+        for a in await _auctions_between(session, q_start, until)
+        if a.status == "successful" and a.auction_price
+    ]
+    return [r for r in cumulative_quarter_vwap(rows) if r["date"] >= since.isoformat()]

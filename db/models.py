@@ -99,9 +99,14 @@ class Article(Base):
 
 
 class Chunk(Base):
+    """`source_type='knowledge'`: đoạn của tài liệu admin tải lên (source_id = knowledge_documents.id, xem
+    services/knowledge.py). Tài liệu chỉ là phần nhỏ so với chunk bài báo, nên có index vector/full-text MỘT PHẦN
+    riêng: HNSW chung lọc SAU khi lấy ứng viên (lọc source_type trên index chung dễ ra 0 kết quả), và cấu hình
+    'english' của content_tsv không hợp tiếng Việt → tài liệu tìm full-text bằng to_tsvector('simple', content)."""
+
     __tablename__ = "chunks"
     __table_args__ = (
-        CheckConstraint("source_type IN ('report', 'article')", name="ck_chunks_source_type"),
+        CheckConstraint("source_type IN ('report', 'article', 'knowledge')", name="ck_chunks_source_type"),
         UniqueConstraint(
             "source_type", "source_id", "chunk_index", name="uq_chunks_source_chunk_index"
         ),
@@ -112,17 +117,30 @@ class Chunk(Base):
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
         Index("idx_chunks_tsv", "content_tsv", postgresql_using="gin"),
+        Index(
+            "idx_chunks_knowledge_embedding", "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+            postgresql_where=text("source_type = 'knowledge'"),
+        ),
+        Index(
+            "idx_chunks_knowledge_tsv_simple", text("to_tsvector('simple', content)"),
+            postgresql_using="gin",
+            postgresql_where=text("source_type = 'knowledge'"),
+        ),
     )
 
     chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     source_type: Mapped[str] = mapped_column(Text, nullable=False)
-    source_id: Mapped[int] = mapped_column(BigInteger, nullable=False)  # articles.id / daily_reports.id
+    source_id: Mapped[int] = mapped_column(BigInteger, nullable=False)  # articles.id / daily_reports.id / knowledge_documents.id
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)  # thứ tự đoạn trong bài
     content: Mapped[str] = mapped_column(Text, nullable=False)  # 1 đoạn văn
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(EMBEDDING_DIM))
     content_tsv: Mapped[Optional[str]] = mapped_column(
         TSVECTOR, Computed("to_tsvector('english', content)", persisted=True)
     )
+    # Chỉ dùng cho source_type='knowledge': {"page_from", "page_to", "heading"} — trích dẫn "tr. N" + đề mục.
+    meta: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -885,3 +903,74 @@ class ReportLesson(Base):
 
     def __repr__(self) -> str:
         return f"ReportLesson(id={self.id!r}, date={self.report_date!r}, section={self.section!r}, status={self.status!r})"
+
+
+KNOWLEDGE_SECTIONS = ("1", "2", "dev", "3", "4", "8", "biz")
+
+
+class KnowledgeDocument(Base):
+    """Tài liệu tri thức (.pdf/.docx) admin tải lên cho Jenny (services/knowledge.py): trích chữ → chia đoạn → nhúng
+    vector vào `chunks` (source_type='knowledge', source_id=id) → dùng khi sinh báo cáo (mục trong `report_sections`)
+    và Jenny chat (tool search_knowledge). `content` = toàn văn đã trích (xem trước, chia lại không cần parse lại, Jack
+    đối chiếu số). Xoá = xoá mềm (status='deleted', xoá chunks + file MinIO) để báo cáo cũ đã trích vẫn tra được tên.
+    `valid_from/valid_to` so với NGÀY DỮ LIỆU của báo cáo / hôm nay (chat)."""
+
+    __tablename__ = "knowledge_documents"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'ready', 'failed', 'deleted')", name="ck_knowledge_documents_status"
+        ),
+        CheckConstraint("media_type IN ('pdf', 'docx')", name="ck_knowledge_documents_media_type"),
+        CheckConstraint(
+            "doc_kind IN ('regulation', 'research', 'market_report', 'internal', 'reference')",
+            name="ck_knowledge_documents_doc_kind",
+        ),
+        CheckConstraint("language IN ('vi', 'en')", name="ck_knowledge_documents_language"),
+        CheckConstraint(
+            "report_sections IS NULL OR report_sections <@ ARRAY["
+            + ",".join(f"'{s}'" for s in KNOWLEDGE_SECTIONS) + "]::text[]",
+            name="ck_knowledge_documents_report_sections",
+        ),
+        UniqueConstraint("sha256", name="uq_knowledge_documents_sha256"),
+        Index("ix_knowledge_documents_status_active", "status", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)  # tên hiển thị + nhãn "(Nguồn: …)"
+    publisher: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # tổ chức ban hành / tác giả
+    issued_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)  # ngày ban hành
+    doc_kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="reference")
+    language: Mapped[str] = mapped_column(Text, nullable=False, server_default="vi")
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    media_type: Mapped[str] = mapped_column(Text, nullable=False)  # 'pdf' | 'docx'
+    file_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # MinIO knowledge/<uuid>.<ext>; NULL sau khi xoá
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[Optional[str]] = mapped_column(CHAR(64), nullable=True)  # NULL sau khi xoá → tải lại được
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    warnings: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)  # cảnh báo trích xuất (trang scan, bảng...)
+    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    char_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Trang/đề mục đã trích: [{"heading", "page_from", "page_to", "text"}] — xem trước theo trang và chia lại.
+    sections: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    use_in_report: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    report_sections: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)  # NULL = mọi mục
+    use_in_chat: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False, server_default=func.current_date())
+    valid_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    uploaded_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"KnowledgeDocument(id={self.id!r}, title={self.title!r}, status={self.status!r})"

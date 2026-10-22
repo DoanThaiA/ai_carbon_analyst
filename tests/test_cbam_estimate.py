@@ -110,6 +110,26 @@ def test_vwap_matches_ec_method():
     assert ce.vwap([]) is None
 
 
+def test_cumulative_quarter_vwap_resets_each_quarter():
+    rows = [
+        (date(2026, 9, 29), 80.0, 3.0),
+        (date(2026, 9, 30), 90.0, 1.0),
+        # 2 phiên cùng ngày (EU + PL) → 1 điểm, cộng dồn cả 2
+        (date(2026, 10, 1), 85.0, 2.0),
+        (date(2026, 10, 1), 87.0, 2.0),
+        (date(2026, 10, 2), 70.0, 0.0),  # khối lượng 0 → bỏ
+        (date(2026, 10, 5), 89.0, 4.0),
+    ]
+    out = ce.cumulative_quarter_vwap(rows)
+    assert [r["date"] for r in out] == ["2026-09-29", "2026-09-30", "2026-10-01", "2026-10-05"]
+    assert out[1]["vwap"] == pytest.approx(82.5)
+    assert out[1]["quarter"] == "Q3 2026"
+    # sang Q4: đặt lại, không lẫn phiên Q3
+    assert out[2] == {"date": "2026-10-01", "vwap": 86.0, "quarter": "Q4 2026", "sessions": 2}
+    assert out[3]["vwap"] == pytest.approx((85 * 2 + 87 * 2 + 89 * 4) / 8, abs=0.01)
+    assert out[3]["sessions"] == 3
+
+
 def test_daily_log_vol():
     assert ce.daily_log_vol([80, 81]) is None
     closes = [80 * (1.01 if i % 2 else 0.99) ** 1 for i in range(20)]

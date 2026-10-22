@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { CompareChart, CompareChips, Dashboard, MAX_COMPARE, fmtFull, useColorOf } from "@/components/PriceCharts";
+import type { CbamEstimate } from "@/lib/types";
 
 // Biểu đồ chỉ số giá cạnh Bảng giá nhanh trong báo cáo (admin + user — ReportDocument.tsx). Dữ liệu GET
 // /api/prices/history?before=<ngày báo cáo> (chỉ phiên trước ngày phát hành, như bảng giá). Bấm vào biểu đồ
@@ -43,7 +44,10 @@ function useHistory(reportDate: string, days: number) {
   return { data, error };
 }
 
-export default function PriceIndexPanel({ reportDate, tableCodes }: { reportDate: string; tableCodes: string[] }) {
+// `cbamEstimate`: thẻ CBAM của chính báo cáo (content["2"].cbam_estimate) — vẽ mốc ước tính cuối quý cạnh đường VWAP.
+export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }: {
+  reportDate: string; tableCodes: string[]; cbamEstimate?: CbamEstimate | null;
+}) {
   const t = useTranslations("priceIndex");
   const { data, error } = useHistory(reportDate, PANEL_DAYS);
   const colorOf = useColorOf(data?.instruments);
@@ -93,7 +97,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes }: { reportDate
         </div>
         <div className="mt-1 flex-1 min-h-[240px]">
           {data ? (
-            <CompareChart instruments={data.instruments} colorOf={colorOf} selected={codes} height={260} />
+            <CompareChart instruments={data.instruments} colorOf={colorOf} selected={codes} vwap={data.auction_vwap} cbam={cbamEstimate} height={260} />
           ) : (
             <div className="h-[260px] rounded-md bg-surface animate-pulse" />
           )}
@@ -102,6 +106,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes }: { reportDate
       {open && (
         <CompareModal
           reportDate={reportDate}
+          cbamEstimate={cbamEstimate}
           selected={codes}
           onChange={setSelected}
           onClose={() => setOpen(false)}
@@ -111,8 +116,8 @@ export default function PriceIndexPanel({ reportDate, tableCodes }: { reportDate
   );
 }
 
-function CompareModal({ reportDate, selected, onChange, onClose }: {
-  reportDate: string; selected: string[]; onChange: (codes: string[]) => void; onClose: () => void;
+function CompareModal({ reportDate, cbamEstimate, selected, onChange, onClose }: {
+  reportDate: string; cbamEstimate?: CbamEstimate | null; selected: string[]; onChange: (codes: string[]) => void; onClose: () => void;
 }) {
   const t = useTranslations("priceIndex");
   const td = useTranslations("adminSrcDash");
@@ -170,7 +175,7 @@ function CompareModal({ reportDate, selected, onChange, onClose }: {
           {error ? (
             <div className="h-[380px] flex items-center justify-center text-sm text-muted-light">{t("loadError")}</div>
           ) : data ? (
-            <CompareChart instruments={data.instruments} colorOf={colorOf} selected={selected} height={380} />
+            <CompareChart instruments={data.instruments} colorOf={colorOf} selected={selected} vwap={data.auction_vwap} cbam={cbamEstimate} height={380} />
           ) : (
             <div className="h-[380px] rounded-md bg-surface animate-pulse" />
           )}

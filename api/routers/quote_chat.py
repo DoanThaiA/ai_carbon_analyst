@@ -30,6 +30,7 @@ from schemas.chat_models import (
     SuggestedQuestionsRequest,
     SuggestedQuestionsResponse,
 )
+from services.knowledge import build_chat_index_block
 from services.chat_history import (
     append_turn,
     count_user_questions_since,
@@ -230,6 +231,8 @@ async def quote_chat_stream(
             context_chunks = await retrieve_context_for_quote(retrieval_service, quote, body.question, date)
             eua_framework_overrides = await get_overrides_map(session)
             few_shot_block = await build_few_shot_prompt_block(session)
+            # Rỗng khi không có tài liệu tri thức bật cho chat → không khai báo tool search_knowledge.
+            knowledge_index_block = await build_chat_index_block(session)
             # Gửi session_id + nguồn tham khảo trước khi bắt đầu stream câu trả
             # lời, để FE lưu lại session_id cho các câu hỏi tiếp theo và render
             # "Danh sách tin tức tham khảo" (link + ngày phát hành) dưới câu trả lời.
@@ -265,6 +268,7 @@ async def quote_chat_stream(
                 is_admin=payload.get("role") == "admin",
                 user_email=user_email,
                 chat_session_id=chat_session.id,
+                knowledge_index_block=knowledge_index_block,
             ):
                 if isinstance(delta, StatusEvent):
                     # Trạng thái tạm (vd đang dùng trợ lý Sonic) — chỉ hiện trên UI, không vào câu trả lời/lịch sử.

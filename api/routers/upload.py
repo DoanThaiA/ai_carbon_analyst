@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_current_user
 from services.minio_service import (
+    KNOWLEDGE_PREFIX,
     InvalidAttachmentError,
     generate_presigned_get_url,
     generate_presigned_upload_url,
@@ -51,5 +52,8 @@ async def get_view_url(
     """URL tạm (10 phút) để FE hiện thumbnail ảnh / mở PDF-Word đã đính kèm
     trong lịch sử chat. KHÔNG kiểm tra file_key thuộc đúng session/user nào —
     file_key là UUID ngẫu nhiên (services/minio_service.py), không đoán được
-    nếu chưa từng thấy qua 1 session/message của chính user đó."""
+    nếu chưa từng thấy qua 1 session/message của chính user đó. Tài liệu tri thức
+    (prefix knowledge/, chỉ admin tải lên) không mở qua đây."""
+    if file_key.startswith(KNOWLEDGE_PREFIX):
+        raise HTTPException(status_code=403, detail="Không có quyền xem file này.")
     return ViewUrlResponse(url=generate_presigned_get_url(file_key))

@@ -234,7 +234,7 @@ export default function PriceDashboardPage() {
             subtitle={t("compareSubtitle", { max: MAX_COMPARE })}
             right={<CompareChips instruments={data.instruments} colorOf={colorOf} selected={compare} onToggle={toggleCompare} />}
           >
-            <CompareChart instruments={data.instruments} colorOf={colorOf} selected={compare} />
+            <CompareChart instruments={data.instruments} colorOf={colorOf} selected={compare} vwap={data.auction_vwap} />
           </Card>
 
           <Card title={t("tableTitle")} subtitle={t("tableSubtitle")}>

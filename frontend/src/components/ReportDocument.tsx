@@ -2699,6 +2699,7 @@ export function ReportDocument({
             <PriceIndexPanel
               reportDate={report.report_date}
               tableCodes={priceRows.map((r: any) => String(r.code || "")).filter(Boolean)}
+              cbamEstimate={noPriceData ? null : report.content["2"]?.cbam_estimate}
             />
             </div>
           </div>
@@ -3384,16 +3385,21 @@ export function ReportDocument({
                 return (
                   <ul className="space-y-1.5 xl:columns-2 xl:gap-x-10">
                     {entries.map((it: any, i: number) => (
-                      <li key={it.url} className="font-mono text-[12px] leading-[1.5] text-muted-light break-inside-avoid">
+                      <li key={it.url ?? `kb-${it.doc_id ?? i}`} className="font-mono text-[12px] leading-[1.5] text-muted-light break-inside-avoid">
                         {i + 1}. [{it.source}]{" "}
-                        <a
-                          href={it.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline"
-                        >
-                          {it.title}
-                        </a>
+                        {it.url ? (
+                          <a
+                            href={it.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            {it.title}
+                          </a>
+                        ) : (
+                          // Tài liệu tri thức admin tải lên (kind="knowledge") — không có link công khai.
+                          <span className="text-body" title={t("body.knowledgeSource")}>{it.title}</span>
+                        )}
                       </li>
                     ))}
                   </ul>

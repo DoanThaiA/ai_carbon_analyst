@@ -14,17 +14,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from db.models import Article, EuaAuction, Price, Instrument, PriceCrawlSource, Report
+from db.models import KNOWLEDGE_SECTIONS, Article, EuaAuction, Price, Instrument, PriceCrawlSource, Report
 from core.config import Settings
 from services import biz_memory
 from services import cbam_estimate
 from services import forecast_review
+from services import knowledge
 from services import report_lessons
 from services.quote_chat_examples import build_report_reference_block
 from services.report_consistency import (
     merge_adjacent_sources,
     GAP_MIN_ATR, apply_consistency_fixes, atr_true_range, derived_target_issues, describe_range_position, eua_streak,
-    parse_num, session_signals, streak_momentum,
+    parse_num, session_signals, streak_momentum, walk_text,
 )
 from services.title_similarity import is_similar_title, title_tokens
 from services import eua_causal_chains as chains
@@ -1334,7 +1335,7 @@ def _filter_news_with_index(
 
 
 
-_CITE_RE = re.compile(r"\s*\[(\d{1,2}|giá|HS\d{1,2})\]")
+_CITE_RE = re.compile(r"\s*\[(\d{1,2}|giá|HS\d{1,2}|TL\d{1,2})\]")
 WATCH_MAX_ITEMS = 4  # "Cần theo dõi" tối đa N watchpoint (bản 17/10: 6 mục, tin Eni/Hormuz/kho khí lặp lại)
 _WATCH_LINE_RE = re.compile(r"^\s*\d+[.)]\s*")
 WATCH_HEADING = "Cần theo dõi"
@@ -1342,12 +1343,15 @@ WATCH_HEADING = "Cần theo dõi"
 
 def _resolve_section3_citations(
     sec3: Dict[str, Any], index_lookup: Dict[int, Dict], dossiers: Optional[Dict[str, Dict]] = None,
-) -> List[Dict[str, str]]:
-    """Đổi dấu trích "[N]" (bài) / "[HSk]" (hồ sơ chính sách cố định, ets_policy_dossiers.yaml) trong văn bản Mục 3 thành
-    "(Nguồn: <nhà xuất bản>)", trả danh sách nguồn đã dùng (để có mặt ở Mục 9). Watchpoint "Cần theo dõi" không có nguồn
-    hợp lệ hay [giá] bị XOÁ; watchpoint trích ĐÚNG cùng bộ nguồn với 1 watchpoint trước (lặp tin) bị bỏ; tối đa
-    WATCH_MAX_ITEMS mục; đánh số lại."""
-    used: Dict[str, Dict[str, str]] = {}
+    knowledge_lookup: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Đổi dấu trích "[N]" (bài) / "[HSk]" (hồ sơ chính sách cố định, ets_policy_dossiers.yaml) / "[TLk]" (đoạn tài liệu
+    tri thức admin tải lên, services/knowledge.py) trong văn bản Mục 3 thành "(Nguồn: <nhà xuất bản / tên tài liệu>)",
+    trả danh sách nguồn đã dùng (để có mặt ở Mục 9; tài liệu tri thức có source_type='knowledge', không URL). Watchpoint
+    "Cần theo dõi" không có nguồn tin hợp lệ hay [giá] bị XOÁ (chỉ trích tài liệu cũng bị xoá — tài liệu nền không phải
+    diễn biến); watchpoint trích ĐÚNG cùng bộ nguồn với 1 watchpoint trước (lặp tin) bị bỏ; tối đa WATCH_MAX_ITEMS mục;
+    đánh số lại."""
+    used: Dict[str, Dict[str, Any]] = {}
     dossiers = dossiers or {}
 
     def _sub(text: str) -> tuple:
@@ -1358,6 +1362,18 @@ def _resolve_section3_citations(
             if key == "giá":
                 cited.add("giá")
                 return ""
+            if key.startswith("TL"):
+                ref = knowledge.resolve_ref(key, knowledge_lookup)
+                if not ref:
+                    return ""
+                code, hit = ref
+                cited.add(code)
+                entry = used.setdefault(f"knowledge:{hit.doc_id}", {
+                    "source_name": hit.title, "source_type": knowledge.SOURCE_TYPE, "doc_id": hit.doc_id, "chunk_ids": [],
+                })
+                if hit.chunk_id not in entry["chunk_ids"]:
+                    entry["chunk_ids"].append(hit.chunk_id)
+                return f" (Nguồn: {knowledge.source_label(hit)})"
             if key.startswith("HS"):
                 d = dossiers.get(key)
                 if not d:
@@ -1390,8 +1406,8 @@ def _resolve_section3_citations(
         for line in blk["content"].split("\n"):
             new, cited = _sub(line)
             if _WATCH_LINE_RE.match(line):
-                if not cited:
-                    logger.warning("[REPORT] Mục 3: bỏ watchpoint không có nguồn — %s", line.strip()[:160])
+                if not {c for c in cited if not knowledge.is_knowledge_code(c)}:
+                    logger.warning("[REPORT] Mục 3: bỏ watchpoint không có nguồn tin — %s", line.strip()[:160])
                     continue
                 news_cited = cited - {"giá"}
                 if news_cited and news_cited in seen_sets:
@@ -1500,21 +1516,44 @@ def _first_source_index(raw: Any) -> Optional[int]:
     return raw
 
 
-def _resolve_bullet_sources(items: Optional[List[Any]], index_lookup: Dict[int, Dict]) -> List[Dict]:
+_TL_MARK_RE = re.compile(r"\s*\[(TL\d{1,2})\]", re.IGNORECASE)
+
+
+def _knowledge_source(it: Dict[str, Any], knowledge_lookup: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """"source_index": "TLk" (hoặc dấu "[TLk]" LLM lỡ viết trong câu) → nguồn là đoạn tài liệu tri thức (không URL).
+    `knowledge_ref` giữ chunk_id để Jack đối chiếu số với đúng đoạn đã đưa vào prompt."""
+    ref = knowledge.resolve_ref(it.get("source_index"), knowledge_lookup)
+    if ref is None:
+        marks = _TL_MARK_RE.findall(str(it.get("text") or it.get("trigger") or it.get("opportunity") or ""))
+        ref = knowledge.resolve_ref(marks[0], knowledge_lookup) if marks else None
+    if ref is None:
+        return None
+    code, hit = ref
+    return {"source_name": knowledge.source_label(hit), "source_url": None, "knowledge_ref": knowledge.knowledge_ref(code, hit)}
+
+
+def _resolve_bullet_sources(
+    items: Optional[List[Any]], index_lookup: Dict[int, Dict], knowledge_lookup: Optional[Dict[str, Any]] = None,
+) -> List[Dict]:
     """Chuẩn hoá mảng "bullets" (mỗi phần tử {"text", "source_index"} do LLM trả
     về, dùng chung cơ chế đánh số [N] với Mục 2/7 — LLM chỉ chọn số có thật,
     backend tự map sang tên/URL nguồn thật, tránh bịa nguồn) thành
     {"text", "source_name", "source_url"} để hiển thị nguồn cạnh mỗi bullet,
     giống cách Mục 6 hiện "Nguồn: {source}". Chấp nhận cả string thô (fallback
-    khi LLM lỗi) — trả về không kèm nguồn cho trường hợp đó."""
+    khi LLM lỗi) — trả về không kèm nguồn cho trường hợp đó. "source_index": "TLk" = đoạn tài liệu tri thức
+    (`knowledge_lookup`, services/knowledge.py) → nguồn không URL + `knowledge_ref`; dấu "[TLk]" trong câu bị gỡ."""
     resolved = []
     for it in items or []:
         if isinstance(it, str):
-            resolved.append({"text": it, "source_name": None, "source_url": None})
+            resolved.append({"text": _TL_MARK_RE.sub("", it), "source_name": None, "source_url": None})
             continue
+        text = _TL_MARK_RE.sub("", str(it.get("text", "")))
         src_art = index_lookup.get(_first_source_index(it.get("source_index")))
+        if not src_art and (kb := _knowledge_source(it, knowledge_lookup)):
+            resolved.append({"text": text, **kb})
+            continue
         resolved.append({
-            "text": it.get("text", ""),
+            "text": text,
             "source_name": src_art["source"] if src_art else None,
             "source_url": src_art["url"] if src_art else None,
         })
@@ -4069,6 +4108,27 @@ CHỈ TRẢ VỀ JSON HỢP LỆ:
 # Main orchestrator
 # ─────────────────────────────────────────────────────────────────────
 
+def _knowledge_retrieval(session: AsyncSession):
+    """RetrievalService cho tài liệu tri thức — chỉ tạo khi có tài liệu bật cho báo cáo (cần COHERE_API_KEY)."""
+    from services.embedding import CohereEmbedder
+    from services.retrieval import RetrievalService
+
+    return RetrievalService(embedder=CohereEmbedder(), session=session)
+
+
+def _knowledge_section9_items(content: Dict[str, Any], knowledge_hits: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
+    """Tài liệu tri thức THỰC SỰ được trích → dòng Mục 9 không link (`kind='knowledge'`, file chỉ admin tải được)."""
+    by_doc = {h.doc_id: h for hits in knowledge_hits.values() for h in hits}
+    items = []
+    for d in knowledge.cited_documents(content):
+        hit = by_doc.get(d["doc_id"])
+        items.append({
+            "source": (hit.publisher if hit and hit.publisher else "Tài liệu tham khảo"),
+            "title": d["title"], "url": None, "kind": knowledge.SOURCE_TYPE, "doc_id": d["doc_id"],
+        })
+    return items
+
+
 async def generate_report_content(session: AsyncSession, report_date: str) -> Dict[str, Any]:
     """
     Sinh nội dung báo cáo bằng cách gọi LLM riêng cho từng mục.
@@ -4254,6 +4314,14 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         _merge_policy_articles(section3_index_lookup, policy_articles), section3_index_lookup, dossier_lookup,
     )
     open_trade_list = forecast_review.open_trades(forecast_review_block)
+    # Tài liệu tri thức admin tải lên (services/knowledge.py) — mỗi mục nhận tối đa vài đoạn liên quan, trích bằng "TLk".
+    # Không có tài liệu bật cho báo cáo → {} và không gọi API nào.
+    knowledge_hits = await knowledge.load_report_knowledge(
+        session, lambda: _knowledge_retrieval(session), target_date, news_by_topic, SECTION_TOPICS,
+        [s for s in KNOWLEDGE_SECTIONS if not (no_price and s == "2")],
+    )
+    knowledge_blocks = {sec: knowledge.knowledge_prompt_block(hits, sec) for sec, hits in knowledge_hits.items()}
+    knowledge_lookups = {sec: lookup for sec, (_text, lookup) in knowledge_blocks.items()}
 
     # ── Bộ nhớ gợi ý kinh doanh (services/biz_memory.py) ──
     # Gợi ý ngắn hạn các báo cáo trước (trong 10 ngày) — kiểm tra tình huống kích
@@ -4404,6 +4472,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             # Tạo khoảng trễ giữa các request liên tiếp để giảm tải rate limit
             await asyncio.sleep(3)
             user_prompt += report_lessons.lessons_prompt_block(lessons, sec_key)
+            user_prompt += knowledge_blocks.get(sec_key, ("", {}))[0]
             system_prompt += chat_reference_block
             raw, parsed = None, None
             for attempt in range(SECTION_PARSE_RETRIES):
@@ -4487,9 +4556,13 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 ),
             }
         elif section_key == "1":
-            content["1"] = {**section_data, "bullets": _resolve_bullet_sources(section_data.get("bullets"), section1_index_lookup)[:EXEC_SUMMARY_MAX_BULLETS]}
+            content["1"] = {**section_data, "bullets": _resolve_bullet_sources(
+                section_data.get("bullets"), section1_index_lookup, knowledge_lookups.get("1"),
+            )[:EXEC_SUMMARY_MAX_BULLETS]}
         elif section_key == "4":
-            content["4"] = {**section_data, "bullets": _resolve_bullet_sources(section_data.get("bullets"), section4_index_lookup)}
+            content["4"] = {**section_data, "bullets": _resolve_bullet_sources(
+                section_data.get("bullets"), section4_index_lookup, knowledge_lookups.get("4"),
+            )}
         elif section_key == "3":
             # "Diễn biến chính" không còn là 1 heading riêng trong Mục 3 nữa — LLM giờ
             # trả về "instrument_notes" (mã -> ghi chú ngắn, KHÔNG kèm số giá vì Δ ngày/Δ
@@ -4510,7 +4583,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             content["3"] = {k: v for k, v in section_data.items() if k != "instrument_notes"}
             content["3"]["ets_policy"] = _resolve_ets_policy(section_data.get("ets_policy"), section3_index_lookup, ets_dossiers)
             _trim_section3_blocks(content["3"], section3_index_lookup)
-            content["3"]["sources"] = _resolve_section3_citations(content["3"], section3_index_lookup, dossier_lookup)
+            content["3"]["sources"] = _resolve_section3_citations(
+                content["3"], section3_index_lookup, dossier_lookup, knowledge_lookups.get("3"),
+            )
             # Giả định mô hình fuel switching hiển thị cho người đọc (dưới Phân tích) để kiểm chứng giá EUA hòa vốn.
             content["3"]["fuel_model_note"] = fuel_model_note(fuel_spread_state(prices)) if not no_price else ""
             if no_price:
@@ -4602,7 +4677,11 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             return {"source_name": d["source_name"] + (f", {d['source_date']}" if d.get("source_date") else ""),
                     "source_url": d.get("source_url"), "source_ref": ref}
         art = biz_index_lookup.get(_first_source_index(it.get("source_index")))
-        return {"source_name": art["source"], "source_url": art["url"]} if art else {}
+        if art:
+            return {"source_name": art["source"], "source_url": art["url"]}
+        # "TLk" = đoạn tài liệu tri thức admin tải lên — kiểm chứng được qua knowledge_ref (Jack đối chiếu số).
+        kb = _knowledge_source(it, knowledge_lookups.get("biz"))
+        return {**kb, "source_ref": kb["knowledge_ref"]["code"]} if kb else {}
 
     # Gợi ý KHÔNG kiểm chứng được (không có bài nguồn, cũng không phải ngưỡng giá) bị loại — người đọc
     # phải lần được tới tin gốc (vd "L&G và NTR huy động 330 triệu EUR" không có nguồn từng lọt vào báo cáo).
@@ -4671,6 +4750,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     # Nhãn % sai, mô tả vị trí trong biên độ sai, vùng giá độ rộng 0, số/ngày kiểu tiếng Anh — sửa bằng Python.
     for fix in apply_consistency_fixes(content):
         logger.warning("[REPORT] %s: tự sửa %s — %s", report_date, fix["path"], fix["message"])
+    if knowledge_lookups:
+        # Dấu "[TLk]" LLM lỡ để lại ngoài các chỗ đã đổi thành nguồn (kịch bản, gợi ý kinh doanh...) — không hiện cho người đọc.
+        walk_text(content, lambda text, _path: _TL_MARK_RE.sub("", text) if "[" in text else text)
 
     cited_articles = _collect_cited_articles(news_by_topic, limit=1000)
     cited_articles += [a for a in policy_articles if a["url"] not in {c["url"] for c in cited_articles}]
@@ -4703,8 +4785,13 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         "items": [
             {"source": a["source"], "title": a["title"], "url": a["url"]}
             for a in (used_articles or cited_articles[:40])
-        ],
+        ] + _knowledge_section9_items(content, knowledge_hits),
     }
+    if knowledge_lookups:
+        # Đúng các đoạn tài liệu đã đưa vào prompt từng mục — Jack (check_facts) và lịch Claude QC đối chiếu số với đây.
+        content["knowledge_used"] = {
+            sec: knowledge.knowledge_used_entry(lookup) for sec, lookup in knowledge_lookups.items() if lookup
+        }
 
     # Chuỗi nguồn gốc → nơi đăng lại (tóm tắt Mục 6 nhận diện "origin") áp cho mọi chỗ trích cùng bài.
     chain_by_url = {

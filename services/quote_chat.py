@@ -21,7 +21,7 @@ from services.report_qc import qc_report_text
 from services.report_qc_review import qc_review_text
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
-from services import cbam_estimate, forecast_review, report_lessons
+from services import cbam_estimate, forecast_review, knowledge, report_lessons
 from services.report_generator import (
     split_policy_mechanism,
     report_data_date,
@@ -1431,6 +1431,28 @@ FRAMEWORK_TOOL = {
 }
 
 
+# CỐ Ý không nằm trong CLIENT_TOOLS: tài liệu tri thức admin tải lên có thể là báo cáo trả phí/tài liệu nội bộ — MCP
+# gateway (Claude Desktop/mobile) không phục vụ (có test). Chỉ khai báo khi có tài liệu bật cho chat
+# (services/knowledge.py::build_chat_index_block khác rỗng); thực thi riêng trong vòng lặp tool của _stream_anthropic.
+KNOWLEDGE_TOOL = {
+    "name": "search_knowledge",
+    "description": (
+        "Tra TÀI LIỆU THAM KHẢO do admin tải lên (quy định EU ETS/CBAM, nghiên cứu, báo cáo thị trường, tài liệu nội bộ "
+        "— xem danh mục trong prompt). Gọi khi câu hỏi cần quy định/cơ chế/số liệu tham chiếu có thể nằm trong các tài "
+        "liệu đó; KHÔNG dùng cho giá/tin trong ngày (dùng tool giá/search_news). Trả về các đoạn liên quan nhất kèm tên "
+        "tài liệu và số trang."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Nội dung cần tra, viết cụ thể (tiếng Việt hoặc tiếng Anh)."},
+            "top_k": {"type": "integer", "minimum": 1, "maximum": 5, "description": "TUỲ CHỌN — số đoạn tối đa (mặc định 5)."},
+        },
+        "required": ["query"],
+    },
+}
+
+
 # CỐ Ý không nằm trong CLIENT_TOOLS: tool GHI (không chỉ đọc) — kênh MCP/Claude Desktop không ghi ngược
 # về hệ thống. Thực thi riêng trong vòng lặp tool của _stream_anthropic (cần email người góp ý).
 LESSON_TOOL = {
@@ -1647,7 +1669,7 @@ CÁCH DÙNG:
 
 def _build_static_instructions(
     report_date: str, overrides: Optional[Dict[str, str]] = None,
-    few_shot_block: str = "",
+    few_shot_block: str = "", knowledge_index_block: str = "",
 ) -> str:
     """Phần system prompt KHÔNG đổi giữa các câu hỏi/phiên/user (chỉ đổi 1
     lần/ngày theo report_date và theo HÔM NAY của LỊCH THAM CHIẾU) — role, kiến thức nền, năng lực, quy tắc. Tách
@@ -1667,8 +1689,12 @@ def _build_static_instructions(
     `few_shot_block`: khối ví dụ mẫu do admin chọn lọc (xem
     services/quote_chat_examples.py::build_few_shot_prompt_block), rỗng nếu
     admin chưa thêm ví dụ nào — đặt cùng phần static vì không đổi theo câu hỏi.
+
+    `knowledge_index_block`: danh mục tài liệu tri thức admin tải lên (services/knowledge.py::chat_index_block) — chỉ
+    đổi khi admin đổi tài liệu; rỗng = không có tài liệu nào bật cho chat (tool search_knowledge cũng không được khai báo).
     """
     few_shot_section = f"\n{few_shot_block}\n" if few_shot_block else ""
+    few_shot_section += f"\n{knowledge_index_block}\n" if knowledge_index_block else ""
     date_reference = _build_date_reference(report_date)
 
     data_block = f"""=== DỮ LIỆU GIÁ / NỘI DUNG BÁO CÁO — TRA CỨU QUA TOOL, KHÔNG CÓ SẴN Ở ĐÂY ===
@@ -2564,6 +2590,7 @@ async def _stream_anthropic(
     cache_ttl: str = "1h",
     user_email: Optional[str] = None,
     chat_session_id: Optional[int] = None,
+    enable_knowledge: bool = False,
 ) -> AsyncIterator[str]:
     """PROMPT CACHING (3 breakpoint, tối đa cho phép là 4):
     1. `system` tách 2 block — `static_instructions` (role/kiến thức/quy tắc,
@@ -2602,6 +2629,8 @@ async def _stream_anthropic(
     if enable_client_tools:
         tools.extend(CLIENT_TOOLS)
         tools.append(FRAMEWORK_TOOL)
+        if enable_knowledge and retrieval_service is not None:
+            tools.append(KNOWLEDGE_TOOL)
         if user_email:
             tools.append(LESSON_TOOL)
         if enable_admin_tools:
@@ -2773,6 +2802,12 @@ async def _stream_anthropic(
                 result_text = _framework_tool_text(call.input, eua_framework_overrides)
                 tool_results.append({"type": "tool_result", "tool_use_id": call.id, "content": result_text})
                 continue
+            if call.name == KNOWLEDGE_TOOL["name"] and enable_knowledge and retrieval_service is not None:
+                cache_key = (call.name, repr(sorted((call.input or {}).items())) if isinstance(call.input, dict) else "")
+                if cache_key not in tool_cache:
+                    tool_cache[cache_key] = await knowledge.chat_search_text(retrieval_service, call.input)
+                tool_results.append({"type": "tool_result", "tool_use_id": call.id, "content": tool_cache[cache_key]})
+                continue
             if call.name == LESSON_TOOL["name"] and user_email:
                 inp = call.input if isinstance(call.input, dict) else {}
                 result_text = await report_lessons.record_lesson(
@@ -2822,6 +2857,7 @@ async def astream_quote_chat(
     is_admin: bool = False,
     user_email: Optional[str] = None,
     chat_session_id: Optional[int] = None,
+    knowledge_index_block: str = "",
 ) -> AsyncIterator[str]:
     """Stream câu trả lời — yield từng đoạn text nhỏ (delta). Luôn dùng backend
     Anthropic (client tools + server tool web_search) — Cohere trong repo này
@@ -2870,7 +2906,7 @@ async def astream_quote_chat(
     # Tách static/dynamic (thay vì ghép sẵn thành 1 chuỗi) để bật prompt
     # caching — xem docstring _stream_anthropic.
     stream = _stream_anthropic(
-        _build_static_instructions(report_date, eua_framework_overrides, few_shot_block),
+        _build_static_instructions(report_date, eua_framework_overrides, few_shot_block, knowledge_index_block),
         _build_dynamic_context(truncated_quote, context_block),
         messages,
         settings.quote_chat_model,
@@ -2884,6 +2920,7 @@ async def astream_quote_chat(
         cache_ttl=settings.quote_chat_cache_ttl,
         user_email=user_email,
         chat_session_id=chat_session_id,
+        enable_knowledge=bool(knowledge_index_block),
     )
 
     async for delta in stream:

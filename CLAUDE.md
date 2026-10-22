@@ -232,6 +232,27 @@ học sai: `python -m scripts.report_lessons --dismiss ID`. Đoạn chat tham kh
 `MAX_INJECTED_EXAMPLES` mới nhất) vừa vào system prompt Jenny chat, vừa được `build_report_reference_block` nối vào CUỐI
 system prompt từng mục báo cáo (chỉ học cách suy luận, không chép số, không theo định dạng chat).
 
+**Tài liệu tri thức (.pdf/.docx)** (`services/knowledge.py`, bảng `knowledge_documents`, migration `e8b4d2f6a1c9` — revision
+này GỘP 2 head cũ `a4c7e2f9b1d5`/`a9e4c7b2d5f1`): admin tải lên ở `/admin/knowledge` (`api/routers/admin_knowledge.py`; presigned PUT
+lên MinIO prefix `knowledge/` — `GET /api/upload/view-url` từ chối prefix này) → `create_document` kiểm file THẬT (dung lượng,
+magic bytes, sha256 trùng → 409) → job nền (`BackgroundTasks`, kẹt khi restart → lifespan `recover_stuck_documents` chuyển
+`failed`) trích chữ bằng `services/knowledge_extraction.py` (hàm thuần; DOCX đúng thứ tự đoạn+bảng, heading → đề mục; PDF bằng
+`pdfplumber`, bảng → "ô | ô", bỏ header/footer lặp; NFC; chặn zip bomb/macro; PDF scan CHƯA có OCR → ≥50% trang không lớp chữ =
+lỗi) trong process riêng có timeout (`_extract_isolated`) → `chunk_document` (không vượt đề mục, `chunks.meta` = trang/đề mục)
+→ embed theo lô 96 (Cohere `embed-v4.0`, `VECTOR_DIMENSION`=1536 — embedder/chunker/retrieval thật nằm ở `services/`, không
+phải FastEmbed 384 như đoạn Architecture cũ) → `chunks.source_type='knowledge'`. Truy hồi `RetrievalService.retrieve_knowledge`:
+index MỘT PHẦN riêng (HNSW + GIN `to_tsvector('simple', …)`, SQL phải ghi literal `source_type = 'knowledge'`), rerank ngưỡng
+`MIN_KNOWLEDGE_SCORE`, ≤`MAX_HITS_PER_DOC` đoạn/tài liệu, lọc `is_active`/hiệu lực (`valid_from/valid_to` so ngày dữ liệu báo
+cáo, chat = hôm nay)/phạm vi (`use_in_report` + `report_sections`, `use_in_chat`) — giữ khớp `is_applicable`. Báo cáo:
+`load_report_knowledge` (không có tài liệu → không gọi API; lỗi → {} trong SAVEPOINT) → `knowledge_prompt_block` nối cuối user
+prompt mục (sau bài học), trích bằng `[TLk]` (Mục 3, `_CITE_RE`; watchpoint chỉ có TL bị xoá) hoặc `"source_index": "TLk"` (Mục
+1/4/biz → `knowledge_ref` {chunk_id}); dev/2/8 chỉ làm bối cảnh. `content["knowledge_used"]` = đoạn đã đưa vào prompt; Mục 9 thêm
+dòng `kind='knowledge'` không link. Jack: `check_facts` đối chiếu số với chữ đúng các đoạn đó, `check_knowledge_refs` (tài liệu
+đã xoá/tắt), Mục 9 knowledge không báo "thiếu URL"; Claude QC đọc `get_qc_assignment(part="knowledge")`. Chat: tool
+`search_knowledge` (`KNOWLEDGE_TOOL`, CỐ Ý ngoài `CLIENT_TOOLS` → MCP không phục vụ, có test) chỉ khai báo khi có tài liệu bật cho
+chat + danh mục ngắn trong prompt tĩnh (`build_chat_index_block`). `knowledge_used`/`knowledge_ref` nằm trong `SKIP_KEYS`
+(tự sửa) và `UNTRANSLATED_SUBTREES` (dịch). Test: `tests/test_knowledge_extraction.py`, `tests/test_knowledge.py`.
+
 **Jack QC báo cáo** (`services/report_qc.py`): tool `jack_qc`: trong Jenny chat web CHỈ bật cho admin
 (`ADMIN_TOOLS` trong `services/quote_chat.py`; `_execute_client_tool(..., allow_admin_tools=...)` chặn thêm ở tầng
 thực thi, admin QC được cả bản draft). Trên MCP/Claude Desktop, gateway thêm riêng `JACK_QC_DESKTOP_TOOL`
@@ -406,7 +427,9 @@ chạy trong job giá 06:00). Giá CBAM EC công bố theo quý = VWAP (gia quy�
 Q1–Q3/2026 tới 0,01) → `services/cbam_estimate.py` ước tính quý đang chạy + khoảng tin cậy 90% + tín hiệu phòng vệ
 (`HEDGE_GAP_PCT`/`HEDGE_FIXED_SHARE_HOLD`), lưu ở `content["2"].cbam_estimate` (chỉ số + enum ASCII, frontend
 `CbamEstimateCard.tsx` dựng chữ theo ngôn ngữ). "EUA lũy kế quý" (`qtd_avg`) ưu tiên VWAP đấu giá, thiếu thì TB giá đóng cửa và
-ghi "xấp xỉ" (`qtd_basis`). Mục 8 có 1 sự kiện gộp các phiên đấu giá 7 ngày tới (`_auction_calendar_events`). Tool chat/MCP:
+ghi "xấp xỉ" (`qtd_basis`). Biểu đồ "So sánh hiệu suất" (`PriceCharts.tsx::CompareChart`): `build_price_dashboard` trả thêm
+`auction_vwap` (VWAP lũy kế quý theo ngày, `auction_vwap_series`) → khi có EUA vẽ đường VWAP đỏ nét đứt quy về GỐC CHỈ SỐ CỦA EUA
+(ngắt khi sang quý) + mốc ước tính CBAM cuối quý kèm KTC ở lề phải (từ `cbam_estimate` của báo cáo, chỉ khi cùng quý). Mục 8 có 1 sự kiện gộp các phiên đấu giá 7 ngày tới (`_auction_calendar_events`). Tool chat/MCP:
 `get_cbam_estimate` (thẻ CBAM + ô phòng hộ Mục 3, đọc từ báo cáo published) và `get_eua_auctions` (bảng `eua_auctions` theo
 khoảng ngày, không neo báo cáo). `get_report_section` Mục 2/3 trả đủ ghi chú bảng giá, `cbam_estimate`, `forecast_review`,
 `vs_previous`, `hedge_action`, `open_positions`, `fuel_model_note`, `sources` (test: `tests/test_quote_chat_report_tools.py`).

@@ -16,12 +16,13 @@ from core.logging import setup_logging
 # API (chạy qua `uvicorn api.main:app`, xem Dockerfile.backend) trước giờ bị bỏ sót.
 setup_logging()
 
-from api.deps import get_current_user, get_db, settings
+from api.deps import async_session_maker, get_current_user, get_db, settings
 from api.routers import (
     admin_chat_reviews,
     admin_qc_reviews,
     admin_eua_framework,
     admin_feedback,
+    admin_knowledge,
     admin_news_sources,
     admin_price_sources,
     admin_quote_chat_examples,
@@ -46,6 +47,7 @@ from datetime import datetime, timedelta, timezone
 from db.models import Report, ReportView
 from api.mcp_http import McpHttpApp, session_manager as mcp_session_manager
 from services.hot_news_broadcast import start_listening, stop_listening
+from services.knowledge import recover_stuck_documents
 from services.report_translation import fresh_content_en
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,14 @@ async def lifespan(_app: FastAPI):
     # do crawl pipeline bắn ra khi lưu bài hot news, fan-out cho các client SSE
     # đang mở (xem services/hot_news_broadcast.py).
     await start_listening(settings.database_url)
+    # Tài liệu tri thức xử lý bằng BackgroundTasks trong process này — restart giữa chừng để lại trạng thái kẹt.
+    try:
+        async with async_session_maker() as session:
+            stuck = await recover_stuck_documents(session)
+        if stuck:
+            logger.warning("[KNOWLEDGE] %d tài liệu bị gián đoạn khi xử lý — đã chuyển sang 'failed'.", stuck)
+    except Exception:
+        logger.exception("[KNOWLEDGE] Không kiểm tra được tài liệu xử lý dở (đã chạy alembic upgrade head chưa?).")
     # MCP qua HTTP (api/mcp_http.py) cần session manager chạy suốt vòng đời app.
     async with mcp_session_manager().run():
         yield
@@ -89,6 +99,7 @@ app.include_router(admin_chat_reviews.router)
 app.include_router(admin_qc_reviews.router)
 app.include_router(admin_eua_framework.router)
 app.include_router(admin_quote_chat_examples.router)
+app.include_router(admin_knowledge.router)
 app.include_router(quote_chat.router)
 app.include_router(claude_connect.router)
 app.include_router(mcp_gateway.router)

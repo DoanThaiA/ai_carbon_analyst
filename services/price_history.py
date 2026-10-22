@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Instrument, Price
+from services.cbam_estimate import auction_vwap_series
 
 TZ_VN = timezone(timedelta(hours=7))
 
@@ -68,4 +69,6 @@ async def build_price_dashboard(session: AsyncSession, days: int, before: Option
             "series": [{"date": p.price_date, "close": p.close_price, "volume": p.volume} for p in series],
         })
 
-    return {"days": days, "latest_date": latest_date, "instruments": items}
+    # VWAP đấu giá EEX lũy kế theo quý (cơ sở giá CBAM) — đường đối chiếu với EUA ở "So sánh hiệu suất".
+    auction_vwap = await auction_vwap_series(session, date.fromisoformat(since), end)
+    return {"days": days, "latest_date": latest_date, "instruments": items, "auction_vwap": auction_vwap}

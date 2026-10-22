@@ -367,6 +367,35 @@ async def _previous_open_findings(session: AsyncSession, report_date: str, limit
     )).scalars())
 
 
+async def _knowledge_part_text(session: AsyncSession, report_date: str, content: Dict[str, Any]) -> str:
+    """get_qc_assignment(part="knowledge"): NGUYÊN VĂN các đoạn tài liệu tri thức admin tải lên đã đưa vào prompt từng
+    mục (content["knowledge_used"], services/knowledge.py) — để Claude QC đối chiếu số của câu trích "(Nguồn: <tên tài
+    liệu>, tr. N)" thay vì coi là nguồn không kiểm chứng được."""
+    from services import knowledge
+    from services.report_qc import knowledge_chunk_ids  # tránh vòng import lúc khởi động
+
+    used = content.get("knowledge_used") or {}
+    if not used:
+        return f"[Báo cáo {report_date}] Báo cáo này không dùng tài liệu tri thức nào."
+    texts = await knowledge.chunk_texts(session, knowledge_chunk_ids(content))
+    lines = [f"[Báo cáo {report_date} — đoạn tài liệu tri thức đã đưa vào prompt — assignment_id {content_hash(content)}]"]
+    for sec, entries in used.items():
+        lines.append(f"\n## Mục {sec}")
+        for e in entries or []:
+            if not isinstance(e, dict):
+                continue
+            body = texts.get(e.get("chunk_id"))
+            lines.append(
+                f"[{e.get('code')}] {e.get('title')} (tài liệu #{e.get('doc_id')}, đoạn #{e.get('chunk_id')})\n"
+                + (body or "(đoạn không còn — tài liệu đã xoá hoặc được xử lý lại)")
+            )
+    lines.append(
+        "\nLƯU Ý: tài liệu là nguồn admin tải lên (không có URL công khai) — số trong câu trích tài liệu phải khớp đúng "
+        "đoạn tương ứng ở trên; tài liệu không phải tin trong ngày."
+    )
+    return "\n".join(lines)
+
+
 async def qc_assignment_text(session: AsyncSession, report_date: Optional[str], part: Optional[str]) -> str:
     """Kết quả tool get_qc_assignment. `part` trống = tổng quan (trạng thái, assignment_id, rubric, Jack rule-based,
     danh sách khối); `part`="1"/"2"/.../"all" = JSON khối đó của bản nháp."""
@@ -385,6 +414,8 @@ async def qc_assignment_text(session: AsyncSession, report_date: Optional[str], 
         return f"Báo cáo ngày {report.report_date} sinh lỗi (status={report.status}) — không có nội dung để QC."
 
     content = report.content
+    if part and part.strip() == "knowledge":
+        return await _knowledge_part_text(session, report.report_date, content)
     if part:
         text = part_json(content, part.strip())
         if text is None:
@@ -403,6 +434,10 @@ async def qc_assignment_text(session: AsyncSession, report_date: Optional[str], 
         f"assignment_id: {content_hash(content)}",
         f"Đã có {prev_runs} biên bản QC cho báo cáo này." if prev_runs else "Chưa có biên bản QC nào cho báo cáo này.",
         f"Dữ liệu báo cáo dùng: phiên/ngày dữ liệu trước ngày báo cáo. Khối nội dung (đọc bằng get_qc_assignment(part=...)): {parts}.",
+        *([
+            "Báo cáo có trích TÀI LIỆU TRI THỨC admin tải lên (nguồn không URL, nhãn \"(Nguồn: <tên tài liệu>, tr. N)\") — "
+            "đọc nguyên văn các đoạn đã dùng bằng get_qc_assignment(part=\"knowledge\") trước khi chấm số liệu/nguồn."
+        ] if content.get("knowledge_used") else []),
         "",
         "KẾT QUẢ JACK RULE-BASED (Python, đối chiếu DB — dùng làm điểm xuất phát, TỰ KIỂM lại, không chép nguyên):",
         format_qc_report(report.report_date, report.status, jack),
@@ -671,7 +706,8 @@ GET_QC_ASSIGNMENT_TOOL = {
     "description": (
         "CHỈ cho tài khoản QC. Nhận phiếu giao QC báo cáo Carbon Analyst: trạng thái bản nháp, `assignment_id`, kết "
         "quả Jack rule-based (đối chiếu DB), lỗi biên bản trước, rubric 7 tiêu chí + định dạng biên bản. Gọi với "
-        "`part` (\"1\",\"2\",\"3\",\"4\",\"6\",\"8\",\"9\",\"biz\"... hoặc \"all\") để đọc JSON nội dung bản nháp. "
+        "`part` (\"1\",\"2\",\"3\",\"4\",\"6\",\"8\",\"9\",\"biz\"... hoặc \"all\") để đọc JSON nội dung bản nháp; "
+        "`part`=\"knowledge\" = nguyên văn các đoạn tài liệu tri thức admin tải lên mà báo cáo đã dùng. "
         "Không truyền report_date = báo cáo hôm nay (giờ Việt Nam)."
     ),
     "input_schema": {

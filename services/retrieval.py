@@ -1,4 +1,6 @@
+import json
 import logging
+from datetime import date
 from typing import List, Optional
 import cohere
 from sqlalchemy import text
@@ -6,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
 from services.embedding import Embedder
-from schemas.retrieval_models import RetrievedDocument
+from schemas.retrieval_models import KnowledgeHit, RetrievedDocument
 
 logger = logging.getLogger(__name__)
 
@@ -249,3 +251,132 @@ class RetrievalService:
                 )
 
         return final_results
+
+    async def retrieve_knowledge(
+        self,
+        query: str,
+        *,
+        purpose: str,
+        as_of: date,
+        section: Optional[str] = None,
+        doc_id: Optional[int] = None,
+        top_k: int = 5,
+        hybrid_limit: int = 20,
+        rrf_k: int = 60,
+        min_relevance_score: float = 0.5,
+        per_doc: int = 2,
+        query_embedding: Optional[List[float]] = None,
+    ) -> List[KnowledgeHit]:
+        """Hybrid search (vector + full-text, RRF) + rerank CHỈ trên đoạn tài liệu tri thức (source_type='knowledge')
+        của các tài liệu còn hiệu lực cho `purpose` ('report' | 'chat') — điều kiện lọc phải giữ khớp
+        services/knowledge.py::is_applicable.
+
+        - `source_type = 'knowledge'` ghi LITERAL (không bind param) để planner dùng được 2 index một phần
+          (idx_chunks_knowledge_embedding, idx_chunks_knowledge_tsv_simple — xem db/models.py::Chunk).
+        - Full-text dùng cấu hình 'simple' (tiếng Việt), không dùng cột content_tsv ('english') của bài báo.
+        - `query_embedding`: truyền sẵn khi đã embed theo lô (báo cáo embed query của mọi mục trong 1 lần gọi).
+        - Sau rerank: lọc `min_relevance_score`, tối đa `per_doc` đoạn/tài liệu, tối đa `top_k` đoạn.
+        """
+        if purpose not in ("report", "chat"):
+            raise ValueError(f"purpose không hợp lệ: {purpose!r}")
+        if query_embedding is None:
+            vectors = await self.embedder.embed([query], input_type="search_query")
+            if not vectors:
+                return []
+            query_embedding = vectors[0]
+
+        params = {
+            "query_embedding": f"[{','.join(str(f) for f in query_embedding)}]",
+            "query_text": query,
+            "limit": hybrid_limit,
+            "rrf_k": rrf_k,
+            "as_of": as_of,
+        }
+        if purpose == "chat":
+            purpose_clause = "AND use_in_chat"
+        elif section:
+            purpose_clause = "AND use_in_report AND (report_sections IS NULL OR :section = ANY(report_sections))"
+            params["section"] = section
+        else:
+            purpose_clause = "AND use_in_report"
+        doc_clause = ""
+        if doc_id is not None:
+            doc_clause = "AND id = :doc_id"
+            params["doc_id"] = doc_id
+
+        sql = text(f'''
+            WITH doc_filter AS (
+                SELECT id FROM knowledge_documents
+                WHERE status = 'ready' AND is_active
+                  AND valid_from <= :as_of AND (valid_to IS NULL OR valid_to >= :as_of)
+                  {purpose_clause} {doc_clause}
+            ),
+            vector_search AS (
+                SELECT chunk_id,
+                       ROW_NUMBER() OVER (ORDER BY embedding <=> :query_embedding) as rank
+                FROM chunks
+                WHERE source_type = 'knowledge' AND source_id IN (SELECT id FROM doc_filter)
+                ORDER BY embedding <=> :query_embedding
+                LIMIT :limit
+            ),
+            fts_search AS (
+                SELECT chunk_id,
+                       ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('simple', content), query) DESC) as rank
+                FROM chunks, websearch_to_tsquery('simple', :query_text) query
+                WHERE source_type = 'knowledge' AND source_id IN (SELECT id FROM doc_filter)
+                  AND to_tsvector('simple', content) @@ query
+                ORDER BY ts_rank_cd(to_tsvector('simple', content), query) DESC
+                LIMIT :limit
+            ),
+            combined AS (
+                SELECT
+                    COALESCE(v.chunk_id, f.chunk_id) as chunk_id,
+                    COALESCE(1.0 / (:rrf_k + v.rank), 0.0) + COALESCE(1.0 / (:rrf_k + f.rank), 0.0) as rrf_score
+                FROM vector_search v
+                FULL OUTER JOIN fts_search f ON v.chunk_id = f.chunk_id
+            )
+            SELECT ch.chunk_id, ch.source_id AS doc_id, ch.chunk_index, ch.content, ch.meta, c.rrf_score,
+                   d.title, d.publisher, d.issued_on, d.verified, d.doc_kind
+            FROM combined c
+            JOIN chunks ch ON ch.chunk_id = c.chunk_id
+            JOIN knowledge_documents d ON d.id = ch.source_id
+            ORDER BY c.rrf_score DESC
+            LIMIT :limit;
+        ''')
+        rows = (await self.session.execute(sql, params)).fetchall()
+        if not rows:
+            return []
+
+        candidates: List[KnowledgeHit] = []
+        for row in rows:
+            meta = row.meta if isinstance(row.meta, dict) else (json.loads(row.meta) if row.meta else {})
+            candidates.append(KnowledgeHit(
+                chunk_id=row.chunk_id, doc_id=row.doc_id, chunk_index=row.chunk_index, content=row.content,
+                score=float(row.rrf_score), title=row.title, publisher=row.publisher, issued_on=row.issued_on,
+                verified=bool(row.verified), doc_kind=row.doc_kind, page_from=meta.get("page_from"),
+                page_to=meta.get("page_to"), heading=meta.get("heading"),
+            ))
+
+        response = await self.cohere_client.rerank(
+            model=self.rerank_model,
+            query=query,
+            documents=[c.content for c in candidates],
+            top_n=len(candidates),
+            return_documents=False,
+        )
+        hits: List[KnowledgeHit] = []
+        taken: dict = {}
+        for result in response.results:
+            hit = candidates[result.index]
+            if result.relevance_score < min_relevance_score or taken.get(hit.doc_id, 0) >= per_doc:
+                continue
+            hit.score = result.relevance_score
+            taken[hit.doc_id] = taken.get(hit.doc_id, 0) + 1
+            hits.append(hit)
+            if len(hits) >= top_k:
+                break
+        logger.info(
+            "[RETRIEVAL] Tài liệu tri thức (%s%s): %d ứng viên → giữ %d đoạn (ngưỡng %.2f).",
+            purpose, f", mục {section}" if section else "", len(candidates), len(hits), min_relevance_score,
+        )
+        return hits

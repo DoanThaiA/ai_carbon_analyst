@@ -254,6 +254,67 @@ export interface QuoteChatExample {
   created_at: string;
 }
 
+// Tài liệu tri thức của Jenny (api/routers/admin_knowledge.py, schemas/knowledge_models.py).
+export type KnowledgeDocKind = "regulation" | "research" | "market_report" | "internal" | "reference";
+export type KnowledgeStatus = "pending" | "processing" | "ready" | "failed" | "deleted";
+// Khoá mục của bộ sinh báo cáo — khớp db/models.py::KNOWLEDGE_SECTIONS.
+export const KNOWLEDGE_SECTIONS = ["1", "2", "dev", "3", "4", "8", "biz"] as const;
+export type KnowledgeSectionKey = (typeof KNOWLEDGE_SECTIONS)[number];
+
+export interface KnowledgeDocument {
+  id: number;
+  title: string;
+  publisher: string | null;
+  issued_on: string | null;
+  doc_kind: KnowledgeDocKind;
+  language: "vi" | "en";
+  file_name: string;
+  media_type: "pdf" | "docx";
+  size_bytes: number;
+  status: KnowledgeStatus;
+  error_message: string | null;
+  warnings: string[] | null;
+  page_count: number | null;
+  char_count: number | null;
+  chunk_count: number | null;
+  is_active: boolean;
+  use_in_report: boolean;
+  report_sections: KnowledgeSectionKey[] | null;
+  use_in_chat: boolean;
+  valid_from: string;
+  valid_to: string | null;
+  verified: boolean;
+  note: string | null;
+  uploaded_by: string;
+  created_at: string;
+  updated_at: string;
+  processed_at: string | null;
+}
+
+export interface KnowledgeDocumentDetail extends KnowledgeDocument {
+  sections: { heading: string | null; page_from: number | null; page_to: number | null; text: string }[];
+}
+
+export interface KnowledgeChunk {
+  chunk_id: number;
+  chunk_index: number;
+  content: string;
+  heading: string | null;
+  page_from: number | null;
+  page_to: number | null;
+}
+
+export interface KnowledgeSearchHit {
+  chunk_id: number;
+  doc_id: number;
+  title: string;
+  score: number;
+  content: string;
+  heading: string | null;
+  page_from: number | null;
+  page_to: number | null;
+}
+
 export interface EuaFrameworkBlock {
   block_id: string;
   title: string;

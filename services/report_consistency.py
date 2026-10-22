@@ -539,6 +539,7 @@ SKIP_KEYS = {
     "url", "source_url", "source_name", "source", "origin", "date", "time", "id", "code", "name", "price", "dday",
     "dweek", "chart_data", "cbam_estimate", "forecast_review", "trigger_rule", "price_timestamp", "heading",
     "horizon", "direction", "probability", "impact", "tag", "region", "country", "released_at", "9",
+    "knowledge_used", "knowledge_ref",
 }
 
 
