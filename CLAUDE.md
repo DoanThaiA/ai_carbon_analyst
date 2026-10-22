@@ -271,10 +271,15 @@ bằng `biz_memory.infer_price_rule`, mã không có trong bảng giá thì khô
 hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cáo sạch đúng định dạng bộ sinh, PHẢI ra
 0 vấn đề — đổi định dạng output của `report_generator.py` thì cập nhật fixture này). `parse_strategy` /
 `parse_signal_levels` (nằm ở `services/strategy_levels.py`, `report_qc` re-export) là bản port 1-1 parser thẻ KHUYẾN NGHỊ VỊ THẾ (trước là TÍN HIỆU HÔM NAY) trong `ReportDocument.tsx` — sửa bên nào
-phải sửa cả bên kia (cả `is_breakout_entry` ↔ `isBreakoutEntry`). Thẻ (`PositionCard`) gộp CẢ 3 kịch bản: hàng chỉ số (Δ lấy từ dòng EUA của
-bảng giá; biên 30 phiên/ATR 14 phiên/vị trí trong biên tính lại từ `chart_data` đúng công thức `report_consistency`; track record từ
-`forecast_review.items`), thang giá, bảng lệnh (R:R tính từ điểm giữa vùng Entry, lệnh phá vỡ từ mức kích hoạt; chuẩn `rules.min_rr`) và
-thanh phòng hộ CBAM dựng từ `cbam_estimate` (không đọc câu `hedge_action.core`). Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
+phải sửa cả bên kia (cả `is_breakout_entry` ↔ `isBreakoutEntry`). Chỉ số EUA (Δ lấy từ dòng EUA của bảng giá; biên 30 phiên/ATR 14
+phiên/vị trí trong biên tính lại từ `chart_data` đúng công thức `report_consistency` — `computeEuaStats`; track record từ
+`forecast_review.items`) nằm ở khối mở đầu (`EuaSnapshot`/`VerdictCard`/`KeyFigures`, kèm lệnh ngắn hạn + nhãn phòng hộ CBAM). Thẻ
+(`PositionCard`) gộp CẢ 3 kịch bản: thang giá, thẻ từng khung (`HorizonCards` — thay cả bảng lệnh lẫn bảng "Kịch bản hành động" cũ: chiều,
+xác suất, vùng giá, lệnh R:R tính từ điểm giữa vùng Entry / lệnh phá vỡ từ mức kích hoạt, chuẩn `rules.min_rr`, điều kiện, rủi ro, nguyên văn
+chiến lược) và thanh phòng hộ CBAM dựng từ `cbam_estimate` (không đọc câu `hedge_action.core`). Xem bản tiếng Anh: mức giá/loại lệnh vẫn
+tách từ kịch bản tiếng Việt (`content_vi` do `lib/reportLocale.ts` giữ lại), câu chữ lấy bản Anh. Bố cục nhiều cột của trang báo cáo theo
+container query `@container/report` (bề rộng thật của báo cáo, không theo viewport); in A4 (~650px) tự về 1 cột — thêm khối mới thì giữ quy
+ước này và `print:` cho phần thu gọn. Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
 
 **Biên bản QC Claude (MCP) + tự xuất bản** (`services/report_qc_review.py`, bảng `report_qc_reviews` + `report_qc_findings`,

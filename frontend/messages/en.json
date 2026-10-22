@@ -958,7 +958,10 @@
       "volume": "{vol} contracts on {date}",
       "volVsAvg": ", {dir} the {n}-session average ({avg}) {pct}%.",
       "higher": "above",
-      "lower": "below"
+      "lower": "below",
+      "volumeTitle": "Volume",
+      "volumeOf": "contracts · session {date}",
+      "volTileSub": "{dir} the {n}-session average ({avg}): {pct}%"
     },
     "masthead": {
       "title": "Daily carbon market news",
@@ -1061,6 +1064,68 @@
         "beforeExpiry": "All remaining auctions (last on {last}) are before the {contract} expiry ({expiry}).",
         "noExpiry": "Last auction of the quarter {last} — no {contract} expiry date configured: check the ICE calendar; anything after expiry rolls to {next}."
       }
+    },
+    "tabs": {
+      "label": "Report navigation",
+      "overview": "Overview",
+      "market": "Market",
+      "recommendation": "Positioning",
+      "analysis": "Analysis",
+      "biz": "SIM ideas",
+      "news": "News",
+      "review": "Forecast review",
+      "sources": "Sources"
+    },
+    "hero": {
+      "euaTitle": "EUA price",
+      "day": "day",
+      "week": "week",
+      "volume": "Session volume",
+      "high": "high",
+      "low": "low",
+      "sessions": "{n} sessions",
+      "verdictTitle": "Overall view",
+      "sentiment": {
+        "positive": "Positive",
+        "neutral": "Neutral",
+        "negative": "Negative"
+      },
+      "todayOrders": "Short-term orders",
+      "seeRecommendation": "See the price ladder and 3-horizon scenarios",
+      "keyFigures": "Key figures",
+      "cbamEstimate": "Estimated CBAM price {quarter}",
+      "ci": "{level}% CI: {low}–{high}",
+      "seeReview": "Details"
+    },
+    "market": {
+      "dDay": "Δ day",
+      "dWeek": "Δ week",
+      "dayLabel": "Day",
+      "weekLabel": "Week",
+      "cat": {
+        "carbon": "Carbon",
+        "gas": "Gas",
+        "oil": "Oil",
+        "coal": "Coal",
+        "power": "Power",
+        "other": "Other"
+      }
+    },
+    "keyDev": {
+      "impact": {
+        "up": "Supports EUA",
+        "down": "Weighs on EUA",
+        "neutral": "Neutral"
+      }
+    },
+    "drivers": {
+      "balance": "{up} supportive · {down} bearish factors"
+    },
+    "review": {
+      "chartNote": "Each column: EUA %Δ from the report-day close to the {date} session · tile: ✓ correct / on track · ✕ wrong · ! diverging · ? unclear. Per-report details in the table below."
+    },
+    "news": {
+      "count": "{n} items"
     }
   },
   "shellHeader": {

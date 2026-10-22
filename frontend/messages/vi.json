@@ -958,7 +958,10 @@
       "volume": "{vol} hợp đồng phiên {date}",
       "volVsAvg": ", {dir} TB {n} phiên ({avg}) {pct}%.",
       "higher": "cao hơn",
-      "lower": "thấp hơn"
+      "lower": "thấp hơn",
+      "volumeTitle": "Khối lượng",
+      "volumeOf": "hợp đồng · phiên {date}",
+      "volTileSub": "{dir} TB {n} phiên ({avg}): {pct}%"
     },
     "masthead": {
       "title": "TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON",
@@ -1061,6 +1064,68 @@
         "beforeExpiry": "Mọi phiên đấu giá còn lại (cuối quý {last}) đều trước ngày đáo hạn {contract} ({expiry}).",
         "noExpiry": "Phiên đấu giá cuối quý {last} — chưa có ngày đáo hạn {contract}: kiểm lịch ICE; phần sau đáo hạn chuyển sang {next}."
       }
+    },
+    "tabs": {
+      "label": "Mục lục báo cáo",
+      "overview": "Tổng quan",
+      "market": "Thị trường",
+      "recommendation": "Khuyến nghị",
+      "analysis": "Phân tích",
+      "biz": "Gợi ý SIM",
+      "news": "Tin tức",
+      "review": "Review dự báo",
+      "sources": "Nguồn"
+    },
+    "hero": {
+      "euaTitle": "Giá EUA",
+      "day": "ngày",
+      "week": "tuần",
+      "volume": "Khối lượng phiên",
+      "high": "đỉnh",
+      "low": "đáy",
+      "sessions": "{n} phiên",
+      "verdictTitle": "Nhận định tổng quan",
+      "sentiment": {
+        "positive": "Tích cực",
+        "neutral": "Trung lập",
+        "negative": "Tiêu cực"
+      },
+      "todayOrders": "Lệnh ngắn hạn",
+      "seeRecommendation": "Xem thang giá và kịch bản 3 khung thời gian",
+      "keyFigures": "Số liệu chính",
+      "cbamEstimate": "Giá CBAM {quarter} ước tính",
+      "ci": "KTC {level}%: {low}–{high}",
+      "seeReview": "Xem chi tiết"
+    },
+    "market": {
+      "dDay": "Δ ngày",
+      "dWeek": "Δ tuần",
+      "dayLabel": "Ngày",
+      "weekLabel": "Tuần",
+      "cat": {
+        "carbon": "Carbon",
+        "gas": "Khí đốt",
+        "oil": "Dầu",
+        "coal": "Than",
+        "power": "Điện",
+        "other": "Khác"
+      }
+    },
+    "keyDev": {
+      "impact": {
+        "up": "Hỗ trợ EUA",
+        "down": "Áp lực EUA",
+        "neutral": "Trung lập"
+      }
+    },
+    "drivers": {
+      "balance": "{up} yếu tố hỗ trợ tăng · {down} yếu tố gây áp lực giảm"
+    },
+    "review": {
+      "chartNote": "Mỗi cột: %Δ EUA từ giá đóng cửa ngày báo cáo tới phiên {date} · ô màu: ✓ đúng / đúng hướng · ✕ sai · ! đang lệch · ? chưa rõ. Chi tiết từng báo cáo ở bảng dưới."
+    },
+    "news": {
+      "count": "{n} tin"
     }
   },
   "shellHeader": {

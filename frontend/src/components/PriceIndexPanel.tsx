@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Maximize2, X } from "lucide-react";
 import clsx from "clsx";
 import { useTranslations } from "next-intl";
@@ -103,14 +104,17 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
           )}
         </div>
       </div>
-      {open && (
+      {/* Portal ra body: báo cáo là container query (.report-shell) nên "position: fixed" bên trong có thể bị giới hạn
+          theo khung báo cáo thay vì cả màn hình. */}
+      {open && createPortal(
         <CompareModal
           reportDate={reportDate}
           cbamEstimate={cbamEstimate}
           selected={codes}
           onChange={setSelected}
           onClose={() => setOpen(false)}
-        />
+        />,
+        document.body,
       )}
     </>
   );
