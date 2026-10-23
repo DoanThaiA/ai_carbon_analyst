@@ -2502,12 +2502,12 @@ function formatVietnameseDateFull(dateStr: string) {
   return `${dayOfWeek}, ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
 }
 
-// Biểu đồ EUA (đầu Phần 1): nến 30 phiên | `aside` (biểu đồ chỉ số giá — 2 khối cao bằng nhau), bên dưới 1 hàng 5 ô số
-// liệu (phiên gần nhất, 1 tuần, biên 30 phiên, thay đổi 30 phiên, khối lượng) cao bằng nhau. Mỗi ô ghi đủ các số của câu
-// "Nhận định thị trường" cũ (câu đó chỉ nhắc lại đúng các số này). Báo cáo hẹp/in: xếp dọc, ô số 2 cột.
+// Biểu đồ EUA (đầu Phần 1): nến 30 phiên | cột 5 ô tóm tắt giá EUA (phiên gần nhất, 1 tuần, biên 30 phiên, thay đổi 30
+// phiên, khối lượng) giãn cao bằng biểu đồ. Mỗi ô ghi đủ các số của câu "Nhận định thị trường" cũ (câu đó chỉ nhắc lại
+// đúng các số này). Báo cáo hẹp/in: ô số xếp lưới 2 cột dưới biểu đồ.
 // printHeading: tiêu đề Phần 1 CHỈ hiện khi in, nằm chung khối "không cắt" với biểu đồ — Chrome không dời tiêu đề
 // (break-after: avoid) theo biểu đồ khi biểu đồ không vừa phần còn lại của trang, để tiêu đề trơ cuối trang 1.
-function EuaDashboardWidget({ report, printHeading, aside }: { report: Report; printHeading?: React.ReactNode; aside?: React.ReactNode }) {
+function EuaDashboardWidget({ report, printHeading }: { report: Report; printHeading?: React.ReactNode }) {
   const locale = useLocale();
   const t = useTranslations("reportDoc");
   const chartData = report.content["2"]?.chart_data || [];
@@ -2553,47 +2553,44 @@ function EuaDashboardWidget({ report, printHeading, aside }: { report: Report; p
   const sign = (n: number) => (n > 0 ? "+" : "");
 
   return (
-    <div className="space-y-4 print:space-y-3">
-      <div className={clsx("grid gap-4 print:block", aside && "@5xl/report:grid-cols-12")}>
-        <div className={clsx("flex min-w-0 flex-col print:break-inside-avoid", aside && "@5xl/report:col-span-7")}>
-          {printHeading && <div className="hidden print:block">{printHeading}</div>}
-          <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="shrink-0 rounded-xl bg-primary p-2 text-white">
-                  <Leaf size={22} aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-bold text-label">
-                    EUA Dec-26
-                    {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
-                    <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
-                    <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
-                  </h3>
-                  <p className="text-left mt-0.5 text-[13px] text-muted-light">{t("dash.marketDesc")}</p>
-                </div>
+    <div className="grid gap-4 @5xl/report:grid-cols-12 print:block print:space-y-3">
+      <div className="flex min-w-0 flex-col @5xl/report:col-span-8 print:break-inside-avoid">
+        {printHeading && <div className="hidden print:block">{printHeading}</div>}
+        <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="shrink-0 rounded-xl bg-primary p-2 text-white">
+                <Leaf size={22} aria-hidden="true" />
               </div>
-              <div className="ml-auto flex flex-col items-end gap-1">
-                <div className="flex items-baseline gap-2.5">
-                  <span className="text-[26px] sm:text-[28px] font-bold leading-none tabular-nums text-label">{fnum(lastClose, 2, locale)}</span>
-                  <span className={clsx("inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums text-white", dayChange >= 0 ? "bg-up" : "bg-down")}>
-                    {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
-                    {sign(dayChange)}{fnum(dayChange, 2, locale)} ({sign(dayChangePct)}{fnum(dayChangePct, 2, locale)}%)
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light">
-                  <Calendar size={13} aria-hidden="true" /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
-                </div>
+              <div className="min-w-0">
+                <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-bold text-label">
+                  EUA Dec-26
+                  {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
+                  <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
+                  <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
+                </h3>
+                <p className="text-left mt-0.5 text-[13px] text-muted-light">{t("dash.marketDesc")}</p>
               </div>
             </div>
-
-            <CandlestickChart report={report} />
+            <div className="ml-auto flex flex-col items-end gap-1">
+              <div className="flex items-baseline gap-2.5">
+                <span className="text-[26px] sm:text-[28px] font-bold leading-none tabular-nums text-label">{fnum(lastClose, 2, locale)}</span>
+                <span className={clsx("inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums text-white", dayChange >= 0 ? "bg-up" : "bg-down")}>
+                  {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
+                  {sign(dayChange)}{fnum(dayChange, 2, locale)} ({sign(dayChangePct)}{fnum(dayChangePct, 2, locale)}%)
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light">
+                <Calendar size={13} aria-hidden="true" /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
+              </div>
+            </div>
           </div>
+
+          <CandlestickChart report={report} />
         </div>
-        {aside && <div className="min-w-0 @5xl/report:col-span-5 print:hidden">{aside}</div>}
       </div>
 
-      <div className="grid gap-3 @2xl/report:grid-cols-2 @5xl/report:grid-cols-5 print:grid-cols-2 print:break-inside-avoid">
+      <div className="grid min-w-0 gap-3 @2xl/report:grid-cols-2 @5xl/report:col-span-4 @5xl/report:flex @5xl/report:flex-col print:grid-cols-2 print:break-inside-avoid">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
@@ -2643,12 +2640,13 @@ function EuaDashboardWidget({ report, printHeading, aside }: { report: Report; p
   );
 }
 
-// Ô số liệu dưới biểu đồ EUA — nhãn, số chính, rồi các dòng diễn giải (cùng cỡ chữ để các ô thẳng hàng).
+// Ô số liệu cạnh biểu đồ EUA — nhãn, số chính, rồi các dòng diễn giải (cùng cỡ chữ để các ô thẳng hàng). Báo cáo rộng:
+// cột ô xếp dọc, phần cao dư chia đều cho các ô (flex-1) để cột cao đúng bằng biểu đồ.
 function StatTile({ icon, label, value, lines, valueClass, linesClass, className }: {
   icon: React.ReactNode; label: string; value: string; lines: (string | null)[]; valueClass?: string; linesClass?: string; className?: string;
 }) {
   return (
-    <div className={clsx("min-w-0 rounded-xl border border-border bg-background px-3.5 py-3", className)}>
+    <div className={clsx("min-w-0 rounded-xl border border-border bg-background px-3.5 py-2.5 @5xl/report:flex-1", className)}>
       <div className="flex items-center gap-1.5 text-[12.5px] font-bold text-primary-dark">{icon} {label}</div>
       <div className={clsx("mt-1 text-[19px] font-bold leading-tight tabular-nums", valueClass ?? "text-label")}>{value}</div>
       {lines.filter(Boolean).map((l, i) => (
@@ -2826,49 +2824,35 @@ function ExecSummary({ bullets }: { bullets: any[] }) {
 
 // Δ ngày / Δ tuần của 1 mã: chuỗi gốc của Bảng giá nhanh ("+0,30% (+0,26)") + thanh lệch trái/phải quanh vạch 0, cùng
 // thang cho mọi mã trong cột để so độ lớn bằng mắt.
-function DeltaCell({ text, pct, scale, label }: { text?: string; pct?: number; scale: number; label?: string }) {
+function DeltaCell({ text, label }: { text?: string; label?: string }) {
   const locale = useLocale();
   if (!text || text === "-") return <span className="text-muted-light">—</span>;
   const up = isPositiveDelta(text);
-  const w = pct !== undefined && scale > 0 ? Math.min(Math.abs(pct) / scale, 1) * 50 : 0;
   return (
-    // Số và thanh cùng 1 dòng khi ô đủ rộng (bảng hết bề rộng báo cáo), ô hẹp thì thanh xuống dòng dưới số.
-    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      {/* Bề rộng số cố định → thanh của mọi dòng cùng cột bắt đầu (và có vạch 0) thẳng hàng. */}
-      <div className={clsx("min-w-[8.75rem] text-[13.5px] font-bold tabular-nums whitespace-nowrap", up ? "text-up" : "text-down")}>
-        {label && <span className="mr-1 text-[12px] font-semibold text-muted-light">{label}</span>}
-        {formatDelta(text, locale)}
-      </div>
-      <div className="relative h-[6px] min-w-[72px] max-w-[220px] flex-1 basis-[96px] rounded-full bg-surface-alt [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true">
-        <span className="absolute inset-y-[-2px] left-1/2 w-px bg-border-soft" />
-        <span className={clsx("absolute inset-y-0 rounded-full", up ? "bg-up" : "bg-down")} style={up ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }} />
-      </div>
+    <div className={clsx("text-[13.5px] font-bold tabular-nums whitespace-nowrap", up ? "text-up" : "text-down")}>
+      {label && <span className="mr-1 text-[12px] font-semibold text-muted-light">{label}</span>}
+      {formatDelta(text, locale)}
     </div>
   );
 }
 
 // Bảng giá nhanh: mỗi mã 1 dòng theo đúng thứ tự bảng gốc (không chia nhóm) — dòng kẻ sọc xen kẽ + vạch ngăn rõ để mắt
-// không nhảy dòng; Δ là thứ người đọc tìm nên Δ được vẽ thành thanh. Ghi chú chất lượng dữ liệu + giá chốt CBAM nằm ở
+// không nhảy dòng; Δ chỉ ghi số (xanh tăng, đỏ giảm). Ghi chú chất lượng dữ liệu + giá chốt CBAM nằm ở
 // dòng phụ ngay dưới mã, cùng màu nền với dòng của mã đó.
 function MarketBoard({ rows }: { rows: any[] }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
-  const pcts = rows.map((r: any) => ({ day: deltaPct(r?.day_change_pct, r?.dday), week: deltaPct(r?.week_change_pct, r?.dweek) }));
-  const ceilScale = (vals: (number | undefined)[], min: number) =>
-    Math.max(min, Math.ceil(Math.max(0, ...vals.map(v => Math.abs(v ?? 0)))));
-  const dayScale = ceilScale(pcts.map(p => p.day), 1);
-  const weekScale = ceilScale(pcts.map(p => p.week), 2);
-  const th = "px-3 py-2.5 text-left text-[12px] font-bold uppercase tracking-wider text-primary-dark";
+  const th = "px-3 py-2 text-left text-[12px] font-bold uppercase tracking-wider text-primary-dark";
 
   return (
     <div className="@container overflow-x-auto rounded-xl border border-border">
       <table className="w-full border-collapse text-[14px]">
         <thead>
           <tr className="border-b-2 border-primary/25 bg-tint">
-            <th className={clsx(th, "w-[34%] @xl:w-[30%]")}>{t("body.contract")}</th>
+            <th className={clsx(th, "w-[36%]")}>{t("body.contract")}</th>
             <th className={clsx(th, "text-right!")}>{t("body.price")}</th>
-            <th className={clsx(th, "hidden w-[27%] @xl:table-cell")}>{t("market.dDay")}</th>
-            <th className={clsx(th, "hidden w-[27%] @xl:table-cell")}>{t("market.dWeek")}</th>
+            <th className={clsx(th, "hidden w-[20%] @xl:table-cell")}>{t("market.dDay")}</th>
+            <th className={clsx(th, "hidden w-[20%] @xl:table-cell")}>{t("market.dWeek")}</th>
             <th className={clsx(th, "@xl:hidden")}>{t("body.change")}</th>
           </tr>
         </thead>
@@ -2890,7 +2874,7 @@ function MarketBoard({ rows }: { rows: any[] }) {
               )}
             >
               <tr className="align-middle">
-                <td className="px-3 py-3 text-[15px] font-semibold leading-snug text-label">
+                <td className="px-3 py-2 text-[14px] font-semibold leading-snug text-label">
                   {r.source_url ? (
                     // Link kiểu quen thuộc (xanh dương + gạch chân + icon ↗) để nhận ra được là bấm được (cả trên mobile).
                     <a
@@ -2907,24 +2891,24 @@ function MarketBoard({ rows }: { rows: any[] }) {
                     r.name
                   )}
                 </td>
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  <div className="text-[17px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
-                  {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <div className="text-[15.5px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
+                  {priceUnit && <div className="text-[11px] leading-tight text-muted-light">{priceUnit}</div>}
                 </td>
-                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dday} pct={pcts[idx]?.day} scale={dayScale} /></td>
-                <td className="hidden px-3 py-3 @xl:table-cell"><DeltaCell text={r.dweek} pct={pcts[idx]?.week} scale={weekScale} /></td>
-                <td className="px-3 py-3 @xl:hidden">
+                <td className="hidden px-3 py-2 @xl:table-cell"><DeltaCell text={r.dday} /></td>
+                <td className="hidden px-3 py-2 @xl:table-cell"><DeltaCell text={r.dweek} /></td>
+                <td className="px-3 py-2 @xl:hidden">
                   {r.dday === "-" && r.dweek === "-" ? <span className="text-muted-light">—</span> : (
                     <div className="space-y-1.5">
-                      <DeltaCell text={r.dday} pct={pcts[idx]?.day} scale={dayScale} label={t("market.dayLabel")} />
-                      <DeltaCell text={r.dweek} pct={pcts[idx]?.week} scale={weekScale} label={t("market.weekLabel")} />
+                      <DeltaCell text={r.dday} label={t("market.dayLabel")} />
+                      <DeltaCell text={r.dweek} label={t("market.weekLabel")} />
                     </div>
                   )}
                 </td>
               </tr>
               {hasNote && (
                 <tr>
-                  <td colSpan={5} className="px-3 pb-3 pt-0">
+                  <td colSpan={5} className="px-3 pb-2 pt-0">
                     {/* Chú thích chất lượng dữ liệu (report_generator.py): phiên không có giao dịch (giá danh
                         nghĩa) / nguồn điều chỉnh hồi tố giá phiên trước; dòng CBAM: giá chốt theo quý. */}
                     {(r.no_trade || r.revision) && (
@@ -3329,8 +3313,7 @@ export function ReportDocument({
   const cbamEstimate: CbamEstimate | null = noPriceData ? null : content["2"]?.cbam_estimate ?? null;
   const hedgeAction: HedgeAction | null = content["3"]?.hedge_action ?? null;
   const execBullets: any[] = content["1"]?.bullets ?? [];
-  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in. Có biểu đồ nến EUA
-  // thì đặt cạnh biểu đồ nến (2 biểu đồ cao bằng nhau), không thì cạnh bảng giá.
+  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in; đặt cạnh bảng giá.
   const indexPanel = !noPriceData && priceRows.length > 0 ? (
     <PriceIndexPanel
       reportDate={report.report_date}
@@ -3462,7 +3445,6 @@ export function ReportDocument({
             <EuaDashboardWidget
               report={report}
               printHeading={<PartHeading eyebrow={t("body.part", { n: 1 })} title={t("body.marketTitle")} icon={LineChart} />}
-              aside={indexPanel}
             />
 
             {noPriceData ? (
@@ -3470,10 +3452,9 @@ export function ReportDocument({
                 {content["2"]?.no_price_notice || t("body.noPriceFallback")}
               </div>
             ) : priceRows.length > 0 && (
-              // Bảng giá nhanh hết bề rộng; báo cáo không có biểu đồ nến thì biểu đồ chỉ số giá nằm cạnh bảng (cao bằng
-              // bảng). Khi in/PDF chỉ giữ bảng giá.
-              <div className={clsx("grid gap-5", chartData.length === 0 && "@5xl/report:grid-cols-12")}>
-                <div className={clsx("min-w-0", chartData.length === 0 && "@5xl/report:col-span-7")}>
+              // Bảng giá nhanh (thu gọn) | biểu đồ chỉ số giá — biểu đồ giãn cao bằng bảng. Khi in/PDF chỉ giữ bảng giá.
+              <div className="grid gap-5 @5xl/report:grid-cols-12">
+                <div className="min-w-0 @5xl/report:col-span-7">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
@@ -3481,7 +3462,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                {chartData.length === 0 && <div className="min-w-0 @5xl/report:col-span-5 print:hidden">{indexPanel}</div>}
+                <div className="min-w-0 @5xl/report:col-span-5 print:hidden">{indexPanel}</div>
               </div>
             )}
 
