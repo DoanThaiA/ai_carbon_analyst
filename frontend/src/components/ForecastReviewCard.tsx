@@ -51,7 +51,7 @@ export function ForecastReviewCard({
   const wrongStreak = review.wrong_in_row >= 2;
 
   return (
-    // Khi in: KHÔNG giữ nguyên khối (bảng dài, có calibration/quy tắc chấm → không vừa phần còn lại của trang thì bị đẩy
+    // Khi in: KHÔNG giữ nguyên khối (bảng dài → không vừa phần còn lại của trang thì bị đẩy
     // nguyên sang trang sau, để trống trang trước) — chỉ giữ không cắt đôi từng dòng/từng phần.
     <div className="rounded-lg border border-border bg-white overflow-hidden print:overflow-visible [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
       {(showTitle || wrongStreak) && (
@@ -113,22 +113,6 @@ export function ForecastReviewCard({
           );
         })}
       </ul>
-
-      {review.calibration?.some((c) => c.total > 0 || (c.direction_only ?? 0) > 0) && (
-        <div className="print:break-inside-avoid px-3.5 py-2 border-t border-border text-[12.5px] text-body tabular-nums">
-          <span className="font-semibold text-label">
-            {/* Báo cáo cũ (tính trên 60 báo cáo) không có calibration_reports → giữ nhãn "lũy kế". */}
-            {review.rules?.calibration_reports ? t("calibrationRecent", { n: review.rules.calibration_reports }) : t("calibration")}
-          </span>{" "}
-          {review.calibration
-            .filter((c) => c.total > 0 || (c.direction_only ?? 0) > 0)
-            .map((c) =>
-              t("calibrationItem", { probability: enumLabel(c.probability), correct: c.correct, total: c.total })
-              + (c.direction_only ? ` ${t("calibrationUnfilled", { n: c.direction_only })}` : ""),
-            )
-            .join(" · ")}
-        </div>
-      )}
 
       {children && (
         <div className="px-3.5 py-2.5 border-t border-border bg-surface/60">

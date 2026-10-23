@@ -115,10 +115,12 @@ async def list_reviews(
         stmt.order_by(ReportQcReview.report_date.desc(), ReportQcReview.run_no.desc()).limit(limit).offset(offset)
     )).scalars())
     states = await _current_hashes(session, [r.report_date for r in reviews])
+    findings = await load_findings(session, [r.id for r in reviews])
     items = []
     for r in reviews:
         status, current = states.get(r.report_date, (None, None))
-        items.append({**review_dict(r, current_hash=current), "current_report_status": status})
+        items.append({**review_dict(r, findings[r.id], current_hash=current, with_body=False),
+                      "current_report_status": status})
     return {"total": total, "items": items, "criteria": QC_CRITERIA}
 
 
@@ -218,12 +220,13 @@ async def get_report_reviews(date: str, session: AsyncSession = Depends(get_db))
     if reviews:
         findings = (await load_findings(session, [reviews[0].id]))[reviews[0].id]
         latest = review_dict(reviews[0], findings, current_hash=current)
+    older = await load_findings(session, [r.id for r in reviews[1:]])
     allowed, reason = await publish_gate(session, date)
     return {
         "report_date": date,
         "report_status": report.status,
         "latest": latest,
-        "history": [review_dict(r, current_hash=current) for r in reviews[1:]],
+        "history": [review_dict(r, older[r.id], current_hash=current, with_body=False) for r in reviews[1:]],
         "auto_publish": {"time": settings.auto_publish_time or None, "allowed": allowed, "reason": reason},
         "criteria": QC_CRITERIA,
     }

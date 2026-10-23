@@ -293,8 +293,8 @@ lỗi biên bản trước; `part=` đọc JSON bản nháp) rồi `submit_qc_re
 mọi lỗi `open`, chỉ áp thay đổi `selected`, actor "Jenny (tự động)") rồi dịch lại EN; BỎ QUA khi nội dung lệch
 `review.content_hash` (= admin đã sửa tay/sửa theo QC sau lần QC — `auto_fix_skip_reason`) → 08:15 `run_auto_publish_job` xuất bản +
 gửi email (chung `_REPORT_FINALIZE_LOCK` với job sửa — chờ sửa xong). Cổng `publish_gate`/`gate_decision` (quyết định 23/10/2026):
-chưa có biên bản → xuất bản (C2); `fail` → chặn, TRỪ KHI đã có lỗi `fixed` và không còn lỗi critical/major `open` (`wont_fix` =
-admin bỏ qua); admin duyệt tay không bị chặn. Server KHÔNG tin số Claude: `overall_score` = Σ điểm × trọng số `QC_CRITERIA` (7 tiêu chí, tổng 100),
+chưa có biên bản → xuất bản (C2); `fail` → chặn, TRỪ KHI đã có lỗi `fixed`, không còn lỗi critical/major `open` (`wont_fix` =
+admin bỏ qua) VÀ điểm sau sửa (`score_after_fixes`) ≥ `FAIL_SCORE`; admin duyệt tay không bị chặn. Server KHÔNG tin số Claude: `overall_score` = Σ điểm × trọng số `QC_CRITERIA` (7 tiêu chí, tổng 100),
 `decide_verdict` chỉ nghiêm hơn Claude (điểm < `FAIL_SCORE` hoặc critical đã kiểm chứng → fail); `assignment_id` lệch nội dung
 hiện tại → từ chối; lỗi định dạng trả văn bản liệt kê đủ để Claude gửi lại. `fingerprint` lỗi → `repeat_count` trên
 `REPEAT_LOOKBACK_REPORTS` báo cáo trước. Token qc_agent: tool QC chỉ hiện với scope này (gateway `tools_for_token`, MCP HTTP
@@ -309,7 +309,7 @@ gửi LLM), LLM (`FIX_MODEL`) chỉ trả cặp `{old → new}` trong các chu�
 đúng 1 lần/chồng nhau/đụng "(Nguồn: …)"/URL/số mới không có trong biên bản hoặc đoạn gốc; rồi `apply_consistency_fixes`
 chỉ trên đoạn vừa sửa + Jack trước/sau (đoạn phát sinh lỗi Jack mới bị bỏ chọn sẵn). `POST .../fix-apply` ghi khi
 `base_hash` và `before` từng đoạn còn khớp, đánh dấu lỗi `fixed`, dịch lại bản EN; `undo=true` = áp ngược, lỗi về `open`.
-Biên bản cũ giữ verdict; fail hết chặn khi lỗi critical/major đã sửa hết (xem `gate_decision`). Test: `tests/test_report_qc_fix.py`.
+Biên bản cũ giữ verdict; fail hết chặn khi lỗi critical/major đã sửa hết (xem `gate_decision`). Điểm sau sửa (`score_after_fixes`, tính lúc đọc, không ghi DB): điểm bị trừ của mỗi tiêu chí (10 − điểm) chia cho lỗi cùng tiêu chí theo trọng số mức độ 3/2/1, lỗi `fixed` được cộng lại phần của mình; `overall_score` gốc giữ nguyên — panel/trang tổng hợp hiện cả 2. Test: `tests/test_report_qc_fix.py`.
 
 **Tự sửa số học/trình bày** (`services/report_consistency.py`, hàm thuần): cuối `generate_report_content` chạy
 `apply_consistency_fixes` trên toàn bộ văn xuôi (bỏ qua `SKIP_KEYS`): tính lại nhãn "X (±p% so với đóng cửa Y)" (và
@@ -396,7 +396,7 @@ mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, khôn
   `mechanism`, `verified`; prompt có khối "CƠ CHẾ MSR" (nâng ngưỡng vô hiệu hóa / giảm chuyển vào MSR = NỚI cung) + Jack
   `check_msr_direction`. Bảng chính sách hiển thị "Tác động lên giá EUA". Mẫu số lũy kế = báo cáo có kết luận Đúng/Sai
   (`calibration_all_excluded` tách riêng), chấm lại toàn bộ theo quy tắc từ `SCORING_METHOD_SINCE`. Thẻ "Dự báo trước" CHỈ hiện
-  bảng + tỷ lệ cửa sổ 7 báo cáo + "Nguyên nhân & điều chỉnh" (lũy kế/chuẩn so sánh/quy tắc vẫn tính, chỉ dùng trong prompt).
+  bảng + "Nguyên nhân & điều chỉnh" (tỷ lệ đúng theo xác suất — cả cửa sổ 7 báo cáo, bỏ hiển thị 23/10/2026 — lũy kế/chuẩn so sánh/quy tắc vẫn tính, chỉ dùng trong prompt).
   Giá trị mặc định CBAM áp theo nước xuất xứ (số TQ/UAE = minh họa; `vn: true` khi admin thêm số VN). `futures_expiry` trong
   cbam_products.yaml chốt câu đáo hạn Dec. Fuel: không có ngưỡng TTF chiều lên (Jack `_UPWARD_THRESHOLD_RE`). Mục 1 nhận
   `_exec_policy_block` (bắt buộc bullet "Chính sách ETS"). `_trim_section3_blocks` bỏ "Quan điểm thị trường" chỉ lặp nguồn bảng

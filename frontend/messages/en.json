@@ -1408,6 +1408,8 @@
     "wontFixPrompt": "Reason for not fixing (optional):",
     "updateError": "Could not update the finding status.",
     "overallScore": "Overall score",
+    "scoreAfterFixes": "After fixes ({count} fixed)",
+    "scoreAfterFixesTitle": "Score after crediting back the deductions of fixed findings",
     "claudeProposed": "Claude proposed: {verdict}",
     "jackRule": "Jack rule-based",
     "issues": "{count} issues",

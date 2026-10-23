@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, ClipboardCheck, Copy, KeyRound, Repeat, Tras
 import { api } from "@/lib/api";
 import { buildMobileConnectorUrl } from "@/lib/claudeConnect";
 import type { QcAgentTokensResponse, QcReviewListResponse, QcReviewStats, QcVerdict } from "@/lib/types";
-import { VerdictBadge, scoreColor } from "@/components/QcReview";
+import { VerdictBadge, improved, scoreColor } from "@/components/QcReview";
 
 const PAGE_SIZE = 20;
 const FILTERS: (QcVerdict | "all")[] = ["all", "fail", "pass_with_fixes", "pass"];
@@ -270,7 +270,12 @@ export default function AdminQcResultsPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-light">#{r.run_no}<br />{fmtTime(r.created_at)}</td>
-                    <td className={clsx("px-3 py-2 text-right font-bold tabular-nums", scoreColor(r.overall_score))}>{r.overall_score.toFixed(2)}</td>
+                    <td className={clsx("px-3 py-2 text-right font-bold tabular-nums", scoreColor(r.overall_score))}>
+                      {r.overall_score.toFixed(2)}
+                      {improved(r) && (
+                        <span className="block text-[11px] font-semibold text-primary" title={t("scoreAfterFixesTitle")}>→ {r.score_after_fixes!.toFixed(2)}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2"><VerdictBadge verdict={r.verdict} /></td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs">
                       <span className="text-down font-semibold">{r.critical_count}</span> / <span className="text-warn font-semibold">{r.major_count}</span> / <span className="text-muted-light">{r.minor_count}</span>

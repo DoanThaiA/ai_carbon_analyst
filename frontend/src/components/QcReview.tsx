@@ -37,6 +37,11 @@ export function VerdictBadge({ verdict, className }: { verdict: QcVerdict; class
   );
 }
 
+// Có lỗi đã sửa làm điểm tăng → hiện thêm "điểm sau sửa" cạnh điểm gốc (điểm gốc của biên bản giữ nguyên).
+export function improved(r: { overall_score: number; score_after_fixes?: number }): boolean {
+  return r.score_after_fixes != null && r.score_after_fixes > r.overall_score;
+}
+
 export function scoreColor(score: number): string {
   return score >= 8 ? "text-primary-dark" : score >= 6 ? "text-warn" : "text-down";
 }
@@ -145,8 +150,10 @@ export function QcReviewView({ review, onChange, onFix }: {
       note = v.trim() || null;
     }
     try {
-      const res = await api.patch(`/api/admin/qc-reviews/findings/${finding.id}`, { status, note });
-      onChange?.({ ...review, findings: review.findings.map((f) => (f.id === finding.id ? res.data : f)) });
+      await api.patch(`/api/admin/qc-reviews/findings/${finding.id}`, { status, note });
+      // Tải lại cả biên bản: điểm sau sửa đổi theo trạng thái lỗi.
+      const res = await api.get<QcReviewDetail>(`/api/admin/qc-reviews/${review.id}`);
+      onChange?.({ ...review, ...res.data });
     } catch (err: any) {
       alert(err.response?.data?.detail || t("updateError"));
     }
@@ -166,6 +173,15 @@ export function QcReviewView({ review, onChange, onFix }: {
             {review.overall_score.toFixed(2)}<span className="text-base text-muted-light font-semibold">/10</span>
           </div>
         </div>
+        {improved(review) && (
+          <div>
+            <div className="text-xs text-muted-light">{t("scoreAfterFixes", { count: review.fixed_count ?? 0 })}</div>
+            <div className={clsx("text-3xl font-bold leading-none", scoreColor(review.score_after_fixes!))}>
+              {review.score_after_fixes!.toFixed(2)}
+              <span className="ml-1.5 text-base font-semibold text-primary">+{(review.score_after_fixes! - review.overall_score).toFixed(2)}</span>
+            </div>
+          </div>
+        )}
         <VerdictBadge verdict={review.verdict} className="mb-1" />
         {review.claude_verdict && review.claude_verdict !== review.verdict && (
           <span className="mb-1 text-xs text-muted-light">{t("claudeProposed", { verdict: t(`verdict_${review.claude_verdict}`) })}</span>
@@ -207,10 +223,15 @@ export function QcReviewView({ review, onChange, onFix }: {
             <li key={c.key} className="text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-heading">{c.label} <span className="text-[11px] font-normal text-muted-light">({c.weight}%)</span></span>
-                <span className={clsx("font-bold tabular-nums", scoreColor(c.score))}>{c.score.toFixed(1)}</span>
+                <span className={clsx("font-bold tabular-nums", scoreColor(c.score_after_fixes ?? c.score))}>
+                  {c.score_after_fixes != null && c.score_after_fixes > c.score && (
+                    <span className="font-normal text-muted-light line-through mr-1.5">{c.score.toFixed(1)}</span>
+                  )}
+                  {(c.score_after_fixes ?? c.score).toFixed(1)}
+                </span>
               </div>
               <div className="h-1.5 rounded-full bg-surface-alt overflow-hidden my-1">
-                <div className={clsx("h-full rounded-full", c.score >= 8 ? "bg-primary" : c.score >= 6 ? "bg-warn" : "bg-down")} style={{ width: `${c.score * 10}%` }} />
+                <div className={clsx("h-full rounded-full", (c.score_after_fixes ?? c.score) >= 8 ? "bg-primary" : (c.score_after_fixes ?? c.score) >= 6 ? "bg-warn" : "bg-down")} style={{ width: `${(c.score_after_fixes ?? c.score) * 10}%` }} />
               </div>
               <p className="text-xs text-muted-light whitespace-pre-wrap">{c.comment}</p>
             </li>
@@ -353,6 +374,7 @@ export function QcReviewPanel({ date, onClose, onReportChanged }: {
                         <span>#{h.run_no} · {h.created_at ? new Date(h.created_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : ""}</span>
                         <span className="flex items-center gap-2">
                           <b className={scoreColor(h.overall_score)}>{h.overall_score.toFixed(2)}</b>
+                          {improved(h) && <span className="text-xs text-primary font-semibold">→ {h.score_after_fixes!.toFixed(2)}</span>}
                           <VerdictBadge verdict={h.verdict} />
                         </span>
                       </Link>

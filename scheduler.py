@@ -297,7 +297,7 @@ async def run_auto_qc_fix_job() -> None:
 
 async def run_auto_publish_job() -> None:
     """Tự xuất bản bản nháp HÔM NAY (VN) lúc AUTO_PUBLISH_TIME — quy tắc C2: chỉ chặn khi biên bản QC (Claude/Jack
-    qua MCP) mới nhất kết luận Không đạt mà còn lỗi critical/major chưa sửa (`publish_gate`); chưa có biên bản vẫn
+    qua MCP) mới nhất kết luận Không đạt mà còn lỗi critical/major chưa sửa hoặc điểm sau sửa < FAIL_SCORE (`publish_gate`); chưa có biên bản vẫn
     xuất bản. Báo cáo không ở trạng thái draft (đang sinh, lỗi, đã xuất bản, chưa có) thì bỏ qua — admin vẫn duyệt
     tay được như cũ. Chờ job tự sửa (nếu đang chạy) xong rồi mới xét."""
     async with _REPORT_FINALIZE_LOCK:

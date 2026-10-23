@@ -395,6 +395,8 @@ export interface QcCriterionScore {
   label: string;
   weight: number;
   score: number;
+  // Điểm sau khi cộng lại phần của lỗi đã sửa (services/report_qc_review.py::score_after_fixes).
+  score_after_fixes?: number;
   comment: string;
 }
 
@@ -429,6 +431,8 @@ export interface QcReviewSummary {
   verdict: QcVerdict;
   claude_verdict: QcVerdict | null;
   overall_score: number;
+  score_after_fixes?: number;
+  fixed_count?: number;
   criteria: QcCriterionScore[];
   critical_count: number;
   major_count: number;

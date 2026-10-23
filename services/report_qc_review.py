@@ -4,7 +4,7 @@ Luồng tự động mỗi ngày (giờ VN): 07:00 sinh bản nháp (scheduler `
 token `scope='qc_agent'`) gọi `get_qc_assignment` đọc bản nháp + kết quả Jack rule-based, chấm theo rubric chuẩn
 `QC_CRITERIA`, rồi `submit_qc_review` gửi biên bản → 08:00 `auto_qc_fix_job` Jenny tự sửa theo biên bản
 (`report_qc_fix.auto_fix_from_review`, bỏ qua nếu admin đã sửa sau lần QC) → 08:15 `auto_publish_job` tự xuất bản,
-CHỈ chặn khi biên bản mới nhất `verdict='fail'` mà còn lỗi critical/major chưa xử lý (`gate_decision`; không có biên
+CHỈ chặn khi biên bản mới nhất `verdict='fail'` mà còn lỗi critical/major chưa xử lý hoặc điểm sau sửa < FAIL_SCORE (`gate_decision`; không có biên
 bản QC vẫn xuất bản — quyết định C2).
 
 Server KHÔNG tin điểm Claude tự cộng: `overall_score` tính lại từ điểm từng tiêu chí × trọng số, `verdict` chuẩn hóa
@@ -144,6 +144,25 @@ def compute_overall_score(criteria: List[Dict[str, Any]]) -> float:
     if not total_w:
         return 0.0
     return round(sum(c["score"] * c["weight"] for c in criteria) / total_w, 2)
+
+
+# Trọng số chia điểm bị trừ của 1 tiêu chí cho các lỗi thuộc tiêu chí đó (xem `score_after_fixes`).
+SEVERITY_DEDUCTION_WEIGHT = {"critical": 3, "major": 2, "minor": 1}
+
+
+def score_after_fixes(criteria: List[Dict[str, Any]], findings: Sequence[Any]) -> Tuple[float, List[Dict[str, Any]]]:
+    """Điểm ước tính sau khi sửa (hàm thuần, KHÔNG ghi đè `overall_score` gốc của biên bản): phần điểm bị trừ của mỗi
+    tiêu chí (10 − điểm) chia cho các lỗi thuộc tiêu chí đó theo `SEVERITY_DEDUCTION_WEIGHT`; lỗi `fixed` được cộng
+    lại phần của nó. Lỗi `wont_fix`/`open` không cộng; tiêu chí không có lỗi nào giữ nguyên điểm.
+    -> (điểm tổng sau sửa, criteria kèm `score_after_fixes`)."""
+    out = []
+    for c in criteria:
+        own = [f for f in findings if f.criterion == c["key"]]
+        total_w = sum(SEVERITY_DEDUCTION_WEIGHT.get(f.severity, 1) for f in own)
+        fixed_w = sum(SEVERITY_DEDUCTION_WEIGHT.get(f.severity, 1) for f in own if f.status == "fixed")
+        gained = (10 - c["score"]) * fixed_w / total_w if total_w else 0.0
+        out.append({**c, "score_after_fixes": round(min(10.0, c["score"] + gained), 1)})
+    return compute_overall_score([{**c, "score": c["score_after_fixes"]} for c in out]), out
 
 
 def decide_verdict(overall: float, counts: Dict[str, int], claude_verdict: Optional[str],
@@ -584,8 +603,8 @@ BLOCKING_SEVERITIES = ("critical", "major")
 
 def gate_decision(review: Optional[Any], findings: Sequence[Any]) -> Tuple[bool, str]:
     """Hàm thuần của `publish_gate`. C2: không có biên bản → xuất bản. Biên bản Không đạt → chặn, TRỪ KHI đã có lỗi
-    được sửa (Jenny tự sửa 08:00 hoặc admin) và không còn lỗi critical/major nào ở trạng thái `open` (`wont_fix` =
-    admin đã quyết bỏ qua)."""
+    được sửa (Jenny tự sửa 08:00 hoặc admin), không còn lỗi critical/major nào ở trạng thái `open` (`wont_fix` =
+    admin đã quyết bỏ qua) VÀ điểm sau sửa (`score_after_fixes`) đạt ≥ FAIL_SCORE."""
     if review is None:
         return True, "chưa có biên bản QC — vẫn xuất bản theo quy tắc C2"
     head = f"biên bản QC #{review.run_no}"
@@ -598,7 +617,12 @@ def gate_decision(review: Optional[Any], findings: Sequence[Any]) -> Tuple[bool,
         return False, f"{head} kết luận Không đạt ({score}), còn {len(open_blocking)} lỗi nghiêm trọng/quan trọng chưa sửa"
     if not fixed:
         return False, f"{head} kết luận Không đạt ({score}) và chưa có lỗi nào được sửa"
-    return True, f"{head} Không đạt ({score}) nhưng đã sửa hết lỗi nghiêm trọng/quan trọng ({fixed} lỗi đã sửa)"
+    after, _ = score_after_fixes(review.criteria or [], findings)
+    if after < FAIL_SCORE:
+        return False, (f"{head} kết luận Không đạt ({score}); đã sửa {fixed} lỗi nhưng điểm sau sửa {after:.2f}/10 "
+                       f"vẫn dưới ngưỡng {FAIL_SCORE:g}")
+    return True, (f"{head} Không đạt ({score}) nhưng đã sửa hết lỗi nghiêm trọng/quan trọng ({fixed} lỗi đã sửa), "
+                  f"điểm sau sửa {after:.2f}/10")
 
 
 async def publish_gate(session: AsyncSession, report_date: str) -> Tuple[bool, str]:
@@ -633,7 +657,9 @@ def finding_dict(f: ReportQcFinding) -> Dict[str, Any]:
 
 
 def review_dict(review: ReportQcReview, findings: Optional[List[ReportQcFinding]] = None,
-                current_hash: Optional[str] = None) -> Dict[str, Any]:
+                current_hash: Optional[str] = None, with_body: bool = True) -> Dict[str, Any]:
+    """`findings` có → kèm `score_after_fixes` (điểm sau khi cộng lại phần của lỗi đã sửa); `with_body=False` (danh
+    sách) thì không trả chi tiết lỗi/biên bản."""
     out = {
         "id": review.id, "report_date": review.report_date, "run_no": review.run_no, "source": review.source,
         "reviewer": review.reviewer, "report_status": review.report_status, "verdict": review.verdict,
@@ -646,6 +672,11 @@ def review_dict(review: ReportQcReview, findings: Optional[List[ReportQcFinding]
         "is_stale": current_hash is not None and current_hash != review.content_hash,
     }
     if findings is not None:
+        after, criteria = score_after_fixes(review.criteria or [], findings)
+        out["score_after_fixes"] = after
+        out["criteria"] = criteria
+        out["fixed_count"] = sum(1 for f in findings if f.status == "fixed")
+    if findings is not None and with_body:
         out["body_markdown"] = review.body_markdown
         out["findings"] = [finding_dict(f) for f in findings]
     return out
@@ -679,6 +710,9 @@ async def qc_review_text(session: AsyncSession, report_date: str) -> str:
         f"Điểm tổng {float(review.overall_score):.2f}/10 — {VERDICT_LABELS[review.verdict]}"
         f" · Jack rule-based {review.jack_rule_score if review.jack_rule_score is not None else '—'}/100",
     ]
+    after, _ = score_after_fixes(review.criteria or [], findings)
+    if after != float(review.overall_score):
+        lines.append(f"Điểm sau khi sửa (cộng lại phần của lỗi đã sửa): {after:.2f}/10")
     if stale:
         lines.append("LƯU Ý: báo cáo đã được sửa SAU lần QC này — một số lỗi có thể đã được xử lý.")
     lines.append("Điểm tiêu chí: " + " | ".join(f"{c['label']} {c['score']:g}" for c in review.criteria or []))

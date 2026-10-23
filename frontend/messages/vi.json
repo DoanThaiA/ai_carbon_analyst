@@ -1408,6 +1408,8 @@
     "wontFixPrompt": "Lý do không sửa (tuỳ chọn):",
     "updateError": "Không cập nhật được trạng thái lỗi.",
     "overallScore": "Điểm tổng",
+    "scoreAfterFixes": "Sau khi sửa ({count} lỗi đã sửa)",
+    "scoreAfterFixesTitle": "Điểm sau khi cộng lại phần điểm bị trừ của các lỗi đã sửa",
     "claudeProposed": "Claude đề xuất: {verdict}",
     "jackRule": "Jack rule-based",
     "issues": "{count} vấn đề",
