@@ -1671,11 +1671,15 @@
     "hint": {
       "mobile": "Chữ to hơn, bố cục 1 cột — đọc vừa màn hình điện thoại không cần phóng to.",
       "pc": "Cỡ chữ chuẩn, phù hợp đọc trên máy tính hoặc in giấy.",
-      "tv": "Chữ to, trang ngang — trình chiếu trên TV/màn hình lớn."
+      "tv": "Trang ngang 16:9, bố cục nhiều cột — trình chiếu trên TV/màn hình lớn."
     },
     "cancel": "Huỷ",
-    "export": "Xuất PDF",
-    "exporting": "Đang dàn trang & xuất…",
-    "error": "Không xuất được PDF, vui lòng thử lại."
+    "exporting": "Đang dàn trang & xuất PDF…",
+    "error": "Không xuất được PDF, vui lòng thử lại.",
+    "pageSize": "Kích thước trang: {w} × {h} mm",
+    "download": "Tải xuống",
+    "pageCount": "{count} trang",
+    "pageOf": "Trang {page}/{total}",
+    "previewError": "Không hiển thị được bản xem trước — vẫn có thể tải xuống."
   }
 }

@@ -1671,11 +1671,15 @@
     "hint": {
       "mobile": "Larger text, single-column layout — fits a phone screen without zooming.",
       "pc": "Standard text size, suited to reading on a computer or printing.",
-      "tv": "Large text, landscape pages — for TVs and large screens."
+      "tv": "16:9 landscape pages, multi-column layout — for TVs and large screens."
     },
     "cancel": "Cancel",
-    "export": "Export PDF",
-    "exporting": "Laying out & exporting…",
-    "error": "Could not export the PDF, please try again."
+    "exporting": "Laying out & exporting the PDF…",
+    "error": "Could not export the PDF, please try again.",
+    "pageSize": "Page size: {w} × {h} mm",
+    "download": "Download",
+    "pageCount": "{count, plural, one {# page} other {# pages}}",
+    "pageOf": "Page {page} of {total}",
+    "previewError": "Could not show the preview — you can still download it."
   }
 }
