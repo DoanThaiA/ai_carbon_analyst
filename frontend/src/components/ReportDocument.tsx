@@ -2169,7 +2169,9 @@ function BizRecommendationTable({
                   const isOpen = openInfo.has(ri);
                   return (
                     <Fragment key={ri}>
-                      <tr className="align-top even:bg-surface/50 print:break-after-avoid">
+                      {/* Chỉ dính với hàng chi tiết ngay sau khi có — hàng không có chi tiết mà vẫn "không ngắt sau" thì cả bảng
+                          thành 1 khối liền (cùng tên cột) và bị đẩy nguyên sang trang sau. */}
+                      <tr className={clsx("align-top even:bg-surface/50", has && "print:break-after-avoid")}>
                         <td className="border-r border-border bg-surface px-1 py-3 text-[12.5px] text-muted-light">
                           <div className="flex flex-col items-center gap-2">
                             <span className="font-bold leading-6">{ri + 1}</span>
@@ -2594,7 +2596,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
           </div>
       </div>
 
-      <div className="grid min-w-0 gap-2.5 @2xl/report:grid-cols-2 @3xl/report:col-span-4 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:grid-cols-2 print:break-inside-avoid">
+      <div className="grid min-w-0 gap-2.5 @2xl/report:grid-cols-2 @3xl/report:col-span-4 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:@max-3xl/report:grid-cols-2 print:break-inside-avoid">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
@@ -2637,7 +2639,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
               pct: `${sign(volChangePct)}${fnum(volChangePct, 1, locale)}`,
             })) : null,
           ]}
-          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:col-span-2"
+          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:@xl/report:@max-3xl/report:col-span-2"
         />
       </div>
     </div>
@@ -3277,8 +3279,11 @@ function NewsColumns({ section, heading }: { section: any; heading?: React.React
 export function ReportDocument({
   report,
   onDismissBizSuggestion,
+  pdfExport = false,
 }: {
   report: Report;
+  // true trên trang xuất PDF (/reports/[date]/export) — trang đó tự dàn ngắt trang theo khổ người dùng chọn.
+  pdfExport?: boolean;
   // Chỉ màn hình admin truyền vào — hiện nút gỡ gợi ý kinh doanh (services/biz_memory.py).
   onDismissBizSuggestion?: (id: number) => void;
 }) {
@@ -3287,7 +3292,7 @@ export function ReportDocument({
   const enumLabel = useEnumLabel();
   // Khi in: khối lớn được phép ngắt bên trong thay vì bị đẩy nguyên sang trang sau (xem usePrintBreakTuning).
   const shellRef = useRef<HTMLDivElement>(null);
-  usePrintBreakTuning(shellRef);
+  usePrintBreakTuning(shellRef, !pdfExport);
   const content = report?.content ?? {};
   const priceRows: any[] = content["2"]?.prices || [];
   // Báo cáo Chủ Nhật/Thứ Hai: ngày dữ liệu cuối tuần, không có phiên giao dịch — backend
@@ -3354,9 +3359,11 @@ export function ReportDocument({
   const showSnapshot = !noPriceData && stats.last !== undefined;
   const showFigures = !noPriceData && (!!cbamEstimate || pickDrivers(priceRows).length > 0 || hasForecastReview);
   // In A4: giá EUA | nhận định cạnh nhau; số liệu chính chỉ in phần "Dự báo trước" (giá đủ ở Bảng giá nhanh, thẻ CBAM).
+  // Chỉ ép 2 cột khi in ở khung 576–767px (A4 dọc): khổ hẹp (PDF cho điện thoại) để 1 cột, khổ rộng (ngang/TV) theo
+  // bố cục màn hình — xem trang export /reports/[date]/export.
   const heroGrid = clsx(
     showSnapshot && showFigures ? "@3xl/report:grid-cols-2 @5xl/report:grid-cols-12" : (showSnapshot || showFigures) && "@3xl/report:grid-cols-2",
-    showSnapshot && "print:grid-cols-2",
+    showSnapshot && "print:@xl/report:@max-3xl/report:grid-cols-2",
   );
 
   const tabs = [
@@ -3454,7 +3461,7 @@ export function ReportDocument({
                 rows={priceRows}
                 review={forecastReview}
                 showTrack={plans.length > 0}
-                className={clsx(showSnapshot && "@3xl/report:col-span-2 @5xl/report:col-span-3 print:col-span-2", !plans.length && !hasForecastReview && "print:hidden")}
+                className={clsx(showSnapshot && "@3xl/report:col-span-2 @5xl/report:col-span-3 print:@xl/report:@max-3xl/report:col-span-2", !plans.length && !hasForecastReview && "print:hidden")}
               />
             )}
           </div>

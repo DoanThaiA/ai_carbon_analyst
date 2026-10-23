@@ -1647,5 +1647,35 @@
     "sectionShort_8": "S8",
     "section_biz": "SIM business suggestions",
     "sectionShort_biz": "SIM suggestions"
+  },
+  "pdfExport": {
+    "title": "Export PDF",
+    "close": "Close",
+    "deviceLabel": "Viewing device",
+    "sizeLabel": "Page size",
+    "orientationLabel": "Orientation",
+    "device": {
+      "mobile": "Phone",
+      "pc": "Computer",
+      "tv": "TV / presentation"
+    },
+    "size": {
+      "a4": "A4",
+      "square": "Square 1:1",
+      "wide": "Screen 16:9"
+    },
+    "orientation": {
+      "portrait": "Portrait",
+      "landscape": "Landscape"
+    },
+    "hint": {
+      "mobile": "Larger text, single-column layout — fits a phone screen without zooming.",
+      "pc": "Standard text size, suited to reading on a computer or printing.",
+      "tv": "Large text, landscape pages — for TVs and large screens."
+    },
+    "cancel": "Cancel",
+    "export": "Export PDF",
+    "exporting": "Laying out & exporting…",
+    "error": "Could not export the PDF, please try again."
   }
 }

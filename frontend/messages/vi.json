@@ -1647,5 +1647,35 @@
     "sectionShort_8": "Mục 8",
     "section_biz": "Gợi ý kinh doanh SIM",
     "sectionShort_biz": "Gợi ý SIM"
+  },
+  "pdfExport": {
+    "title": "Xuất PDF",
+    "close": "Đóng",
+    "deviceLabel": "Xem trên thiết bị",
+    "sizeLabel": "Khổ trang",
+    "orientationLabel": "Hướng",
+    "device": {
+      "mobile": "Điện thoại",
+      "pc": "Máy tính",
+      "tv": "TV / trình chiếu"
+    },
+    "size": {
+      "a4": "A4",
+      "square": "Vuông 1:1",
+      "wide": "Màn hình 16:9"
+    },
+    "orientation": {
+      "portrait": "Dọc",
+      "landscape": "Ngang"
+    },
+    "hint": {
+      "mobile": "Chữ to hơn, bố cục 1 cột — đọc vừa màn hình điện thoại không cần phóng to.",
+      "pc": "Cỡ chữ chuẩn, phù hợp đọc trên máy tính hoặc in giấy.",
+      "tv": "Chữ to, trang ngang — trình chiếu trên TV/màn hình lớn."
+    },
+    "cancel": "Huỷ",
+    "export": "Xuất PDF",
+    "exporting": "Đang dàn trang & xuất…",
+    "error": "Không xuất được PDF, vui lòng thử lại."
   }
 }

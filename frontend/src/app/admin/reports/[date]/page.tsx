@@ -14,6 +14,7 @@ import { QuoteChat } from "@/components/QuoteChat";
 import { EnglishFallbackNotice } from "@/components/EnglishFallbackNotice";
 import { localizeReport, removeBizFromContentEn } from "@/lib/reportLocale";
 import { QcReviewPanel } from "@/components/QcReview";
+import { PdfExportModal } from "@/components/PdfExportModal";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -33,6 +34,7 @@ export default function AdminReportReview() {
   const [error, setError] = useState("");
 
   const [isEditing, setIsEditing] = useState(false);
+  const [showPdfExport, setShowPdfExport] = useState(false);
   const [editContent, setEditContent] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   // Panel "Kết quả QC" (biên bản Claude/Jack qua MCP) — chỉ có khi báo cáo CHƯA xuất bản.
@@ -188,7 +190,7 @@ export default function AdminReportReview() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {!isEditing && report.status !== 'generating' && report.status !== 'failed' && (
             <button
-              onClick={() => window.print()}
+              onClick={() => setShowPdfExport(true)}
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border border-border-soft text-body hover:border-primary hover:text-primary-dark transition-colors"
             >
               <Download size={14} />
@@ -345,6 +347,7 @@ export default function AdminReportReview() {
             setReport(prev => prev ? { ...prev, content, content_en: null } : prev)}
         />
       )}
+      {showPdfExport && <PdfExportModal date={date} admin onClose={() => setShowPdfExport(false)} />}
     </div>
   );
 }

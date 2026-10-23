@@ -10,6 +10,7 @@ import type { Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
 import { QuoteChat } from "@/components/QuoteChat";
 import { EnglishFallbackNotice } from "@/components/EnglishFallbackNotice";
+import { PdfExportModal } from "@/components/PdfExportModal";
 import { localizeReport } from "@/lib/reportLocale";
 
 export default function ReportDetail() {
@@ -22,6 +23,7 @@ export default function ReportDetail() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showPdfExport, setShowPdfExport] = useState(false);
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -80,7 +82,7 @@ export default function ReportDetail() {
         </Link>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => window.print()}
+            onClick={() => setShowPdfExport(true)}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border border-border-soft text-body hover:border-primary hover:text-primary-dark transition-colors"
           >
             <Download size={14} />
@@ -97,6 +99,7 @@ export default function ReportDetail() {
       <QuoteChat reportDate={date}>
         <ReportDocument report={shown} />
       </QuoteChat>
+      {showPdfExport && <PdfExportModal date={date} onClose={() => setShowPdfExport(false)} />}
     </div>
   );
 }

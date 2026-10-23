@@ -39,6 +39,7 @@ from api.routers import (
     mcp_gateway,
     prices,
     quote_chat,
+    report_pdf,
     upload,
 )
 import logging
@@ -84,6 +85,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Tên file PDF xuất (api/routers/report_pdf.py) — trình duyệt chỉ cho JS đọc header này khi được expose.
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(auth_admin.router)
@@ -91,6 +94,7 @@ app.include_router(auth_user.router)
 app.include_router(admin_price_sources.router)
 app.include_router(admin_news_sources.router)
 app.include_router(admin_users.router)
+app.include_router(report_pdf.router)
 app.include_router(admin_reports.router)
 app.include_router(admin_prices.router)
 app.include_router(prices.router)
