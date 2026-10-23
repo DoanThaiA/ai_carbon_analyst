@@ -113,7 +113,7 @@ def test_jenny_qc_review_tool_admin_only():
 
 def test_routine_prompt_mentions_deadline_and_flow():
     p = qr.QC_ROUTINE_PROMPT
-    assert "get_qc_assignment" in p and "submit_qc_review" in p and "08:08" in p and "08:10" in p
+    assert "get_qc_assignment" in p and "submit_qc_review" in p and "07:50" in p and "07:55" in p and "08:15" in p
     schema = qr.submission_schema_text()
     for c in qr.QC_CRITERIA:
         assert f"`{c['key']}`" in schema
@@ -164,3 +164,33 @@ def test_jack_no_false_alarm_on_legal_doc_id():
     msgs = [i["message"] for i in report_qc.check_facts(content, texts)]
     assert not [m for m in msgs if "616" in m]
     assert not [m for m in msgs if "COM(2026;" in m]
+
+
+def _review(verdict="fail", content_hash="h1"):
+    return SimpleNamespace(run_no=1, verdict=verdict, overall_score=5.5, content_hash=content_hash)
+
+
+def _finding(status, severity="major"):
+    return SimpleNamespace(status=status, severity=severity)
+
+
+def test_gate_decision_fail_blocks_until_heavy_findings_fixed():
+    assert qr.gate_decision(None, [])[0] is True
+    assert qr.gate_decision(_review("pass_with_fixes"), [_finding("open")])[0] is True
+    # Không đạt, còn lỗi nặng mở → chặn
+    assert qr.gate_decision(_review(), [_finding("fixed"), _finding("open", "critical")])[0] is False
+    # Không đạt, chưa sửa gì (chỉ còn lỗi nhỏ) → vẫn chặn
+    assert qr.gate_decision(_review(), [_finding("open", "minor")])[0] is False
+    # Jenny/admin đã sửa hết lỗi nặng (lỗi nhỏ còn mở, wont_fix bỏ qua) → xuất bản
+    ok, reason = qr.gate_decision(_review(), [_finding("fixed", "critical"), _finding("wont_fix"),
+                                             _finding("open", "minor")])
+    assert ok is True and "đã sửa hết" in reason
+
+
+def test_auto_fix_skips_when_admin_already_edited():
+    from services.report_qc_fix import auto_fix_skip_reason
+    assert auto_fix_skip_reason("draft", "h1", _review(), [1]) is None
+    assert "admin" in auto_fix_skip_reason("draft", "h2", _review(), [1])
+    assert auto_fix_skip_reason("published", "h1", _review(), [1])
+    assert auto_fix_skip_reason("draft", "h1", None, [1]) == "chưa có biên bản QC"
+    assert auto_fix_skip_reason("draft", "h1", _review(), [])

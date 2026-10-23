@@ -1,9 +1,11 @@
 """Biên bản QC báo cáo do Claude (vai Jack) chấm qua MCP — bảng `report_qc_reviews` + `report_qc_findings`.
 
-Luồng tự động mỗi ngày (giờ VN): 07:00 sinh bản nháp (scheduler `auto_report_job`) → 08:00 lịch Claude (routine,
+Luồng tự động mỗi ngày (giờ VN): 07:00 sinh bản nháp (scheduler `auto_report_job`) → 07:30 lịch Claude (routine,
 token `scope='qc_agent'`) gọi `get_qc_assignment` đọc bản nháp + kết quả Jack rule-based, chấm theo rubric chuẩn
-`QC_CRITERIA`, rồi `submit_qc_review` gửi biên bản → 08:10 `auto_publish_job` tự xuất bản, CHỈ chặn khi biên bản mới
-nhất có `verdict='fail'` (không có biên bản QC vẫn xuất bản — quyết định C2).
+`QC_CRITERIA`, rồi `submit_qc_review` gửi biên bản → 08:00 `auto_qc_fix_job` Jenny tự sửa theo biên bản
+(`report_qc_fix.auto_fix_from_review`, bỏ qua nếu admin đã sửa sau lần QC) → 08:15 `auto_publish_job` tự xuất bản,
+CHỈ chặn khi biên bản mới nhất `verdict='fail'` mà còn lỗi critical/major chưa xử lý (`gate_decision`; không có biên
+bản QC vẫn xuất bản — quyết định C2).
 
 Server KHÔNG tin điểm Claude tự cộng: `overall_score` tính lại từ điểm từng tiêu chí × trọng số, `verdict` chuẩn hóa
 theo `decide_verdict` (Claude đề xuất được lưu riêng ở `claude_verdict`). Biên bản phải kèm `assignment_id` = hash nội
@@ -17,7 +19,7 @@ import logging
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -320,7 +322,7 @@ def submission_schema_text() -> str:
         "source_refs [{label, url}]}.\n"
         "  critical = sai số liệu/chiều tác động có thể dẫn tới quyết định giao dịch/phòng hộ sai; major = sai logic, "
         "thiếu tin quan trọng, nguồn sai; minor = trình bày, diễn đạt.\n"
-        "- `verdict`: pass | pass_with_fixes | fail (fail = KHÔNG được tự xuất bản lúc 08:10).\n"
+        "- `verdict`: pass | pass_with_fixes | fail (fail = chặn tự xuất bản 08:15 nếu lỗi nặng chưa được sửa).\n"
         "- `summary` (3–6 câu), `strengths` [chuỗi], `priorities` [{text, expected_gain (điểm cộng dự kiến)}], "
         "`body_markdown` (biên bản đầy đủ dạng Markdown — bảng điểm, lỗi theo mục, lộ trình cải thiện), "
         "`reviewer` (vd \"Jack (claude-opus-5-5)\").\n"
@@ -405,7 +407,7 @@ async def qc_assignment_text(session: AsyncSession, report_date: Optional[str], 
     report_date = report_date or today_vn()
     report = await _pick_report(session, report_date)
     if report is None:
-        return (f"KHÔNG CÓ BÁO CÁO NGÀY {report_date} để QC. Nếu đang trong khung 08:00–08:08, thử lại sau 2 phút "
+        return (f"KHÔNG CÓ BÁO CÁO NGÀY {report_date} để QC. Nếu đang trong khung 07:30–07:50, thử lại sau 2 phút "
                 "(bản nháp sinh lúc 07:00).")
     if report.status == "generating":
         return (f"Báo cáo ngày {report.report_date} ĐANG ĐƯỢC SINH (status=generating) — chưa QC được. "
@@ -560,7 +562,8 @@ def submit_result_text(review: ReportQcReview, auto_publish_time: Optional[str])
     if review.report_status == "draft" and auto_publish_time:
         lines.append(
             f"Lịch tự xuất bản {auto_publish_time}: "
-            + ("SẼ BỊ CHẶN (kết luận Không đạt) — admin xử lý thủ công." if review.verdict == "fail" else "vẫn chạy.")
+            + ("SẼ BỊ CHẶN (kết luận Không đạt) nếu Jenny không sửa được hết lỗi nghiêm trọng/quan trọng — "
+               "khi đó admin xử lý thủ công." if review.verdict == "fail" else "vẫn chạy.")
         )
     return "\n".join(lines)
 
@@ -576,14 +579,33 @@ async def latest_review(session: AsyncSession, report_date: str) -> Optional[Rep
     )).scalars().first()
 
 
-async def publish_gate(session: AsyncSession, report_date: str) -> Tuple[bool, str]:
-    """C2: tự xuất bản trừ khi biên bản QC MỚI NHẤT kết luận Không đạt. Không có biên bản → vẫn xuất bản."""
-    review = await latest_review(session, report_date)
+BLOCKING_SEVERITIES = ("critical", "major")
+
+
+def gate_decision(review: Optional[Any], findings: Sequence[Any]) -> Tuple[bool, str]:
+    """Hàm thuần của `publish_gate`. C2: không có biên bản → xuất bản. Biên bản Không đạt → chặn, TRỪ KHI đã có lỗi
+    được sửa (Jenny tự sửa 08:00 hoặc admin) và không còn lỗi critical/major nào ở trạng thái `open` (`wont_fix` =
+    admin đã quyết bỏ qua)."""
     if review is None:
         return True, "chưa có biên bản QC — vẫn xuất bản theo quy tắc C2"
-    if review.verdict == "fail":
-        return False, f"biên bản QC #{review.run_no} kết luận Không đạt ({float(review.overall_score):.2f}/10)"
-    return True, f"biên bản QC #{review.run_no}: {VERDICT_LABELS[review.verdict]} ({float(review.overall_score):.2f}/10)"
+    head = f"biên bản QC #{review.run_no}"
+    score = f"{float(review.overall_score):.2f}/10"
+    if review.verdict != "fail":
+        return True, f"{head}: {VERDICT_LABELS[review.verdict]} ({score})"
+    open_blocking = [f for f in findings if f.status == "open" and f.severity in BLOCKING_SEVERITIES]
+    fixed = sum(1 for f in findings if f.status == "fixed")
+    if open_blocking:
+        return False, f"{head} kết luận Không đạt ({score}), còn {len(open_blocking)} lỗi nghiêm trọng/quan trọng chưa sửa"
+    if not fixed:
+        return False, f"{head} kết luận Không đạt ({score}) và chưa có lỗi nào được sửa"
+    return True, f"{head} Không đạt ({score}) nhưng đã sửa hết lỗi nghiêm trọng/quan trọng ({fixed} lỗi đã sửa)"
+
+
+async def publish_gate(session: AsyncSession, report_date: str) -> Tuple[bool, str]:
+    """Cổng tự xuất bản — xem `gate_decision`."""
+    review = await latest_review(session, report_date)
+    findings = (await load_findings(session, [review.id]))[review.id] if review is not None else []
+    return gate_decision(review, findings)
 
 
 async def load_findings(session: AsyncSession, review_ids: List[int]) -> Dict[int, List[ReportQcFinding]]:
@@ -724,7 +746,8 @@ SUBMIT_QC_REVIEW_TOOL = {
     "description": (
         "CHỈ cho tài khoản QC. Gửi biên bản QC đã chấm để lưu vào hệ thống (bảng report_qc_reviews). Bắt buộc "
         "`report_date`, `assignment_id` (từ get_qc_assignment), đủ 7 `criteria`, `verdict`, `summary`. Hệ thống tự "
-        "tính điểm tổng theo trọng số và chuẩn hóa kết luận; verdict=fail sẽ CHẶN lịch tự xuất bản 08:10. Lỗi định "
+        "tính điểm tổng theo trọng số và chuẩn hóa kết luận; Jenny tự sửa theo biên bản lúc 08:00, verdict=fail CHẶN "
+        "lịch tự xuất bản 08:15 nếu còn lỗi critical/major chưa sửa. Lỗi định "
         "dạng trả về danh sách cần sửa — sửa rồi gọi lại."
     ),
     "input_schema": {
@@ -752,10 +775,10 @@ SUBMIT_QC_REVIEW_TOOL = {
 QC_AGENT_TOOLS = [GET_QC_ASSIGNMENT_TOOL, SUBMIT_QC_REVIEW_TOOL]
 QC_AGENT_TOOL_NAMES = frozenset(t["name"] for t in QC_AGENT_TOOLS)
 
-QC_ROUTINE_PROMPT = """Bạn là Jack — chuyên viên kiểm soát chất lượng (QC) báo cáo ngày của Carbon Analyst (thị trường EUA, năng lượng, CBAM cho SIM). Nhiệm vụ: QC bản NHÁP báo cáo hôm nay trước khi hệ thống tự xuất bản lúc 08:10 (giờ Việt Nam), rồi gửi biên bản qua MCP carbon-analyst. KHÔNG sửa báo cáo, chỉ chấm và ghi biên bản.
+QC_ROUTINE_PROMPT = """Bạn là Jack — chuyên viên kiểm soát chất lượng (QC) báo cáo ngày của Carbon Analyst (thị trường EUA, năng lượng, CBAM cho SIM). Nhiệm vụ: QC bản NHÁP báo cáo hôm nay (sinh lúc 07:00, giờ Việt Nam), rồi gửi biên bản qua MCP carbon-analyst trước 07:55 — lúc 08:00 Jenny tự sửa báo cáo theo biên bản của bạn, 08:15 hệ thống tự xuất bản. KHÔNG sửa báo cáo, chỉ chấm và ghi biên bản.
 
 QUY TRÌNH
-1. Gọi get_qc_assignment (không truyền report_date). Nếu kết quả báo "ĐANG ĐƯỢC SINH" hoặc "KHÔNG CÓ BÁO CÁO", đợi 2 phút rồi gọi lại; quá 08:08 giờ VN vẫn chưa có thì DỪNG, không gửi gì.
+1. Gọi get_qc_assignment (không truyền report_date). Nếu kết quả báo "ĐANG ĐƯỢC SINH" hoặc "KHÔNG CÓ BÁO CÁO", đợi 2 phút rồi gọi lại; quá 07:50 giờ VN vẫn chưa có thì DỪNG, không gửi gì.
 2. Đọc toàn bộ bản nháp: get_qc_assignment(report_date=<ngày>, part="all") (hoặc từng khối nếu quá dài). Ghi lại assignment_id.
 3. Đối chiếu bằng tool, ưu tiên phần ảnh hưởng quyết định giao dịch/phòng hộ:
    - Giá, %Δ, ATR, biên độ: get_market_prices, get_price_history, calc_price_stats, get_eua_details (truyền report_date).
@@ -764,9 +787,9 @@ QUY TRÌNH
    - Kết quả Jack rule-based trong phiếu giao là gợi ý — tự kiểm lại, bỏ báo động giả, bổ sung lỗi logic mà rule không bắt được (chiều tác động lên EUA, cơ chế MSR/fuel switching, mâu thuẫn giữa các mục, kịch bản ↔ nhãn Tổng hợp, R:R, nguồn sai nhà xuất bản).
    - Lỗi của biên bản trước còn tồn tại thì ghi lại (hệ thống tự đếm số lần lặp).
 4. Chấm ĐỦ 7 tiêu chí theo rubric (0–10, có comment). Mỗi lỗi: trích nguyên văn current_text, đề xuất expected_text, evidence bằng số/phép tính/nguồn; verification="verified" CHỈ khi đã tự đối chiếu bằng tool, không thì partially_verified/unverified. Không bịa số; không chắc thì ghi rõ là nghi vấn (minor/unverified).
-5. Kết luận: fail CHỈ khi có sai sót khiến báo cáo không nên phát hành (sai giá/chiều tác động trọng yếu, khuyến nghị vị thế/phòng hộ sai số học, nguồn bịa) — fail sẽ chặn tự xuất bản. Có lỗi cần sửa nhưng vẫn phát hành được → pass_with_fixes.
+5. Kết luận: fail CHỈ khi có sai sót khiến báo cáo không nên phát hành (sai giá/chiều tác động trọng yếu, khuyến nghị vị thế/phòng hộ sai số học, nguồn bịa) — fail chặn tự xuất bản tới khi các lỗi critical/major được sửa. Jenny chỉ tự sửa được lỗi có current_text trích NGUYÊN VĂN và field_path đúng, nên ghi 2 trường này thật chính xác. Có lỗi cần sửa nhưng vẫn phát hành được → pass_with_fixes.
 6. Gọi submit_qc_review với report_date, assignment_id, reviewer="Jack (<tên model>)", criteria, findings, verdict, summary, strengths, priorities (kèm expected_gain), body_markdown (biên bản đầy đủ: bảng điểm, lỗi theo mục, lộ trình cải thiện). Nếu bị trả lỗi định dạng thì sửa và gửi lại; nếu assignment_id không khớp thì đọc lại báo cáo (bước 2) rồi gửi lại.
-Phải gửi biên bản trước 08:09 giờ VN — ưu tiên kiểm phần trọng yếu trước khi hết giờ. Viết tiếng Việt, ngắn gọn, chính xác."""
+Phải gửi biên bản trước 07:55 giờ VN — ưu tiên kiểm phần trọng yếu trước khi hết giờ. Viết tiếng Việt, ngắn gọn, chính xác."""
 
 QC_PROMPT_DEF = {
     "name": "jack_qc_review",

@@ -7,7 +7,7 @@
 - PATCH /api/admin/qc-reviews/findings/{id}      đánh dấu lỗi đã sửa / không sửa
 - POST /api/admin/qc-reviews/report/{date}/fix-preview   đề xuất sửa bản nháp theo biên bản QC (không ghi gì)
 - POST /api/admin/qc-reviews/report/{date}/fix-apply     ghi các thay đổi admin đã chọn (hoặc hoàn tác)
-- GET/POST/DELETE /api/admin/qc-reviews/agent-tokens   token scope 'qc_agent' cho lịch Claude QC 08:00
+- GET/POST/DELETE /api/admin/qc-reviews/agent-tokens   token scope 'qc_agent' cho lịch Claude QC 07:30
 
 Ẩn/hiện theo trạng thái báo cáo (chỉ hiện nút "Kết quả QC" khi báo cáo CHƯA xuất bản) là việc của giao diện
 trang báo cáo; trang tổng hợp QC Result vẫn liệt kê đủ để admin xem lại lịch sử.
@@ -176,6 +176,7 @@ async def get_agent_tokens(session: AsyncSession = Depends(get_db)):
         ],
         "routine_prompt": QC_ROUTINE_PROMPT,
         "auto_report_time": settings.auto_report_time,
+        "auto_qc_fix_time": settings.auto_qc_fix_time or None,
         "auto_publish_time": settings.auto_publish_time or None,
     }
 

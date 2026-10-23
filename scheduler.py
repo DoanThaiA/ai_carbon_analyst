@@ -17,11 +17,14 @@ Script chạy ngầm 24/7, tự động kích hoạt các tác vụ độc lập
                                       tự động sinh 1 báo cáo NHÁP/ngày bằng Claude, lưu report_date = HÔM NAY
                                       (VN) — dữ liệu vẫn là giá/tin của hôm qua, xem
                                       services/report_generator.py::report_data_date
-     (08:00 VN — lịch Claude (routine, NGOÀI scheduler này) QC bản nháp qua MCP, token qc_agent, gửi biên bản
-      vào report_qc_reviews — services/report_qc_review.py)
-  4. auto_publish_job       08:10 VN       — cùng các ngày; tự xuất bản bản nháp hôm nay + gửi email PDF, CHỈ
-                                      chặn khi biên bản QC mới nhất kết luận Không đạt (AUTO_PUBLISH_TIME,
-                                      trống = tắt)
+     (07:30 VN — lịch Claude (routine, NGOÀI scheduler này) Jack QC bản nháp qua MCP, token qc_agent, gửi biên
+      bản vào report_qc_reviews — services/report_qc_review.py)
+  4. auto_qc_fix_job        08:00 VN       — cùng các ngày; Jenny tự sửa bản nháp theo biên bản QC mới nhất
+                                      (services/report_qc_fix.py::auto_fix_from_review) — bỏ qua nếu admin đã sửa
+                                      báo cáo sau lần QC (AUTO_QC_FIX_TIME, trống = tắt)
+  5. auto_publish_job       08:15 VN       — cùng các ngày; tự xuất bản bản nháp hôm nay + gửi email PDF, chặn khi
+                                      biên bản QC mới nhất Không đạt mà còn lỗi critical/major chưa sửa
+                                      (AUTO_PUBLISH_TIME, trống = tắt)
 
 Crawl theo giờ không nhân chi phí LLM vì mỗi đợt chỉ xử lý URL MỚI: URL đã lưu (`articles`)
 và URL đã bị loại (`crawl_seen_urls` — LLM đánh không liên quan, ngoài cửa sổ ngày, ...)
@@ -68,6 +71,10 @@ logger = logging.getLogger("scheduler")
 
 # Múi giờ Việt Nam (UTC+7)
 TZ_VN = timezone(timedelta(hours=7))
+
+# Job tự sửa theo QC (LLM, có thể chạy vài phút) và job tự xuất bản dùng chung khoá: nếu Jenny chưa sửa xong lúc
+# AUTO_PUBLISH_TIME thì xuất bản chờ, không phát hành bản chưa sửa (cùng 1 event loop của AsyncIOScheduler).
+_REPORT_FINALIZE_LOCK = asyncio.Lock()
 
 
 # ─── Job 1: Crawl Prices (06:00) ─────────────────────────────────────────────
@@ -257,10 +264,47 @@ async def run_auto_report_job() -> None:
     logger.info("=" * 60)
 
 
+async def run_auto_qc_fix_job() -> None:
+    """AUTO_QC_FIX_TIME: Jenny sửa bản nháp HÔM NAY theo biên bản QC mới nhất (luồng của nút "Sửa báo cáo theo QC",
+    chỉ áp thay đổi không làm phát sinh lỗi Jack mới), rồi dịch lại bản tiếng Anh trước giờ xuất bản. Không có biên
+    bản, báo cáo không còn là draft, hoặc admin đã sửa sau lần QC → bỏ qua."""
+    from api.deps import async_session_maker, settings
+    from services.report_qc_fix import auto_fix_from_review
+    from services.report_translation import ensure_report_translation
+
+    target_date = datetime.now(TZ_VN).strftime("%Y-%m-%d")
+    logger.info("=" * 60)
+    logger.info("🚀 [SCHEDULER] Auto QC Fix Job (Jenny sửa theo QC) cho báo cáo %s...", target_date)
+    async with _REPORT_FINALIZE_LOCK:
+        try:
+            async with async_session_maker() as session:
+                result = await auto_fix_from_review(session, target_date)
+        except Exception:
+            logger.exception("━━━ [QC-FIX] Lỗi khi Jenny tự sửa báo cáo %s — giữ nguyên bản nháp.", target_date)
+            logger.info("=" * 60)
+            return
+        if not result["applied"]:
+            logger.info("━━━ [QC-FIX] Không tự sửa %s: %s.", target_date, result["reason"])
+            logger.info("=" * 60)
+            return
+        logger.info("✅ [QC-FIX] Jenny đã sửa %s — %s. Dịch lại bản tiếng Anh...", target_date, result["reason"])
+        try:
+            await ensure_report_translation(async_session_maker, settings, target_date)
+        except Exception:
+            logger.exception("━━━ [QC-FIX] Lỗi dịch lại bản tiếng Anh %s (bản tiếng Việt đã sửa).", target_date)
+    logger.info("=" * 60)
+
+
 async def run_auto_publish_job() -> None:
     """Tự xuất bản bản nháp HÔM NAY (VN) lúc AUTO_PUBLISH_TIME — quy tắc C2: chỉ chặn khi biên bản QC (Claude/Jack
-    qua MCP) mới nhất của báo cáo kết luận Không đạt; chưa có biên bản vẫn xuất bản. Báo cáo không ở trạng thái
-    draft (đang sinh, lỗi, đã xuất bản, chưa có) thì bỏ qua — admin vẫn duyệt tay được như cũ."""
+    qua MCP) mới nhất kết luận Không đạt mà còn lỗi critical/major chưa sửa (`publish_gate`); chưa có biên bản vẫn
+    xuất bản. Báo cáo không ở trạng thái draft (đang sinh, lỗi, đã xuất bản, chưa có) thì bỏ qua — admin vẫn duyệt
+    tay được như cũ. Chờ job tự sửa (nếu đang chạy) xong rồi mới xét."""
+    async with _REPORT_FINALIZE_LOCK:
+        await _auto_publish()
+
+
+async def _auto_publish() -> None:
     from sqlalchemy import select
     from api.deps import async_session_maker
     from api.routers.admin_reports import _send_report_email_job
@@ -351,7 +395,20 @@ async def main() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
-    publish_hm = _parse_hhmm(cfg.auto_publish_time, "08:10") if cfg.auto_publish_time else None
+    fix_hm = _parse_hhmm(cfg.auto_qc_fix_time, "08:00") if cfg.auto_qc_fix_time else None
+    if fix_hm:
+        scheduler.add_job(
+            run_auto_qc_fix_job,
+            trigger=CronTrigger(day_of_week=auto_report_days, hour=fix_hm[0], minute=fix_hm[1],
+                                timezone="Asia/Ho_Chi_Minh"),
+            id="auto_qc_fix",
+            name="Auto QC Fix (Jenny)",
+            replace_existing=True,
+            max_instances=1,
+            # Trễ quá 10 phút thì bỏ lượt — sát giờ xuất bản, để admin xử lý.
+            misfire_grace_time=600,
+        )
+    publish_hm = _parse_hhmm(cfg.auto_publish_time, "08:15") if cfg.auto_publish_time else None
     if publish_hm:
         scheduler.add_job(
             run_auto_publish_job,
@@ -370,8 +427,13 @@ async def main() -> None:
     for _, _, hours, tz, label in NEWS_CRAWL_SCHEDULES:
         logger.info("   - Tin tức:  đầu giờ %s (%s, %s)", hours, label, tz)
     logger.info("   - Báo cáo nháp: %02d:%02d (giờ VN), chỉ các ngày '%s' (AUTO_REPORT_DAYS)", report_h, report_m, auto_report_days)
+    logger.info("   - Jack QC (lịch Claude, ngoài scheduler): 07:30 (giờ VN)")
+    if fix_hm:
+        logger.info("   - Jenny tự sửa theo QC: %02d:%02d (giờ VN)", *fix_hm)
+    else:
+        logger.info("   - Jenny tự sửa theo QC: TẮT (AUTO_QC_FIX_TIME trống)")
     if publish_hm:
-        logger.info("   - Tự xuất bản: %02d:%02d (giờ VN), chặn khi biên bản QC Không đạt", *publish_hm)
+        logger.info("   - Tự xuất bản: %02d:%02d (giờ VN), chặn khi Không đạt mà còn lỗi nặng chưa sửa", *publish_hm)
     else:
         logger.info("   - Tự xuất bản: TẮT (AUTO_PUBLISH_TIME trống)")
 

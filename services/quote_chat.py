@@ -2303,7 +2303,7 @@ ADMIN_TOOLS = [
         "name": "get_qc_review",
         "description": (
             "Đọc BIÊN BẢN QC mới nhất của 1 báo cáo do Jack chấm trên Claude (qua MCP, lưu ở hệ thống — chạy tự động "
-            "08:00 trên bản nháp): điểm tổng thang 10 + kết luận (Đạt / Đạt, cần sửa / Không đạt), điểm 7 tiêu chí, "
+            "07:30 trên bản nháp, Jenny tự sửa theo biên bản lúc 08:00): điểm tổng thang 10 + kết luận (Đạt / Đạt, cần sửa / Không đạt), điểm 7 tiêu chí, "
             "danh sách lỗi (báo cáo ghi / nên sửa / căn cứ, số báo cáo lỗi lặp lại), ưu tiên cải thiện. Gọi khi admin "
             "hỏi kết quả QC/biên bản QC/bản chấm của Jack, lý do báo cáo không được tự xuất bản, hoặc nhờ sửa theo bản "
             "chấm. KHÁC jack_qc (Jack đối chiếu rule-based tức thời, không dùng AI). Giữ nguyên số liệu biên bản, "

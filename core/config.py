@@ -92,11 +92,13 @@ class Settings:
     # Crawl giá/tin vẫn chạy MỖI NGÀY; admin vẫn sinh tay được bất kỳ ngày nào.
     auto_report_days: str
 
-    # Luồng tự động (giờ VN, "HH:MM"): sinh bản NHÁP lúc auto_report_time → lịch Claude QC (08:00, cấu hình ở
-    # Claude, không ở đây) gửi biên bản qua MCP → tự xuất bản lúc auto_publish_time, CHỈ chặn khi biên bản QC mới
-    # nhất kết luận Không đạt (services/report_qc_review.py::publish_gate). auto_publish_time trống = tắt tự xuất bản.
+    # Luồng tự động (giờ VN, "HH:MM"): sinh bản NHÁP lúc auto_report_time → lịch Claude QC (07:30, cấu hình ở
+    # Claude, không ở đây) gửi biên bản qua MCP → Jenny tự sửa theo biên bản lúc auto_qc_fix_time (bỏ qua nếu admin
+    # đã sửa/đánh dấu sau lần QC) → tự xuất bản lúc auto_publish_time, chặn khi biên bản QC mới nhất Không đạt mà còn
+    # lỗi nặng chưa sửa (services/report_qc_review.py::publish_gate). Trống = tắt bước tương ứng.
     auto_report_time: str = "07:00"
-    auto_publish_time: str = "08:10"
+    auto_qc_fix_time: str = "08:00"
+    auto_publish_time: str = "08:15"
 
     # Khung giờ VN KHÔNG gửi email digest Hot News, dạng "22-6" (22:00 → trước 06:00;
     # trống = gửi mọi giờ). Bài hot news trong khung này dồn lại, gửi ở đợt crawl đầu tiên
@@ -175,7 +177,8 @@ class Settings:
             app_base_url=os.environ.get("APP_BASE_URL", "").rstrip("/"),
             auto_report_days=os.environ.get("AUTO_REPORT_DAYS", "tue-sat").strip().lower() or "tue-sat",
             auto_report_time=os.environ.get("AUTO_REPORT_TIME", "07:00").strip() or "07:00",
-            auto_publish_time=os.environ.get("AUTO_PUBLISH_TIME", "08:10").strip(),
+            auto_qc_fix_time=os.environ.get("AUTO_QC_FIX_TIME", "08:00").strip(),
+            auto_publish_time=os.environ.get("AUTO_PUBLISH_TIME", "08:15").strip(),
             hot_news_email_quiet_hours=os.environ.get("HOT_NEWS_EMAIL_QUIET_HOURS", "").strip(),
             report_pdf_email_enabled=os.environ.get("REPORT_PDF_EMAIL_ENABLED", "true").lower() == "true",
             crawl_lookback_hours=int(os.environ.get("CRAWL_LOOKBACK_HOURS", "36")),

@@ -701,3 +701,55 @@ async def apply_fix_changes(session: AsyncSession, report_date: str, base_hash: 
     logger.info("[QC-FIX] %s %s: %d đoạn, lỗi %s → %s.", actor, report_date, len(changes), finding_ids, finding_status)
     return {"content": new_content, "content_hash": content_hash(new_content), "finding_ids": finding_ids,
             "changed_paths": sorted(seen)}
+
+
+# ---------------------------------------------------------------------------
+# Tự sửa theo lịch (08:00 — scheduler.run_auto_qc_fix_job)
+# ---------------------------------------------------------------------------
+
+AUTO_FIX_ACTOR = "Jenny (tự động)"
+
+
+def auto_fix_skip_reason(report_status: Optional[str], current_hash: Optional[str],
+                         review: Optional[Any], open_ids: Sequence[int]) -> Optional[str]:
+    """Lý do KHÔNG tự sửa (None = sửa). Nội dung lệch hash lúc Claude QC = admin đã sửa tay hoặc đã bấm "Sửa báo cáo
+    theo QC" sau lần QC → tôn trọng bản của admin, Jenny không đụng vào."""
+    if report_status != "draft":
+        return f"báo cáo không ở trạng thái draft ({report_status or 'chưa có'})"
+    if review is None:
+        return "chưa có biên bản QC"
+    if review.content_hash != current_hash:
+        return f"báo cáo đã được sửa sau biên bản QC #{review.run_no} (admin sửa tay/sửa theo QC)"
+    if not open_ids:
+        return f"biên bản QC #{review.run_no} không còn lỗi nào chưa xử lý"
+    return None
+
+
+async def auto_fix_from_review(session: AsyncSession, report_date: str) -> Dict[str, Any]:
+    """Jenny tự sửa bản nháp theo biên bản QC mới nhất: chạy đúng luồng của nút "Sửa báo cáo theo QC"
+    (`build_fix_preview` → `apply_fix_changes`) trên mọi lỗi còn `open`, chỉ áp các thay đổi được chọn sẵn (không làm
+    phát sinh lỗi Jack mới). Lỗi không neo được/AI không sửa được vẫn `open` — `publish_gate` sẽ xét."""
+    report = (await session.execute(select(Report).where(Report.report_date == report_date))).scalars().first()
+    review = (await session.execute(
+        select(ReportQcReview).where(ReportQcReview.report_date == report_date)
+        .order_by(ReportQcReview.run_no.desc()).limit(1)
+    )).scalars().first()
+    rows = (await load_findings(session, [review.id]))[review.id] if review is not None else []
+    open_ids = [f.id for f in rows if f.status == "open"]
+    current = content_hash(report.content) if report is not None and report.content else None
+    skip = auto_fix_skip_reason(report.status if report else None, current, review, open_ids)
+    if skip:
+        return {"applied": False, "reason": skip, "changed_paths": [], "finding_ids": []}
+
+    preview = await build_fix_preview(session, report_date, open_ids, review.id)
+    selected = [{"path": ch["path"], "before": ch["before"], "after": ch["after"], "finding_ids": ch["finding_ids"]}
+                for ch in preview["changes"] if ch.get("selected")]
+    if not selected:
+        return {"applied": False, "reason": f"không có thay đổi an toàn để áp ({len(open_ids)} lỗi cần sửa tay)",
+                "changed_paths": [], "finding_ids": []}
+    result = await apply_fix_changes(session, report_date, preview["base_hash"], selected, "fixed",
+                                     actor=AUTO_FIX_ACTOR, run_no=review.run_no)
+    remaining = len(set(open_ids) - set(result["finding_ids"]))
+    return {"applied": True, "reason": f"biên bản QC #{review.run_no}: {len(result['changed_paths'])} đoạn đã sửa, "
+                                       f"{remaining} lỗi còn lại cần sửa tay",
+            "changed_paths": result["changed_paths"], "finding_ids": result["finding_ids"]}

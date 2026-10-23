@@ -526,5 +526,6 @@ export interface QcAgentTokensResponse {
   items: QcAgentToken[];
   routine_prompt: string;
   auto_report_time: string;
+  auto_qc_fix_time: string | null;
   auto_publish_time: string | null;
 }

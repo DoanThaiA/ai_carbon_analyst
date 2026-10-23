@@ -1,7 +1,7 @@
 "use client";
 
 // Trang "QC Result": tổng hợp mọi biên bản QC báo cáo do Claude (vai Jack) gửi qua MCP — CHỈ admin.
-// Gồm thống kê nhanh, danh sách biên bản (lọc theo kết luận) và quản lý token qc_agent cho lịch Claude QC 08:00.
+// Gồm thống kê nhanh, danh sách biên bản (lọc theo kết luận) và quản lý token qc_agent cho lịch Claude QC 07:30.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,7 +23,7 @@ function fmtTime(iso: string | null | undefined): string {
 function AgentTokens() {
   const t = useTranslations("adminQcReviews");
   const [data, setData] = useState<QcAgentTokensResponse | null>(null);
-  const [name, setName] = useState("Claude QC 08:00");
+  const [name, setName] = useState("Claude QC 07:30");
   const [created, setCreated] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -68,7 +68,11 @@ function AgentTokens() {
       <div>
         <h2 className="flex items-center gap-2 font-bold text-heading"><KeyRound size={16} className="text-primary" />{t("agentTitle")}</h2>
         <p className="text-sm text-body mt-1">
-          {t("agentFlow", { report: data.auto_report_time, publish: data.auto_publish_time || t("autoPublishOff") })}
+          {t("agentFlow", {
+            report: data.auto_report_time,
+            fix: data.auto_qc_fix_time || t("autoFixOff"),
+            publish: data.auto_publish_time || t("autoPublishOff"),
+          })}
         </p>
       </div>
 
