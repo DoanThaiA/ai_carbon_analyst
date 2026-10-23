@@ -16,6 +16,7 @@ import PriceIndexPanel from "@/components/PriceIndexPanel";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
+import { usePrintBreakTuning } from "@/lib/usePrintBreakTuning";
 
 // Hàm dịch của namespace "reportDoc" — truyền xuống các hàm thuần (không gọi được hook).
 type ReportT = ReturnType<typeof useTranslations>;
@@ -3274,6 +3275,9 @@ export function ReportDocument({
   const t = useTranslations("reportDoc");
   const locale = useLocale();
   const enumLabel = useEnumLabel();
+  // Khi in: khối lớn được phép ngắt bên trong thay vì bị đẩy nguyên sang trang sau (xem usePrintBreakTuning).
+  const shellRef = useRef<HTMLDivElement>(null);
+  usePrintBreakTuning(shellRef);
   const content = report?.content ?? {};
   const priceRows: any[] = content["2"]?.prices || [];
   // Báo cáo Chủ Nhật/Thứ Hai: ngày dữ liệu cuối tuần, không có phiên giao dịch — backend
@@ -3363,7 +3367,7 @@ export function ReportDocument({
     // mới "dính" được khi cuộn trang.
     // Mobile (< sm): báo cáo tràn sát 2 mép màn hình (-mx-4 bù đúng px-4 của <main> trong app/layout.tsx), bỏ viền/bo
     // góc/bóng của card — lề đọc chỉ còn px-4 của nội dung.
-    <div className="report-shell @container/report w-full max-sm:-mx-4 max-sm:w-auto bg-background text-foreground font-sans leading-[1.55] rounded-2xl max-sm:rounded-none border border-border max-sm:border-x-0 shadow-[var(--shadow-soft)] max-sm:shadow-none overflow-clip mb-10">
+    <div ref={shellRef} className="report-shell @container/report w-full max-sm:-mx-4 max-sm:w-auto bg-background text-foreground font-sans leading-[1.55] rounded-2xl max-sm:rounded-none border border-border max-sm:border-x-0 shadow-[var(--shadow-soft)] max-sm:shadow-none overflow-clip mb-10">
 
       {/* Banner Stavian — 1 hàng gọn: logo | nhãn + tiêu đề + người báo cáo | thứ + ngày phát hành. */}
       <div className="relative overflow-hidden bg-gradient-to-br from-[#1B4D3E] via-[#1a5c4a] to-[#143d33] text-white">
