@@ -6,7 +6,8 @@ import { useEffect, type RefObject } from "react";
 // khối nhỏ". Khối lớn mà giữ trọn thì không vừa phần còn lại của trang sẽ bị đẩy nguyên sang trang sau, để trống
 // cả mảng cuối trang. Hook này đo các khối/thẻ theo khổ in: khối cao hơn SPLIT_RATIO trang gắn `data-print-split`
 // → CSS (globals.css) cho phép ngắt GIỮA các phần con của nó; khối nhỏ gắn `data-print-keep` → giữ trọn, chỉ sang
-// trang mới khi phần còn lại của trang không đủ chứa nó.
+// trang mới khi phần còn lại của trang không đủ chứa nó. Khối gắn sẵn `data-print-whole` (vd biểu đồ nến) luôn giữ trọn dù
+// cao bao nhiêu — tách ra thì tiêu đề khung ở trang trước, biểu đồ ở trang sau.
 
 // Vùng in A4 trong @page (globals.css): 210 − 2×10 mm ngang, 297 − 2×12 mm dọc, 1mm = 96/25,4 px.
 const PRINT_WIDTH_PX = Math.round((190 * 96) / 25.4);
@@ -50,6 +51,7 @@ export function usePrintBreakTuning(shellRef: RefObject<HTMLElement | null>) {
       reset();
       shell.querySelectorAll<HTMLElement>(BLOCK_SELECTOR).forEach((el) => {
         if (el.dataset.printKeep !== undefined || el.dataset.printSplit !== undefined) return;
+        if (el.closest("[data-print-whole]")) return;
         if (el.getBoundingClientRect().height <= limit) {
           el.dataset.printKeep = "";
         } else {

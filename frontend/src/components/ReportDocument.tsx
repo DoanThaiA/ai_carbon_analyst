@@ -759,7 +759,8 @@ function HorizonCards({ plans, last, minRr }: { plans: HorizonPlan[]; last?: num
   // Thanh R:R mọi chân dùng chung 1 thang: chân có (rủi ro + lợi nhuận) lớn nhất = toàn bộ bề rộng.
   const rrScale = Math.max(0, ...plans.flatMap(p => p.legs).map(l => (l.risk && l.risk > 0 ? l.risk + Math.max(l.reward ?? 0, 0) : 0)));
   const ctx: LegCtx = { t, locale, last, minRr, rrScale };
-  const label = "text-[11.5px] font-bold uppercase tracking-[0.06em]";
+  // print:break-after-avoid — nhãn nhỏ (Điều kiện, Chiến lược…) không bị bỏ lại 1 mình cuối trang PDF.
+  const label = "text-[11.5px] font-bold uppercase tracking-[0.06em] print:break-after-avoid";
   return (
     <div>
       {plans.length > 1 && (
@@ -1420,7 +1421,7 @@ function KeyFigures({ cbamEstimate, rows, review, showTrack, className }: {
   const wrong = items.filter(i => i.verdict === "wrong").map(i => i.report_date);
   const watching = items.filter(i => !right.includes(i.report_date) && !wrong.includes(i.report_date)).map(i => i.report_date);
   return (
-    <div className={clsx("@container min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5", className)}>
+    <div className={clsx("@container min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5 print:p-3!", className)}>
       <div className="grid gap-x-8 gap-y-5 @xl:grid-cols-2 @3xl:grid-cols-[3fr_2fr]">
         {(cbamEstimate || drivers.length > 0) && (
           <div className="min-w-0 print:hidden">
@@ -1497,7 +1498,7 @@ function ForecastChart({ review }: { review: ForecastReview }) {
   const scale = Math.max(1, ...items.map(i => Math.abs(i.change_pct)));
   const lastDate = items.reduce((d, i) => (i.last_date > d ? i.last_date : d), items[0].last_date);
   return (
-    <div className="mb-3 rounded-xl border border-border bg-surface/50 px-3 sm:px-4 py-3.5 print:break-inside-avoid">
+    <div data-print-whole className="mb-3 rounded-xl border border-border bg-surface/50 px-3 sm:px-4 py-3.5 print:break-inside-avoid">
       <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map(it => {
           const up = it.change_pct >= 0;
@@ -1904,8 +1905,9 @@ function splitPolicyMechanism(it: Record<string, any>): [string | null, string |
   return [text.slice(0, m.index).trim() || null, explicit || (rest ? rest[0].toUpperCase() + rest.slice(1) : null)];
 }
 
-// Theo dõi chính sách ETS/MSR — báo cáo rộng (và khi in): bảng 4 cột Hồ sơ | Lập trường/tiến độ | Bước tiếp theo | Tác
-// động; báo cáo hẹp: mỗi hồ sơ 1 thẻ xếp dọc (bảng 4 cột ở 375px chỉ còn vài chữ mỗi dòng). Cùng nội dung ở 2 dạng.
+// Theo dõi chính sách ETS/MSR — báo cáo rộng: bảng 4 cột Hồ sơ | Lập trường/tiến độ | Bước tiếp theo | Tác động; báo
+// cáo hẹp VÀ khi in: mỗi hồ sơ 1 thẻ xếp dọc (bảng 4 cột ở khổ A4/375px chỉ còn vài chữ mỗi dòng, mỗi hồ sơ cao gần nửa
+// trang). Cùng nội dung ở 2 dạng.
 function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
   const t = useTranslations("reportDoc");
   const impactKey = (it: Record<string, any>) =>
@@ -1959,8 +1961,8 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
   return (
     <div>
       <SubHeading>{t("etsPolicy.title")}</SubHeading>
-      {/* Báo cáo hẹp: thẻ xếp dọc */}
-      <ul className="list-none space-y-3 @2xl/report:hidden print:hidden">
+      {/* Báo cáo hẹp + khi in: thẻ xếp dọc */}
+      <ul className="list-none space-y-3 @2xl/report:hidden print:block!">
         {items.map((it, i) => (
           <li key={i} className="rounded-xl border border-border bg-background p-3.5">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1985,9 +1987,8 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
           </li>
         ))}
       </ul>
-      {/* Báo cáo rộng + khi in: bảng. Không giữ nguyên khối khi in — từng hàng không bị cắt đôi (tr) và tên cột lặp
-          lại ở trang sau. */}
-      <div className="hidden overflow-x-auto rounded-xl border border-border @2xl/report:block print:block">
+      {/* Báo cáo rộng: bảng (khi in dùng thẻ ở trên). */}
+      <div className="hidden overflow-x-auto rounded-xl border border-border @2xl/report:block print:hidden!">
         <table className="w-full table-fixed border-collapse text-[14px]">
           <thead>
             <tr className="bg-tint">
@@ -2168,7 +2169,7 @@ function BizRecommendationTable({
                   const isOpen = openInfo.has(ri);
                   return (
                     <Fragment key={ri}>
-                      <tr className="align-top even:bg-surface/50">
+                      <tr className="align-top even:bg-surface/50 print:break-after-avoid">
                         <td className="border-r border-border bg-surface px-1 py-3 text-[12.5px] text-muted-light">
                           <div className="flex flex-col items-center gap-2">
                             <span className="font-bold leading-6">{ri + 1}</span>
@@ -2557,7 +2558,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
   // biểu đồ. Hẹp hơn: ô tóm tắt xuống dưới (2 cột). Bản in: 1 cột như cũ.
   return (
     <div className="grid gap-4 @3xl/report:grid-cols-12 print:block print:space-y-3">
-      <div className="flex min-w-0 flex-col @3xl/report:col-span-8 print:break-inside-avoid">
+      <div data-print-whole className="flex min-w-0 flex-col @3xl/report:col-span-8 print:break-inside-avoid">
           {printHeading && <div className="hidden print:block">{printHeading}</div>}
           <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
@@ -2800,7 +2801,7 @@ function ExecSummary({ bullets }: { bullets: any[] }) {
   return (
     <div>
       <SubHeading>{t("body.execSummary")}</SubHeading>
-      <ul className="grid list-none gap-3 @3xl/report:grid-cols-2">
+      <ul className="grid list-none gap-3 @3xl/report:grid-cols-2 print:block print:space-y-3">
         {bullets.map((bullet: any, i: number) => {
           const b: string = typeof bullet === "string" ? bullet : bullet?.text || "";
           const isMatch = b.includes(":");
@@ -3049,7 +3050,7 @@ function DriversPanel({ drivers }: { drivers: any }) {
   const column = (items: any[], tone: "up" | "down") => (
     <div className={clsx("overflow-hidden rounded-xl border", tone === "up" ? "border-up/25 bg-up/[0.035]" : "border-down/25 bg-down/[0.035]")}>
       <div className={clsx(
-        "flex items-center gap-1.5 border-b px-3.5 py-2 text-[12px] font-bold uppercase tracking-wider",
+        "flex items-center gap-1.5 border-b px-3.5 py-2 text-[12px] font-bold uppercase tracking-wider print:break-after-avoid",
         tone === "up" ? "border-up/20 bg-up/10 text-up" : "border-down/20 bg-down/10 text-down",
       )}>
         {tone === "up" ? <TrendingUp size={14} strokeWidth={2.5} /> : <TrendingDown size={14} strokeWidth={2.5} />}
@@ -3075,12 +3076,12 @@ function DriversPanel({ drivers }: { drivers: any }) {
         {t("body.drivers")}
       </SubHeading>
       {bull.length + bear.length > 0 && (
-        <div className="mb-3 flex h-2 gap-0.5 overflow-hidden rounded-full [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true">
+        <div className="mb-3 flex h-2 gap-0.5 overflow-hidden rounded-full print:break-after-avoid [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true">
           {bull.length > 0 && <span className="bg-up" style={{ flexGrow: bull.length }} />}
           {bear.length > 0 && <span className="bg-down" style={{ flexGrow: bear.length }} />}
         </div>
       )}
-      <div className="grid gap-3 @3xl/report:grid-cols-2">
+      <div className="grid gap-3 @3xl/report:grid-cols-2 print:block print:space-y-3">
         {column(bull, "up")}
         {column(bear, "down")}
       </div>
@@ -3094,7 +3095,7 @@ function DriversPanel({ drivers }: { drivers: any }) {
 function WatchList({ text }: { text: string }) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   return (
-    <ol className="list-none grid gap-3 @3xl/report:grid-cols-2">
+    <ol className="list-none grid gap-3 @3xl/report:grid-cols-2 print:block print:space-y-3">
       {lines.map((line, i) => {
         const m = line.match(/^(\d+)[.)]\s+/);
         const body = m ? line.slice(m[0].length) : line;
@@ -3172,7 +3173,7 @@ function AnalysisBlocks({ blocks }: { blocks: any[] }) {
               </div>
             )}
             {groups.length > 0 && (
-              <div className={clsx("grid gap-3 print:gap-5", groups.length === 2 && "@3xl/report:grid-cols-2", groups.length > 2 && "@5xl/report:grid-cols-3")}>
+              <div className={clsx("grid gap-3 print:block print:space-y-5", groups.length === 2 && "@3xl/report:grid-cols-2", groups.length > 2 && "@5xl/report:grid-cols-3")}>
                 {groups.map((g, gi) => (
                   <section key={gi} className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background print:overflow-visible print:rounded-none print:border-0">
                     <div className="bg-tint px-3.5 py-2.5 print:break-after-avoid print:rounded-lg [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
@@ -3199,7 +3200,9 @@ function AnalysisBlocks({ blocks }: { blocks: any[] }) {
 
 // Phần 3 — tin chi tiết theo NƠI ĐĂNG: Quốc tế rồi Việt Nam (2 nhóm nối tiếp — số tin 2 nhóm thường lệch nhau nên không
 // đặt 2 cột cạnh nhau). Mỗi nhóm: danh sách DỌC trải hết bề rộng trang, các tin ngăn bằng vạch kẻ (không chia ô/thẻ).
-function NewsColumns({ section }: { section: any }) {
+// `heading` (tiêu đề Phần 3) + tên nhóm + tin đầu tiên nằm chung 1 khối không tách khi in — Chrome không giữ được
+// "break-after: avoid" qua nhiều tầng lồng nhau, tiêu đề hay bị bỏ lại 1 mình cuối trang.
+function NewsColumns({ section, heading }: { section: any; heading?: React.ReactNode }) {
   const t = useTranslations("reportDoc");
   const regions = [
     { key: "international", label: t("body.intl"), empty: t("body.noNewsIntl") },
@@ -3207,51 +3210,58 @@ function NewsColumns({ section }: { section: any }) {
   ];
   return (
     <div className="space-y-8">
-      {regions.map(({ key, label, empty }) => {
+      {regions.map(({ key, label, empty }, ri) => {
         const items: any[] = section?.[key] ?? [];
         // Có tin Việt Nam trong kỳ nhưng không bài nào đủ liên quan → nói đúng như vậy, không ghi "không có tin".
         const vnConsidered = key === "vietnam" ? section?.vietnam_considered : 0;
         const emptyText = vnConsidered > 0 ? t("body.noNewsVnFiltered", { n: vnConsidered }) : empty;
+        const item = (art: any, i: number) => (
+          // Khi in mỗi tin giữ nguyên khối (tiêu đề không tách khỏi tóm tắt).
+          <li
+            key={i}
+            className={clsx(
+              "grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 py-4 print:break-inside-avoid",
+              i === 0 && "pt-1",
+              i < items.length - 1 && "border-b border-border",
+            )}
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[12.5px] font-bold tabular-nums text-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">{i + 1}</span>
+            <div className="min-w-0">
+              <h4 className="text-[15px] font-bold leading-snug text-label">{art.title}</h4>
+              {art.topics?.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {art.topics.map((topic: string, ti: number) => (
+                    <span key={ti} className={clsx("rounded-[4px] border px-1.5 py-px text-[11px] font-bold uppercase tracking-wide whitespace-nowrap", tagColorClass(topic))}>
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Mọi tin đều có tóm tắt (bản chấm 17/10: chỉ còn tiêu đề thì Phần 3 mất giá trị). */}
+              <p className="text-left mt-1.5 text-[14.5px] leading-[1.6] text-body">
+                <RichText text={art.summary} nums />{" "}
+                <a href={art.url} target="_blank" rel="noopener noreferrer" className="inline-block text-[12.5px] font-semibold text-primary hover:underline">
+                  {t("body.source")} {art.source} <ExternalLink size={10} className="-mt-0.5 inline" aria-hidden="true" />
+                </a>
+              </p>
+            </div>
+          </li>
+        );
         return (
           <div key={key} className="min-w-0">
-            <div className="report-heading mb-3 flex items-baseline justify-between gap-3 border-b-2 border-primary/20 pb-2 print:break-after-avoid">
-              <h3 className="text-[14px] font-bold uppercase tracking-[0.1em] text-primary-dark">{label}</h3>
-              {items.length > 0 && <span className="text-[12.5px] text-muted-light">{t("news.count", { n: items.length })}</span>}
+            <div data-print-whole className="print:break-inside-avoid">
+              {ri === 0 && heading}
+              <div className="report-heading mb-3 flex items-baseline justify-between gap-3 border-b-2 border-primary/20 pb-2 print:break-after-avoid">
+                <h3 className="text-[14px] font-bold uppercase tracking-[0.1em] text-primary-dark">{label}</h3>
+                {items.length > 0 && <span className="text-[12.5px] text-muted-light">{t("news.count", { n: items.length })}</span>}
+              </div>
+              {items.length > 0 ? (
+                <ol className="list-none">{item(items[0], 0)}</ol>
+              ) : (
+                <p className="text-[14.5px] italic text-muted-light">{emptyText}</p>
+              )}
             </div>
-            {items.length > 0 ? (
-              <ol className="list-none">
-                {items.map((art: any, i: number) => (
-                  // Khi in mỗi tin giữ nguyên khối (tiêu đề không tách khỏi tóm tắt).
-                  <li
-                    key={i}
-                    className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 border-b border-border py-4 first:pt-1 last:border-b-0 print:break-inside-avoid"
-                  >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[12.5px] font-bold tabular-nums text-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">{i + 1}</span>
-                    <div className="min-w-0">
-                      <h4 className="text-[15px] font-bold leading-snug text-label">{art.title}</h4>
-                      {art.topics?.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {art.topics.map((topic: string, ti: number) => (
-                            <span key={ti} className={clsx("rounded-[4px] border px-1.5 py-px text-[11px] font-bold uppercase tracking-wide whitespace-nowrap", tagColorClass(topic))}>
-                              {topic}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {/* Mọi tin đều có tóm tắt (bản chấm 17/10: chỉ còn tiêu đề thì Phần 3 mất giá trị). */}
-                      <p className="text-left mt-1.5 text-[14.5px] leading-[1.6] text-body">
-                        <RichText text={art.summary} nums />{" "}
-                        <a href={art.url} target="_blank" rel="noopener noreferrer" className="inline-block text-[12.5px] font-semibold text-primary hover:underline">
-                          {t("body.source")} {art.source} <ExternalLink size={10} className="-mt-0.5 inline" aria-hidden="true" />
-                        </a>
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-[14.5px] italic text-muted-light">{emptyText}</p>
-            )}
+            {items.length > 1 && <ol className="list-none" start={2}>{items.slice(1).map((art, k) => item(art, k + 1))}</ol>}
           </div>
         );
       })}
@@ -3491,7 +3501,7 @@ export function ReportDocument({
             {/* Diễn biến chính (tin tức tác động cung/cầu EUA — content["2"].key_developments) | lịch sự kiện 7 ngày
                 tới (content["8"]): việc đã xảy ra cạnh việc sắp tới. */}
             {(keyDevelopmentItems.length > 0 || content["8"]) && (
-              <div className="grid gap-5 @5xl/report:grid-cols-12 print:gap-8">
+              <div className="grid gap-5 @5xl/report:grid-cols-12 print:block print:space-y-8">
                 {keyDevelopmentItems.length > 0 && (
                   <div className={clsx(PANEL, content["8"] ? "@5xl/report:col-span-7 @7xl/report:col-span-8" : "@5xl/report:col-span-12")}>
                     <SubHeading>{t("body.keyDev")}</SubHeading>
@@ -3664,8 +3674,10 @@ export function ReportDocument({
         {/* ═══ PHẦN 3 — CHI TIẾT CÁC TIN TỨC CHÍNH ═══ */}
         {content["6"] && (
           <section id="section-news" className="report-section scroll-mt-32 pt-4 pb-8">
-            <PartHeading eyebrow={t("body.part", { n: 3 })} title={content["6"].title || t("body.newsTitle")} icon={Newspaper} />
-            <NewsColumns section={content["6"]} />
+            <NewsColumns
+              section={content["6"]}
+              heading={<PartHeading eyebrow={t("body.part", { n: 3 })} title={content["6"].title || t("body.newsTitle")} icon={Newspaper} />}
+            />
           </section>
         )}
 
@@ -3781,7 +3793,7 @@ export function ReportDocument({
                 // Không hiện tiêu đề nhóm: 1 danh sách liền, đánh số liên tục theo thứ tự Phần 3.
                 const entries = [...groups.flatMap((g) => g.entries), ...others];
                 return (
-                  <ol className="list-none space-y-1.5 @5xl/report:columns-2 @5xl/report:gap-x-10">
+                  <ol className="list-none space-y-1.5 @5xl/report:columns-2 @5xl/report:gap-x-10 print:space-y-1">
                     {entries.map((it: any, i: number) => (
                       <li key={it.url ?? `kb-${it.doc_id ?? i}`} className="break-inside-avoid text-[13px] leading-[1.55] text-muted-light">
                         <span className="tabular-nums">{i + 1}.</span> [{it.source}]{" "}
@@ -3804,7 +3816,7 @@ export function ReportDocument({
           </section>
         )}
 
-        <footer className="border-t border-border pt-6 text-center">
+        <footer className="border-t border-border pt-6 text-center print:pt-2">
           <p className="text-[12px] italic text-muted-light">{t("body.footer")}</p>
         </footer>
 

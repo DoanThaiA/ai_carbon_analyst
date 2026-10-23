@@ -177,6 +177,19 @@ svg text {
       color: #707070;
     }
   }
+  /* Bản tiếng Anh (<html lang="en">): trang in tên "report-en" — chỉ đổi chữ ở đầu/chân trang, khổ giấy/lề/font
+     kế thừa @page ở trên. */
+  @page report-en {
+    @top-left {
+      content: "Daily carbon market news";
+    }
+    @bottom-right {
+      content: "Page " counter(page) " / " counter(pages);
+    }
+  }
+  :root:lang(en) body {
+    page: report-en;
+  }
 
   /* ---- Section: cho nội dung chảy liên tục, chỉ ngắt trang khi tràn ---- */
   section {
@@ -244,9 +257,20 @@ svg text {
     break-inside: auto !important;
     page-break-inside: auto !important;
   }
-  [data-print-keep], .report-heading {
+  [data-print-keep], [data-print-whole], .report-heading {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+  /* Khung có viền/nền bị ngắt sang trang sau: mỗi mảnh tự có đủ viền, bo góc và padding (thay vì mảnh trên hở đáy,
+     mảnh dưới hở đỉnh trông như bị cắt cụt). */
+  .rounded-md.border, .rounded-lg.border, .rounded-xl.border, .rounded-2xl.border, [data-print-split] {
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  /* Nhãn ngay trên nội dung (dt, tiêu đề nhỏ h4) đi cùng nội dung của nó, không trơ cuối trang. */
+  dt, h4 {
+    break-after: avoid;
+    page-break-after: avoid;
   }
 
   /* ---- Chống mồ côi dòng: chỉ ngắt trang khi phần còn lại của trang không đủ
@@ -281,7 +305,9 @@ svg text {
   /* ---- Footer: luôn nằm cuối, không bị tách ---- */
   footer {
     page-break-inside: avoid;
-    page-break-before: auto;
+    /* Dòng chân báo cáo đi liền phần Nguồn tham khảo — không đứng trơ 1 mình ở trang cuối. */
+    break-before: avoid;
+    page-break-before: avoid;
   }
 
   /* ---- Ẩn nút collapse/expand (Ẩn phân tích / Hiện phân tích) — không có tác dụng trên PDF ---- */
