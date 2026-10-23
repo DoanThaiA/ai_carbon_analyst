@@ -21,7 +21,7 @@ from db.models import ApiToken, ClaudeHandoff, User
 
 TOKEN_PREFIX = "cat_"
 TOKEN_TTL_DAYS = 90
-# Token cho lịch Claude QC 08:00 (scope 'qc_agent', admin tạo ở trang QC) — hạn dài hơn vì gắn vào routine chạy tự động.
+# Token cho lịch Claude QC 07:30 (scope 'qc_agent', admin tạo ở trang QC) — hạn dài hơn vì gắn vào routine chạy tự động.
 QC_AGENT_TOKEN_TTL_DAYS = 180
 MAX_ACTIVE_QC_AGENT_TOKENS = 3
 TOKEN_SCOPES = ("user", "qc_agent")

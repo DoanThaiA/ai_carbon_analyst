@@ -1,7 +1,7 @@
 "use client";
 
 // Trang "QC Result": tổng hợp mọi biên bản QC báo cáo do Claude (vai Jack) gửi qua MCP — CHỈ admin.
-// Gồm thống kê nhanh, danh sách biên bản (lọc theo kết luận) và quản lý token qc_agent cho lịch Claude QC 08:00.
+// Gồm thống kê nhanh, danh sách biên bản (lọc theo kết luận) và quản lý token qc_agent cho lịch Claude QC 07:30.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, ClipboardCheck, Copy, KeyRound, Repeat, Tras
 import { api } from "@/lib/api";
 import { buildMobileConnectorUrl } from "@/lib/claudeConnect";
 import type { QcAgentTokensResponse, QcReviewListResponse, QcReviewStats, QcVerdict } from "@/lib/types";
-import { VerdictBadge, scoreColor } from "@/components/QcReview";
+import { VerdictBadge, improved, scoreColor } from "@/components/QcReview";
 
 const PAGE_SIZE = 20;
 const FILTERS: (QcVerdict | "all")[] = ["all", "fail", "pass_with_fixes", "pass"];
@@ -23,7 +23,7 @@ function fmtTime(iso: string | null | undefined): string {
 function AgentTokens() {
   const t = useTranslations("adminQcReviews");
   const [data, setData] = useState<QcAgentTokensResponse | null>(null);
-  const [name, setName] = useState("Claude QC 08:00");
+  const [name, setName] = useState("Claude QC 07:30");
   const [created, setCreated] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -68,7 +68,11 @@ function AgentTokens() {
       <div>
         <h2 className="flex items-center gap-2 font-bold text-heading"><KeyRound size={16} className="text-primary" />{t("agentTitle")}</h2>
         <p className="text-sm text-body mt-1">
-          {t("agentFlow", { report: data.auto_report_time, publish: data.auto_publish_time || t("autoPublishOff") })}
+          {t("agentFlow", {
+            report: data.auto_report_time,
+            fix: data.auto_qc_fix_time || t("autoFixOff"),
+            publish: data.auto_publish_time || t("autoPublishOff"),
+          })}
         </p>
       </div>
 
@@ -266,7 +270,12 @@ export default function AdminQcResultsPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-light">#{r.run_no}<br />{fmtTime(r.created_at)}</td>
-                    <td className={clsx("px-3 py-2 text-right font-bold tabular-nums", scoreColor(r.overall_score))}>{r.overall_score.toFixed(2)}</td>
+                    <td className={clsx("px-3 py-2 text-right font-bold tabular-nums", scoreColor(r.overall_score))}>
+                      {r.overall_score.toFixed(2)}
+                      {improved(r) && (
+                        <span className="block text-[11px] font-semibold text-primary" title={t("scoreAfterFixesTitle")}>→ {r.score_after_fixes!.toFixed(2)}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2"><VerdictBadge verdict={r.verdict} /></td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs">
                       <span className="text-down font-semibold">{r.critical_count}</span> / <span className="text-warn font-semibold">{r.major_count}</span> / <span className="text-muted-light">{r.minor_count}</span>

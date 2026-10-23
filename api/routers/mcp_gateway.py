@@ -6,7 +6,7 @@ trong services/quote_chat.py) — danh sách tool lấy động qua GET /tools n
 sửa tool ở server không cần cập nhật MCP client trên từng máy. Mọi tool đều chỉ
 đọc DB, và chỉ phục vụ báo cáo đã published (cùng quyền với role 'user' trên web).
 
-Ngoại lệ: token `scope='qc_agent'` (admin tạo cho lịch Claude QC 08:00) thấy thêm tool `get_qc_assignment` /
+Ngoại lệ: token `scope='qc_agent'` (admin tạo cho lịch Claude QC 07:30) thấy thêm tool `get_qc_assignment` /
 `submit_qc_review` + prompt `jack_qc_review`, được đọc cả báo cáo NHÁP (tool neo ngày + jack_qc) và là đường
 GHI duy nhất của gateway — chỉ ghi biên bản QC (services/report_qc_review.py), không sửa báo cáo.
 """

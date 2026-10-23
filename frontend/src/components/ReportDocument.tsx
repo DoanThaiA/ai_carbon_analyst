@@ -16,6 +16,7 @@ import PriceIndexPanel from "@/components/PriceIndexPanel";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
+import { usePrintBreakTuning } from "@/lib/usePrintBreakTuning";
 
 // Hàm dịch của namespace "reportDoc" — truyền xuống các hàm thuần (không gọi được hook).
 type ReportT = ReturnType<typeof useTranslations>;
@@ -2502,9 +2503,9 @@ function formatVietnameseDateFull(dateStr: string) {
   return `${dayOfWeek}, ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
 }
 
-// Biểu đồ EUA (đầu Phần 1): nến 30 phiên | cột 5 ô tóm tắt giá EUA (phiên gần nhất, 1 tuần, biên 30 phiên, thay đổi 30
-// phiên, khối lượng) giãn cao bằng biểu đồ. Mỗi ô ghi đủ các số của câu "Nhận định thị trường" cũ (câu đó chỉ nhắc lại
-// đúng các số này). Báo cáo hẹp/in: ô số xếp lưới 2 cột dưới biểu đồ.
+// Biểu đồ EUA (đầu Phần 1): nến 30 phiên | `aside` (biểu đồ chỉ số giá — 2 khối cao bằng nhau), bên dưới 1 hàng 5 ô số
+// liệu (phiên gần nhất, 1 tuần, biên 30 phiên, thay đổi 30 phiên, khối lượng) cao bằng nhau. Mỗi ô ghi đủ các số của câu
+// "Nhận định thị trường" cũ (câu đó chỉ nhắc lại đúng các số này). Báo cáo hẹp/in: xếp dọc, ô số 2 cột.
 // printHeading: tiêu đề Phần 1 CHỈ hiện khi in, nằm chung khối "không cắt" với biểu đồ — Chrome không dời tiêu đề
 // (break-after: avoid) theo biểu đồ khi biểu đồ không vừa phần còn lại của trang, để tiêu đề trơ cuối trang 1.
 function EuaDashboardWidget({ report, printHeading }: { report: Report; printHeading?: React.ReactNode }) {
@@ -2552,45 +2553,47 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
   const loc = locale === "en" ? "en-US" : "vi-VN";
   const sign = (n: number) => (n > 0 ? "+" : "");
 
+  // Biểu đồ nến | 5 ô tóm tắt nằm ngang từ khung báo cáo ≥ 768px (@3xl) — ô tóm tắt xếp dọc, giãn đều theo chiều cao
+  // biểu đồ. Hẹp hơn: ô tóm tắt xuống dưới (2 cột). Bản in: 1 cột như cũ.
   return (
-    <div className="grid gap-4 @5xl/report:grid-cols-12 print:block print:space-y-3">
-      <div className="flex min-w-0 flex-col @5xl/report:col-span-8 print:break-inside-avoid">
-        {printHeading && <div className="hidden print:block">{printHeading}</div>}
-        <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="shrink-0 rounded-xl bg-primary p-2 text-white">
-                <Leaf size={22} aria-hidden="true" />
+    <div className="grid gap-4 @3xl/report:grid-cols-12 print:block print:space-y-3">
+      <div className="flex min-w-0 flex-col @3xl/report:col-span-8 print:break-inside-avoid">
+          {printHeading && <div className="hidden print:block">{printHeading}</div>}
+          <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="shrink-0 rounded-xl bg-primary p-2 text-white">
+                  <Leaf size={22} aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-bold text-label">
+                    EUA Dec-26
+                    {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
+                    <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
+                    <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
+                  </h3>
+                  <p className="text-left mt-0.5 text-[13px] text-muted-light">{t("dash.marketDesc")}</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-bold text-label">
-                  EUA Dec-26
-                  {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
-                  <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
-                  <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
-                </h3>
-                <p className="text-left mt-0.5 text-[13px] text-muted-light">{t("dash.marketDesc")}</p>
+              <div className="ml-auto flex flex-col items-end gap-1">
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-[26px] sm:text-[28px] font-bold leading-none tabular-nums text-label">{fnum(lastClose, 2, locale)}</span>
+                  <span className={clsx("inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums text-white", dayChange >= 0 ? "bg-up" : "bg-down")}>
+                    {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
+                    {sign(dayChange)}{fnum(dayChange, 2, locale)} ({sign(dayChangePct)}{fnum(dayChangePct, 2, locale)}%)
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light">
+                  <Calendar size={13} aria-hidden="true" /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
+                </div>
               </div>
             </div>
-            <div className="ml-auto flex flex-col items-end gap-1">
-              <div className="flex items-baseline gap-2.5">
-                <span className="text-[26px] sm:text-[28px] font-bold leading-none tabular-nums text-label">{fnum(lastClose, 2, locale)}</span>
-                <span className={clsx("inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums text-white", dayChange >= 0 ? "bg-up" : "bg-down")}>
-                  {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
-                  {sign(dayChange)}{fnum(dayChange, 2, locale)} ({sign(dayChangePct)}{fnum(dayChangePct, 2, locale)}%)
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light">
-                <Calendar size={13} aria-hidden="true" /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
-              </div>
-            </div>
-          </div>
 
-          <CandlestickChart report={report} />
-        </div>
+            <CandlestickChart report={report} />
+          </div>
       </div>
 
-      <div className="grid min-w-0 gap-3 @2xl/report:grid-cols-2 @5xl/report:col-span-4 @5xl/report:flex @5xl/report:flex-col print:grid-cols-2 print:break-inside-avoid">
+      <div className="grid min-w-0 gap-2.5 @2xl/report:grid-cols-2 @3xl/report:col-span-4 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:grid-cols-2 print:break-inside-avoid">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
@@ -2633,20 +2636,19 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
               pct: `${sign(volChangePct)}${fnum(volChangePct, 1, locale)}`,
             })) : null,
           ]}
-          className="@2xl/report:col-span-2 @5xl/report:col-span-1 print:col-span-2"
+          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:col-span-2"
         />
       </div>
     </div>
   );
 }
 
-// Ô số liệu cạnh biểu đồ EUA — nhãn, số chính, rồi các dòng diễn giải (cùng cỡ chữ để các ô thẳng hàng). Báo cáo rộng:
-// cột ô xếp dọc, phần cao dư chia đều cho các ô (flex-1) để cột cao đúng bằng biểu đồ.
+// Ô số liệu dưới biểu đồ EUA — nhãn, số chính, rồi các dòng diễn giải (cùng cỡ chữ để các ô thẳng hàng).
 function StatTile({ icon, label, value, lines, valueClass, linesClass, className }: {
   icon: React.ReactNode; label: string; value: string; lines: (string | null)[]; valueClass?: string; linesClass?: string; className?: string;
 }) {
   return (
-    <div className={clsx("min-w-0 rounded-xl border border-border bg-background px-3.5 py-2.5 @5xl/report:flex-1", className)}>
+    <div className={clsx("min-w-0 rounded-xl border border-border bg-background px-3.5 py-3", className)}>
       <div className="flex items-center gap-1.5 text-[12.5px] font-bold text-primary-dark">{icon} {label}</div>
       <div className={clsx("mt-1 text-[19px] font-bold leading-tight tabular-nums", valueClass ?? "text-label")}>{value}</div>
       {lines.filter(Boolean).map((l, i) => (
@@ -2749,8 +2751,10 @@ function SectionNav({ tabs, quote }: { tabs: { id: string; label: string }[]; qu
                 data-target={tab.id}
                 onClick={() => go(tab.id)}
                 aria-current={on ? "location" : undefined}
+                // Báo cáo rộng (≥ 768px): các tab giãn ra lấp đầy thanh (không để trống giữa tab và ô giá EUA);
+                // hẹp hơn: giữ bề rộng tự nhiên + cuộn ngang.
                 className={clsx(
-                  "relative shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-3 text-[13.5px] font-semibold transition-colors",
+                  "relative shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-3 text-center text-[13.5px] font-semibold transition-colors @3xl/report:flex-auto",
                   on ? "text-primary-dark" : "text-muted-light hover:text-label",
                 )}
               >
@@ -2760,7 +2764,7 @@ function SectionNav({ tabs, quote }: { tabs: { id: string; label: string }[]; qu
             );
           })}
         </div>
-        {quote && <div className="hidden shrink-0 items-center @4xl/report:flex">{quote}</div>}
+        {quote && <div className="hidden shrink-0 items-center border-l border-border pl-4 @4xl/report:flex">{quote}</div>}
       </div>
     </nav>
   );
@@ -2822,38 +2826,83 @@ function ExecSummary({ bullets }: { bullets: any[] }) {
   );
 }
 
-// Δ ngày / Δ tuần của 1 mã: chuỗi gốc của Bảng giá nhanh ("+0,30% (+0,26)") + thanh lệch trái/phải quanh vạch 0, cùng
-// thang cho mọi mã trong cột để so độ lớn bằng mắt.
+// Δ ngày / Δ tuần của 1 mã: chỉ số — chuỗi gốc của Bảng giá nhanh ("+0,30% (+0,26)"), xanh tăng / đỏ giảm.
 function DeltaCell({ text, label }: { text?: string; label?: string }) {
   const locale = useLocale();
   if (!text || text === "-") return <span className="text-muted-light">—</span>;
-  const up = isPositiveDelta(text);
   return (
-    <div className={clsx("text-[13.5px] font-bold tabular-nums whitespace-nowrap", up ? "text-up" : "text-down")}>
+    <div className={clsx("text-[13.5px] font-bold tabular-nums whitespace-nowrap", isPositiveDelta(text) ? "text-up" : "text-down")}>
       {label && <span className="mr-1 text-[12px] font-semibold text-muted-light">{label}</span>}
       {formatDelta(text, locale)}
     </div>
   );
 }
 
+// Ô tên hợp đồng: tên (link nguồn giá) + dấu "!" sát ngay bên phải khi mã có lưu ý (phiên không giao dịch, điều chỉnh
+// hồi tố, giá chốt CBAM) — BẤM mới hiện nội dung dưới tên, bấm lần nữa để ẩn; bản in luôn hiện nội dung.
+function ContractName({ row, notes }: { row: any; notes: string[] }) {
+  const t = useTranslations("reportDoc");
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="flex items-start gap-1.5">
+        {row.source_url ? (
+          // Link kiểu quen thuộc (xanh dương + gạch chân + icon ↗) để nhận ra được là bấm được (cả trên mobile).
+          <a
+            href={row.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t("body.viewPriceAt", { name: row.name })}
+            className="min-w-0 text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900 transition-colors"
+          >
+            {row.name}
+            <ExternalLink size={11} className="ml-1 -mt-0.5 inline-block align-middle" aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="min-w-0">{row.name}</span>
+        )}
+        {notes.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen(v => !v)}
+            aria-expanded={open}
+            aria-label={t("market.note")}
+            className={clsx(
+              "mt-[2px] grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-warn text-[11.5px] font-extrabold leading-none text-white transition-opacity hover:opacity-80 print:hidden",
+              open && "ring-2 ring-black/15",
+            )}
+          >
+            !
+          </button>
+        )}
+      </div>
+      {notes.length > 0 && (
+        <div className={clsx("mt-1 text-[12.5px] font-normal leading-[1.45] text-body", open ? "block" : "hidden print:block")}>
+          {notes.map((n, i) => <div key={i}>{n}</div>)}
+        </div>
+      )}
+    </>
+  );
+}
+
 // Bảng giá nhanh: mỗi mã 1 dòng theo đúng thứ tự bảng gốc (không chia nhóm) — dòng kẻ sọc xen kẽ + vạch ngăn rõ để mắt
-// không nhảy dòng; Δ chỉ ghi số (xanh tăng, đỏ giảm). Ghi chú chất lượng dữ liệu + giá chốt CBAM nằm ở
-// dòng phụ ngay dưới mã, cùng màu nền với dòng của mã đó.
+// không nhảy dòng; Δ chỉ hiện số (không vẽ thanh). Ghi chú chất lượng dữ liệu + giá chốt CBAM nằm ở
+// sau dấu "!" cạnh tên hợp đồng (bấm mới hiện).
 function MarketBoard({ rows }: { rows: any[] }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
-  const th = "px-3 py-2 text-left text-[12px] font-bold uppercase tracking-wider text-primary-dark";
+  const th = "px-3 py-2.5 text-left text-[12px] font-bold uppercase tracking-wider text-primary-dark";
 
   return (
     <div className="@container overflow-x-auto rounded-xl border border-border">
       <table className="w-full border-collapse text-[14px]">
         <thead>
           <tr className="border-b-2 border-primary/25 bg-tint">
-            <th className={clsx(th, "w-[36%]")}>{t("body.contract")}</th>
-            <th className={clsx(th, "text-right!")}>{t("body.price")}</th>
-            <th className={clsx(th, "hidden w-[20%] @xl:table-cell")}>{t("market.dDay")}</th>
-            <th className={clsx(th, "hidden w-[20%] @xl:table-cell")}>{t("market.dWeek")}</th>
-            <th className={clsx(th, "@xl:hidden")}>{t("body.change")}</th>
+            <th className={clsx(th, "w-[34%] @xl:w-[30%]")}>{t("body.contract")}</th>
+            <th className={clsx(th, "text-center!")}>{t("body.price")}</th>
+            <th className={clsx(th, "hidden w-[27%] text-center! @xl:table-cell")}>{t("market.dDay")}</th>
+            <th className={clsx(th, "hidden w-[27%] text-center! @xl:table-cell")}>{t("market.dWeek")}</th>
+            <th className={clsx(th, "text-center! @xl:hidden")}>{t("body.change")}</th>
           </tr>
         </thead>
         {rows.map((r: any, idx: number) => {
@@ -2863,8 +2912,8 @@ function MarketBoard({ rows }: { rows: any[] }) {
             // Báo cáo cũ có thể đã nối thêm ghi chú LLM phía sau — chỉ lấy phần "Giá chốt…"
             ? String(r.note).match(/^Giá chốt theo quý, tại ngày .*?\d{4}(?:, ngày chốt giá tiếp theo .*?\d{4})?|^Quarterly (?:settlement|closing|fixed) price.*?\d{4}(?:, next .*?\d{4})?/i)?.[0] ?? r.note
             : null;
-          const hasNote = !!(r.no_trade || r.revision || cbamNote);
-          // Mỗi mã 1 <tbody>: dòng giá + dòng ghi chú cùng nền, vạch ngăn đặt dưới cả cụm; khi in không tách cụm.
+          const notes = [r.no_trade && t("body.noTrade"), r.revision, cbamNote].filter(Boolean) as string[];
+          // Mỗi mã 1 <tbody> (nền sọc + vạch ngăn); lưu ý của mã nằm sau dấu "!" cạnh tên (ContractName).
           return (
             <tbody
               key={idx}
@@ -2874,30 +2923,16 @@ function MarketBoard({ rows }: { rows: any[] }) {
               )}
             >
               <tr className="align-middle">
-                <td className="px-3 py-2 text-[14px] font-semibold leading-snug text-label">
-                  {r.source_url ? (
-                    // Link kiểu quen thuộc (xanh dương + gạch chân + icon ↗) để nhận ra được là bấm được (cả trên mobile).
-                    <a
-                      href={r.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={t("body.viewPriceAt", { name: r.name })}
-                      className="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:text-blue-900 hover:decoration-blue-900 transition-colors"
-                    >
-                      {r.name}
-                      <ExternalLink size={11} className="ml-1 -mt-0.5 inline-block align-middle" aria-hidden="true" />
-                    </a>
-                  ) : (
-                    r.name
-                  )}
+                <td className="px-3 py-3 text-[15px] font-semibold leading-snug text-label">
+                  <ContractName row={r} notes={notes} />
                 </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <div className="text-[15.5px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
-                  {priceUnit && <div className="text-[11px] leading-tight text-muted-light">{priceUnit}</div>}
+                <td className="px-3 py-3 text-center whitespace-nowrap">
+                  <div className="text-[16px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
+                  {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
                 </td>
-                <td className="hidden px-3 py-2 @xl:table-cell"><DeltaCell text={r.dday} /></td>
-                <td className="hidden px-3 py-2 @xl:table-cell"><DeltaCell text={r.dweek} /></td>
-                <td className="px-3 py-2 @xl:hidden">
+                <td className="hidden px-3 py-3 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
+                <td className="hidden px-3 py-3 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
+                <td className="px-3 py-3 text-center @xl:hidden">
                   {r.dday === "-" && r.dweek === "-" ? <span className="text-muted-light">—</span> : (
                     <div className="space-y-1.5">
                       <DeltaCell text={r.dday} label={t("market.dayLabel")} />
@@ -2906,23 +2941,6 @@ function MarketBoard({ rows }: { rows: any[] }) {
                   )}
                 </td>
               </tr>
-              {hasNote && (
-                <tr>
-                  <td colSpan={5} className="px-3 pb-2 pt-0">
-                    {/* Chú thích chất lượng dữ liệu (report_generator.py): phiên không có giao dịch (giá danh
-                        nghĩa) / nguồn điều chỉnh hồi tố giá phiên trước; dòng CBAM: giá chốt theo quý. */}
-                    {(r.no_trade || r.revision) && (
-                      <div className="text-[13px] leading-[1.45] text-warn">
-                        {r.no_trade && <div>⚠ {t("body.noTrade")}</div>}
-                        {r.revision && <div>⚠ {r.revision}</div>}
-                      </div>
-                    )}
-                    {cbamNote && (
-                      <div className="inline-block rounded-md border border-primary/15 bg-background/80 px-2.5 py-1.5 text-[13px] leading-[1.45] text-body">{cbamNote}</div>
-                    )}
-                  </td>
-                </tr>
-              )}
             </tbody>
           );
         })}
@@ -3180,8 +3198,7 @@ function AnalysisBlocks({ blocks }: { blocks: any[] }) {
 }
 
 // Phần 3 — tin chi tiết theo NƠI ĐĂNG: Quốc tế rồi Việt Nam (2 nhóm nối tiếp — số tin 2 nhóm thường lệch nhau nên không
-// đặt 2 cột cạnh nhau). Mỗi nhóm: lưới thẻ 2 cột khi báo cáo rộng, thẻ cùng hàng cao bằng nhau, tin lẻ cuối trải hết hàng.
-// Khi in (1 cột) thẻ trở lại dạng danh sách kẻ dòng.
+// đặt 2 cột cạnh nhau). Mỗi nhóm: danh sách DỌC trải hết bề rộng trang, các tin ngăn bằng vạch kẻ (không chia ô/thẻ).
 function NewsColumns({ section }: { section: any }) {
   const t = useTranslations("reportDoc");
   const regions = [
@@ -3202,15 +3219,12 @@ function NewsColumns({ section }: { section: any }) {
               {items.length > 0 && <span className="text-[12.5px] text-muted-light">{t("news.count", { n: items.length })}</span>}
             </div>
             {items.length > 0 ? (
-              <ol className="list-none grid gap-3 @3xl/report:grid-cols-2 print:gap-4">
+              <ol className="list-none">
                 {items.map((art: any, i: number) => (
                   // Khi in mỗi tin giữ nguyên khối (tiêu đề không tách khỏi tóm tắt).
                   <li
                     key={i}
-                    className={clsx(
-                      "grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 rounded-xl border border-border bg-background p-3.5 transition-colors hover:border-primary/40 print:break-inside-avoid print:rounded-none print:border-x-0 print:border-t-0 print:px-0 print:pt-0 print:pb-4 print:last:border-b-0",
-                      items.length % 2 === 1 && i === items.length - 1 && "@3xl/report:col-span-2",
-                    )}
+                    className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 border-b border-border py-4 first:pt-1 last:border-b-0 print:break-inside-avoid"
                   >
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[12.5px] font-bold tabular-nums text-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">{i + 1}</span>
                     <div className="min-w-0">
@@ -3261,6 +3275,9 @@ export function ReportDocument({
   const t = useTranslations("reportDoc");
   const locale = useLocale();
   const enumLabel = useEnumLabel();
+  // Khi in: khối lớn được phép ngắt bên trong thay vì bị đẩy nguyên sang trang sau (xem usePrintBreakTuning).
+  const shellRef = useRef<HTMLDivElement>(null);
+  usePrintBreakTuning(shellRef);
   const content = report?.content ?? {};
   const priceRows: any[] = content["2"]?.prices || [];
   // Báo cáo Chủ Nhật/Thứ Hai: ngày dữ liệu cuối tuần, không có phiên giao dịch — backend
@@ -3313,7 +3330,8 @@ export function ReportDocument({
   const cbamEstimate: CbamEstimate | null = noPriceData ? null : content["2"]?.cbam_estimate ?? null;
   const hedgeAction: HedgeAction | null = content["3"]?.hedge_action ?? null;
   const execBullets: any[] = content["1"]?.bullets ?? [];
-  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in; đặt cạnh bảng giá.
+  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in. Có biểu đồ nến EUA
+  // thì đặt cạnh biểu đồ nến (2 biểu đồ cao bằng nhau), không thì cạnh bảng giá.
   const indexPanel = !noPriceData && priceRows.length > 0 ? (
     <PriceIndexPanel
       reportDate={report.report_date}
@@ -3349,7 +3367,7 @@ export function ReportDocument({
     // mới "dính" được khi cuộn trang.
     // Mobile (< sm): báo cáo tràn sát 2 mép màn hình (-mx-4 bù đúng px-4 của <main> trong app/layout.tsx), bỏ viền/bo
     // góc/bóng của card — lề đọc chỉ còn px-4 của nội dung.
-    <div className="report-shell @container/report w-full max-sm:-mx-4 max-sm:w-auto bg-background text-foreground font-sans leading-[1.55] rounded-2xl max-sm:rounded-none border border-border max-sm:border-x-0 shadow-[var(--shadow-soft)] max-sm:shadow-none overflow-clip mb-10">
+    <div ref={shellRef} className="report-shell @container/report w-full max-sm:-mx-4 max-sm:w-auto bg-background text-foreground font-sans leading-[1.55] rounded-2xl max-sm:rounded-none border border-border max-sm:border-x-0 shadow-[var(--shadow-soft)] max-sm:shadow-none overflow-clip mb-10">
 
       {/* Banner Stavian — 1 hàng gọn: logo | nhãn + tiêu đề + người báo cáo | thứ + ngày phát hành. */}
       <div className="relative overflow-hidden bg-gradient-to-br from-[#1B4D3E] via-[#1a5c4a] to-[#143d33] text-white">
@@ -3452,9 +3470,10 @@ export function ReportDocument({
                 {content["2"]?.no_price_notice || t("body.noPriceFallback")}
               </div>
             ) : priceRows.length > 0 && (
-              // Bảng giá nhanh (thu gọn) | biểu đồ chỉ số giá — biểu đồ giãn cao bằng bảng. Khi in/PDF chỉ giữ bảng giá.
-              <div className="grid gap-5 @5xl/report:grid-cols-12">
-                <div className="min-w-0 @5xl/report:col-span-7">
+              // Bảng giá nhanh hẹp (5/12, dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá rộng (7/12) — ngang từ khung báo
+              // cáo ≥ 768px (@3xl). Khi in/PDF chỉ giữ bảng giá.
+              <div className="grid gap-5 @3xl/report:grid-cols-12">
+                <div className="min-w-0 @3xl/report:col-span-5">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
@@ -3462,7 +3481,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                <div className="min-w-0 @5xl/report:col-span-5 print:hidden">{indexPanel}</div>
+                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 print:hidden">{indexPanel}</div>
               </div>
             )}
 

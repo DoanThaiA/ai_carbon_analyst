@@ -1100,7 +1100,8 @@
       "dDay": "Δ ngày",
       "dWeek": "Δ tuần",
       "dayLabel": "Ngày",
-      "weekLabel": "Tuần"
+      "weekLabel": "Tuần",
+      "note": "Lưu ý"
     },
     "keyDev": {
       "impact": {
@@ -1380,7 +1381,7 @@
   },
   "adminQcReviews": {
     "pageTitle": "QC Result",
-    "pageDesc": "Biên bản QC báo cáo do Jack chấm trên Claude (lịch 08:00, gửi qua MCP) — chỉ quản trị viên xem được. Biên bản Không đạt chặn lịch tự xuất bản.",
+    "pageDesc": "Biên bản QC báo cáo do Jack chấm trên Claude (lịch 07:30, gửi qua MCP) — chỉ quản trị viên xem được. Jenny tự sửa theo biên bản lúc 08:00; biên bản Không đạt mà còn lỗi nặng chưa sửa sẽ chặn lịch tự xuất bản.",
     "verdict_pass": "Đạt",
     "verdict_pass_with_fixes": "Đạt, cần sửa",
     "verdict_fail": "Không đạt",
@@ -1407,6 +1408,8 @@
     "wontFixPrompt": "Lý do không sửa (tuỳ chọn):",
     "updateError": "Không cập nhật được trạng thái lỗi.",
     "overallScore": "Điểm tổng",
+    "scoreAfterFixes": "Sau khi sửa ({count} lỗi đã sửa)",
+    "scoreAfterFixesTitle": "Điểm sau khi cộng lại phần điểm bị trừ của các lỗi đã sửa",
     "claudeProposed": "Claude đề xuất: {verdict}",
     "jackRule": "Jack rule-based",
     "issues": "{count} vấn đề",
@@ -1424,14 +1427,15 @@
     "close": "Đóng",
     "autoPublishOn": "Lịch tự xuất bản {time}: sẽ chạy — {reason}.",
     "autoPublishBlocked": "Lịch tự xuất bản {time}: BỊ CHẶN — {reason}. Sửa báo cáo rồi duyệt tay.",
-    "noReviewYet": "Chưa có biên bản QC cho báo cáo này (lịch Claude QC chạy lúc 08:00).",
+    "noReviewYet": "Chưa có biên bản QC cho báo cáo này (lịch Claude QC chạy lúc 07:30).",
     "historyTitle": "Các lần QC trước",
     "agentTitle": "Kết nối lịch Claude QC",
-    "agentFlow": "Luồng tự động: {report} sinh bản nháp → 08:00 Claude QC qua MCP và gửi biên bản → {publish} tự xuất bản (chặn nếu Không đạt).",
+    "agentFlow": "Luồng tự động: {report} sinh bản nháp → 07:30 Jack (Claude) QC qua MCP và gửi biên bản → {fix} Jenny tự sửa theo biên bản (nếu admin chưa sửa) → {publish} tự xuất bản (chặn nếu Không đạt mà còn lỗi nặng chưa sửa).",
+    "autoFixOff": "tắt tự sửa",
     "autoPublishOff": "tắt tự xuất bản",
     "tokenCreatedOnce": "URL MCP chỉ hiện 1 lần — sao chép ngay. Coi như mật khẩu.",
     "copy": "Sao chép",
-    "connectorHint": "Thêm URL này làm Connector (MCP từ xa) trong Claude, rồi tạo lịch chạy 08:00 các ngày có báo cáo với prompt bên dưới.",
+    "connectorHint": "Thêm URL này làm Connector (MCP từ xa) trong Claude, rồi tạo lịch chạy 07:30 các ngày có báo cáo với prompt bên dưới.",
     "createToken": "Tạo token QC",
     "tokenMeta": "Tạo bởi {by} · hết hạn {expires} · dùng lần cuối {used}",
     "revoke": "Thu hồi",

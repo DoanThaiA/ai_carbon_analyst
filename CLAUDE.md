@@ -161,7 +161,7 @@ so a connection isn't held idle while awaiting the Claude API.
 **Lịch crawl** (`scheduler.py`): giá 06:00 VN; tin tức đầu mỗi giờ 08:00–17:00 MỌI ngày (nhóm `vietnam` thêm đợt 06:00 VN trước báo cáo 07:00), tách
 theo `news_crawl_sources.region` (`NEWS_CRAWL_SCHEDULES`): `vietnam` theo giờ VN, `international`
 theo giờ New York (`America/New_York`, tự theo giờ mùa hè Mỹ); mỗi job `max_instances=1` +
-`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report NHÁP 07:45 VN (`AUTO_REPORT_TIME`), tự xuất bản 08:10 (`AUTO_PUBLISH_TIME`, xem "Biên bản QC Claude"). `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
+`coalesce=True` — 2 đợt cùng nhóm không chạy chồng; auto report NHÁP 07:00 VN (`AUTO_REPORT_TIME`), Jenny tự sửa theo QC 08:00 (`AUTO_QC_FIX_TIME`), tự xuất bản 08:15 (`AUTO_PUBLISH_TIME`, xem "Biên bản QC Claude"). `is_noon_crawl` chỉ còn dùng khi chạy tay `main.main(noon_only=True)`.
 Để crawl hàng giờ không gọi LLM lặp lại, URL đã xử lý nhưng KHÔNG lưu thành article
 (irrelevant, ngoài cửa sổ ngày, trùng hash, extract/classify lỗi, link Bloomberg gốc) được
 ghi vào bảng `crawl_seen_urls` (`pipeline/crawl_pipeline.py::process_source` →
@@ -279,19 +279,22 @@ xác suất, vùng giá, lệnh R:R tính từ điểm giữa vùng Entry / lệ
 chiến lược) và thanh phòng hộ CBAM dựng từ `cbam_estimate` (không đọc câu `hedge_action.core`). Xem bản tiếng Anh: mức giá/loại lệnh vẫn
 tách từ kịch bản tiếng Việt (`content_vi` do `lib/reportLocale.ts` giữ lại), câu chữ lấy bản Anh. Bố cục nhiều cột của trang báo cáo theo
 container query `@container/report` (bề rộng thật của báo cáo, không theo viewport); in A4 (~650px) tự về 1 cột — thêm khối mới thì giữ quy
-ước này và `print:` cho phần thu gọn. Khối đứng cùng hàng phải cao bằng nhau (yêu cầu 22/10/2026): lưới để mặc định stretch, không thêm
+ước này và `print:` cho phần thu gọn. Ngắt trang PDF: `lib/usePrintBreakTuning.ts` đo khối/thẻ theo khổ in lúc in — khối ≤ 18% trang giữ trọn (`data-print-keep`), khối lớn hơn (kể cả đang `print:break-inside-avoid`) được ngắt giữa các phần con (`data-print-split`), để không đẩy nguyên khối lớn sang trang sau. Khối đứng cùng hàng phải cao bằng nhau (yêu cầu 22/10/2026): lưới để mặc định stretch, không thêm
 `items-start`; cặp khối chữ dài dùng khung `PANEL`; danh sách thẻ (nhóm Phân tích, Cần theo dõi, tin Phần 3) xếp lưới 2 cột theo hàng
-thay vì 2 cột chảy độc lập; Phần 1: biểu đồ nến EUA | cột 5 ô tóm tắt giá EUA, bảng giá nhanh (thu gọn, Δ chỉ ghi số) | biểu
-đồ chỉ số giá (`PriceIndexPanel` tự giãn bằng bảng). Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
+thay vì 2 cột chảy độc lập; Phần 1: biểu đồ nến EUA | 5 ô tóm tắt xếp dọc (giãn theo chiều cao biểu đồ), Bảng giá nhanh dạng gọn | biểu đồ chỉ số giá (`PriceIndexPanel` tự giãn bằng bảng) — ngang từ khung ≥ 768px (`@3xl/report`). Mục 1 bullet không có nguồn là HỢP LỆ (prompt cho phép), không báo lỗi. Bảng `report_qc_results` (bản nút bấm cũ) không còn được ghi,
 giữ lại để không phá chuỗi migration.
 
 **Biên bản QC Claude (MCP) + tự xuất bản** (`services/report_qc_review.py`, bảng `report_qc_reviews` + `report_qc_findings`,
-migration `a9e4c7b2d5f1`): 07:45 sinh nháp → 08:00 lịch Claude (routine NGOÀI repo, prompt `QC_ROUTINE_PROMPT` / MCP prompt
+migration `a9e4c7b2d5f1`): 07:00 sinh nháp → 07:30 lịch Claude Jack QC (routine NGOÀI repo — giờ chạy đặt ở Claude, prompt `QC_ROUTINE_PROMPT` / MCP prompt
 `jack_qc_review`) dùng token `api_tokens.scope='qc_agent'` (admin tạo ở `/admin/qc-results`, không gắn bảng `users`, hạn
 `QC_AGENT_TOKEN_TTL_DAYS`) gọi `get_qc_assignment` (phiếu giao + `assignment_id` = `content_hash(content)` + Jack rule-based +
-lỗi biên bản trước; `part=` đọc JSON bản nháp) rồi `submit_qc_review` → 08:10 `scheduler.run_auto_publish_job` xuất bản +
-gửi email, CHỈ chặn khi biên bản mới nhất `verdict='fail'` (`publish_gate`, quy tắc C2: chưa có biên bản vẫn xuất bản; admin
-duyệt tay không bị chặn). Server KHÔNG tin số Claude: `overall_score` = Σ điểm × trọng số `QC_CRITERIA` (7 tiêu chí, tổng 100),
+lỗi biên bản trước; `part=` đọc JSON bản nháp) rồi `submit_qc_review` (prompt dặn gửi trước 07:55) → 08:00
+`scheduler.run_auto_qc_fix_job`: Jenny tự sửa = chạy đúng luồng nút "Sửa báo cáo theo QC" (`report_qc_fix.auto_fix_from_review`,
+mọi lỗi `open`, chỉ áp thay đổi `selected`, actor "Jenny (tự động)") rồi dịch lại EN; BỎ QUA khi nội dung lệch
+`review.content_hash` (= admin đã sửa tay/sửa theo QC sau lần QC — `auto_fix_skip_reason`) → 08:15 `run_auto_publish_job` xuất bản +
+gửi email (chung `_REPORT_FINALIZE_LOCK` với job sửa — chờ sửa xong). Cổng `publish_gate`/`gate_decision` (quyết định 23/10/2026):
+chưa có biên bản → xuất bản (C2); `fail` → chặn, TRỪ KHI đã có lỗi `fixed`, không còn lỗi critical/major `open` (`wont_fix` =
+admin bỏ qua) VÀ điểm sau sửa (`score_after_fixes`) ≥ `FAIL_SCORE`; admin duyệt tay không bị chặn. Server KHÔNG tin số Claude: `overall_score` = Σ điểm × trọng số `QC_CRITERIA` (7 tiêu chí, tổng 100),
 `decide_verdict` chỉ nghiêm hơn Claude (điểm < `FAIL_SCORE` hoặc critical đã kiểm chứng → fail); `assignment_id` lệch nội dung
 hiện tại → từ chối; lỗi định dạng trả văn bản liệt kê đủ để Claude gửi lại. `fingerprint` lỗi → `repeat_count` trên
 `REPEAT_LOOKBACK_REPORTS` báo cáo trước. Token qc_agent: tool QC chỉ hiện với scope này (gateway `tools_for_token`, MCP HTTP
@@ -306,7 +309,7 @@ gửi LLM), LLM (`FIX_MODEL`) chỉ trả cặp `{old → new}` trong các chu�
 đúng 1 lần/chồng nhau/đụng "(Nguồn: …)"/URL/số mới không có trong biên bản hoặc đoạn gốc; rồi `apply_consistency_fixes`
 chỉ trên đoạn vừa sửa + Jack trước/sau (đoạn phát sinh lỗi Jack mới bị bỏ chọn sẵn). `POST .../fix-apply` ghi khi
 `base_hash` và `before` từng đoạn còn khớp, đánh dấu lỗi `fixed`, dịch lại bản EN; `undo=true` = áp ngược, lỗi về `open`.
-Biên bản cũ giữ verdict (fail vẫn chặn tự xuất bản tới khi QC lại/duyệt tay). Test: `tests/test_report_qc_fix.py`.
+Biên bản cũ giữ verdict; fail hết chặn khi lỗi critical/major đã sửa hết (xem `gate_decision`). Điểm sau sửa (`score_after_fixes`, tính lúc đọc, không ghi DB): điểm bị trừ của mỗi tiêu chí (10 − điểm) chia cho lỗi cùng tiêu chí theo trọng số mức độ 3/2/1, lỗi `fixed` được cộng lại phần của mình; `overall_score` gốc giữ nguyên — panel/trang tổng hợp hiện cả 2. Test: `tests/test_report_qc_fix.py`.
 
 **Tự sửa số học/trình bày** (`services/report_consistency.py`, hàm thuần): cuối `generate_report_content` chạy
 `apply_consistency_fixes` trên toàn bộ văn xuôi (bỏ qua `SKIP_KEYS`): tính lại nhãn "X (±p% so với đóng cửa Y)" (và
@@ -393,7 +396,7 @@ mục tiêu tới trước khi khớp → `direction_only` (đếm riêng, khôn
   `mechanism`, `verified`; prompt có khối "CƠ CHẾ MSR" (nâng ngưỡng vô hiệu hóa / giảm chuyển vào MSR = NỚI cung) + Jack
   `check_msr_direction`. Bảng chính sách hiển thị "Tác động lên giá EUA". Mẫu số lũy kế = báo cáo có kết luận Đúng/Sai
   (`calibration_all_excluded` tách riêng), chấm lại toàn bộ theo quy tắc từ `SCORING_METHOD_SINCE`. Thẻ "Dự báo trước" CHỈ hiện
-  bảng + tỷ lệ cửa sổ 7 báo cáo + "Nguyên nhân & điều chỉnh" (lũy kế/chuẩn so sánh/quy tắc vẫn tính, chỉ dùng trong prompt).
+  bảng + "Nguyên nhân & điều chỉnh" (tỷ lệ đúng theo xác suất — cả cửa sổ 7 báo cáo, bỏ hiển thị 23/10/2026 — lũy kế/chuẩn so sánh/quy tắc vẫn tính, chỉ dùng trong prompt).
   Giá trị mặc định CBAM áp theo nước xuất xứ (số TQ/UAE = minh họa; `vn: true` khi admin thêm số VN). `futures_expiry` trong
   cbam_products.yaml chốt câu đáo hạn Dec. Fuel: không có ngưỡng TTF chiều lên (Jack `_UPWARD_THRESHOLD_RE`). Mục 1 nhận
   `_exec_policy_block` (bắt buộc bullet "Chính sách ETS"). `_trim_section3_blocks` bỏ "Quan điểm thị trường" chỉ lặp nguồn bảng

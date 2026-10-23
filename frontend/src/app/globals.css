@@ -238,6 +238,17 @@ svg text {
     page-break-inside: avoid;
   }
 
+  /* Khối "giữ trọn" mà cao hơn ~18% trang (đo lúc in — src/lib/usePrintBreakTuning.ts) được phép ngắt giữa các
+     phần con, để không bị đẩy nguyên sang trang sau để trống cuối trang. Đặt sau mọi quy tắc avoid ở trên. */
+  [data-print-split] {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+  [data-print-keep], .report-heading {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   /* ---- Chống mồ côi dòng: chỉ ngắt trang khi phần còn lại của trang không đủ
      5 dòng — orphans/widows tính bằng đơn vị dòng, đúng nghĩa "diện tích còn
      lại < 5 dòng thì mới ngắt trang, còn lại thì phải viết tiếp". ---- */

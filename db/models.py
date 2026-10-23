@@ -615,7 +615,7 @@ class ApiToken(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_email: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    # 'user': token cá nhân (chỉ đọc, chỉ báo cáo published). 'qc_agent': admin tạo cho lịch Claude QC 08:00 —
+    # 'user': token cá nhân (chỉ đọc, chỉ báo cáo published). 'qc_agent': admin tạo cho lịch Claude QC 07:30 —
     # thêm quyền đọc bản NHÁP để QC và ghi biên bản (get_qc_assignment / submit_qc_review); không gắn với bảng users.
     scope: Mapped[str] = mapped_column(Text, nullable=False, server_default="user")
     token_hash: Mapped[str] = mapped_column(Text, nullable=False)
@@ -708,8 +708,8 @@ class ReportQCResult(Base):
 
 class ReportQcReview(Base):
     """1 dòng = 1 biên bản QC báo cáo do Claude (vai Jack) chấm rồi gửi qua MCP (tool `submit_qc_review`, token
-    `scope='qc_agent'`) — luồng tự động: sinh nháp 07:45 → Claude QC 08:00 → tự xuất bản 08:10 (chặn khi
-    `verdict='fail'`). Xem services/report_qc_review.py (rubric, chuẩn hóa, tính điểm).
+    `scope='qc_agent'`) — luồng tự động: sinh nháp 07:00 → Claude QC 07:30 → Jenny tự sửa 08:00 → tự xuất bản
+    08:15 (chặn khi `verdict='fail'` mà còn lỗi critical/major chưa sửa). Xem services/report_qc_review.py (rubric, chuẩn hóa, tính điểm).
 
     `overall_score` (thang 10) do SERVER tính lại từ `criteria` theo trọng số rubric, không lấy số Claude tự cộng.
     `content_hash` = hash `reports.content` lúc Claude đọc bản nháp — lệch hash hiện tại nghĩa là báo cáo đã bị sửa
