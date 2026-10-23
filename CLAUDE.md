@@ -305,7 +305,7 @@ mọi lỗi `open`, chỉ áp thay đổi `selected`, actor "Jenny (tự động
 gửi email (chung `_REPORT_FINALIZE_LOCK` với job sửa — chờ sửa xong). Cổng `publish_gate`/`gate_decision` (quyết định 23/10/2026):
 chưa có biên bản → xuất bản (C2); `fail` → chặn, TRỪ KHI đã có lỗi `fixed`, không còn lỗi critical/major `open` (`wont_fix` =
 admin bỏ qua) VÀ điểm sau sửa (`score_after_fixes`) ≥ `FAIL_SCORE`; admin duyệt tay không bị chặn. Server KHÔNG tin số Claude: `overall_score` = Σ điểm × trọng số `QC_CRITERIA` (7 tiêu chí, tổng 100),
-`decide_verdict` chỉ nghiêm hơn Claude (điểm < `FAIL_SCORE` hoặc critical đã kiểm chứng → fail); `assignment_id` lệch nội dung
+thang chấm Claude theo `SCORING_GUIDE` (khoan dung, 23/10/2026: CHỈ sai rõ ràng về logic/số liệu mới là lỗi, mỗi tiêu chí bắt đầu từ 9,0; phần còn THIẾU không nêu, không trừ), `decide_verdict` chỉ nghiêm hơn Claude (điểm < `FAIL_SCORE` hoặc critical đã kiểm chứng → fail); `assignment_id` lệch nội dung
 hiện tại → từ chối; lỗi định dạng trả văn bản liệt kê đủ để Claude gửi lại. `fingerprint` lỗi → `repeat_count` trên
 `REPEAT_LOOKBACK_REPORTS` báo cáo trước. Token qc_agent: tool QC chỉ hiện với scope này (gateway `tools_for_token`, MCP HTTP
 list_tools theo token), tool neo ngày được đọc bản nháp, jack_qc chạy trên nháp; đây là đường GHI duy nhất của gateway. Chỉ

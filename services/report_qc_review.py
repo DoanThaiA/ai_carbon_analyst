@@ -36,13 +36,15 @@ QC_CRITERIA: List[Dict[str, Any]] = [
      "guide": "Chiều tác động lên EUA đúng cơ chế (fuel switching, MSR, cung/cầu), không mâu thuẫn giữa các mục, "
               "kết luận có cơ sở dữ liệu."},
     {"key": "coverage", "label": "Độ phủ & cập nhật tin", "weight": 15,
-     "guide": "Đủ tin quan trọng trong khung tin; không tin cũ/trùng; chính sách ETS/MSR, CBAM được theo dõi."},
+     "guide": "Tin đưa vào không cũ/trùng, nội dung tóm tắt đúng bài gốc. Thiếu tin KHÔNG trừ điểm."},
     {"key": "transparency", "label": "Minh bạch nguồn & giả định", "weight": 10,
-     "guide": "Nguồn trích đúng bài, đúng nhà xuất bản; giả định mô hình ghi rõ; phân biệt số liệu và suy luận."},
+     "guide": "Nguồn trích đúng bài, đúng nhà xuất bản; không trình bày suy luận như số liệu thật. Thiếu nguồn/giả "
+              "định KHÔNG trừ điểm."},
     {"key": "trading_hedge", "label": "Kịch bản giao dịch & phòng hộ", "weight": 15,
      "guide": "Entry/mục tiêu/cắt lỗ hợp lệ (R:R, ATR), nhất quán nhãn Tổng hợp; phòng hộ CBAM đúng cấu trúc."},
     {"key": "biz", "label": "Gợi ý kinh doanh (SIM)", "weight": 10,
-     "guide": "Bám lăng kính kim loại/CBAM của SIM, có nguồn, có KPI/người phụ trách, định lượng hợp lý."},
+     "guide": "Số liệu/định lượng đúng, logic gợi ý khớp dữ liệu báo cáo. Thiếu KPI/người phụ trách/nguồn KHÔNG "
+              "trừ điểm."},
     {"key": "presentation", "label": "Trình bày & ngôn ngữ", "weight": 5,
      "guide": "Ngắn gọn, đúng định dạng số VN, không lặp ý, không lỗi chính tả/thuật ngữ."},
 ]
@@ -323,6 +325,29 @@ def normalize_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
 # Giao việc cho Claude (tool get_qc_assignment)
 # ---------------------------------------------------------------------------
 
+# Thang chấm khoan dung (đưa vào phiếu giao qua submission_schema_text; QC_ROUTINE_PROMPT nhắc lại ý chính): CHỈ sai
+# rõ ràng về logic/số liệu mới là lỗi và bị trừ điểm; phần còn thiếu không nêu; mỗi lỗi chỉ trừ 1 lần.
+SCORING_GUIDE = (
+    "THANG CHẤM (khoan dung — CHỈ trừ điểm khi SAI RÕ RÀNG về LOGIC hoặc SỐ LIỆU, không bới lỗi):\n"
+    "  - CHỈ 2 loại được tính là lỗi: (a) SAI SỐ LIỆU — số trong báo cáo khác số trong dữ liệu/bài gốc, phép tính "
+    "sai (%, R:R, ATR, cộng trừ); (b) SAI LOGIC — chiều tác động trái cơ chế đã nêu trong khung, mâu thuẫn trực tiếp "
+    "giữa 2 câu/2 mục, kết luận ngược với chính dữ liệu báo cáo đưa ra. Phải chỉ ra được bằng chứng cụ thể; không có "
+    "→ KHÔNG trừ điểm.\n"
+    "  - THIẾU thì KHÔNG nêu, KHÔNG trừ điểm: thiếu tin, thiếu nguồn, thiếu giả định, thiếu KPI/người phụ trách, thiếu "
+    "phân tích sâu hơn, thiếu chi tiết... — không ghi vào findings.\n"
+    "  - Mỗi tiêu chí BẮT ĐẦU từ 9,0, chỉ trừ cho lỗi sai rõ ràng: critical −2,0; major −1,0; minor −0,3 (minor cùng "
+    "loại gộp thành 1 lần trừ, tối đa −1,0 cho mọi minor của 1 tiêu chí). Làm tốt nổi bật có thể cộng tới 10.\n"
+    "  - Mỗi lỗi chỉ trừ ở ĐÚNG 1 tiêu chí (tiêu chí chính của lỗi) — không trừ lặp sang tiêu chí khác.\n"
+    "  - Tiêu chí chỉ có lỗi minor → điểm ≥ 8,0. Không chấm dưới 6,0 nếu tiêu chí đó không có lỗi critical.\n"
+    "  - Nghi vấn, chưa tự kiểm chứng được bằng tool, hoặc cách hiểu/cách viết khác cũng hợp lý → KHÔNG phải lỗi, "
+    "không ghi vào findings, không trừ điểm.\n"
+    "  - Cảnh báo Jack rule-based mà bạn kiểm lại thấy là báo động giả, không ảnh hưởng người đọc, hoặc chỉ báo phần "
+    "THIẾU (độ phủ tin, thiếu URL/nguồn...) → bỏ, không trừ.\n"
+    "  - Phần prompt cho phép (vd bullet Mục 1 không có nguồn, báo cáo CN/T2 không có giá) không tính là lỗi.\n"
+    "  - Phong cách, cách diễn đạt khác, góp ý \"có thể tốt hơn\" → ghi vào priorities, KHÔNG tính là lỗi, không trừ điểm."
+)
+
+
 def submission_schema_text() -> str:
     """Mô tả định dạng biên bản (đưa vào kết quả get_qc_assignment + mô tả tool)."""
     crit = "\n".join(
@@ -339,8 +364,10 @@ def submission_schema_text() -> str:
         "trích nguyên văn), expected_text (nên sửa thành), evidence (số đối chiếu/phép tính/trích nguồn — BẮT BUỘC với "
         "critical/major), verification: verified (đã tự đối chiếu bằng tool/dữ liệu) | partially_verified | unverified, "
         "source_refs [{label, url}]}.\n"
-        "  critical = sai số liệu/chiều tác động có thể dẫn tới quyết định giao dịch/phòng hộ sai; major = sai logic, "
-        "thiếu tin quan trọng, nguồn sai; minor = trình bày, diễn đạt.\n"
+        "  critical = sai số liệu/chiều tác động ĐÃ KIỂM CHỨNG bằng tool, chắc chắn dẫn tới quyết định giao dịch/phòng "
+        "hộ sai; major = sai logic/số liệu rõ ràng nhưng ít ảnh hưởng quyết định; minor = sai nhỏ về số/logic ở phần "
+        "phụ. Không dùng finding cho phần còn THIẾU.\n"
+        f"{SCORING_GUIDE}\n"
         "- `verdict`: pass | pass_with_fixes | fail (fail = chặn tự xuất bản 08:15 nếu lỗi nặng chưa được sửa).\n"
         "- `summary` (3–6 câu), `strengths` [chuỗi], `priorities` [{text, expected_gain (điểm cộng dự kiến)}], "
         "`body_markdown` (biên bản đầy đủ dạng Markdown — bảng điểm, lỗi theo mục, lộ trình cải thiện), "
@@ -816,12 +843,12 @@ QUY TRÌNH
 2. Đọc toàn bộ bản nháp: get_qc_assignment(report_date=<ngày>, part="all") (hoặc từng khối nếu quá dài). Ghi lại assignment_id.
 3. Đối chiếu bằng tool, ưu tiên phần ảnh hưởng quyết định giao dịch/phòng hộ:
    - Giá, %Δ, ATR, biên độ: get_market_prices, get_price_history, calc_price_stats, get_eua_details (truyền report_date).
-   - Số liệu trích tin: get_article theo URL nguồn; độ phủ: browse_news / search_news trong khung tin.
+   - Số liệu trích tin: get_article theo URL nguồn (không cần soát độ phủ tin — thiếu tin không tính lỗi).
    - Đấu giá, CBAM, lịch: get_eua_auctions, get_cbam_estimate, get_calendar_events.
    - Kết quả Jack rule-based trong phiếu giao là gợi ý — tự kiểm lại, bỏ báo động giả, bổ sung lỗi logic mà rule không bắt được (chiều tác động lên EUA, cơ chế MSR/fuel switching, mâu thuẫn giữa các mục, kịch bản ↔ nhãn Tổng hợp, R:R, nguồn sai nhà xuất bản).
    - Lỗi của biên bản trước còn tồn tại thì ghi lại (hệ thống tự đếm số lần lặp).
-4. Chấm ĐỦ 7 tiêu chí theo rubric (0–10, có comment). Mỗi lỗi: trích nguyên văn current_text, đề xuất expected_text, evidence bằng số/phép tính/nguồn; verification="verified" CHỈ khi đã tự đối chiếu bằng tool, không thì partially_verified/unverified. Không bịa số; không chắc thì ghi rõ là nghi vấn (minor/unverified).
-5. Kết luận: fail CHỈ khi có sai sót khiến báo cáo không nên phát hành (sai giá/chiều tác động trọng yếu, khuyến nghị vị thế/phòng hộ sai số học, nguồn bịa) — fail chặn tự xuất bản tới khi các lỗi critical/major được sửa. Jenny chỉ tự sửa được lỗi có current_text trích NGUYÊN VĂN và field_path đúng, nên ghi 2 trường này thật chính xác. Có lỗi cần sửa nhưng vẫn phát hành được → pass_with_fixes.
+4. Chấm ĐỦ 7 tiêu chí (0–10, có comment) theo THANG CHẤM KHOAN DUNG trong phiếu giao: mỗi tiêu chí bắt đầu từ 9,0, CHỈ trừ điểm cho lỗi SAI RÕ RÀNG về LOGIC hoặc SỐ LIỆU có bằng chứng cụ thể (nghi vấn/cách viết khác không trừ; phần còn THIẾU — tin, nguồn, KPI, giả định, chi tiết — KHÔNG nêu ra, không trừ), lỗi nhỏ chỉ trừ ít, mỗi lỗi chỉ trừ ở 1 tiêu chí, góp ý văn phong đưa vào priorities chứ không tính lỗi. Báo cáo dùng được, chỉ có lỗi nhỏ thì điểm tổng phải ở mức 8–9. Mỗi lỗi: trích nguyên văn current_text, đề xuất expected_text, evidence bằng số/phép tính/nguồn; verification="verified" CHỈ khi đã tự đối chiếu bằng tool, không thì partially_verified/unverified. Không bịa số; không chắc là sai thì KHÔNG ghi. Chỉ ghi lỗi có ích cho người đọc — không bới lỗi vụn vặt, gộp lỗi cùng loại thành 1.
+5. Kết luận: mặc định pass hoặc pass_with_fixes. fail CHỈ khi có lỗi critical ĐÃ KIỂM CHỨNG khiến báo cáo không nên phát hành (sai giá/chiều tác động trọng yếu, khuyến nghị vị thế/phòng hộ sai số học, nguồn bịa) — fail chặn tự xuất bản tới khi các lỗi critical/major được sửa. Jenny chỉ tự sửa được lỗi có current_text trích NGUYÊN VĂN và field_path đúng, nên ghi 2 trường này thật chính xác. Có lỗi cần sửa nhưng vẫn phát hành được → pass_with_fixes.
 6. Gọi submit_qc_review với report_date, assignment_id, reviewer="Jack (<tên model>)", criteria, findings, verdict, summary, strengths, priorities (kèm expected_gain), body_markdown (biên bản đầy đủ: bảng điểm, lỗi theo mục, lộ trình cải thiện). Nếu bị trả lỗi định dạng thì sửa và gửi lại; nếu assignment_id không khớp thì đọc lại báo cáo (bước 2) rồi gửi lại.
 Phải gửi biên bản trước 07:55 giờ VN — ưu tiên kiểm phần trọng yếu trước khi hết giờ. Viết tiếng Việt, ngắn gọn, chính xác."""
 
