@@ -430,6 +430,16 @@ function rangePosition(price: number, low: number, high: number): { pct: number;
   return { pct, pos };
 }
 
+// ["2026-10-13", "2026-10-15", "2026-10-16"] → "13, 15, 16/10" (gộp theo tháng).
+function joinDayMonth(dates: string[]): string {
+  const byMonth = new Map<string, string[]>();
+  [...dates].sort().forEach(d => {
+    const [, m, day] = d.split("-");
+    byMonth.set(m, [...(byMonth.get(m) ?? []), day]);
+  });
+  return [...byMonth].map(([m, days]) => `${days.join(", ")}/${m}`).join(" · ");
+}
+
 // ── Thang giá ────────────────────────────────────────────────────────────────
 type MarkTone = "buy" | "sell" | "target" | "stop" | "ref" | "current";
 interface LadderMark {
@@ -1110,8 +1120,8 @@ function hedgeShares(est: CbamEstimate) {
 }
 
 // ── KHỐI MỞ ĐẦU (Tổng quan) ──────────────────────────────────────────────────────────────────────────────
-// Báo cáo rộng: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM — 3 ô cao bằng
-// nhau ("Dự báo trước" chỉ ở mục Review dự báo bên dưới). Số liệu chính (giá CBAM ước tính, khí, than, điện, dầu) chạy dọc trên thanh menu (PriceTicker).
+// Báo cáo rộng: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM · Dự báo trước —
+// 3 ô cao bằng nhau. Số liệu chính (giá CBAM ước tính, khí, than, điện, dầu) chạy dọc trên thanh menu (PriceTicker).
 
 // Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung. Khi in, ô luôn giữ trọn
 // (data-print-whole — không cắt ô sang 2 trang, kể cả khi cao hơn ngưỡng ngắt của usePrintBreakTuning); riêng Tóm tắt
@@ -1282,23 +1292,20 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
       tint
       title={t("hero.verdictTitle")}
       backdrop={last !== undefined && chartData.length > 1 ? <EuaBackdrop data={chartData} /> : undefined}
-      // Góc trên: chiều kịch bản (ngắn hạn + trung hạn, outlookOf — vd "Trung lập · nghiêng giảm") thay cho thanh thước đo
-      // Giảm–Tăng cũ; không có kịch bản thì dùng nhãn của câu "Tổng hợp".
-      aside={outlook ? (
-        <span className={clsx("rounded-full border px-2.5 py-0.5 text-[12px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[OUTLOOK_SENTIMENT[outlook.tone] ?? "neutral"])}>
-          {t(`signal.outlookLabel.${outlook.key}`)}
-        </span>
-      ) : verdict && (
+      // Góc trên chỉ dùng khi không có kịch bản: nhãn của câu "Tổng hợp". Có kịch bản thì nhãn chiều + thanh Giảm–Tăng
+      // nằm ở hàng giá bên dưới.
+      aside={!outlook && verdict && (
         <span className={clsx("rounded-full border px-2.5 py-0.5 text-[12px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[verdict.sentiment])}>
           {t(`hero.sentiment.${verdict.sentiment}`)}
         </span>
       )}
       className={className}
     >
-      {/* Hàng giá nằm ngang: giá + đơn vị | Δ ngày/tuần (hẹp thì tự xuống dòng); câu nhận định trải hết bề ngang bên
-          dưới. Không còn đường giá 30 phiên (biểu đồ nến ở Phần 1) và thanh Giảm–Tăng (nhãn chiều ở góc trên). */}
-      {last !== undefined && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3">
+      {/* Hàng giá: cột trái = giá + đơn vị, Δ ngày/tuần ngay dưới giá; cột phải = nhãn chiều kịch bản (ngắn hạn + trung
+          hạn, outlookOf — vd "Trung lập · nghiêng giảm") với thanh Giảm–Tăng ngay dưới nhãn (hẹp thì xuống dòng). Câu
+          nhận định trải hết bề ngang bên dưới. */}
+      {(last !== undefined || outlook) && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
           {last !== undefined && (
             <div className="min-w-0">
               <div className="flex items-end gap-x-2">
@@ -1309,19 +1316,33 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
                 {euaRow?.name && <span>{euaRow.name} · </span>}
                 {stats.lastDate && <span className="tabular-nums">{t("dash.closeOf", { date: formatFullDate(stats.lastDate) })}</span>}
               </div>
+              {deltas.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {deltas.map(d => (
+                    <span key={d.key} className={clsx(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-bold tabular-nums",
+                      d.up ? "bg-up/10 text-up" : "bg-down/10 text-down",
+                    )}>
+                      {d.up ? "▲" : "▼"} {d.value}
+                      <span className="font-semibold opacity-80">{t(`hero.${d.key}`)}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          {last !== undefined && deltas.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {deltas.map(d => (
-                <span key={d.key} className={clsx(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-bold tabular-nums",
-                  d.up ? "bg-up/10 text-up" : "bg-down/10 text-down",
-                )}>
-                  {d.up ? "▲" : "▼"} {d.value}
-                  <span className="font-semibold opacity-80">{t(`hero.${d.key}`)}</span>
-                </span>
-              ))}
+          {outlook && (
+            <div className="min-w-[190px] flex-1">
+              <span className={clsx("inline-block rounded-full border px-2.5 py-0.5 text-[12px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[OUTLOOK_SENTIMENT[outlook.tone] ?? "neutral"])}>
+                {t(`signal.outlookLabel.${outlook.key}`)}
+              </span>
+              <div className="relative mt-3 h-[6px] rounded-full bg-gradient-to-r from-down/55 via-border to-up/55 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                <span className="absolute top-[-5px] h-4 w-[3px] rounded-full bg-label" style={{ left: `${outlook.pos}%`, transform: "translateX(-50%)" }} />
+              </div>
+              <div className="mt-1.5 flex items-baseline justify-between gap-2 text-[11.5px] text-muted-light">
+                <span>{t("signal.gaugeDown")}</span>
+                <span>{t("signal.gaugeUp")}</span>
+              </div>
             </div>
           )}
         </div>
@@ -1426,14 +1447,62 @@ const VERDICT_MARK: Record<string, { cls: string; icon: string }> = {
   unclear: { cls: "bg-surface text-muted-light ring-1 ring-inset ring-border-soft", icon: "?" },
 };
 
-// Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh ngắn hạn/phòng hộ).
+function ForecastStrip({ review }: { review: ForecastReview }) {
+  const tf = useTranslations("forecastReview");
+  const items = [...review.items].sort((a, b) => a.report_date.localeCompare(b.report_date));
+  return (
+    <ol className="mt-2.5 flex gap-1.5">
+      {items.map(it => {
+        const m = VERDICT_MARK[it.verdict] ?? VERDICT_MARK.unclear;
+        return (
+          <li key={it.report_date} className="flex min-w-0 max-w-[46px] flex-1 flex-col items-center gap-1" title={`${formatShortDate(it.report_date)} · ${tf(`verdict.${it.verdict}`)}`}>
+            <span className={clsx("grid h-7 w-full place-items-center rounded-md text-[13px] font-bold", m.cls)} aria-hidden="true">{m.icon}</span>
+            <span className="text-[10.5px] tabular-nums text-muted-light">{formatShortDate(it.report_date)}</span>
+            <span className="sr-only">{tf(`verdict.${it.verdict}`)}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// Dự báo trước (cột phải, ô 3): dải kết quả chấm các báo cáo gần nhất — chỉ liệt kê ngày Sai / Đúng / Đang theo dõi,
+// không hiện tỷ lệ (Sai chốt ngay khi chạm cắt lỗ còn Đúng phải chờ chạm mục tiêu/hết khung, nên tỷ lệ giữa khung luôn
+// nghiêng về Sai, dễ hiểu nhầm). "direction_only" (đúng hướng, lệnh không khớp) xếp vào Đúng; còn lại = Đang theo dõi.
+function HeroForecast({ review, className }: { review?: ForecastReview | null; className?: string }) {
+  const t = useTranslations("reportDoc");
+  const items = review?.items ?? [];
+  const right = items.filter(i => i.verdict === "correct" || i.verdict === "direction_only").map(i => i.report_date);
+  const wrong = items.filter(i => i.verdict === "wrong").map(i => i.report_date);
+  const watching = items.filter(i => !right.includes(i.report_date) && !wrong.includes(i.report_date)).map(i => i.report_date);
+  return (
+    <HeroCard
+      compact
+      title={t("signal.track")}
+      aside={items.length > 0 && (
+        <a href="#section-forecast-review" className="text-[12px] font-bold text-primary hover:underline print:hidden">{t("hero.seeReview")}</a>
+      )}
+      className={className}
+    >
+      {items.length > 0 && review && <ForecastStrip review={review} />}
+      <div className="mt-2 space-y-0.5 text-[12.5px] leading-snug tabular-nums">
+        {!items.length && <div className="text-muted-light">{t("signal.trackNone")}</div>}
+        {wrong.length > 0 && <div className="font-semibold text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
+        {right.length > 0 && <div className="font-semibold text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
+        {watching.length > 0 && <div className="text-muted-light">{t("signal.trackWatching", { dates: joinDayMonth(watching) })}</div>}
+      </div>
+    </HeroCard>
+  );
+}
+
+// Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh/phòng hộ/dự báo).
 // grid: lưới ngoài; s/v/d: class của từng ô. Màn hình: 3 ô cạnh nhau từ khung 1024px (WIDE), 768–1023px Tóm tắt hết
 // hàng + 2 ô bên dưới (A2). In (mọi khổ từ 576px — A4 dọc/ngang, 16:9): Tóm tắt và Nhận định (giá | câu nhận định cạnh
-// nhau) đều hết hàng, 2 ô lệnh/phòng hộ thành 1 hàng 2 cột — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
+// nhau) đều hết hàng, 3 ô lệnh/phòng hộ/dự báo thành 1 hàng 3 cột — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
 const A2 = "@3xl/report:grid-cols-2 print:@xl/report:grid-cols-2";
 const A2_FULL = "@3xl/report:col-span-2 print:@xl/report:col-span-2";
 const PRINT_FULL = "print:@xl/report:col-span-2";
-const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-2";
+const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-3";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
     // Nhận định to nhất, Tóm tắt = cột phải: 3/4/3 (báo cáo 1024–1279px) → 3/6/3 (≥ 1280px).
@@ -3379,11 +3448,11 @@ export function ReportDocument({
   const tickerItems = useTickerItems(noPriceData ? null : cbamEstimate, noPriceData ? [] : priceRows);
   const showOrders = !!shortPlan && shortPlan.legs.length > 0;
   const showHedge = !noPriceData && (!!cbamEstimate || !!hedgeAction);
+  const showTrack = !noPriceData && (plans.length > 0 || hasForecastReview);
   const heroKey = [
     execBullets.length > 0 && "s",
     (showSnapshot || !!euaVerdict || !!outlook) && "v",
-    // "Dự báo trước" không còn ở khối mở đầu (24/10/2026) — chỉ ở mục Review dự báo bên dưới.
-    (showOrders || showHedge) && "d",
+    (showOrders || showHedge || showTrack) && "d",
   ].filter(Boolean).join("") as keyof typeof HERO_SPANS | "";
   const heroSpans = heroKey ? HERO_SPANS[heroKey] : null;
 
@@ -3485,6 +3554,7 @@ export function ReportDocument({
                 <div className={clsx("flex min-w-0 flex-col gap-3", heroSpans.d)}>
                   {showOrders && shortPlan && <HeroOrders shortPlan={shortPlan} className="flex-1" />}
                   {showHedge && <HeroHedge cbamEstimate={cbamEstimate} hedgeAction={hedgeAction} className="flex-1" />}
+                  {showTrack && <HeroForecast review={forecastReview} className="flex-1" />}
                 </div>
               )}
             </div>
