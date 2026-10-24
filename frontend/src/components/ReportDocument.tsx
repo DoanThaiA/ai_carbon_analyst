@@ -1156,7 +1156,9 @@ function HeroSummary({ bullets, className }: { bullets: any[]; className?: strin
   const t = useTranslations("reportDoc");
   return (
     <HeroCard splittable title={t("body.execSummary")} className={className}>
-      <ul className="mt-3 flex list-none flex-col divide-y divide-border print:block">
+      {/* Các ý chia đều chiều cao ô (ô giãn bằng ô cao nhất hàng): mỗi ý 1 hàng bằng nhau, chữ căn giữa theo chiều dọc —
+          Tóm tắt ít ý không bị trống cả mảng dưới đáy. In: chảy dạng khối như cũ. */}
+      <ul className="mt-3 flex flex-1 list-none flex-col divide-y divide-border print:block">
         {bullets.map((bullet: any, i: number) => {
           const b: string = typeof bullet === "string" ? bullet : bullet?.text || "";
           const isMatch = b.includes(":");
@@ -1165,7 +1167,7 @@ function HeroSummary({ bullets, className }: { bullets: any[]; className?: strin
           const sourceName = typeof bullet === "object" ? bullet?.source_name : null;
           const sourceUrl = typeof bullet === "object" ? bullet?.source_url : null;
           return (
-            <li key={i} className="py-2.5 first:pt-0 last:pb-0 print:break-inside-avoid">
+            <li key={i} className="flex flex-1 flex-col justify-center py-2.5 first:pt-0 last:pb-0 print:block print:break-inside-avoid">
               {/* Nhãn chủ đề đứng đầu dòng, cùng dòng với chữ (không chiếm 1 dòng riêng) — ô thấp hơn, bớt trống ở 2 ô cạnh. */}
               <p className="text-left text-[15px] leading-[1.55] text-foreground">
                 <span className={clsx("mr-1.5 inline-block rounded-md border px-1.5 py-px align-[1px] text-[11.5px] font-bold leading-snug", tagColorClass(tag))}>{tag}</span>
@@ -1474,7 +1476,7 @@ function PriceTicker({ items, label, className }: { items: TickerItem[]; label?:
   );
 }
 
-// "Điều đáng quan tâm nhất hôm nay" (hết bề rộng, đầu phần Tổng quan; thay dải "Tin nóng" cũ): 1–2 câu LLM chọn trong
+// "Điều đáng quan tâm nhất hôm nay" (hết bề rộng, đầu phần Tổng quan; thay dải "Tin nóng" cũ, giữ tông đỏ của dải đó): 1–2 câu LLM chọn trong
 // lượt sinh Mục 1 — biến động giá mạnh HOẶC tin tác động trực tiếp lên EUA (content["1"].highlight,
 // report_generator._resolve_highlight). Báo cáo cũ không có trường này → ẩn.
 interface ReportHighlight { type: "price" | "news"; text: string; source_name?: string | null; source_url?: string | null }
@@ -1483,14 +1485,14 @@ function TodayHighlight({ highlight }: { highlight: ReportHighlight }) {
   const t = useTranslations("reportDoc");
   const Icon = highlight.type === "price" ? Activity : Newspaper;
   return (
-    <div className="flex min-w-0 items-stretch overflow-hidden rounded-xl border border-primary/30 bg-tint print:break-inside-avoid">
-      <div className="w-1.5 shrink-0 bg-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true" />
+    <div className="flex min-w-0 items-stretch overflow-hidden rounded-xl border border-down/30 bg-down/[0.04] print:break-inside-avoid">
+      <div className="w-1.5 shrink-0 bg-down [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true" />
       <div className="min-w-0 flex-1 px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">
+          <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-down">
             <Sparkles size={15} aria-hidden="true" /> {t("highlight.title")}
           </h2>
-          <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-background px-2 py-px text-[11.5px] font-bold text-primary-dark">
+          <span className="inline-flex items-center gap-1 rounded-full border border-down/30 bg-background px-2 py-px text-[11.5px] font-bold text-down">
             <Icon size={12} aria-hidden="true" /> {t(`highlight.type.${highlight.type}`)}
           </span>
         </div>
