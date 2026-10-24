@@ -1219,7 +1219,7 @@ function HeroSummary({ bullets, className }: { bullets: any[]; className?: strin
   const t = useTranslations("reportDoc");
   return (
     <HeroCard splittable title={t("body.execSummary")} className={className}>
-      <ul className="mt-3 flex flex-1 list-none flex-col justify-around divide-y divide-border print:block">
+      <ul className="mt-3 flex list-none flex-col divide-y divide-border print:block">
         {bullets.map((bullet: any, i: number) => {
           const b: string = typeof bullet === "string" ? bullet : bullet?.text || "";
           const isMatch = b.includes(":");
@@ -1228,9 +1228,9 @@ function HeroSummary({ bullets, className }: { bullets: any[]; className?: strin
           const sourceName = typeof bullet === "object" ? bullet?.source_name : null;
           const sourceUrl = typeof bullet === "object" ? bullet?.source_url : null;
           return (
-            <li key={i} className="py-3 first:pt-0 last:pb-0 print:break-inside-avoid">
+            <li key={i} className="py-2.5 first:pt-0 last:pb-0 print:break-inside-avoid">
               <span className={clsx("inline-block rounded-md border px-2 py-0.5 text-[12px] font-bold leading-snug", tagColorClass(tag))}>{tag}</span>
-              <p className="text-left mt-1.5 text-[16.5px] leading-[1.6] text-foreground">
+              <p className="text-left mt-1 text-[15px] leading-[1.55] text-foreground">
                 <RichText text={text} nums />
                 {sourceName && <InlineSource name={sourceName} url={sourceUrl} />}
               </p>
@@ -1269,7 +1269,7 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
     const up = text && text !== "-" ? isPositiveDelta(String(text)) : (pct ?? 0) >= 0;
     return { key, value, up };
   }).filter(d => d.value);
-  // Biên 30 phiên / ATR / khối lượng: ô rộng nằm ở cột phải dưới câu nhận định, ô hẹp nằm cuối ô.
+  // Biên 30 phiên / ATR / khối lượng: 1 hàng hết bề ngang ở đáy ô (cả ô rộng lẫn ô hẹp).
   const statsBlock = (cls: string) => last !== undefined && (
     <div className={clsx("grid grid-cols-2 gap-x-4 gap-y-3 border-t border-primary/15 pt-3 @sm:grid-cols-3", cls)}>
       <MiniStat
@@ -1305,7 +1305,7 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
       className={className}
     >
       {/* Ô rộng (in A4: hết hàng; báo cáo vừa không có tóm tắt): giá + thước đo | câu nhận định cạnh nhau. */}
-      <div className="mt-3 grid content-start gap-x-6 gap-y-3 @xl:grid-cols-2">
+      <div className="mt-3 grid content-start gap-x-6 gap-y-3 @lg:grid-cols-2">
         <div className="min-w-0">
           {last !== undefined && (
             <>
@@ -1342,22 +1342,22 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
               </div>
             </div>
           )}
-          {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="hidden @xl:flex" />}
+          {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="hidden @lg:flex" />}
         </div>
         <div className="min-w-0">
           {verdict && (
-            <p className="text-left text-[15.5px] leading-[1.6] text-label">
+            <p className="text-left text-[16px] leading-[1.6] text-label">
               <RichText text={verdict.text} nums />
             </p>
           )}
-          {statsBlock("mt-4 hidden @xl:grid")}
         </div>
       </div>
 
       {/* Ô hẹp: đường giá nhỏ dưới câu nhận định (ô rộng: ở cột trái, xem trên). */}
-      {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="mb-4 flex @xl:hidden" />}
+      {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="mb-4 flex @lg:hidden" />}
 
-      {statsBlock("mt-auto @xl:hidden")}
+      {/* mt-auto: hàng chỉ số luôn nằm ở đáy ô (ô giãn theo hàng lưới) — không để khoảng trống dưới đáy. */}
+      {last !== undefined && <div className="mt-auto pt-4">{statsBlock("")}</div>}
     </HeroCard>
   );
 }
@@ -1508,8 +1508,8 @@ const PRINT_FULL = "print:@xl/report:col-span-2";
 const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-3";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
-    grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-5`,
-    v: `not-print:@5xl/report:col-span-4 ${PRINT_FULL}`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
+    grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-4`,
+    v: `not-print:@5xl/report:col-span-5 ${PRINT_FULL}`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
   },
   sv: { grid: A2, s: "", v: "" },
   sd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
