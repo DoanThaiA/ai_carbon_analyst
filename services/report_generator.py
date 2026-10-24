@@ -3239,6 +3239,79 @@ def _resolve_highlight(raw: Any, index_lookup: Dict[int, Dict], no_price: bool) 
     return {"type": kind, **resolved}
 
 
+def _highlight_backfill_prompt(content: Dict[str, Any], target_date: str) -> tuple[str, str, Dict[int, Dict]]:
+    """Prompt bổ sung `content["1"].highlight` cho báo cáo ĐÃ SINH (scripts/backfill_report_highlight.py) — chỉ dựa trên
+    nội dung báo cáo (bảng giá, biên 30 phiên, Tóm tắt, Diễn biến chính, Mục 4), không đọc lại tin crawl. Mọi câu có nguồn
+    được đánh số [N] theo URL (trả kèm index_lookup cho `_resolve_highlight`) để LLM trích như lúc sinh Mục 1."""
+    sec1, sec2, sec4 = (content.get(k) or {} for k in ("1", "2", "4"))
+    no_price = bool(sec2.get("no_price_data"))
+    index_lookup: Dict[int, Dict] = {}
+    by_url: Dict[str, int] = {}
+
+    def cite(item: Any) -> str:
+        if not isinstance(item, dict):
+            return str(item or "")
+        text = str(item.get("text") or "").strip()
+        url = item.get("source_url")
+        if not url:
+            return text
+        if url not in by_url:
+            by_url[url] = len(by_url) + 1
+            index_lookup[by_url[url]] = {"source": item.get("source_name") or "", "url": url}
+        return f"[{by_url[url]}] {text} (Nguồn: {item.get('source_name') or url})"
+
+    blocks = []
+    if not no_price:
+        rows = [
+            f"- {r.get('name') or r.get('code')}: {r.get('price')} | Δ ngày {r.get('dday') or '-'} | Δ tuần {r.get('dweek') or '-'}"
+            for r in sec2.get("prices") or [] if isinstance(r, dict)
+        ]
+        blocks.append("BẢNG GIÁ:\n" + ("\n".join(rows) or "Không có."))
+        closes = [c["close"] for c in sec2.get("chart_data") or [] if isinstance(c, dict) and isinstance(c.get("close"), (int, float))]
+        if len(closes) >= 2:
+            blocks.append(
+                f"EUA {len(closes)} PHIÊN GẦN NHẤT: đóng cửa cuối {closes[-1]:g}, thấp nhất {min(closes):g}, cao nhất "
+                f"{max(closes):g} (phiên trước {closes[-2]:g})."
+            )
+    bullets = [cite(b) for b in sec1.get("bullets") or []]
+    blocks.append("TÓM TẮT ĐIỀU HÀNH ĐÃ VIẾT:\n" + "\n".join(f"- {b}" for b in bullets if b))
+    devs = [
+        f"- [{d.get('impact') or '?'}] {cite(d)}" for d in sec2.get("key_developments") or [] if isinstance(d, dict)
+    ]
+    if devs:
+        blocks.append("DIỄN BIẾN CHÍNH (chiều ròng lên EUA trong ngoặc vuông đầu dòng):\n" + "\n".join(devs))
+    cbam = [f"- {cite(b)}" for b in sec4.get("bullets") or []]
+    if cbam:
+        blocks.append("TÍN CHỈ CARBON & CBAM:\n" + "\n".join(cbam))
+
+    rule = HIGHLIGHT_RULE_NEWS_ONLY if no_price else HIGHLIGHT_RULE
+    example = ('{"highlight": {"type": "news", "text": "...", "source_index": 1}}' if no_price
+               else '{"highlight": {"type": "price", "text": "...", "source_index": null}}')
+    system = f"Bạn là chuyên gia phân tích thị trường năng lượng & carbon châu Âu.\n{CONCISENESS_RULE}"
+    user = (
+        f"Ngày báo cáo: {target_date}\n"
+        + (_NO_PRICE_PROMPT_RULE + "\n" if no_price else "")
+        + "\nNỘI DUNG BÁO CÁO ĐÃ PHÁT HÀNH (chỉ dùng đúng số liệu ở đây; số [N] là nguồn có thật):\n\n"
+        + "\n\n".join(blocks)
+        + "\n\nYÊU CẦU: Báo cáo đã có sẵn, chỉ viết thêm trường \"highlight\". Mọi số liệu PHẢI lấy nguyên văn từ nội dung "
+        "trên, không tự tính thêm, không đưa thông tin mới.\n"
+        + rule.replace("Số liệu PHẢI khớp bullet tương ứng ở trên.", "Số liệu PHẢI khớp nội dung báo cáo ở trên.")
+        + f"\n\nCHỈ TRẢ VỀ JSON HỢP LỆ:\n{example}"
+    )
+    return system, user, index_lookup
+
+
+async def generate_highlight_for_content(content: Dict[str, Any], target_date: str) -> Optional[Dict]:
+    """1 lượt LLM (cùng model Mục 1) → highlight đã chuẩn hoá, hoặc None (LLM lỗi / không chọn được / không hợp lệ)."""
+    system, user, index_lookup = _highlight_backfill_prompt(content, target_date)
+    raw = await _call_llm(user, system=system, max_tokens=1024)
+    data = _extract_json(raw) if raw else None
+    if not isinstance(data, dict):
+        return None
+    raw_hl = data.get("highlight") if "highlight" in data else (data.get("1") or {}).get("highlight")
+    return _resolve_highlight(raw_hl, index_lookup, bool((content.get("2") or {}).get("no_price_data")))
+
+
 def _prompt_section1(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str, target_date: str,
     fuel_spread: str = "",
