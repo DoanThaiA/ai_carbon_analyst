@@ -1176,8 +1176,9 @@ function HeroSummary({ bullets, className }: { bullets: any[]; className?: strin
           const sourceUrl = typeof bullet === "object" ? bullet?.source_url : null;
           return (
             <li key={i} className="py-2.5 first:pt-0 last:pb-0 print:break-inside-avoid">
-              <span className={clsx("inline-block rounded-md border px-2 py-0.5 text-[12px] font-bold leading-snug", tagColorClass(tag))}>{tag}</span>
-              <p className="text-left mt-1 text-[15px] leading-[1.55] text-foreground">
+              {/* Nhãn chủ đề đứng đầu dòng, cùng dòng với chữ (không chiếm 1 dòng riêng) — ô thấp hơn, bớt trống ở 2 ô cạnh. */}
+              <p className="text-left text-[15px] leading-[1.55] text-foreground">
+                <span className={clsx("mr-1.5 inline-block rounded-md border px-1.5 py-px align-[1px] text-[11.5px] font-bold leading-snug", tagColorClass(tag))}>{tag}</span>
                 <RichText text={text} nums />
                 {sourceName && <InlineSource name={sourceName} url={sourceUrl} />}
               </p>
@@ -1189,6 +1190,7 @@ function HeroSummary({ bullets, className }: { bullets: any[]; className?: strin
   );
 }
 
+const OUTLOOK_SENTIMENT: Record<string, EuaSentiment> = { "text-up": "positive", "text-down": "negative", "text-warn": "neutral" };
 const SENTIMENT_CHIP: Record<EuaSentiment, string> = {
   positive: "bg-up/10 text-up border-up/30",
   neutral: "bg-warn-tint text-warn border-warn/35",
@@ -1196,7 +1198,7 @@ const SENTIMENT_CHIP: Record<EuaSentiment, string> = {
 };
 
 // Nhận định tổng quan (ô giữa): giá EUA (số lớn nhất trang) + Δ ngày/tuần (đúng chuỗi của Bảng giá nhanh), thước đo
-// chiều kịch bản xếp 1 hàng ngang; câu "Tổng hợp" của Mục 3 (nguyên văn) trải ngang bên dưới; biên 30 phiên / ATR /
+// chiều kịch bản (chip góc trên) xếp gọn; câu "Tổng hợp" của Mục 3 (nguyên văn) trải ngang bên dưới; biên 30 phiên / ATR /
 // khối lượng phiên ở đáy ô.
 function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
   verdict: { sentiment: EuaSentiment; text: string } | null;
@@ -1244,21 +1246,27 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
     <HeroCard
       tint
       title={t("hero.verdictTitle")}
-      aside={verdict && (
+      // Góc trên: chiều kịch bản (ngắn hạn + trung hạn, outlookOf — vd "Trung lập · nghiêng giảm") thay cho thanh thước đo
+      // Giảm–Tăng cũ; không có kịch bản thì dùng nhãn của câu "Tổng hợp".
+      aside={outlook ? (
+        <span className={clsx("rounded-full border px-2.5 py-0.5 text-[12px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[OUTLOOK_SENTIMENT[outlook.tone] ?? "neutral"])}>
+          {t(`signal.outlookLabel.${outlook.key}`)}
+        </span>
+      ) : verdict && (
         <span className={clsx("rounded-full border px-2.5 py-0.5 text-[12px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[verdict.sentiment])}>
           {t(`hero.sentiment.${verdict.sentiment}`)}
         </span>
       )}
       className={className}
     >
-      {/* Hàng giá nằm ngang: giá + đơn vị | Δ ngày/tuần | thước đo chiều kịch bản (đủ chỗ thì 1 hàng, hẹp thì tự xuống
-          dòng); câu nhận định trải hết bề ngang bên dưới. Không còn đường giá 30 phiên (biểu đồ nến ở Phần 1). */}
-      {(last !== undefined || outlook) && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
+      {/* Hàng giá nằm ngang: giá + đơn vị | Δ ngày/tuần (hẹp thì tự xuống dòng); câu nhận định trải hết bề ngang bên
+          dưới. Không còn đường giá 30 phiên (biểu đồ nến ở Phần 1) và thanh Giảm–Tăng (nhãn chiều ở góc trên). */}
+      {last !== undefined && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3">
           {last !== undefined && (
             <div className="min-w-0">
               <div className="flex items-end gap-x-2">
-                <span className="text-[40px] sm:text-[44px] font-bold leading-none tracking-[-0.02em] tabular-nums text-label">{fp(last)}</span>
+                <span className="text-[38px] sm:text-[40px] font-bold leading-none tracking-[-0.02em] tabular-nums text-label">{fp(last)}</span>
                 <span className="mb-1 text-[13px] font-bold text-muted-light">EUR/tCO₂</span>
               </div>
               <div className="mt-1 text-[12px] leading-snug text-muted-light">
@@ -1268,28 +1276,16 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
             </div>
           )}
           {last !== undefined && deltas.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {deltas.map(d => (
                 <span key={d.key} className={clsx(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums",
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-bold tabular-nums",
                   d.up ? "bg-up/10 text-up" : "bg-down/10 text-down",
                 )}>
                   {d.up ? "▲" : "▼"} {d.value}
                   <span className="font-semibold opacity-80">{t(`hero.${d.key}`)}</span>
                 </span>
               ))}
-            </div>
-          )}
-          {outlook && (
-            <div className="min-w-[200px] flex-1">
-              <div className="relative h-[6px] rounded-full bg-gradient-to-r from-down/55 via-border to-up/55 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                <span className="absolute top-[-5px] h-4 w-[3px] rounded-full bg-label" style={{ left: `${outlook.pos}%`, transform: "translateX(-50%)" }} />
-              </div>
-              <div className="mt-1.5 flex items-baseline justify-between gap-2 text-[11.5px] text-muted-light">
-                <span>{t("signal.gaugeDown")}</span>
-                <span className={clsx("text-center text-[13px] font-bold", outlook.tone)}>{t(`signal.outlookLabel.${outlook.key}`)}</span>
-                <span>{t("signal.gaugeUp")}</span>
-              </div>
             </div>
           )}
         </div>
@@ -1455,7 +1451,7 @@ const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: str
     grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-4`,
     // In: Nhận định (giữ trọn ô) đứng TRƯỚC Tóm tắt (ngắt được giữa các ý) — Tóm tắt chảy tiếp lấp chỗ trống, không để ô
     // Nhận định bị đẩy nguyên sang trang 2 và bỏ trắng nửa trang 1.
-    v: `not-print:@5xl/report:col-span-5 ${PRINT_FULL} print:order-first`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
+    v: `not-print:@5xl/report:col-span-4 ${PRINT_FULL} print:order-first`, d: `not-print:@5xl/report:col-span-4 ${PRINT_FULL} ${PRINT_ROW}`,
   },
   sv: { grid: A2, s: "", v: "" },
   sd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
