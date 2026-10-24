@@ -325,10 +325,13 @@ def normalize_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
 # Giao việc cho Claude (tool get_qc_assignment)
 # ---------------------------------------------------------------------------
 
-# Thang chấm khoan dung (đưa vào phiếu giao qua submission_schema_text; QC_ROUTINE_PROMPT nhắc lại ý chính): CHỈ sai
-# rõ ràng về logic/số liệu mới là lỗi và bị trừ điểm; phần còn thiếu không nêu; mỗi lỗi chỉ trừ 1 lần.
+# Thang chấm (đưa vào phiếu giao qua submission_schema_text; QC_ROUTINE_PROMPT nhắc lại ý chính): CHỈ sai rõ ràng về
+# logic/số liệu mới là lỗi và bị trừ điểm; phần còn thiếu không nêu; mỗi lỗi chỉ trừ 1 lần. Chữ đưa cho Claude CỐ Ý không
+# có "khoan dung"/"nhẹ tay" — Claude Desktop từng nhắc lại thành "sẽ chấm nhẹ", người đọc hiểu là nới tay; chỉ gọi là "chấm".
 SCORING_GUIDE = (
-    "THANG CHẤM (khoan dung — CHỈ trừ điểm khi SAI RÕ RÀNG về LOGIC hoặc SỐ LIỆU, không bới lỗi):\n"
+    "THANG CHẤM (CHỈ trừ điểm khi SAI RÕ RÀNG về LOGIC hoặc SỐ LIỆU, không bới lỗi):\n"
+    "  - Khi nói/viết về việc chấm (trả lời người dùng, summary, body_markdown) chỉ dùng chữ \"chấm\" / \"chấm theo "
+    "thang chấm\" — KHÔNG viết \"chấm nhẹ\", \"chấm khoan dung\", \"chấm nới tay\", \"chấm dễ\" hay tương tự.\n"
     "  - CHỈ 2 loại được tính là lỗi: (a) SAI SỐ LIỆU — số trong báo cáo khác số trong dữ liệu/bài gốc, phép tính "
     "sai (%, R:R, ATR, cộng trừ); (b) SAI LOGIC — chiều tác động trái cơ chế đã nêu trong khung, mâu thuẫn trực tiếp "
     "giữa 2 câu/2 mục, kết luận ngược với chính dữ liệu báo cáo đưa ra. Phải chỉ ra được bằng chứng cụ thể; không có "
@@ -847,10 +850,11 @@ QUY TRÌNH
    - Đấu giá, CBAM, lịch: get_eua_auctions, get_cbam_estimate, get_calendar_events.
    - Kết quả Jack rule-based trong phiếu giao là gợi ý — tự kiểm lại, bỏ báo động giả, bổ sung lỗi logic mà rule không bắt được (chiều tác động lên EUA, cơ chế MSR/fuel switching, mâu thuẫn giữa các mục, kịch bản ↔ nhãn Tổng hợp, R:R, nguồn sai nhà xuất bản).
    - Lỗi của biên bản trước còn tồn tại thì ghi lại (hệ thống tự đếm số lần lặp).
-4. Chấm ĐỦ 7 tiêu chí (0–10, có comment) theo THANG CHẤM KHOAN DUNG trong phiếu giao: mỗi tiêu chí bắt đầu từ 9,0, CHỈ trừ điểm cho lỗi SAI RÕ RÀNG về LOGIC hoặc SỐ LIỆU có bằng chứng cụ thể (nghi vấn/cách viết khác không trừ; phần còn THIẾU — tin, nguồn, KPI, giả định, chi tiết — KHÔNG nêu ra, không trừ), lỗi nhỏ chỉ trừ ít, mỗi lỗi chỉ trừ ở 1 tiêu chí, góp ý văn phong đưa vào priorities chứ không tính lỗi. Báo cáo dùng được, chỉ có lỗi nhỏ thì điểm tổng phải ở mức 8–9. Mỗi lỗi: trích nguyên văn current_text, đề xuất expected_text, evidence bằng số/phép tính/nguồn; verification="verified" CHỈ khi đã tự đối chiếu bằng tool, không thì partially_verified/unverified. Không bịa số; không chắc là sai thì KHÔNG ghi. Chỉ ghi lỗi có ích cho người đọc — không bới lỗi vụn vặt, gộp lỗi cùng loại thành 1.
+4. Chấm ĐỦ 7 tiêu chí (0–10, có comment) theo THANG CHẤM trong phiếu giao: mỗi tiêu chí bắt đầu từ 9,0, CHỈ trừ điểm cho lỗi SAI RÕ RÀNG về LOGIC hoặc SỐ LIỆU có bằng chứng cụ thể (nghi vấn/cách viết khác không trừ; phần còn THIẾU — tin, nguồn, KPI, giả định, chi tiết — KHÔNG nêu ra, không trừ), lỗi nhỏ chỉ trừ ít, mỗi lỗi chỉ trừ ở 1 tiêu chí, góp ý văn phong đưa vào priorities chứ không tính lỗi. Báo cáo dùng được, chỉ có lỗi nhỏ thì điểm tổng phải ở mức 8–9. Mỗi lỗi: trích nguyên văn current_text, đề xuất expected_text, evidence bằng số/phép tính/nguồn; verification="verified" CHỈ khi đã tự đối chiếu bằng tool, không thì partially_verified/unverified. Không bịa số; không chắc là sai thì KHÔNG ghi. Chỉ ghi lỗi có ích cho người đọc — không bới lỗi vụn vặt, gộp lỗi cùng loại thành 1.
 5. Kết luận: mặc định pass hoặc pass_with_fixes. fail CHỈ khi có lỗi critical ĐÃ KIỂM CHỨNG khiến báo cáo không nên phát hành (sai giá/chiều tác động trọng yếu, khuyến nghị vị thế/phòng hộ sai số học, nguồn bịa) — fail chặn tự xuất bản tới khi các lỗi critical/major được sửa. Jenny chỉ tự sửa được lỗi có current_text trích NGUYÊN VĂN và field_path đúng, nên ghi 2 trường này thật chính xác. Có lỗi cần sửa nhưng vẫn phát hành được → pass_with_fixes.
 6. Gọi submit_qc_review với report_date, assignment_id, reviewer="Jack (<tên model>)", criteria, findings, verdict, summary, strengths, priorities (kèm expected_gain), body_markdown (biên bản đầy đủ: bảng điểm, lỗi theo mục, lộ trình cải thiện). Nếu bị trả lỗi định dạng thì sửa và gửi lại; nếu assignment_id không khớp thì đọc lại báo cáo (bước 2) rồi gửi lại.
-Phải gửi biên bản trước 07:55 giờ VN — ưu tiên kiểm phần trọng yếu trước khi hết giờ. Viết tiếng Việt, ngắn gọn, chính xác."""
+Phải gửi biên bản trước 07:55 giờ VN — ưu tiên kiểm phần trọng yếu trước khi hết giờ. Viết tiếng Việt, ngắn gọn, chính xác.
+CÁCH GỌI VIỆC CHẤM: chỉ nói là "chấm" / "chấm theo thang chấm trong phiếu giao" — KHÔNG được nói hay viết "chấm nhẹ", "chấm khoan dung", "chấm nới tay", "chấm dễ", "nương tay" hay bất kỳ cách nói nào khiến người đọc hiểu là chấm lỏng (kể cả khi trả lời người dùng, trong summary và body_markdown)."""
 
 QC_PROMPT_DEF = {
     "name": "jack_qc_review",

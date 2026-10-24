@@ -221,3 +221,11 @@ def test_score_after_fixes_credits_fixed_findings():
     # Sửa hết lỗi của tiêu chí → 10; không sửa gì → giữ nguyên điểm gốc.
     assert qr.score_after_fixes(crit, [f("major", "fixed"), f("minor", "fixed")])[1][0]["score_after_fixes"] == 10.0
     assert qr.score_after_fixes(crit, [f("major", "open")])[0] == qr.compute_overall_score(crit)
+
+
+def test_qc_prompts_never_describe_scoring_as_lenient():
+    # Claude Desktop nhắc lại chữ trong prompt ("thang chấm khoan dung" → "sẽ chấm nhẹ") — chữ đưa cho Claude chỉ được
+    # gọi là "chấm"; "khoan dung"/"chấm nhẹ" chỉ được xuất hiện trong chính câu cấm.
+    for text in (qr.QC_ROUTINE_PROMPT, qr.SCORING_GUIDE):
+        lines = [ln for ln in text.splitlines() if "khoan dung" in ln.lower() or "chấm nhẹ" in ln.lower()]
+        assert lines and all("KHÔNG" in ln for ln in lines)
