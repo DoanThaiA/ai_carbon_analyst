@@ -1,13 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import clsx from "clsx";
 import {
   Clock, CalendarRange, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Trash2,
-  Leaf, Calendar, RefreshCw, ArrowLeftRight, ArrowRight, CalendarClock, ClipboardCheck, ArrowDownUp, Activity
+  Leaf, Calendar, RefreshCw, ArrowLeftRight, ArrowRight, CalendarClock, ClipboardCheck, ArrowDownUp
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
@@ -1116,8 +1116,10 @@ function hedgeShares(est: CbamEstimate) {
 // Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung. Khi in, ô luôn giữ trọn
 // (data-print-whole — không cắt ô sang 2 trang, kể cả khi cao hơn ngưỡng ngắt của usePrintBreakTuning); riêng Tóm tắt
 // điều hành (`splittable`) được ngắt giữa các ý vì báo cáo cũ có thể dài gần 1 trang.
-function HeroCard({ title, aside, tint, compact, splittable, className, children }: {
+function HeroCard({ title, aside, tint, compact, splittable, backdrop, className, children }: {
   title: React.ReactNode; aside?: React.ReactNode; tint?: boolean; compact?: boolean; splittable?: boolean; className?: string;
+  // Lớp nền trang trí (vd EuaBackdrop) — nằm sau nội dung (isolate + -z-10), bị cắt theo góc bo của ô.
+  backdrop?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -1127,14 +1129,55 @@ function HeroCard({ title, aside, tint, compact, splittable, className, children
       splittable ? "print:block" : "print:break-inside-avoid",
       compact ? "px-4 py-3.5" : "p-4 sm:p-5",
       tint ? "border-primary/20 bg-tint" : "border-border bg-background",
+      backdrop && "relative isolate overflow-hidden",
       className,
     )}>
+      {backdrop}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">{title}</h2>
         {aside}
       </div>
       {children}
     </div>
+  );
+}
+
+// Nền ô Nhận định tổng quan: đường giá đóng cửa EUA 30 phiên (chart_data) dạng vùng tô mờ — trang trí, không trục/nhãn
+// (số liệu thật nằm ở Phần 1). Chiếm ~60% chiều cao dưới đáy ô, giãn theo mọi bề rộng (preserveAspectRatio="none", nét
+// không co giãn); mờ dần lên trên để chữ phía trên vẫn đọc rõ.
+function EuaBackdrop({ data }: { data: OhlcRow[] }) {
+  const id = useId();
+  const closes = data.map(d => d.close).filter((v): v is number => typeof v === "number");
+  if (closes.length < 2) return null;
+  const min = Math.min(...closes), max = Math.max(...closes);
+  const span = max - min || 1;
+  const W = 300, H = 100;
+  const x = (i: number) => (i / (closes.length - 1)) * W;
+  const y = (v: number) => 8 + (1 - (v - min) / span) * (H - 16);
+  const line = closes.map((c, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(c).toFixed(2)}`).join(" ");
+  const up = closes[closes.length - 1] >= closes[0];
+  const color = up ? "var(--color-up)" : "var(--color-down)";
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true"
+      className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-[62%] w-full opacity-[0.22] [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
+    >
+      <defs>
+        <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.55" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id={`${id}-fade`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="white" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="white" stopOpacity="1" />
+        </linearGradient>
+        <mask id={`${id}-mask`}><rect width={W} height={H} fill={`url(#${id}-fade)`} /></mask>
+      </defs>
+      <g mask={`url(#${id}-mask)`}>
+        <path d={`${line} L${W},${H} L0,${H} Z`} fill={`url(#${id}-fill)`} />
+        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      </g>
+    </svg>
   );
 }
 
@@ -1192,10 +1235,10 @@ const SENTIMENT_CHIP: Record<EuaSentiment, string> = {
 // Nhận định tổng quan (ô giữa): giá EUA (số lớn nhất trang) + Δ ngày/tuần (đúng chuỗi của Bảng giá nhanh), thước đo
 // chiều kịch bản (chip góc trên) xếp gọn; câu "Tổng hợp" của Mục 3 (nguyên văn) trải ngang bên dưới; biên 30 phiên / ATR /
 // khối lượng phiên ở đáy ô.
-function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
+function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: {
   verdict: { sentiment: EuaSentiment; text: string } | null;
   outlook: { pos: number; key: string; tone: string } | null;
-  stats: EuaStats; euaRow?: any; className?: string;
+  stats: EuaStats; euaRow?: any; chartData: OhlcRow[]; className?: string;
 }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
@@ -1238,6 +1281,7 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
     <HeroCard
       tint
       title={t("hero.verdictTitle")}
+      backdrop={last !== undefined && chartData.length > 1 ? <EuaBackdrop data={chartData} /> : undefined}
       // Góc trên: chiều kịch bản (ngắn hạn + trung hạn, outlookOf — vd "Trung lập · nghiêng giảm") thay cho thanh thước đo
       // Giảm–Tăng cũ; không có kịch bản thì dùng nhãn của câu "Tổng hợp".
       aside={outlook ? (
@@ -1392,10 +1436,13 @@ const PRINT_FULL = "print:@xl/report:col-span-2";
 const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-2";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
-    grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-5`,
+    // Nhận định to nhất, Tóm tắt = cột phải: 3/4/3 (báo cáo 1024–1279px) → 3/6/3 (≥ 1280px).
+    grid: `${A2} not-print:@5xl/report:grid-cols-10 not-print:@7xl/report:grid-cols-12`,
+    s: `${A2_FULL} not-print:@5xl/report:col-span-3`,
     // In: Nhận định (giữ trọn ô) đứng TRƯỚC Tóm tắt (ngắt được giữa các ý) — Tóm tắt chảy tiếp lấp chỗ trống, không để ô
     // Nhận định bị đẩy nguyên sang trang 2 và bỏ trắng nửa trang 1.
-    v: `not-print:@5xl/report:col-span-4 ${PRINT_FULL} print:order-first`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
+    v: `not-print:@5xl/report:col-span-4 not-print:@7xl/report:col-span-6 ${PRINT_FULL} print:order-first`,
+    d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
   },
   sv: { grid: A2, s: "", v: "" },
   sd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
@@ -1478,24 +1525,18 @@ function PriceTicker({ items, label, className }: { items: TickerItem[]; label?:
 
 // "Điều đáng quan tâm nhất hôm nay" (hết bề rộng, đầu phần Tổng quan; thay dải "Tin nóng" cũ, giữ tông đỏ của dải đó): 1–2 câu LLM chọn trong
 // lượt sinh Mục 1 — biến động giá mạnh HOẶC tin tác động trực tiếp lên EUA (content["1"].highlight,
-// report_generator._resolve_highlight). Báo cáo cũ không có trường này → ẩn.
+// report_generator._resolve_highlight). Chỉ hiện nội dung, không nhãn loại (giá/tin). Báo cáo cũ không có trường này → ẩn.
 interface ReportHighlight { type: "price" | "news"; text: string; source_name?: string | null; source_url?: string | null }
 
 function TodayHighlight({ highlight }: { highlight: ReportHighlight }) {
   const t = useTranslations("reportDoc");
-  const Icon = highlight.type === "price" ? Activity : Newspaper;
   return (
     <div className="flex min-w-0 items-stretch overflow-hidden rounded-xl border border-down/30 bg-down/[0.04] print:break-inside-avoid">
       <div className="w-1.5 shrink-0 bg-down [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true" />
       <div className="min-w-0 flex-1 px-4 py-3 sm:px-5">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-down">
-            <Sparkles size={15} aria-hidden="true" /> {t("highlight.title")}
-          </h2>
-          <span className="inline-flex items-center gap-1 rounded-full border border-down/30 bg-background px-2 py-px text-[11.5px] font-bold text-down">
-            <Icon size={12} aria-hidden="true" /> {t(`highlight.type.${highlight.type}`)}
-          </span>
-        </div>
+        <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-down">
+          <Sparkles size={15} aria-hidden="true" /> {t("highlight.title")}
+        </h2>
         <p className="mt-1.5 text-left text-[16px] font-semibold leading-[1.55] text-label">
           <RichText text={highlight.text} nums />
           {highlight.source_name && <InlineSource name={highlight.source_name} url={highlight.source_url} />}
@@ -3428,7 +3469,7 @@ export function ReportDocument({
             <div className={clsx("grid gap-4 print:items-start", heroSpans.grid)}>
               {execBullets.length > 0 && <HeroSummary bullets={execBullets} className={heroSpans.s} />}
               {heroSpans.v !== undefined && (
-                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} className={heroSpans.v} />
+                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} chartData={chartData} className={heroSpans.v} />
               )}
               {heroSpans.d !== undefined && (
                 <div className={clsx("flex min-w-0 flex-col gap-3", heroSpans.d)}>
