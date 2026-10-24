@@ -1126,25 +1126,45 @@ function hedgeShares(est: CbamEstimate) {
 // Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung. Khi in, ô luôn giữ trọn
 // (data-print-whole — không cắt ô sang 2 trang, kể cả khi cao hơn ngưỡng ngắt của usePrintBreakTuning); riêng Tóm tắt
 // điều hành (`splittable`) được ngắt giữa các ý vì báo cáo cũ có thể dài gần 1 trang.
-function HeroCard({ title, aside, tint, compact, splittable, backdrop, className, children }: {
-  title: React.ReactNode; aside?: React.ReactNode; tint?: boolean; compact?: boolean; splittable?: boolean; className?: string;
+function HeroCard({ title, href, aside, compact, splittable, backdrop, className, children }: {
+  title: React.ReactNode; aside?: React.ReactNode; compact?: boolean; splittable?: boolean; className?: string;
+  // Neo mục chi tiết bên dưới (vd "#section-market") — bấm vào bất kỳ chỗ nào trong ô thì cuộn tới; ô nền trắng, rê
+  // chuột thì đổi nền xanh (bg-tint) + con trỏ bàn tay. Tiêu đề vẫn là <a> để dùng được bằng bàn phím.
+  href?: string;
   // Lớp nền trang trí (vd EuaBackdrop) — nằm sau nội dung (isolate + -z-10), bị cắt theo góc bo của ô.
   backdrop?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const onClick = href ? (e: React.MouseEvent<HTMLDivElement>) => {
+    // Bấm vào link bên trong ô (tiêu đề, nguồn tin, "Xem khuyến nghị") → để link tự xử lý; đang bôi đen chữ (Hỏi AI /
+    // Hỏi Claude) → không nhảy trang.
+    if ((e.target as HTMLElement).closest("a, button")) return;
+    if (window.getSelection()?.toString().trim()) return;
+    const el = document.getElementById(href.slice(1));
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.history.replaceState(null, "", href);
+  } : undefined;
   return (
-    <div data-print-whole={splittable ? undefined : ""} className={clsx(
+    <div data-print-whole={splittable ? undefined : ""} onClick={onClick} className={clsx(
       // Ô được ngắt trang: khi in chảy dạng khối — khung flex bị ngắt trang trong Chrome đè lên khối phía sau.
-      "@container flex min-w-0 flex-col rounded-xl border print:p-3.5!",
+      "@container flex min-w-0 flex-col rounded-xl border border-border bg-background print:p-3.5!",
       splittable ? "print:block" : "print:break-inside-avoid",
       compact ? "px-4 py-3.5" : "p-4 sm:p-5",
-      tint ? "border-primary/20 bg-tint" : "border-border bg-background",
+      href && "cursor-pointer transition-colors hover:border-primary/20 hover:bg-tint",
       backdrop && "relative isolate overflow-hidden",
       className,
     )}>
       {backdrop}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">{title}</h2>
+        <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">
+          {href ? (
+            <a href={href} className="group/hero-link inline-flex items-center gap-1.5 hover:text-primary hover:underline underline-offset-2">
+              {title}
+              <ArrowRight size={13} strokeWidth={2.5} aria-hidden="true" className="opacity-60 transition-transform group-hover/hero-link:translate-x-0.5 group-hover/hero-link:opacity-100 print:hidden" />
+            </a>
+          ) : title}
+        </h2>
         {aside}
       </div>
       {children}
@@ -1289,8 +1309,8 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
   );
   return (
     <HeroCard
-      tint
       title={t("hero.verdictTitle")}
+      href="#section-market"
       backdrop={last !== undefined && chartData.length > 1 ? <EuaBackdrop data={chartData} /> : undefined}
       // Góc trên chỉ dùng khi không có kịch bản: nhãn của câu "Tổng hợp". Có kịch bản thì nhãn chiều + thanh Giảm–Tăng
       // nằm ở hàng giá bên dưới.
@@ -1370,6 +1390,7 @@ function HeroOrders({ shortPlan, className }: { shortPlan: HorizonPlan; classNam
     <HeroCard
       compact
       title={t("hero.todayOrders")}
+      href="#section-analysis"
       aside={trend && <span className={clsx("text-[13px] font-bold", trend.className)}>{trend.arrow} {capFirst(enumLabel(shortPlan.dir))}</span>}
       className={className}
     >
@@ -1409,6 +1430,8 @@ function HeroHedge({ cbamEstimate, hedgeAction, className }: {
     <HeroCard
       compact
       title={<><ShieldCheck size={14} strokeWidth={2.5} aria-hidden="true" /> {cbamEstimate ? t("hedge.title", { quarter: cbamEstimate.quarter }) : t("signal.hedge")}</>}
+      // Có ước tính → thẻ "Ước tính giá CBAM" ở Phần 1; báo cáo cũ không có thẻ đó → khuyến nghị vị thế (ô phòng hộ).
+      href={cbamEstimate ? "#section-cbam-estimate" : "#section-analysis"}
       className={className}
     >
       {label && (
@@ -1479,9 +1502,7 @@ function HeroForecast({ review, className }: { review?: ForecastReview | null; c
     <HeroCard
       compact
       title={t("signal.track")}
-      aside={items.length > 0 && (
-        <a href="#section-forecast-review" className="text-[12px] font-bold text-primary hover:underline print:hidden">{t("hero.seeReview")}</a>
-      )}
+      href="#section-forecast-review"
       className={className}
     >
       {items.length > 0 && review && <ForecastStrip review={review} />}
@@ -3596,7 +3617,7 @@ export function ReportDocument({
             )}
 
             {/* Ước tính giá CBAM quý (VWAP đấu giá EEX + lịch còn lại, tín hiệu phòng vệ). Báo cáo cũ/CN-T2 → ẩn. */}
-            {cbamEstimate && <CbamEstimateCard estimate={cbamEstimate} />}
+            {cbamEstimate && <div id="section-cbam-estimate" className="scroll-mt-32"><CbamEstimateCard estimate={cbamEstimate} /></div>}
 
             {/* Diễn biến chính (tin tức tác động cung/cầu EUA — content["2"].key_developments) | lịch sự kiện 7 ngày
                 tới (content["8"]): việc đã xảy ra cạnh việc sắp tới. */}
