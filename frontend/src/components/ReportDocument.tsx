@@ -1147,7 +1147,7 @@ function EuaSparkline({ data, range, className }: { data: OhlcRow[]; range: [num
   return (
     <div className={clsx("mt-4 flex-col justify-center", className)}>
       <div className="mx-auto w-full max-w-[560px] px-[60px]">
-        <div className="relative h-[112px] @sm:h-[136px]">
+        <div className="relative h-[112px] @sm:h-[136px] print:h-[84px]!">
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
             <rect x="0" y={y(hi)} width={W} height={Math.max(0, y(lo) - y(hi))} fill="var(--color-primary)" fillOpacity="0.06" />
             <line x1="0" x2={W} y1={y(hi)} y2={y(hi)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
@@ -1509,7 +1509,9 @@ const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-3";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
     grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-4`,
-    v: `not-print:@5xl/report:col-span-5 ${PRINT_FULL}`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
+    // In: Nhận định (giữ trọn ô) đứng TRƯỚC Tóm tắt (ngắt được giữa các ý) — Tóm tắt chảy tiếp lấp chỗ trống, không để ô
+    // Nhận định bị đẩy nguyên sang trang 2 và bỏ trắng nửa trang 1.
+    v: `not-print:@5xl/report:col-span-5 ${PRINT_FULL} print:order-first`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
   },
   sv: { grid: A2, s: "", v: "" },
   sd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
