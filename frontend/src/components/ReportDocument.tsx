@@ -7,12 +7,11 @@ import {
   Clock, CalendarRange, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Trash2,
-  Leaf, Calendar, RefreshCw, ArrowLeftRight, ArrowRight, CalendarClock, ClipboardCheck, ArrowDownUp, Flame
+  Leaf, Calendar, RefreshCw, ArrowLeftRight, ArrowRight, CalendarClock, ClipboardCheck, ArrowDownUp, Activity
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
-import type { CbamEstimate, ForecastReview, HedgeAction, HotNewsItem, OpenPosition, Report } from "@/lib/types";
-import { api } from "@/lib/api";
+import type { CbamEstimate, ForecastReview, HedgeAction, OpenPosition, Report } from "@/lib/types";
 import PriceIndexPanel from "@/components/PriceIndexPanel";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
@@ -1124,58 +1123,6 @@ function hedgeShares(est: CbamEstimate) {
 // Báo cáo rộng: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM · Dự báo trước —
 // 3 ô cao bằng nhau. Số liệu chính (giá CBAM ước tính, khí, than, điện, dầu) chạy dọc trên thanh menu (PriceTicker).
 
-// Đường giá đóng cửa 30 phiên + dải đáy–đỉnh 30 phiên (cùng biên với thang giá) + điểm phiên gần nhất. Vẽ theo %
-// (preserveAspectRatio="none" + nét không co giãn) để khớp mọi bề rộng; nhãn là HTML nên chữ không bị kéo méo.
-function EuaSparkline({ data, range, className }: { data: OhlcRow[]; range: [number, number] | null; className?: string }) {
-  const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  const closes = data.map(d => d.close).filter((v): v is number => typeof v === "number");
-  if (closes.length < 2) return null;
-  const lo = range ? range[0] : Math.min(...closes);
-  const hi = range ? range[1] : Math.max(...closes);
-  const pad = (hi - lo) * 0.14 || 1;
-  const min = lo - pad, max = hi + pad;
-  const W = 300, H = 100;
-  const x = (i: number) => (i / (closes.length - 1)) * W;
-  const y = (v: number) => H - ((v - min) / (max - min)) * H;
-  const line = closes.map((c, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(c).toFixed(2)}`).join(" ");
-  const top = (v: number) => `${(y(v) / H) * 100}%`;
-  const last = closes[closes.length - 1];
-  // Khung biểu đồ cao cố định, rộng tối đa 560px, căn giữa cả 2 chiều trong phần còn trống của thẻ (thẻ giãn
-  // theo hàng lưới); 2 lề đối xứng: trái = nhãn đỉnh/đáy 30 phiên, phải = giá phiên gần nhất cạnh điểm cuối.
-  // Không đặt sẵn `flex`: nơi gọi truyền `hidden @xl:flex` / `flex @xl:hidden` để chỉ 1 trong 2 bản hiện.
-  return (
-    <div className={clsx("mt-4 flex-col justify-center", className)}>
-      <div className="mx-auto w-full max-w-[560px] px-[60px]">
-        <div className="relative h-[112px] @sm:h-[136px] print:h-[84px]!">
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
-            <rect x="0" y={y(hi)} width={W} height={Math.max(0, y(lo) - y(hi))} fill="var(--color-primary)" fillOpacity="0.06" />
-            <line x1="0" x2={W} y1={y(hi)} y2={y(hi)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-            <line x1="0" x2={W} y1={y(lo)} y2={y(lo)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-            <path d={`${line} L${W},${H} L0,${H} Z`} fill="var(--color-primary)" fillOpacity="0.1" />
-            <path d={line} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-          </svg>
-          <span className="absolute right-full mr-2 -translate-y-1/2 text-right text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(hi) }}>
-            {fmtPrice(hi, locale)} <span className="block">{t("hero.high")}</span>
-          </span>
-          <span className="absolute right-full mr-2 -translate-y-1/2 text-right text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(lo) }}>
-            {fmtPrice(lo, locale)} <span className="block">{t("hero.low")}</span>
-          </span>
-          <span className="absolute left-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background" style={{ top: top(last) }} />
-          <span className="absolute left-full ml-2.5 -translate-y-1/2 text-[12px] font-bold text-primary-dark tabular-nums whitespace-nowrap" style={{ top: top(last) }}>
-            {fmtPrice(last, locale)}
-          </span>
-        </div>
-        <div className="mt-1.5 flex justify-between text-[11.5px] text-muted-light tabular-nums">
-          <span>{formatShortDate(data[0].date)}</span>
-          <span>{t("hero.sessions", { n: data.length })}</span>
-          <span>{formatShortDate(data[data.length - 1].date)}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung. Khi in, ô luôn giữ trọn
 // (data-print-whole — không cắt ô sang 2 trang, kể cả khi cao hơn ngưỡng ngắt của usePrintBreakTuning); riêng Tóm tắt
 // điều hành (`splittable`) được ngắt giữa các ý vì báo cáo cũ có thể dài gần 1 trang.
@@ -1249,12 +1196,12 @@ const SENTIMENT_CHIP: Record<EuaSentiment, string> = {
 };
 
 // Nhận định tổng quan (ô giữa): giá EUA (số lớn nhất trang) + Δ ngày/tuần (đúng chuỗi của Bảng giá nhanh), thước đo
-// chiều kịch bản, câu "Tổng hợp" của Mục 3 (nguyên văn), đường giá 30 phiên (cỡ nhỏ cố định) và biên 30
-// phiên / ATR / khối lượng phiên.
-function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: {
+// chiều kịch bản xếp 1 hàng ngang; câu "Tổng hợp" của Mục 3 (nguyên văn) trải ngang bên dưới; biên 30 phiên / ATR /
+// khối lượng phiên ở đáy ô.
+function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
   verdict: { sentiment: EuaSentiment; text: string } | null;
   outlook: { pos: number; key: string; tone: string } | null;
-  stats: EuaStats; euaRow?: any; chartData: OhlcRow[]; className?: string;
+  stats: EuaStats; euaRow?: any; className?: string;
 }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
@@ -1304,34 +1251,37 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
       )}
       className={className}
     >
-      {/* Ô rộng (in A4: hết hàng; báo cáo vừa không có tóm tắt): giá + thước đo | câu nhận định cạnh nhau. */}
-      <div className="mt-3 grid content-start gap-x-6 gap-y-3 @lg:grid-cols-2">
-        <div className="min-w-0">
+      {/* Hàng giá nằm ngang: giá + đơn vị | Δ ngày/tuần | thước đo chiều kịch bản (đủ chỗ thì 1 hàng, hẹp thì tự xuống
+          dòng); câu nhận định trải hết bề ngang bên dưới. Không còn đường giá 30 phiên (biểu đồ nến ở Phần 1). */}
+      {(last !== undefined || outlook) && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
           {last !== undefined && (
-            <>
-              <div className="flex flex-wrap items-end gap-x-2.5 gap-y-1">
-                <span className="text-[42px] sm:text-[46px] font-bold leading-none tracking-[-0.02em] tabular-nums text-label">{fp(last)}</span>
+            <div className="min-w-0">
+              <div className="flex items-end gap-x-2">
+                <span className="text-[40px] sm:text-[44px] font-bold leading-none tracking-[-0.02em] tabular-nums text-label">{fp(last)}</span>
                 <span className="mb-1 text-[13px] font-bold text-muted-light">EUR/tCO₂</span>
               </div>
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                {deltas.map(d => (
-                  <span key={d.key} className={clsx(
-                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums",
-                    d.up ? "bg-up/10 text-up" : "bg-down/10 text-down",
-                  )}>
-                    {d.up ? "▲" : "▼"} {d.value}
-                    <span className="font-semibold opacity-80">{t(`hero.${d.key}`)}</span>
-                  </span>
-                ))}
-              </div>
-              <div className="mt-1.5 text-[12px] leading-snug text-muted-light">
+              <div className="mt-1 text-[12px] leading-snug text-muted-light">
                 {euaRow?.name && <span>{euaRow.name} · </span>}
                 {stats.lastDate && <span className="tabular-nums">{t("dash.closeOf", { date: formatFullDate(stats.lastDate) })}</span>}
               </div>
-            </>
+            </div>
+          )}
+          {last !== undefined && deltas.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {deltas.map(d => (
+                <span key={d.key} className={clsx(
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums",
+                  d.up ? "bg-up/10 text-up" : "bg-down/10 text-down",
+                )}>
+                  {d.up ? "▲" : "▼"} {d.value}
+                  <span className="font-semibold opacity-80">{t(`hero.${d.key}`)}</span>
+                </span>
+              ))}
+            </div>
           )}
           {outlook && (
-            <div className={clsx(last !== undefined && "mt-4")}>
+            <div className="min-w-[200px] flex-1">
               <div className="relative h-[6px] rounded-full bg-gradient-to-r from-down/55 via-border to-up/55 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
                 <span className="absolute top-[-5px] h-4 w-[3px] rounded-full bg-label" style={{ left: `${outlook.pos}%`, transform: "translateX(-50%)" }} />
               </div>
@@ -1342,19 +1292,13 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
               </div>
             </div>
           )}
-          {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="hidden @lg:flex" />}
         </div>
-        <div className="min-w-0">
-          {verdict && (
-            <p className="text-left text-[16px] leading-[1.6] text-label">
-              <RichText text={verdict.text} nums />
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Ô hẹp: đường giá nhỏ dưới câu nhận định (ô rộng: ở cột trái, xem trên). */}
-      {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="mb-4 flex @lg:hidden" />}
+      )}
+      {verdict && (
+        <p className="mt-3 text-left text-[16px] leading-[1.6] text-label">
+          <RichText text={verdict.text} nums />
+        </p>
+      )}
 
       {/* mt-auto: hàng chỉ số luôn nằm ở đáy ô (ô giãn theo hàng lưới) — không để khoảng trống dưới đáy. */}
       {last !== undefined && <div className="mt-auto pt-4">{statsBlock("")}</div>}
@@ -1592,63 +1536,31 @@ function PriceTicker({ items, label, className }: { items: TickerItem[]; label?:
   );
 }
 
-// Dải "Tin nóng" (hết bề rộng, dưới thanh menu): tin is_hot_news trong ngày báo cáo + ngày liền trước (GET /api/news/hot
-// ?report_date=…); nhiều tin thì lần lượt đổi tin sau HOT_NEWS_MS (rê chuột để dừng), 1 tin thì đứng yên, không có tin
-// (hoặc lỗi/không đăng nhập) thì ẩn. Không in.
-const HOT_NEWS_MS = 6000;
+// "Điều đáng quan tâm nhất hôm nay" (hết bề rộng, đầu phần Tổng quan; thay dải "Tin nóng" cũ): 1–2 câu LLM chọn trong
+// lượt sinh Mục 1 — biến động giá mạnh HOẶC tin tác động trực tiếp lên EUA (content["1"].highlight,
+// report_generator._resolve_highlight). Báo cáo cũ không có trường này → ẩn.
+interface ReportHighlight { type: "price" | "news"; text: string; source_name?: string | null; source_url?: string | null }
 
-function HotNewsStrip({ reportDate }: { reportDate: string }) {
+function TodayHighlight({ highlight }: { highlight: ReportHighlight }) {
   const t = useTranslations("reportDoc");
-  const [items, setItems] = useState<HotNewsItem[]>([]);
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    api.get(`/api/news/hot?limit=10&report_date=${reportDate}`)
-      .then(res => { if (!cancelled) { setItems(res.data?.items ?? []); setIndex(0); } })
-      .catch(() => { if (!cancelled) setItems([]); });
-    return () => { cancelled = true; };
-  }, [reportDate]);
-  useEffect(() => {
-    if (items.length < 2 || paused) return;
-    const id = window.setInterval(() => setIndex(i => (i + 1) % items.length), HOT_NEWS_MS);
-    return () => window.clearInterval(id);
-  }, [items.length, paused]);
-  if (!items.length) return null;
-  const cur = items[index % items.length];
-  // hot_news_reason lưu kèm nhãn nhóm "[Cắt nguồn cung] …" (crawl_news/classification.py) → tách làm chip.
-  const category = cur.hot_news_reason?.match(/^\s*\[([^\]]+)\]/)?.[1];
+  const Icon = highlight.type === "price" ? Activity : Newspaper;
   return (
-    <div
-      className="flex min-w-0 items-stretch overflow-hidden rounded-xl border border-down/30 bg-down/[0.04] print:hidden"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
-      <div className="flex shrink-0 items-center gap-1.5 bg-down px-3 text-[12px] font-extrabold uppercase tracking-[0.1em] text-white">
-        <Flame size={15} aria-hidden="true" /> <span className="hidden sm:inline">{t("hotNews.label")}</span>
-      </div>
-      <div className="relative min-h-[48px] min-w-0 flex-1 overflow-hidden">
-        <div key={`${cur.id}-${index}`} className="report-ticker-down flex h-full min-w-0 flex-col justify-center gap-0.5 px-3.5 py-2 @3xl/report:flex-row @3xl/report:items-center @3xl/report:justify-start @3xl/report:gap-3">
-          <a
-            href={cur.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={cur.hot_news_reason ?? undefined}
-            className="min-w-0 text-[14.5px] font-bold leading-snug text-label hover:text-down hover:underline @3xl/report:truncate"
-          >
-            {cur.title || cur.url}
-          </a>
-          <span className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted-light">
-            {category && <span className="rounded border border-down/30 bg-background px-1.5 py-px font-bold text-down">{category}</span>}
-            <span>{cur.source}</span>
+    <div className="flex min-w-0 items-stretch overflow-hidden rounded-xl border border-primary/30 bg-tint print:break-inside-avoid">
+      <div className="w-1.5 shrink-0 bg-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]" aria-hidden="true" />
+      <div className="min-w-0 flex-1 px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">
+            <Sparkles size={15} aria-hidden="true" /> {t("highlight.title")}
+          </h2>
+          <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-background px-2 py-px text-[11.5px] font-bold text-primary-dark">
+            <Icon size={12} aria-hidden="true" /> {t(`highlight.type.${highlight.type}`)}
           </span>
         </div>
+        <p className="mt-1.5 text-left text-[16px] font-semibold leading-[1.55] text-label">
+          <RichText text={highlight.text} nums />
+          {highlight.source_name && <InlineSource name={highlight.source_name} url={highlight.source_url} />}
+        </p>
       </div>
-      {items.length > 1 && (
-        <div className="flex shrink-0 items-center border-l border-down/20 px-3 text-[12px] font-bold tabular-nums text-down">
-          {index % items.length + 1}/{items.length}
-        </div>
-      )}
     </div>
   );
 }
@@ -3456,6 +3368,9 @@ export function ReportDocument({
   const cbamEstimate: CbamEstimate | null = noPriceData ? null : content["2"]?.cbam_estimate ?? null;
   const hedgeAction: HedgeAction | null = content["3"]?.hedge_action ?? null;
   const execBullets: any[] = content["1"]?.bullets ?? [];
+  const rawHighlight = content["1"]?.highlight;
+  const highlight: ReportHighlight | null =
+    rawHighlight?.text && (rawHighlight.type === "price" || rawHighlight.type === "news") ? rawHighlight : null;
   // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in. Có biểu đồ nến EUA
   // thì đặt cạnh biểu đồ nến (2 biểu đồ cao bằng nhau), không thì cạnh bảng giá.
   const indexPanel = !noPriceData && priceRows.length > 0 ? (
@@ -3566,14 +3481,14 @@ export function ReportDocument({
               className="rounded-xl border border-border bg-surface/60 px-3.5 @5xl/report:hidden print:hidden"
             />
           )}
-          <HotNewsStrip reportDate={report.report_date} />
+          {highlight && <TodayHighlight highlight={highlight} />}
           {heroSpans && (
             // In: ô không giãn theo ô cao nhất hàng (print:items-start) — Tóm tắt dài ngắt sang trang sau thì ô Nhận định
             // giãn theo sẽ cao hơn 1 trang và bị cắt đôi.
             <div className={clsx("grid gap-4 print:items-start", heroSpans.grid)}>
               {execBullets.length > 0 && <HeroSummary bullets={execBullets} className={heroSpans.s} />}
               {heroSpans.v !== undefined && (
-                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} chartData={chartData} className={heroSpans.v} />
+                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} className={heroSpans.v} />
               )}
               {heroSpans.d !== undefined && (
                 <div className={clsx("flex min-w-0 flex-col gap-3", heroSpans.d)}>

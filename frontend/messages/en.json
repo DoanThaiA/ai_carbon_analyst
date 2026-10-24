@@ -1103,9 +1103,6 @@
       "weekLabel": "Week",
       "note": "Note"
     },
-    "hotNews": {
-      "label": "Breaking"
-    },
     "keyDev": {
       "impact": {
         "up": "Supports EUA",
@@ -1121,6 +1118,13 @@
     },
     "news": {
       "count": "{n} items"
+    },
+    "highlight": {
+      "title": "Today's top takeaway",
+      "type": {
+        "price": "Price",
+        "news": "News"
+      }
     }
   },
   "shellHeader": {

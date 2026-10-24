@@ -197,7 +197,7 @@ chính trị gây sốc thị trường, cắt nguồn cung, đảo chiều giá
 `hot_news_category` hợp lệ (không thì bỏ cờ), lý do lưu kèm nhãn "[Cắt nguồn cung] ...". Digest bỏ bài trùng sự kiện
 (so tiêu đề, `services/title_similarity.py`) với nhau hoặc với tin đã gửi trong `HOT_NEWS_DUP_LOOKBACK_HOURS` (72h) — bài
 bị bỏ vẫn đánh dấu `hot_news_emailed_at`. Real-time UI alerts are separate (Postgres
-NOTIFY + SSE, `services/hot_news_broadcast.py`). Manual: `python -m scripts.send_hot_news_digest --dry-run`.
+NOTIFY + SSE, `services/hot_news_broadcast.py`). Đầu trang báo cáo KHÔNG còn dải "Tin nóng" (24/10/2026): thay bằng khối "Điều đáng quan tâm nhất hôm nay" = `content["1"].highlight` {type price|news, text, nguồn}, LLM chọn trong CÙNG lượt sinh Mục 1 (`HIGHLIGHT_RULE`, `_resolve_highlight`; Jack `check_facts` kiểm số như bullet Mục 1); báo cáo cũ không có → ẩn. Manual: `python -m scripts.send_hot_news_digest --dry-run`.
 
 **Kết nối Claude Desktop (MCP)**: user bấm "Hỏi Claude" trên quote → web tạo handoff
 (`POST /api/reports/{date}/quote-chat/handoff`, `api/routers/claude_connect.py`) và trả prompt

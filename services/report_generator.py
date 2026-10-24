@@ -3218,6 +3218,27 @@ def _extract_json(raw: str) -> Optional[dict]:
 # Section-specific prompt builders
 # ─────────────────────────────────────────────────────────────────────
 
+# "Điều đáng quan tâm nhất hôm nay" (content["1"].highlight) — khối nổi bật đầu báo cáo, thay dải "Tin nóng" cũ. Sinh cùng
+# lượt gọi Mục 1 (không thêm lượt LLM); `type` ∈ HIGHLIGHT_TYPES (khoá "type" không bị dịch — services/report_translation.py).
+HIGHLIGHT_TYPES = ("price", "news")
+HIGHLIGHT_RULE = """- "highlight" (BẮT BUỘC): ĐIỀU ĐÁNG QUAN TÂM NHẤT HÔM NAY — CHỌN ĐÚNG 1 điều nổi bật nhất từ dữ liệu giá + tin tức ở trên, thứ người đọc cần biết đầu tiên: biến động giá MẠNH (EUA hoặc mã dẫn dắt EUA: %Δ ngày lớn bất thường, phá/thủng biên 30 phiên, chuỗi phiên dài) HOẶC tin tác động TRỰC TIẾP tới cung/cầu/giá EUA. So sánh rồi chọn cái tác động lớn nhất — không chọn mặc định giá EUA nếu phiên đi ngang, biến động nhỏ.
+  {"type": "price" | "news", "text": "...", "source_index": N | null}: "text" 1–2 câu (tối đa ~40 chữ), mở đầu bằng điều đã xảy ra (số liệu then chốt), rồi VÌ SAO đáng lưu tâm (chiều tác động lên EUA); KHÔNG tag đậm, KHÔNG mở đầu bằng "Điều đáng quan tâm nhất". "type": "price" nếu là biến động giá (source_index: null hoặc số [N] của tin giải thích nó), "news" nếu là tin (source_index BẮT BUỘC = số [N] của bài đó). Số liệu PHẢI khớp bullet tương ứng ở trên."""
+HIGHLIGHT_RULE_NEWS_ONLY = """- "highlight" (BẮT BUỘC): ĐIỀU ĐÁNG QUAN TÂM NHẤT HÔM NAY — CHỌN ĐÚNG 1 tin tác động TRỰC TIẾP và lớn nhất tới cung/cầu/giá EUA trong các tin ở trên.
+  {"type": "news", "text": "...", "source_index": N}: "text" 1–2 câu (tối đa ~40 chữ): điều đã xảy ra rồi VÌ SAO đáng lưu tâm (chiều tác động lên EUA); KHÔNG tag đậm, KHÔNG nêu số giá. "source_index" BẮT BUỘC = số [N] của bài đó. Không có tin nào tác động trực tiếp → bỏ hẳn trường "highlight"."""
+
+
+def _resolve_highlight(raw: Any, index_lookup: Dict[int, Dict], no_price: bool) -> Optional[Dict]:
+    """content["1"].highlight: chuẩn hoá {type, text, source_name, source_url}; nguồn map từ số [N] như bullet. Thiếu chữ /
+    type lạ → bỏ (frontend ẩn khối); báo cáo không có giá thì chỉ nhận type "news"."""
+    if not isinstance(raw, dict) or not str(raw.get("text") or "").strip():
+        return None
+    kind = str(raw.get("type") or "").strip().lower()
+    if kind not in HIGHLIGHT_TYPES or (no_price and kind != "news"):
+        return None
+    resolved = _resolve_bullet_sources([raw], index_lookup)[0]
+    return {"type": kind, **resolved}
+
+
 def _prompt_section1(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str, target_date: str,
     fuel_spread: str = "",
@@ -3248,9 +3269,9 @@ YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
 - CHUYỂN ĐỔI NHIÊN LIỆU (BẮT BUỘC thống nhất với Mục 2/3): khi khối "SPREAD THAN–KHÍ" có "KẾT LUẬN DÙNG CHUNG" → nhận định fuel switching PHẢI theo ĐÚNG kết luận đó (vd đã ghi "ĐÃ BÃO HÒA" thì TUYỆT ĐỐI KHÔNG viết "TTF tăng → nghiêng về chuyển sang than/cầu EUA tăng", và KHÔNG ghi "chưa tính spread" vì spread đã tính). Chỉ khi khối này báo thiếu dữ liệu mới dùng logic %Δ: than (API2) TĂNG so với khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → cầu EUA TĂNG, ghi rõ "theo %Δ, chưa tính spread". Than cho fuel switching EU là API2 (CIF ARA), KHÔNG dùng API4/NEWC. KHÔNG viết "giá than TĂNG hỗ trợ cầu EUA" (than đắt lên làm than kém cạnh tranh). NHƯNG khi than đang rẻ hơn khí rõ rệt thì ĐƯỢC (và nên) viết: điện than chạy gần tối đa, phát thải cao → HỖ TRỢ MỨC cầu EUA hiện tại (chỉ không tạo thêm lực tăng) — đây là nhánh đỡ giá, không phải nhánh giảm.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm nếu bullet dựa trên 1 tin cụ thể ở trên), hoặc null nếu bullet chỉ dựa trên DỮ LIỆU GIÁ hệ thống (không phải tin tức) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
-
+{HIGHLIGHT_RULE}
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": null}}]}}}}"""
+{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": null}}], "highlight": {{"type": "price", "text": "...", "source_index": null}}}}}}"""
     return system, user
 
 
@@ -3276,9 +3297,9 @@ YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH, CHỈ từ tin tức �
 - Mỗi bullet mở đầu bằng tag đậm (**Chính sách:**, **Năng lượng:**, **Địa chính trị:**...). KHÔNG có bullet giá EUA.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm khi bullet dựa trên 1 tin cụ thể) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
-
+{HIGHLIGHT_RULE_NEWS_ONLY}
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": 1}}]}}}}"""
+{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": 1}}], "highlight": {{"type": "news", "text": "...", "source_index": 1}}}}}}"""
     return system, user
 
 
@@ -4575,6 +4596,11 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             content["1"] = {**section_data, "bullets": _resolve_bullet_sources(
                 section_data.get("bullets"), section1_index_lookup, knowledge_lookups.get("1"),
             )[:EXEC_SUMMARY_MAX_BULLETS]}
+            highlight = _resolve_highlight(section_data.get("highlight"), section1_index_lookup, no_price)
+            if highlight:
+                content["1"]["highlight"] = highlight
+            else:
+                content["1"].pop("highlight", None)
         elif section_key == "4":
             content["4"] = {**section_data, "bullets": _resolve_bullet_sources(
                 section_data.get("bullets"), section4_index_lookup, knowledge_lookups.get("4"),

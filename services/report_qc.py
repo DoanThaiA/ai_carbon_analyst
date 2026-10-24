@@ -1769,6 +1769,9 @@ def check_facts(
     items: List[tuple] = []
     for i, b in enumerate((content.get("1") or {}).get("bullets") or []):
         items.append(("1", f"Tóm tắt — bullet {i + 1}", f"1.bullets[{i}]", b))
+    # "Điều đáng quan tâm nhất hôm nay" (report_generator._resolve_highlight) — cùng dạng {text, source_url} như bullet.
+    if isinstance(hl := (content.get("1") or {}).get("highlight"), dict):
+        items.append(("1", "Điều đáng quan tâm nhất hôm nay", "1.highlight", hl))
     for i, d in enumerate(sec2.get("key_developments") or []):
         items.append(("4", f"Diễn biến chính #{i + 1}", f"2.key_developments[{i}]", d))
     for i, b in enumerate((content.get("4") or {}).get("bullets") or []):
