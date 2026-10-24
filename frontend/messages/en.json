@@ -950,7 +950,6 @@
       "trend7Label": "1-week trend:",
       "trend7": "{dir} {abs} ({pct}%) vs. the session one week earlier.",
       "lastSessionLabel": "Latest session:",
-      "lastSession": "open {open} — high {high} — low {low} — close {close}; {dir} vs the open, range {range} (~{pct}%).",
       "eua30Label": "EUA 30 sessions:",
       "eua30": "{first} → {last} ({pct}%); high {high}, low {low}.",
       "volumeLabel": "Volume:",
@@ -959,8 +958,9 @@
       "higher": "above",
       "lower": "below",
       "volumeTitle": "Volume",
-      "volumeOf": "contracts · session {date}",
-      "volTileSub": "{dir} the {n}-session average ({avg}): {pct}%"
+      "volTileSub": "{dir} the {n}-session average ({avg}): {pct}%",
+      "lastSessionShort": "open {open} → close {close} · range {range} (~{pct}%)",
+      "contracts": "contracts"
     },
     "masthead": {
       "title": "Daily carbon market news",

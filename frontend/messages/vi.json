@@ -950,7 +950,6 @@
       "trend7Label": "Xu hướng 1 tuần:",
       "trend7": "{dir} {abs} ({pct}%) so với phiên cách đây 1 tuần.",
       "lastSessionLabel": "Phiên gần nhất:",
-      "lastSession": "mở {open} — cao {high} — thấp {low} — đóng {close}; {dir} so với giá mở cửa, biên độ {range} (~{pct}%).",
       "eua30Label": "EUA 30 phiên:",
       "eua30": "{first} → {last} ({pct}%); cao nhất {high}, thấp nhất {low}.",
       "volumeLabel": "Khối lượng:",
@@ -959,8 +958,9 @@
       "higher": "cao hơn",
       "lower": "thấp hơn",
       "volumeTitle": "Khối lượng",
-      "volumeOf": "hợp đồng · phiên {date}",
-      "volTileSub": "{dir} TB {n} phiên ({avg}): {pct}%"
+      "volTileSub": "{dir} TB {n} phiên ({avg}): {pct}%",
+      "lastSessionShort": "mở {open} → đóng {close} · biên độ {range} (~{pct}%)",
+      "contracts": "hợp đồng"
     },
     "masthead": {
       "title": "TIN TỨC HÀNG NGÀY THỊ TRƯỜNG CARBON",

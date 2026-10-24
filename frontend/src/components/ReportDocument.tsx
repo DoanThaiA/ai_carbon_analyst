@@ -2616,11 +2616,12 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
   const loc = locale === "en" ? "en-US" : "vi-VN";
   const sign = (n: number) => (n > 0 ? "+" : "");
 
-  // Biểu đồ nến | 5 ô tóm tắt nằm ngang từ khung báo cáo ≥ 768px (@3xl) — ô tóm tắt xếp dọc, giãn đều theo chiều cao
-  // biểu đồ. Hẹp hơn: ô tóm tắt xuống dưới (2 cột). Bản in: 1 cột như cũ.
+  // Biểu đồ nến | 5 ô tóm tắt nằm ngang từ khung báo cáo ≥ 768px (@3xl), tỷ lệ 6,5 : 3,5 — ô tóm tắt xếp dọc, giãn đều
+  // theo chiều cao biểu đồ, mỗi dòng 1 hàng (StatTile cắt "…" + title khi quá hẹp). Hẹp hơn: ô tóm tắt xuống dưới (2 cột).
+  // Bản in: 1 cột như cũ.
   return (
-    <div className="grid gap-4 @3xl/report:grid-cols-12 print:block print:space-y-3">
-      <div data-print-whole className="flex min-w-0 flex-col @3xl/report:col-span-8 print:break-inside-avoid">
+    <div className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)] print:block print:space-y-3">
+      <div data-print-whole className="flex min-w-0 flex-col print:break-inside-avoid">
         {printHeading && <div className="hidden print:block">{printHeading}</div>}
         <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
@@ -2656,14 +2657,15 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-2.5 @2xl/report:grid-cols-2 @3xl/report:col-span-4 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:@max-3xl/report:grid-cols-2 print:break-inside-avoid">
+      <div className="grid min-w-0 gap-2 @2xl/report:grid-cols-2 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:@max-3xl/report:grid-cols-2 print:break-inside-avoid">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
           value={`${fnum(dayLow, 2, locale)} – ${fnum(dayHigh, 2, locale)}`}
-          lines={[capFirst(t("dash.lastSession", {
-            open: fnum(dayOpen, 2, locale), high: fnum(dayHigh, 2, locale), low: fnum(dayLow, 2, locale), close: fnum(lastClose, 2, locale),
-            dir: lastClose >= dayOpen ? t("dash.up") : t("dash.down"), range: fnum(dayRange, 2, locale), pct: fnum(dayRangePct, 1, locale),
+          // Cao/thấp đã là số chính của ô — dòng phụ chỉ còn mở → đóng + biên độ.
+          lines={[capFirst(t("dash.lastSessionShort", {
+            open: fnum(dayOpen, 2, locale), close: fnum(lastClose, 2, locale),
+            range: fnum(dayRange, 2, locale), pct: fnum(dayRangePct, 1, locale),
           }))]}
         />
         <StatTile
@@ -2690,8 +2692,9 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
           icon={<BarChart3 size={14} />}
           label={t("dash.volumeTitle")}
           value={vol.toLocaleString(loc)}
+          unit={t("dash.contracts")}
+          // Ngày phiên đã có ở đầu khung biểu đồ ("Đóng cửa phiên …") — không lặp ở đây.
           lines={[
-            t("dash.volumeOf", { date: formatFullDate(lastDate) }),
             avgVol > 0 ? capFirst(t("dash.volTileSub", {
               dir: volChangePct >= 0 ? t("dash.higher") : t("dash.lower"),
               n: priorVols.length,
@@ -2707,15 +2710,22 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
 }
 
 // Ô số liệu dưới biểu đồ EUA — nhãn, số chính, rồi các dòng diễn giải (cùng cỡ chữ để các ô thẳng hàng).
-function StatTile({ icon, label, value, lines, valueClass, linesClass, className }: {
-  icon: React.ReactNode; label: string; value: string; lines: (string | null)[]; valueClass?: string; linesClass?: string; className?: string;
+// Gọn: mỗi dòng đúng 1 hàng — quá hẹp thì cắt "…" (rê chuột xem đủ qua title), không xuống dòng; khi in thì xuống dòng
+// bình thường (giấy không rê chuột được).
+function StatTile({ icon, label, value, unit, lines, valueClass, linesClass, className }: {
+  icon: React.ReactNode; label: string; value: string; unit?: string; lines: (string | null)[]; valueClass?: string;
+  linesClass?: string; className?: string;
 }) {
   return (
-    <div className={clsx("min-w-0 rounded-xl border border-border bg-background px-3.5 py-3", className)}>
-      <div className="flex items-center gap-1.5 text-[12.5px] font-bold text-primary-dark">{icon} {label}</div>
-      <div className={clsx("mt-1 text-[19px] font-bold leading-tight tabular-nums", valueClass ?? "text-label")}>{value}</div>
-      {lines.filter(Boolean).map((l, i) => (
-        <div key={i} className={clsx("mt-0.5 text-[12.5px] leading-snug tabular-nums", linesClass ?? "text-body")}>{l}</div>
+    <div className={clsx("flex min-w-0 flex-col justify-center rounded-xl border border-border bg-background px-3 py-2", className)}>
+      <div className="flex min-w-0 items-center gap-1.5 text-[12px] font-bold text-primary-dark">
+        <span className="shrink-0">{icon}</span><span className="truncate print:whitespace-normal" title={label}>{label}</span>
+      </div>
+      <div className={clsx("mt-0.5 truncate text-[17px] print:whitespace-normal font-bold leading-tight tabular-nums", valueClass ?? "text-label")} title={value}>
+        {value}{unit && <span className="ml-1 text-[12px] font-semibold text-muted-light">{unit}</span>}
+      </div>
+      {lines.filter((l): l is string => !!l).map((l, i) => (
+        <div key={i} className={clsx("mt-0.5 truncate text-[12px] print:whitespace-normal leading-snug tabular-nums", linesClass ?? "text-body")} title={l}>{l}</div>
       ))}
     </div>
   );
