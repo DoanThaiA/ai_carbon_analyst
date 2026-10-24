@@ -3605,10 +3605,10 @@ export function ReportDocument({
                 {content["2"]?.no_price_notice || t("body.noPriceFallback")}
               </div>
             ) : priceRows.length > 0 && (
-              // Bảng giá nhanh (hết bề ngang — MarketBoard tự tách cột Δ ngày/tuần) rồi biểu đồ chỉ số giá bên dưới: xếp trên
-              // dưới để bảng ít dòng không bị bỏ trắng cạnh biểu đồ cao. Khi in/PDF chỉ giữ bảng giá.
-              <div className="space-y-5">
-                <div className="min-w-0">
+              // Bảng giá nhanh hẹp (5/12, dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá rộng (7/12) — ngang từ khung báo
+              // cáo ≥ 768px (@3xl). Khi in/PDF chỉ giữ bảng giá.
+              <div className="grid gap-5 @3xl/report:grid-cols-12">
+                <div className="min-w-0 @3xl/report:col-span-5">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
@@ -3616,7 +3616,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                <div className="flex min-w-0 flex-col print:hidden">{indexPanel}</div>
+                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 print:hidden">{indexPanel}</div>
               </div>
             )}
 
