@@ -1124,13 +1124,62 @@ function hedgeShares(est: CbamEstimate) {
 // Báo cáo rộng: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM · Dự báo trước —
 // 3 ô cao bằng nhau. Số liệu chính (giá CBAM ước tính, khí, than, điện, dầu) chạy dọc trên thanh menu (PriceTicker).
 
-// Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung.
-function HeroCard({ title, aside, tint, compact, className, children }: {
-  title: React.ReactNode; aside?: React.ReactNode; tint?: boolean; compact?: boolean; className?: string; children: React.ReactNode;
+// Đường giá đóng cửa 30 phiên + dải đáy–đỉnh 30 phiên (cùng biên với thang giá) + điểm phiên gần nhất. Vẽ theo %
+// (preserveAspectRatio="none" + nét không co giãn) để khớp mọi bề rộng; nhãn là HTML nên chữ không bị kéo méo.
+function EuaSparkline({ data, range, className }: { data: OhlcRow[]; range: [number, number] | null; className?: string }) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const closes = data.map(d => d.close).filter((v): v is number => typeof v === "number");
+  if (closes.length < 2) return null;
+  const lo = range ? range[0] : Math.min(...closes);
+  const hi = range ? range[1] : Math.max(...closes);
+  const pad = (hi - lo) * 0.14 || 1;
+  const min = lo - pad, max = hi + pad;
+  const W = 300, H = 100;
+  const x = (i: number) => (i / (closes.length - 1)) * W;
+  const y = (v: number) => H - ((v - min) / (max - min)) * H;
+  const line = closes.map((c, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(c).toFixed(2)}`).join(" ");
+  const top = (v: number) => `${(y(v) / H) * 100}%`;
+  const last = closes[closes.length - 1];
+  return (
+    <div className={clsx("mt-4 h-[96px] flex-col", className)}>
+      <div className="relative mr-[64px] h-[72px]">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+          <rect x="0" y={y(hi)} width={W} height={Math.max(0, y(lo) - y(hi))} fill="var(--color-primary)" fillOpacity="0.06" />
+          <line x1="0" x2={W} y1={y(hi)} y2={y(hi)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+          <line x1="0" x2={W} y1={y(lo)} y2={y(lo)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+          <path d={`${line} L${W},${H} L0,${H} Z`} fill="var(--color-primary)" fillOpacity="0.1" />
+          <path d={line} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <span className="absolute left-full ml-2 -translate-y-1/2 text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(hi) }}>
+          {fmtPrice(hi, locale)} <span className="block">{t("hero.high")}</span>
+        </span>
+        <span className="absolute left-full ml-2 -translate-y-1/2 text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(lo) }}>
+          {fmtPrice(lo, locale)} <span className="block">{t("hero.low")}</span>
+        </span>
+        <span className="absolute left-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background" style={{ top: top(last) }} />
+      </div>
+      <div className="mr-[64px] mt-1 flex justify-between text-[11.5px] text-muted-light tabular-nums">
+        <span>{formatShortDate(data[0].date)}</span>
+        <span>{t("hero.sessions", { n: data.length })}</span>
+        <span>{formatShortDate(data[data.length - 1].date)}</span>
+      </div>
+    </div>
+  );
+}
+
+// Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung. Khi in, ô luôn giữ trọn
+// (data-print-whole — không cắt ô sang 2 trang, kể cả khi cao hơn ngưỡng ngắt của usePrintBreakTuning); riêng Tóm tắt
+// điều hành (`splittable`) được ngắt giữa các ý vì báo cáo cũ có thể dài gần 1 trang.
+function HeroCard({ title, aside, tint, compact, splittable, className, children }: {
+  title: React.ReactNode; aside?: React.ReactNode; tint?: boolean; compact?: boolean; splittable?: boolean; className?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className={clsx(
-      "@container flex min-w-0 flex-col rounded-xl border print:break-inside-avoid print:p-3.5!",
+    <div data-print-whole={splittable ? undefined : ""} className={clsx(
+      // Ô được ngắt trang: khi in chảy dạng khối — khung flex bị ngắt trang trong Chrome đè lên khối phía sau.
+      "@container flex min-w-0 flex-col rounded-xl border print:p-3.5!",
+      splittable ? "print:block" : "print:break-inside-avoid",
       compact ? "px-4 py-3.5" : "p-4 sm:p-5",
       tint ? "border-primary/20 bg-tint" : "border-border bg-background",
       className,
@@ -1161,8 +1210,8 @@ function MiniStat({ label, value, lines }: { label: string; value: string; lines
 function HeroSummary({ bullets, className }: { bullets: any[]; className?: string }) {
   const t = useTranslations("reportDoc");
   return (
-    <HeroCard title={t("body.execSummary")} className={className}>
-      <ul className="mt-3 flex flex-1 list-none flex-col justify-around divide-y divide-border">
+    <HeroCard splittable title={t("body.execSummary")} className={className}>
+      <ul className="mt-3 flex flex-1 list-none flex-col justify-around divide-y divide-border print:block">
         {bullets.map((bullet: any, i: number) => {
           const b: string = typeof bullet === "string" ? bullet : bullet?.text || "";
           const isMatch = b.includes(":");
@@ -1192,11 +1241,12 @@ const SENTIMENT_CHIP: Record<EuaSentiment, string> = {
 };
 
 // Nhận định tổng quan (ô giữa): giá EUA (số lớn nhất trang) + Δ ngày/tuần (đúng chuỗi của Bảng giá nhanh), thước đo
-// chiều kịch bản, câu "Tổng hợp" của Mục 3 (nguyên văn) và biên 30 phiên / ATR / khối lượng phiên.
-function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
+// chiều kịch bản, câu "Tổng hợp" của Mục 3 (nguyên văn), đường giá 30 phiên (cỡ nhỏ cố định) và biên 30
+// phiên / ATR / khối lượng phiên.
+function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: {
   verdict: { sentiment: EuaSentiment; text: string } | null;
   outlook: { pos: number; key: string; tone: string } | null;
-  stats: EuaStats; euaRow?: any; className?: string;
+  stats: EuaStats; euaRow?: any; chartData: OhlcRow[]; className?: string;
 }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
@@ -1211,6 +1261,30 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
     const up = text && text !== "-" ? isPositiveDelta(String(text)) : (pct ?? 0) >= 0;
     return { key, value, up };
   }).filter(d => d.value);
+  // Biên 30 phiên / ATR / khối lượng: ô rộng nằm ở cột phải dưới câu nhận định, ô hẹp nằm cuối ô.
+  const statsBlock = (cls: string) => last !== undefined && (
+    <div className={clsx("grid grid-cols-2 gap-x-4 gap-y-3 border-t border-primary/15 pt-3 @sm:grid-cols-3", cls)}>
+      <MiniStat
+        label={t("signal.range30")}
+        value={range ? fmtRange(range, locale) : "—"}
+        lines={[
+          pos && t(`signal.rangePos.${pos.pos}`, { pct: fnum(pos.pct, 0, locale) }),
+          // Mục tiêu đo biên độ khi phá/thủng biên = report_generator._eua_technical_levels_summary
+          range && t("signal.measured", { down: fp(range[0] - (range[1] - range[0])), up: fp(range[1] + (range[1] - range[0])) }),
+        ]}
+      />
+      <MiniStat
+        label={t("signal.atr", { n: ATR_SESSIONS })}
+        value={atr !== undefined ? fp(atr) : "—"}
+        lines={[atr !== undefined && last ? t("signal.atrPct", { pct: fnum((atr / last) * 100, 1, locale) }) : null]}
+      />
+      <MiniStat
+        label={t("hero.volume")}
+        value={stats.vol > 0 ? stats.vol.toLocaleString(locale === "en" ? "en-US" : "vi-VN") : "—"}
+        lines={[stats.volPct !== undefined ? t("signal.volVsAvg", { pct: signed(stats.volPct, 1), n: stats.volN }) : null]}
+      />
+    </div>
+  );
   return (
     <HeroCard
       tint
@@ -1223,7 +1297,7 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
       className={className}
     >
       {/* Ô rộng (in A4: hết hàng; báo cáo vừa không có tóm tắt): giá + thước đo | câu nhận định cạnh nhau. */}
-      <div className="mt-3 grid flex-1 content-start gap-x-6 gap-y-3 @xl:grid-cols-2">
+      <div className="mt-3 grid content-start gap-x-6 gap-y-3 @xl:grid-cols-2">
         <div className="min-w-0">
           {last !== undefined && (
             <>
@@ -1260,37 +1334,22 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
               </div>
             </div>
           )}
+          {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="hidden @xl:flex" />}
         </div>
-        {verdict && (
-          <p className="text-left text-[15.5px] leading-[1.6] text-label">
-            <RichText text={verdict.text} nums />
-          </p>
-        )}
+        <div className="min-w-0">
+          {verdict && (
+            <p className="text-left text-[15.5px] leading-[1.6] text-label">
+              <RichText text={verdict.text} nums />
+            </p>
+          )}
+          {statsBlock("mt-4 hidden @xl:grid")}
+        </div>
       </div>
 
-      {last !== undefined && (
-        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-primary/15 pt-3 @sm:grid-cols-3">
-          <MiniStat
-            label={t("signal.range30")}
-            value={range ? fmtRange(range, locale) : "—"}
-            lines={[
-              pos && t(`signal.rangePos.${pos.pos}`, { pct: fnum(pos.pct, 0, locale) }),
-              // Mục tiêu đo biên độ khi phá/thủng biên = report_generator._eua_technical_levels_summary
-              range && t("signal.measured", { down: fp(range[0] - (range[1] - range[0])), up: fp(range[1] + (range[1] - range[0])) }),
-            ]}
-          />
-          <MiniStat
-            label={t("signal.atr", { n: ATR_SESSIONS })}
-            value={atr !== undefined ? fp(atr) : "—"}
-            lines={[atr !== undefined && last ? t("signal.atrPct", { pct: fnum((atr / last) * 100, 1, locale) }) : null]}
-          />
-          <MiniStat
-            label={t("hero.volume")}
-            value={stats.vol > 0 ? stats.vol.toLocaleString(locale === "en" ? "en-US" : "vi-VN") : "—"}
-            lines={[stats.volPct !== undefined ? t("signal.volVsAvg", { pct: signed(stats.volPct, 1), n: stats.volN }) : null]}
-          />
-        </div>
-      )}
+      {/* Ô hẹp: đường giá nhỏ dưới câu nhận định (ô rộng: ở cột trái, xem trên). */}
+      {last !== undefined && chartData.length > 1 && <EuaSparkline data={chartData} range={range} className="mb-4 flex @xl:hidden" />}
+
+      {statsBlock("mt-auto @xl:hidden")}
     </HeroCard>
   );
 }
@@ -1432,28 +1491,28 @@ function HeroForecast({ review, className }: { review?: ForecastReview | null; c
 }
 
 // Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh/phòng hộ/dự báo).
-// grid: lưới ngoài; s/v/d: class của từng ô. A2 = khung 768–1023px và khi in A4 dọc (576–767px).
-const A2 = "@3xl/report:grid-cols-2 print:@xl/report:@max-3xl/report:grid-cols-2";
-const A2_FULL = "@3xl/report:col-span-2 print:@xl/report:@max-3xl/report:col-span-2";
-// In A4 dọc khi đủ 3 ô: Tóm tắt, Nhận định (giá | câu nhận định cạnh nhau) đều hết hàng, 3 ô lệnh/phòng hộ/dự báo thành
-// 1 hàng 3 cột — vừa trang 1, không cắt ô Nhận định sang trang sau.
-const PRINT_A2_FULL = "print:@xl/report:@max-3xl/report:col-span-2";
-const PRINT_A2_ROW = "print:@xl/report:@max-3xl/report:grid print:@xl/report:@max-3xl/report:grid-cols-3";
+// grid: lưới ngoài; s/v/d: class của từng ô. Màn hình: 3 ô cạnh nhau từ khung 1024px (WIDE), 768–1023px Tóm tắt hết
+// hàng + 2 ô bên dưới (A2). In (mọi khổ từ 576px — A4 dọc/ngang, 16:9): Tóm tắt và Nhận định (giá | câu nhận định cạnh
+// nhau) đều hết hàng, 3 ô lệnh/phòng hộ/dự báo thành 1 hàng 3 cột — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
+const A2 = "@3xl/report:grid-cols-2 print:@xl/report:grid-cols-2";
+const A2_FULL = "@3xl/report:col-span-2 print:@xl/report:col-span-2";
+const PRINT_FULL = "print:@xl/report:col-span-2";
+const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-3";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
-    grid: `${A2} @5xl/report:grid-cols-12`, s: `${A2_FULL} @5xl/report:col-span-5`,
-    v: `@5xl/report:col-span-4 ${PRINT_A2_FULL}`, d: `@5xl/report:col-span-3 ${PRINT_A2_FULL} ${PRINT_A2_ROW}`,
+    grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-5`,
+    v: `not-print:@5xl/report:col-span-4 ${PRINT_FULL}`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
   },
   sv: { grid: A2, s: "", v: "" },
-  sd: { grid: `${A2} @5xl/report:grid-cols-12`, s: "@5xl/report:col-span-8", d: "@5xl/report:col-span-4" },
-  vd: { grid: `${A2} @5xl/report:grid-cols-12`, v: "@5xl/report:col-span-8", d: "@5xl/report:col-span-4" },
+  sd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
+  vd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, v: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
   s: { grid: "", s: "" },
   v: { grid: "", v: "" },
   d: { grid: "", d: "" },
 };
 
 // Thanh số liệu chính chạy dọc (thay ô "giá EUA + nhãn nhận định" cũ trên thanh menu): giá CBAM quý ước tính rồi lần
-// lượt các mã dẫn dắt EUA — mỗi lần 1 mục, mục mới trượt từ trên xuống sau TICKER_MS; rê chuột để dừng. Không in.
+// lượt các mã dẫn dắt EUA — mỗi lần 1 mục, mục mới trượt từ trên xuống sau TICKER_MS, chạy liên tục. Không in.
 interface TickerItem { key: string; label: string; value: string; unit?: string; delta?: { text: string; up: boolean }; sub?: string }
 const TICKER_MS = 3500;
 
@@ -1492,20 +1551,15 @@ function useTickerItems(cbamEstimate: CbamEstimate | null | undefined, rows: any
 
 function PriceTicker({ items, label, className }: { items: TickerItem[]; label?: string; className?: string }) {
   const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
   useEffect(() => {
-    if (items.length < 2 || paused) return;
+    if (items.length < 2) return;
     const id = window.setInterval(() => setIndex(i => (i + 1) % items.length), TICKER_MS);
     return () => window.clearInterval(id);
-  }, [items.length, paused]);
+  }, [items.length]);
   if (!items.length) return null;
   const cur = items[index % items.length];
   return (
-    <div
-      className={clsx("flex w-full min-w-0 items-center gap-2.5", className)}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
+    <div className={clsx("flex w-full min-w-0 items-center gap-2.5", className)}>
       {label && (
         <span className="flex shrink-0 items-center gap-1 text-[11.5px] font-bold uppercase tracking-[0.08em] text-primary-dark">
           <ArrowDownUp size={13} aria-hidden="true" /> <span className="hidden sm:inline">{label}</span>
@@ -1524,11 +1578,6 @@ function PriceTicker({ items, label, className }: { items: TickerItem[]; label?:
           {cur.sub && <span className="shrink-0 text-[11.5px] text-muted-light">{cur.sub}</span>}
         </div>
       </div>
-      {items.length > 1 && (
-        <span className="flex shrink-0 flex-col gap-[3px]" aria-hidden="true">
-          {items.map((it, i) => <span key={it.key} className={clsx("h-[5px] w-[5px] rounded-full", i === index % items.length ? "bg-primary" : "bg-border-soft")} />)}
-        </span>
-      )}
     </div>
   );
 }
@@ -3514,10 +3563,12 @@ export function ReportDocument({
           )}
           <HotNewsStrip reportDate={report.report_date} />
           {heroSpans && (
-            <div className={clsx("grid gap-4", heroSpans.grid)}>
+            // In: ô không giãn theo ô cao nhất hàng (print:items-start) — Tóm tắt dài ngắt sang trang sau thì ô Nhận định
+            // giãn theo sẽ cao hơn 1 trang và bị cắt đôi.
+            <div className={clsx("grid gap-4 print:items-start", heroSpans.grid)}>
               {execBullets.length > 0 && <HeroSummary bullets={execBullets} className={heroSpans.s} />}
               {heroSpans.v !== undefined && (
-                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} className={heroSpans.v} />
+                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} chartData={chartData} className={heroSpans.v} />
               )}
               {heroSpans.d !== undefined && (
                 <div className={clsx("flex min-w-0 flex-col gap-3", heroSpans.d)}>
