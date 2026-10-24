@@ -22,7 +22,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // đăng xuất nằm trong drawer của Header.tsx.
   return (
     <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-      <AdminSidebar />
+      {/* report-focus-hide: ẩn khi "Phóng to" báo cáo (components/ReportFocusToggle.tsx). */}
+      <div className="report-focus-hide contents">
+        <AdminSidebar />
+      </div>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
   );

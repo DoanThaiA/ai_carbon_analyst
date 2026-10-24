@@ -1143,8 +1143,9 @@ function EuaSparkline({ data, range, className }: { data: OhlcRow[]; range: [num
   const last = closes[closes.length - 1];
   // Khung biểu đồ cao cố định, rộng tối đa 560px, căn giữa cả 2 chiều trong phần còn trống của thẻ (thẻ giãn
   // theo hàng lưới); 2 lề đối xứng: trái = nhãn đỉnh/đáy 30 phiên, phải = giá phiên gần nhất cạnh điểm cuối.
+  // Không đặt sẵn `flex`: nơi gọi truyền `hidden @xl:flex` / `flex @xl:hidden` để chỉ 1 trong 2 bản hiện.
   return (
-    <div className="mt-4 flex flex-1 flex-col justify-center">
+    <div className={clsx("mt-4 flex-col justify-center", className)}>
       <div className="mx-auto w-full max-w-[560px] px-[60px]">
         <div className="relative h-[112px] @sm:h-[136px]">
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
@@ -1596,7 +1597,6 @@ const HOT_NEWS_MS = 6000;
 
 function HotNewsStrip({ reportDate }: { reportDate: string }) {
   const t = useTranslations("reportDoc");
-  const locale = useLocale();
   const [items, setItems] = useState<HotNewsItem[]>([]);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -1616,9 +1616,6 @@ function HotNewsStrip({ reportDate }: { reportDate: string }) {
   const cur = items[index % items.length];
   // hot_news_reason lưu kèm nhãn nhóm "[Cắt nguồn cung] …" (crawl_news/classification.py) → tách làm chip.
   const category = cur.hot_news_reason?.match(/^\s*\[([^\]]+)\]/)?.[1];
-  const when = new Date(cur.published_at ?? cur.crawled_at).toLocaleString(locale === "en" ? "en-GB" : "vi-VN", {
-    timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-  });
   return (
     <div
       className="flex min-w-0 items-stretch overflow-hidden rounded-xl border border-down/30 bg-down/[0.04] print:hidden"
@@ -1642,7 +1639,6 @@ function HotNewsStrip({ reportDate }: { reportDate: string }) {
           <span className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted-light">
             {category && <span className="rounded border border-down/30 bg-background px-1.5 py-px font-bold text-down">{category}</span>}
             <span>{cur.source}</span>
-            <span className="tabular-nums">{when}</span>
           </span>
         </div>
       </div>

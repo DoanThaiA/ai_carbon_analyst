@@ -1684,5 +1684,10 @@
     "pageCount": "{count, plural, one {# page} other {# pages}}",
     "pageOf": "Page {page} of {total}",
     "previewError": "Could not show the preview — you can still download it."
+  },
+  "reportFocus": {
+    "enter": "Focus view",
+    "exit": "Exit focus",
+    "exitHint": "Exit focus (Esc)"
   }
 }

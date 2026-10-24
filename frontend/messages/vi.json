@@ -1684,5 +1684,10 @@
     "pageCount": "{count} trang",
     "pageOf": "Trang {page}/{total}",
     "previewError": "Không hiển thị được bản xem trước — vẫn có thể tải xuống."
+  },
+  "reportFocus": {
+    "enter": "Phóng to",
+    "exit": "Thu nhỏ",
+    "exitHint": "Thu nhỏ (Esc)"
   }
 }

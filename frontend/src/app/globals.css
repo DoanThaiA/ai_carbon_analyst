@@ -412,3 +412,15 @@ svg text {
     animation: none !important;
   }
 }
+
+/* Chế độ "Phóng to" báo cáo (components/ReportFocusToggle.tsx): ẩn header site + thanh công cụ của trang (khối có
+   .report-focus-hide), thu lề dọc của <main> — chỉ còn báo cáo. Header ẩn thì SectionNav tự dính sát mép trên
+   (ResizeObserver đo lại chiều cao header = 0). */
+html.report-focus header.sticky,
+html.report-focus .report-focus-hide {
+  display: none !important;
+}
+html.report-focus main {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
