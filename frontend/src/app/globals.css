@@ -226,7 +226,9 @@ svg text {
     break-after: avoid;
     page-break-after: avoid;
   }
-  tbody tr:first-child {
+  /* Chỉ nhóm hàng ĐẦU (:first-of-type): bảng mỗi hàng 1 <tbody> (vd Bảng giá nhanh — hàng + hàng ghi chú đi cùng) mà
+     áp cho mọi tbody thì không còn chỗ ngắt nào giữa các hàng → cả bảng bị đẩy nguyên khối sang trang sau. */
+  tbody:first-of-type > tr:first-child {
     break-before: avoid;
     page-break-before: avoid;
   }
