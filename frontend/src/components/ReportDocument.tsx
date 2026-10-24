@@ -430,16 +430,6 @@ function rangePosition(price: number, low: number, high: number): { pct: number;
   return { pct, pos };
 }
 
-// ["2026-10-13", "2026-10-15", "2026-10-16"] → "13, 15, 16/10" (gộp theo tháng).
-function joinDayMonth(dates: string[]): string {
-  const byMonth = new Map<string, string[]>();
-  [...dates].sort().forEach(d => {
-    const [, m, day] = d.split("-");
-    byMonth.set(m, [...(byMonth.get(m) ?? []), day]);
-  });
-  return [...byMonth].map(([m, days]) => `${days.join(", ")}/${m}`).join(" · ");
-}
-
 // ── Thang giá ────────────────────────────────────────────────────────────────
 type MarkTone = "buy" | "sell" | "target" | "stop" | "ref" | "current";
 interface LadderMark {
@@ -1120,8 +1110,8 @@ function hedgeShares(est: CbamEstimate) {
 }
 
 // ── KHỐI MỞ ĐẦU (Tổng quan) ──────────────────────────────────────────────────────────────────────────────
-// Báo cáo rộng: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM · Dự báo trước —
-// 3 ô cao bằng nhau. Số liệu chính (giá CBAM ước tính, khí, than, điện, dầu) chạy dọc trên thanh menu (PriceTicker).
+// Báo cáo rộng: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM — 3 ô cao bằng
+// nhau ("Dự báo trước" chỉ ở mục Review dự báo bên dưới). Số liệu chính (giá CBAM ước tính, khí, than, điện, dầu) chạy dọc trên thanh menu (PriceTicker).
 
 // Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung. Khi in, ô luôn giữ trọn
 // (data-print-whole — không cắt ô sang 2 trang, kể cả khi cao hơn ngưỡng ngắt của usePrintBreakTuning); riêng Tóm tắt
@@ -1390,68 +1380,20 @@ const VERDICT_MARK: Record<string, { cls: string; icon: string }> = {
   unclear: { cls: "bg-surface text-muted-light ring-1 ring-inset ring-border-soft", icon: "?" },
 };
 
-function ForecastStrip({ review }: { review: ForecastReview }) {
-  const tf = useTranslations("forecastReview");
-  const items = [...review.items].sort((a, b) => a.report_date.localeCompare(b.report_date));
-  return (
-    <ol className="mt-2.5 flex gap-1.5">
-      {items.map(it => {
-        const m = VERDICT_MARK[it.verdict] ?? VERDICT_MARK.unclear;
-        return (
-          <li key={it.report_date} className="flex min-w-0 max-w-[46px] flex-1 flex-col items-center gap-1" title={`${formatShortDate(it.report_date)} · ${tf(`verdict.${it.verdict}`)}`}>
-            <span className={clsx("grid h-7 w-full place-items-center rounded-md text-[13px] font-bold", m.cls)} aria-hidden="true">{m.icon}</span>
-            <span className="text-[10.5px] tabular-nums text-muted-light">{formatShortDate(it.report_date)}</span>
-            <span className="sr-only">{tf(`verdict.${it.verdict}`)}</span>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-// Dự báo trước (cột phải, ô 3): dải kết quả chấm các báo cáo gần nhất — chỉ liệt kê ngày Sai / Đúng / Đang theo dõi,
-// không hiện tỷ lệ (Sai chốt ngay khi chạm cắt lỗ còn Đúng phải chờ chạm mục tiêu/hết khung, nên tỷ lệ giữa khung luôn
-// nghiêng về Sai, dễ hiểu nhầm). "direction_only" (đúng hướng, lệnh không khớp) xếp vào Đúng; còn lại = Đang theo dõi.
-function HeroForecast({ review, className }: { review?: ForecastReview | null; className?: string }) {
-  const t = useTranslations("reportDoc");
-  const items = review?.items ?? [];
-  const right = items.filter(i => i.verdict === "correct" || i.verdict === "direction_only").map(i => i.report_date);
-  const wrong = items.filter(i => i.verdict === "wrong").map(i => i.report_date);
-  const watching = items.filter(i => !right.includes(i.report_date) && !wrong.includes(i.report_date)).map(i => i.report_date);
-  return (
-    <HeroCard
-      compact
-      title={t("signal.track")}
-      aside={items.length > 0 && (
-        <a href="#section-forecast-review" className="text-[12px] font-bold text-primary hover:underline print:hidden">{t("hero.seeReview")}</a>
-      )}
-      className={className}
-    >
-      {items.length > 0 && review && <ForecastStrip review={review} />}
-      <div className="mt-2 space-y-0.5 text-[12.5px] leading-snug tabular-nums">
-        {!items.length && <div className="text-muted-light">{t("signal.trackNone")}</div>}
-        {wrong.length > 0 && <div className="font-semibold text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
-        {right.length > 0 && <div className="font-semibold text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
-        {watching.length > 0 && <div className="text-muted-light">{t("signal.trackWatching", { dates: joinDayMonth(watching) })}</div>}
-      </div>
-    </HeroCard>
-  );
-}
-
-// Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh/phòng hộ/dự báo).
+// Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh ngắn hạn/phòng hộ).
 // grid: lưới ngoài; s/v/d: class của từng ô. Màn hình: 3 ô cạnh nhau từ khung 1024px (WIDE), 768–1023px Tóm tắt hết
 // hàng + 2 ô bên dưới (A2). In (mọi khổ từ 576px — A4 dọc/ngang, 16:9): Tóm tắt và Nhận định (giá | câu nhận định cạnh
-// nhau) đều hết hàng, 3 ô lệnh/phòng hộ/dự báo thành 1 hàng 3 cột — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
+// nhau) đều hết hàng, 2 ô lệnh/phòng hộ thành 1 hàng 2 cột — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
 const A2 = "@3xl/report:grid-cols-2 print:@xl/report:grid-cols-2";
 const A2_FULL = "@3xl/report:col-span-2 print:@xl/report:col-span-2";
 const PRINT_FULL = "print:@xl/report:col-span-2";
-const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-3";
+const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-2";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
-    grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-4`,
+    grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: `${A2_FULL} not-print:@5xl/report:col-span-5`,
     // In: Nhận định (giữ trọn ô) đứng TRƯỚC Tóm tắt (ngắt được giữa các ý) — Tóm tắt chảy tiếp lấp chỗ trống, không để ô
     // Nhận định bị đẩy nguyên sang trang 2 và bỏ trắng nửa trang 1.
-    v: `not-print:@5xl/report:col-span-4 ${PRINT_FULL} print:order-first`, d: `not-print:@5xl/report:col-span-4 ${PRINT_FULL} ${PRINT_ROW}`,
+    v: `not-print:@5xl/report:col-span-4 ${PRINT_FULL} print:order-first`, d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
   },
   sv: { grid: A2, s: "", v: "" },
   sd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
@@ -3377,18 +3319,18 @@ export function ReportDocument({
     />
   ) : null;
 
-  // Khối mở đầu: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM · Dự báo trước —
+  // Khối mở đầu: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM —
   // bỏ ô thiếu dữ liệu, các ô còn lại chia cột (HERO_SPANS). Báo cáo vừa (768–1023px) và in A4 dọc (khung 576–767px): Tóm
   // tắt hết hàng, 2 ô kia cạnh nhau bên dưới; khổ hẹp hơn 1 cột — xem trang export /reports/[date]/export.
   const showSnapshot = !noPriceData && stats.last !== undefined;
   const tickerItems = useTickerItems(noPriceData ? null : cbamEstimate, noPriceData ? [] : priceRows);
   const showOrders = !!shortPlan && shortPlan.legs.length > 0;
   const showHedge = !noPriceData && (!!cbamEstimate || !!hedgeAction);
-  const showTrack = !noPriceData && (plans.length > 0 || hasForecastReview);
   const heroKey = [
     execBullets.length > 0 && "s",
     (showSnapshot || !!euaVerdict || !!outlook) && "v",
-    (showOrders || showHedge || showTrack) && "d",
+    // "Dự báo trước" không còn ở khối mở đầu (24/10/2026) — chỉ ở mục Review dự báo bên dưới.
+    (showOrders || showHedge) && "d",
   ].filter(Boolean).join("") as keyof typeof HERO_SPANS | "";
   const heroSpans = heroKey ? HERO_SPANS[heroKey] : null;
 
@@ -3490,7 +3432,6 @@ export function ReportDocument({
                 <div className={clsx("flex min-w-0 flex-col gap-3", heroSpans.d)}>
                   {showOrders && shortPlan && <HeroOrders shortPlan={shortPlan} className="flex-1" />}
                   {showHedge && <HeroHedge cbamEstimate={cbamEstimate} hedgeAction={hedgeAction} className="flex-1" />}
-                  {showTrack && <HeroForecast review={forecastReview} className="flex-1" />}
                 </div>
               )}
             </div>
