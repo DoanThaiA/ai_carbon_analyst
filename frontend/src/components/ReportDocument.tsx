@@ -1141,28 +1141,35 @@ function EuaSparkline({ data, range, className }: { data: OhlcRow[]; range: [num
   const line = closes.map((c, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(c).toFixed(2)}`).join(" ");
   const top = (v: number) => `${(y(v) / H) * 100}%`;
   const last = closes[closes.length - 1];
+  // Khung biểu đồ cao cố định, rộng tối đa 560px, căn giữa cả 2 chiều trong phần còn trống của thẻ (thẻ giãn
+  // theo hàng lưới); 2 lề đối xứng: trái = nhãn đỉnh/đáy 30 phiên, phải = giá phiên gần nhất cạnh điểm cuối.
   return (
-    <div className={clsx("mt-4 h-[96px] flex-col", className)}>
-      <div className="relative mr-[64px] h-[72px]">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
-          <rect x="0" y={y(hi)} width={W} height={Math.max(0, y(lo) - y(hi))} fill="var(--color-primary)" fillOpacity="0.06" />
-          <line x1="0" x2={W} y1={y(hi)} y2={y(hi)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-          <line x1="0" x2={W} y1={y(lo)} y2={y(lo)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-          <path d={`${line} L${W},${H} L0,${H} Z`} fill="var(--color-primary)" fillOpacity="0.1" />
-          <path d={line} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        </svg>
-        <span className="absolute left-full ml-2 -translate-y-1/2 text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(hi) }}>
-          {fmtPrice(hi, locale)} <span className="block">{t("hero.high")}</span>
-        </span>
-        <span className="absolute left-full ml-2 -translate-y-1/2 text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(lo) }}>
-          {fmtPrice(lo, locale)} <span className="block">{t("hero.low")}</span>
-        </span>
-        <span className="absolute left-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background" style={{ top: top(last) }} />
-      </div>
-      <div className="mr-[64px] mt-1 flex justify-between text-[11.5px] text-muted-light tabular-nums">
-        <span>{formatShortDate(data[0].date)}</span>
-        <span>{t("hero.sessions", { n: data.length })}</span>
-        <span>{formatShortDate(data[data.length - 1].date)}</span>
+    <div className="mt-4 flex flex-1 flex-col justify-center">
+      <div className="mx-auto w-full max-w-[560px] px-[60px]">
+        <div className="relative h-[112px] @sm:h-[136px]">
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+            <rect x="0" y={y(hi)} width={W} height={Math.max(0, y(lo) - y(hi))} fill="var(--color-primary)" fillOpacity="0.06" />
+            <line x1="0" x2={W} y1={y(hi)} y2={y(hi)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={W} y1={y(lo)} y2={y(lo)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+            <path d={`${line} L${W},${H} L0,${H} Z`} fill="var(--color-primary)" fillOpacity="0.1" />
+            <path d={line} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          </svg>
+          <span className="absolute right-full mr-2 -translate-y-1/2 text-right text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(hi) }}>
+            {fmtPrice(hi, locale)} <span className="block">{t("hero.high")}</span>
+          </span>
+          <span className="absolute right-full mr-2 -translate-y-1/2 text-right text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(lo) }}>
+            {fmtPrice(lo, locale)} <span className="block">{t("hero.low")}</span>
+          </span>
+          <span className="absolute left-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background" style={{ top: top(last) }} />
+          <span className="absolute left-full ml-2.5 -translate-y-1/2 text-[12px] font-bold text-primary-dark tabular-nums whitespace-nowrap" style={{ top: top(last) }}>
+            {fmtPrice(last, locale)}
+          </span>
+        </div>
+        <div className="mt-1.5 flex justify-between text-[11.5px] text-muted-light tabular-nums">
+          <span>{formatShortDate(data[0].date)}</span>
+          <span>{t("hero.sessions", { n: data.length })}</span>
+          <span>{formatShortDate(data[data.length - 1].date)}</span>
+        </div>
       </div>
     </div>
   );
@@ -2723,39 +2730,39 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
   return (
     <div className="grid gap-4 @3xl/report:grid-cols-12 print:block print:space-y-3">
       <div data-print-whole className="flex min-w-0 flex-col @3xl/report:col-span-8 print:break-inside-avoid">
-          {printHeading && <div className="hidden print:block">{printHeading}</div>}
-          <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="shrink-0 rounded-xl bg-primary p-2 text-white">
-                  <Leaf size={22} aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-bold text-label">
-                    EUA Dec-26
-                    {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
-                    <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
-                    <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
-                  </h3>
-                  <p className="text-left mt-0.5 text-[13px] text-muted-light">{t("dash.marketDesc")}</p>
-                </div>
+        {printHeading && <div className="hidden print:block">{printHeading}</div>}
+        <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="shrink-0 rounded-xl bg-primary p-2 text-white">
+                <Leaf size={22} aria-hidden="true" />
               </div>
-              <div className="ml-auto flex flex-col items-end gap-1">
-                <div className="flex items-baseline gap-2.5">
-                  <span className="text-[26px] sm:text-[28px] font-bold leading-none tabular-nums text-label">{fnum(lastClose, 2, locale)}</span>
-                  <span className={clsx("inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums text-white", dayChange >= 0 ? "bg-up" : "bg-down")}>
-                    {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
-                    {sign(dayChange)}{fnum(dayChange, 2, locale)} ({sign(dayChangePct)}{fnum(dayChangePct, 2, locale)}%)
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light">
-                  <Calendar size={13} aria-hidden="true" /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
-                </div>
+              <div className="min-w-0">
+                <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-bold text-label">
+                  EUA Dec-26
+                  {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
+                  <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
+                  <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
+                </h3>
+                <p className="text-left mt-0.5 text-[13px] text-muted-light">{t("dash.marketDesc")}</p>
               </div>
             </div>
-
-            <CandlestickChart report={report} />
+            <div className="ml-auto flex flex-col items-end gap-1">
+              <div className="flex items-baseline gap-2.5">
+                <span className="text-[26px] sm:text-[28px] font-bold leading-none tabular-nums text-label">{fnum(lastClose, 2, locale)}</span>
+                <span className={clsx("inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums text-white", dayChange >= 0 ? "bg-up" : "bg-down")}>
+                  {dayChange >= 0 ? <ChevronUp size={15} strokeWidth={3} /> : <ChevronDown size={15} strokeWidth={3} />}
+                  {sign(dayChange)}{fnum(dayChange, 2, locale)} ({sign(dayChangePct)}{fnum(dayChangePct, 2, locale)}%)
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light">
+                <Calendar size={13} aria-hidden="true" /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
+              </div>
+            </div>
           </div>
+
+          <CandlestickChart report={report} />
+        </div>
       </div>
 
       <div className="grid min-w-0 gap-2.5 @2xl/report:grid-cols-2 @3xl/report:col-span-4 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:@max-3xl/report:grid-cols-2 print:break-inside-avoid">
