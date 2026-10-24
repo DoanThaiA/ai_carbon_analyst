@@ -1423,6 +1423,11 @@ def _resolve_section3_citations(
         blk["content"] = "\n".join(kept).strip()
     if isinstance(sec3.get("vs_previous"), str):
         sec3["vs_previous"] = _sub(sec3["vs_previous"])[0]
+    # Ghi chú bảng giá (Mục 2) — "[3]" để thô là số bài trong prompt Mục 3, người đọc/QC hiểu nhầm thành số Mục 9 (bản 24/10).
+    if isinstance(sec3.get("instrument_notes"), dict):
+        sec3["instrument_notes"] = {
+            k: _sub(v)[0].strip() if isinstance(v, str) else v for k, v in sec3["instrument_notes"].items()
+        }
     return list(used.values())
 
 
@@ -1623,10 +1628,17 @@ def _section6_must_keep(art: Dict) -> bool:
 
 
 def _prompt_section6_summary(article: Dict, target_date: str) -> str:
+    published = article.get("published_date") or ""
+    try:
+        pub_day = datetime.strptime(published, "%d/%m/%Y")
+        published = f"{_VN_WEEKDAYS[pub_day.weekday()]} {published}"
+    except ValueError:
+        pass
     return f"""Bạn là chuyên gia phân tích thị trường carbon & năng lượng châu Âu.
 Ngày báo cáo: {target_date}
 
 BÀI VIẾT CẦN TÓM TẮT (CHỈ bài này, không liên quan bài nào khác):
+Ngày đăng: {published or "không rõ"} — mốc thời gian tương đối trong bài ("on Thursday", "hôm qua", "today") PHẢI quy đổi theo NGÀY ĐĂNG này, KHÔNG theo ngày báo cáo (bản 24/10: "FTSE ended lower on Thursday" bị ghi thành 23/10 — Thứ Sáu); không chắc thì ghi đúng thứ như bài, không tự gắn ngày.
 Nguồn: {article['source']}
 Tiêu đề: {article['title']}
 Nội dung (trích): {article.get('content_excerpt') or article['summary']}
@@ -2287,7 +2299,9 @@ def _fuel_switching_spread_summary(prices: List[Dict]) -> str:
         lines.append(
             f"Trong TUẦN: TTF {_vn_num(wk['TTF'], sign=True)}%, API2 {_vn_num(wk['API2'], sign=True)}%, EUA "
             f"{_vn_num(wk['EUA'], sign=True)}% → chênh khí − than từ ≈ {st['spread_prev']:+.0f} lên ≈ {spread:+.0f} EUR/MWh "
-            f"({delta:+.0f}): {verdict}. Tác động RÒNG của nhiên liệu lên EUA tuần này dùng ĐÚNG kết luận này."
+            f"({delta:+.0f}): {verdict}. Tác động RÒNG của nhiên liệu lên EUA tuần này dùng ĐÚNG kết luận này. Mốc "
+            f"{st['spread_prev']:+.0f} là của 1 TUẦN TRƯỚC (không phải phiên trước/báo cáo trước) → nhắc cặp số này PHẢI ghi "
+            "\"trong tuần\"."
         )
     lines.append(
         "QUY TẮC XẾP CHIỀU (BẮT BUỘC ở động lực thị trường/instrument_notes/Diễn biến chính/Phân tích): xếp theo THAY ĐỔI RÒNG "
@@ -3548,6 +3562,7 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      • Nhất quán giá vào lệnh: nếu Entry khác giá đóng cửa hiện tại thì phải ghi điều kiện kích hoạt (vd "mua khi đóng cửa trên X"), và R:R PHẢI tính từ đúng giá vào lệnh đó (X), không dùng giá hiện tại. Entry không được "ngược" với điều kiện (vd mua khi giá đang dưới Entry mà không ghi chờ vượt).
      • Mức vô hiệu của kịch bản (trong "key_risk"/Phân tích) PHẢI trùng đúng mức cắt lỗ ở "Quản trị rủi ro" — không để 2 con số khác nhau (vd 87,01 và 87,15).
      • "price_zone" hỗ trợ/kháng cự KHÔNG được chứa giá đóng cửa hiện tại (vùng hỗ trợ phải nằm dưới giá, kháng cự nằm trên).
+     • Lệnh 2 chiều: R:R ≥ 1,5 cho TỪNG chân, tính tại cận BẤT LỢI của vùng Entry (chân mua: cận trên; chân bán: cận dưới) — vd bán 88,1–88,7, mục tiêu 85,70, cắt lỗ 90,10 → tại 88,1 R:R chỉ 1,20 là SAI; thu hẹp vùng hoặc đổi mục tiêu/cắt lỗ của chân đó.
      • ĐIỀU KIỆN ↔ ENTRY: "condition" dạng "đóng cửa trên X" (lệnh mua) thì Entry là "mua khi đóng cửa trên X" (giá vào = X), KHÔNG được "mua quanh" vùng thấp hơn X; tương tự "dưới X" cho lệnh bán. R:R tính từ đúng X.
      • Kịch bản trung/dài hạn: mục tiêu PHẢI có phép suy ra từ dữ liệu (vd "+8% so với đóng cửa 87,14", "đỉnh 30 phiên"); không suy ra được → không đặt mức giá cụ thể. Luận điểm chính sách dài hạn (vd cắt phân bổ miễn phí) chỉ dùng khi có trong tin đã cung cấp (kèm nguồn) HOẶC thuộc "VĂN BẢN ĐÃ LUẬT HÓA" dưới đây (kèm trích dẫn văn bản ngay trong câu); không có cả hai → BỎ luận điểm/điều kiện đó.
        VĂN BẢN ĐÃ LUẬT HÓA:
@@ -3558,7 +3573,7 @@ C. "trading_scenarios": mảng ĐÚNG 3 kịch bản — BẮT BUỘC đủ cả
      • Mục tiêu tính theo % (dạng "X (Y × 0,95)" hoặc "−5% ≈ X") CHỈ được lấy cơ sở Y = giá đóng cửa hiện tại hoặc 1 mốc có trong "MỐC KỸ THUẬT EUA"; MỖI kịch bản CHỈ có 1 mục tiêu — "price_zone" và "**Mục tiêu:**" phải ghi CÙNG con số (bản 17/10 lỗi: Vùng giá 81,14 = 85,41 × 0,95 nhưng Chiến lược 77,95 = 82,05 × 0,95, mốc 82,05 không có trong dữ liệu).
      • Nhãn % của mục tiêu tính từ ĐÚNG giá vào lệnh: Entry là mức kích hoạt (vd "bán khi đóng cửa dưới 82,35") thì ghi "(−4,6% từ Entry 82,35)", KHÔNG ghi "−8% so với đóng cửa 85,41" (phóng đại kỳ vọng thực).
      • Ngắn hạn và trung hạn KHÔNG được chồng vùng hành động: nếu ngắn hạn giữ lệnh một chiều với cắt lỗ S, mức kích hoạt của kịch bản trung hạn ngược chiều phải nằm NGOÀI S (vd ngắn hạn mua cắt lỗ 81,50 → trung hạn bán chỉ khi đóng cửa dưới 81,50), và ghi rõ "trung hạn chỉ kích hoạt sau khi lệnh ngắn hạn đã cắt lỗ".
-     • "đi ngang" thì "trading_strategy" PHẢI là lệnh 2 chiều trong biên (mua biên dưới + bán biên trên); kịch bản PHÁ BIÊN (bán khi thủng / mua khi vượt) KHÔNG được để dưới nhãn "đi ngang" — ghi nó ở "key_risk" như kịch bản thay thế, hoặc đặt "direction" theo chiều phá với xác suất "Thấp". Lệnh phá biên: mục tiêu = phép đo biên độ đã cho trong MỐC KỸ THUẬT, cắt lỗ cách mức phá 0,5–1,5 × ATR (vd ATR 1,69 → ~0,85–2,5).
+     • "đi ngang" thì "trading_strategy" PHẢI là lệnh 2 chiều trong biên (mua biên dưới + bán biên trên) — ÁP DỤNG CẢ trung/dài hạn: lệnh 1 chiều kiểu "tích lũy dần quanh X"/"chỉ mua"/"chỉ bán" thì "direction" phải theo đúng chiều đó (điều kiện kịch bản hỗ trợ giá, vd "các hồ sơ nới lỏng bị bác", là chiều TĂNG, không phải đi ngang); kịch bản PHÁ BIÊN (bán khi thủng / mua khi vượt) KHÔNG được để dưới nhãn "đi ngang" — ghi nó ở "key_risk" như kịch bản thay thế, hoặc đặt "direction" theo chiều phá với xác suất "Thấp". Lệnh phá biên: mục tiêu = phép đo biên độ đã cho trong MỐC KỸ THUẬT, cắt lỗ cách mức phá 0,5–1,5 × ATR (vd ATR 1,69 → ~0,85–2,5).
      • "direction" khác "đi ngang" (nhất là trung/dài hạn) PHẢI dựa trên ≥1 driver ĐÃ xảy ra/đang diễn ra cùng chiều trong dữ liệu/tin hôm nay. Nếu mọi điều kiện kích hoạt của chiều đó CHƯA xảy ra, hoặc số liệu hiện tại đang đi NGƯỢC điều kiện (vd điều kiện "chênh khí − than thu hẹp" trong khi chênh đang mở rộng; chính sách được đánh giá trung lập) → "direction" = "đi ngang", ghi điều kiện đó ở "condition" như ngưỡng chờ kích hoạt.
      • Lệnh trong "trading_strategy" là LỆNH CHỜ có hiệu lực {forecast_review.ORDER_VALID_SESSIONS} phiên kể từ ngày báo cáo và tự huỷ nếu giá chạm mục tiêu trước khi khớp (hệ thống chấm theo quy tắc này) → đặt vùng Entry trong tầm với của {forecast_review.ORDER_VALID_SESSIONS} phiên (≈ 1–1,5 × ATR quanh giá hiện tại), không đặt quá xa. Với "đi ngang", ghi rõ "đặt lệnh chờ (limit) mua quanh … / bán quanh …".
      • Mức vô hiệu/rủi ro của MỖI kịch bản (key_risk) PHẢI trùng mức cắt lỗ trong "Quản trị rủi ro" của CHÍNH kịch bản đó; "price_zone" và vùng nêu ở "Entry" phải là CÙNG một vùng (không để 82,35–85,84 ở chỗ này và 82,35–85,00 ở chỗ khác).
@@ -4571,7 +4586,10 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             # dưới — cùng list `prices` object nên mutate ở đây là đủ, không cần gán lại.
             # Giữ nguyên "note" thủ công/bất thường có sẵn từ DB (price.note) nếu có,
             # nối thêm ghi chú của LLM phía sau thay vì ghi đè.
-            instrument_notes = section_data.get("instrument_notes") or {}
+            # Đổi "[N]" trong ghi chú bảng giá thành "(Nguồn: …)" cùng lượt với văn bản Mục 3 (nguồn vào Mục 9).
+            notes_holder = {"instrument_notes": section_data.get("instrument_notes") or {}}
+            notes_sources = _resolve_section3_citations(notes_holder, section3_index_lookup, dossier_lookup)
+            instrument_notes = notes_holder["instrument_notes"] if isinstance(notes_holder["instrument_notes"], dict) else {}
             for p in prices:
                 llm_note = instrument_notes.get(p["code"])
                 if not llm_note:
@@ -4586,6 +4604,8 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             content["3"]["sources"] = _resolve_section3_citations(
                 content["3"], section3_index_lookup, dossier_lookup, knowledge_lookups.get("3"),
             )
+            seen_src = {s.get("source_url") for s in content["3"]["sources"]}
+            content["3"]["sources"] += [s for s in notes_sources if s.get("source_url") not in seen_src]
             # Giả định mô hình fuel switching hiển thị cho người đọc (dưới Phân tích) để kiểm chứng giá EUA hòa vốn.
             content["3"]["fuel_model_note"] = fuel_model_note(fuel_spread_state(prices)) if not no_price else ""
             if no_price:
@@ -4595,6 +4615,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
                 content["3"].pop("open_positions", None)
             else:
                 _finalize_hedge_fields(content["3"], open_trade_list, cbam_est)
+                content["3"]["vs_previous"] = forecast_review.acknowledge_wrong_forecasts(
+                    content["3"].get("vs_previous"), forecast_review_block,
+                )
         else:
             content[section_key] = section_data
 

@@ -585,6 +585,37 @@ def _chart(content: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [c for c in (content.get("2") or {}).get("chart_data") or [] if isinstance(c, dict)]
 
 
+_SPREAD_CHANGE_RE = re.compile(
+    r"(chênh[^.;\n]{0,80}?từ\s*≈?\s*)([+−-]?\d+)(\s*(?:lên|xuống|thành)\s*≈?\s*[+−-]?\d+\s*EUR/MWh)", re.IGNORECASE,
+)
+
+
+def spread_prev_week(content: Dict[str, Any]) -> Optional[float]:
+    """Chênh khí − than 1 TUẦN trước (report_generator.fuel_spread_state, suy từ Δ tuần)."""
+    from services.report_generator import fuel_spread_state  # import muộn: report_generator import module này
+
+    state = fuel_spread_state((content.get("2") or {}).get("prices") or [])
+    return state.get("spread_prev") if state else None
+
+
+def fix_spread_period(text: str, prev_week: Optional[float]) -> Tuple[str, List[str]]:
+    """"chênh khí − than từ ≈ +64 lên ≈ +75 EUR/MWh" mà +64 là mốc 1 TUẦN trước nhưng câu không ghi "tuần" → người đọc
+    hiểu là so với phiên trước (bản 24/10: QC đối chiếu phiên 22/10 ra +69, báo "không cách nào ra +64"). Thêm "trong tuần"."""
+    if prev_week is None or "chênh" not in text.lower():
+        return text, []
+    fixed: List[str] = []
+
+    def _one(m: re.Match) -> str:
+        start = m.group(2).replace("−", "-")
+        around = text[max(0, m.start() - 60):m.end() + 25].lower()
+        if abs(int(start) - round(prev_week)) > 1 or "tuần" in around:
+            return m.group(0)
+        fixed.append(f"chênh khí − than từ {m.group(2)}: mốc 1 tuần trước — thêm \"trong tuần\"")
+        return m.group(0) + " trong tuần"
+
+    return _SPREAD_CHANGE_RE.sub(_one, text), fixed
+
+
 # Tiêu đề GỐC của bài (Mục 6 giữ nguyên ngôn ngữ bài) — không đổi dấu thập phân/ngày ("44.01's", "$11.7M" là tên/số tiếng
 # Anh; bản 17/10 thành "44,01’s", "$11,7M"), chỉ sửa nháy lẻ.
 _ORIGINAL_TITLE_RE = re.compile(r"^6\.(?:international|vietnam)\[\d+\]\.title$")
@@ -595,6 +626,7 @@ def apply_consistency_fixes(content: Dict[str, Any]) -> List[Dict[str, str]]:
     close, rng = eua_reference(content)
     streak = eua_streak(_chart(content))
     momentum = streak_momentum(streak)
+    prev_week = spread_prev_week(content)
     fixed: List[Dict[str, str]] = []
 
     def _fn(text: str, path: str) -> str:
@@ -607,7 +639,8 @@ def apply_consistency_fixes(content: Dict[str, Any]) -> List[Dict[str, str]]:
         text, p2 = fix_range_claims(text, close, rng)
         text, p3 = fix_streak_claims(text, streak)
         text, p4 = fix_momentum_claims(text, momentum)
-        fixed.extend({"path": path, "message": m} for m in p1 + p2 + p3 + p4)
+        text, p5 = fix_spread_period(text, prev_week)
+        fixed.extend({"path": path, "message": m} for m in p1 + p2 + p3 + p4 + p5)
         return text
 
     walk_text(content, _fn)
@@ -619,6 +652,7 @@ def consistency_issues(content: Dict[str, Any]) -> List[Dict[str, str]]:
     close, rng = eua_reference(content)
     streak = eua_streak(_chart(content))
     momentum = streak_momentum(streak)
+    prev_week = spread_prev_week(content)
     found: List[Dict[str, str]] = []
 
     def _fn(text: str, path: str) -> str:
@@ -626,7 +660,8 @@ def consistency_issues(content: Dict[str, Any]) -> List[Dict[str, str]]:
         _, p2 = fix_range_claims(text, close, rng)
         _, p3 = fix_streak_claims(text, streak)
         _, p4 = fix_momentum_claims(text, momentum)
-        found.extend({"path": path, "message": m} for m in p1 + p2 + p3 + p4)
+        _, p5 = fix_spread_period(text, prev_week)
+        found.extend({"path": path, "message": m} for m in p1 + p2 + p3 + p4 + p5)
         if fix_stray_quotes(text) != text:
             found.append({"path": path, "message": "dấu nháy đơn lẻ (không có cặp)", "minor": "1"})
         if not _ORIGINAL_TITLE_RE.match(path) and normalize_presentation(text) != text:

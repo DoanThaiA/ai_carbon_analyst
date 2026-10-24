@@ -497,6 +497,13 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
     lines = ["ĐỐI CHIẾU DỰ BÁO GẦN ĐÂY (tính sẵn từ giá EUA thật + mô phỏng lệnh — dùng đúng, KHÔNG tự tính lại; "
              "khối này đã hiển thị dạng bảng ngay sau Phần 3 (Chi tiết tin tức), kèm DUY NHẤT dòng tỷ lệ đúng của cửa sổ gần nhất — tỷ lệ LŨY KẾ, CHUẨN "
              "SO SÁNH ngây thơ và danh sách báo cáo của cửa sổ KHÔNG hiển thị cho người đọc nên \"vs_previous\" KHÔNG dẫn các số đó):"]
+    # Dòng tổng ở ĐẦU khối — bản 24/10: dòng SAI (15/10) nằm cuối 8 dòng, LLM bỏ sót và viết "không có dự báo nào SAI".
+    wrong = [it for it in block["items"] if it.get("verdict") == "wrong"]
+    lines.append(
+        f"→ CÓ {len(wrong)} DỰ BÁO BỊ CHẤM SAI: " + ", ".join(f"báo cáo {_dm(it['report_date'])}" for it in wrong)
+        + " — \"vs_previous\" PHẢI thừa nhận TỪNG báo cáo này (ngày, chiều, kết quả); TUYỆT ĐỐI KHÔNG viết \"không có dự báo nào sai\"."
+        if wrong else "→ KHÔNG có dự báo nào bị chấm SAI trong bảng."
+    )
     for it in block["items"]:
         t = it.get("trade")
         trade_txt = ""
@@ -555,6 +562,41 @@ def describe_for_prompt(block: Optional[Dict[str, Any]], premises: Optional[Dict
             "nguyên nhân dự báo sai phải nêu cả phần THỰC THI (Entry quá xa, lệnh treo/hết hiệu lực) chứ không chỉ tiền đề."
         )
     return "\n".join(lines)
+
+
+# Câu phủ nhận có dự báo sai ("Không có dự báo nào bị chấm SAI trong bảng đối chiếu", "chưa có dự báo sai").
+_NO_WRONG_RE = re.compile(r"[^.;\n]*\b(?:không|chưa)\s+có\s+(?:dự báo|báo cáo)[^.;\n]{0,25}?\bsai\b[^.;\n]*[.;]?\s*", re.IGNORECASE)
+
+
+def wrong_forecast_sentence(it: Dict[str, Any]) -> str:
+    """1 câu thừa nhận dự báo SAI, dựng từ đúng số liệu bảng (không qua LLM)."""
+    t = it.get("trade") or {}
+    if t.get("status") == "stopped":
+        side = "mua" if t.get("side") == "buy" else "bán"
+        result = (f"lệnh {side} {_zone(t['entry_low'], t['entry_high'])}"
+                  + (f" khớp {_dm(t['filled_date'])} tại {_vn(t['fill_price'])}" if t.get("fill_price") is not None else "")
+                  + f" chạm cắt lỗ {_vn(t['stop'])}" + (f" ngày {_dm(t['exit_date'])}" if t.get("exit_date") else ""))
+    else:
+        result = f"EUA {_vn(it['change_pct'], sign=True)}% sau {it['sessions']} phiên"
+    flaws = describe_design_flaws(it.get("design_flaws") or [])
+    return (f"Dự báo báo cáo {_dm(it['report_date'])} (\"{it['direction']}\", xác suất {it['probability']}) bị chấm SAI: {result}"
+            + (f" — lỗi thiết kế lệnh: {flaws}" if flaws else "") + ".")
+
+
+def acknowledge_wrong_forecasts(text: Any, block: Optional[Dict[str, Any]]) -> Any:
+    """"vs_previous" bỏ sót dự báo bị chấm SAI (hoặc viết "không có dự báo nào sai") → xoá câu phủ nhận và chèn câu thừa
+    nhận dựng từ bảng lên đầu. Bản 24/10: viết "Không có dự báo nào bị chấm SAI" trong khi 15/10 chạm cắt lỗ."""
+    if not isinstance(text, str) or not block:
+        return text
+    wrong = [it for it in block.get("items") or [] if isinstance(it, dict) and it.get("verdict") == "wrong"]
+    if not wrong:
+        return text
+    out = _NO_WRONG_RE.sub("", text).strip()
+    missing = [it for it in wrong
+               if not re.search(rf"\b0?{int(it['report_date'][8:10])}/0?{int(it['report_date'][5:7])}\b", out)]
+    if not missing and out == text.strip():
+        return text
+    return " ".join([wrong_forecast_sentence(it) for it in missing] + ([out] if out else []))
 
 
 def open_trades(block: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:

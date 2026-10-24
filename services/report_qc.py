@@ -407,6 +407,10 @@ def _check_strategy_math(
     return issues
 
 
+# "Tích lũy/gom quanh X" = lệnh MUA (strategy_levels._split_buy_sell chỉ nhận chữ "mua").
+_ACCUMULATE_RE = re.compile(r"tích\s*l[ũu]y|tích\s*luỹ|\bgom\b|accumulat", re.IGNORECASE)
+
+
 def _check_strategy(
     sc: Dict[str, Any], label: str, path: str, eua_close: Optional[float],
     session: Optional[Dict[str, float]] = None,
@@ -444,6 +448,18 @@ def _check_strategy(
                 "scenario", "3", "warning",
                 f"{label}: nhãn \"đi ngang\" nhưng chiến lược là lệnh {'bán khi thủng' if side == 'giảm' else 'mua khi phá'} 1 chiều "
                 "— tách \"Cơ sở: đi ngang\" (mua biên dưới/bán biên trên) và \"Thay thế: phá biên\" (đổi direction, xác suất thấp).",
+                f"{path}.trading_strategy",
+            ))
+            direction = side
+        elif side or (not e_sell and _ACCUMULATE_RE.search(bodies["Entry"])):
+            side = side or "tăng"
+            # "Đi ngang" mà chỉ có lệnh MUA (hoặc chỉ BÁN) giới hạn/tích lũy — bản 24/10 dài hạn: "đi ngang" + điều kiện
+            # "các hồ sơ nới lỏng đều bị bác" (hỗ trợ EUA) + "Tích lũy dần quanh 82,35" → nhãn trái chiều lệnh (lặp lại).
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"{label}: nhãn \"đi ngang\" nhưng chiến lược chỉ có lệnh {'bán' if side == 'giảm' else 'mua'} 1 chiều — "
+                f"đổi direction thành \"{side}\" (khi điều kiện/kịch bản thực chất nghiêng chiều đó) hoặc giữ \"đi ngang\" "
+                "với lệnh 2 chiều trong biên (mua biên dưới + bán biên trên).",
                 f"{path}.trading_strategy",
             ))
             direction = side
@@ -519,6 +535,20 @@ def _check_two_sided_legs(sc: Dict[str, Any], label: str, path: str, bodies: Dic
             issues.append(_issue(
                 "scenario", "3", "error",
                 f"{label}: chân {name} có mục tiêu {_fmt(target)} / cắt lỗ {_fmt(stop)} sai phía so với Entry {_fmt(entry)}.",
+                p,
+            ))
+            continue
+        # R:R của TỪNG chân tại cận BẤT LỢI của vùng Entry (lệnh giới hạn khớp ở cận đầu tiên giá chạm — cùng quy ước
+        # _check_strategy_math). Bản 24/10: chân bán 88,1–88,7, mục tiêu 85,70, cắt lỗ 90,10 → tại 88,1 R:R chỉ 1,20.
+        worst = max(entry_range) if sign > 0 else min(entry_range)
+        reward, risk = sign * (target - worst), sign * (worst - stop)
+        if risk > 0 and reward > 0 and reward / risk < MIN_RISK_REWARD:
+            ok = (target + MIN_RISK_REWARD * stop) / (1 + MIN_RISK_REWARD)
+            issues.append(_issue(
+                "scenario", "3", "warning",
+                f"{label}: chân {name} R:R chỉ {reward / risk:.2f}:1 tại {_fmt(worst)} (mục tiêu {_fmt(target)}, cắt lỗ "
+                f"{_fmt(stop)}) — dưới 1,5:1; cận {'trên' if sign > 0 else 'dưới'} vùng {name} phải "
+                f"{'≤' if sign > 0 else '≥'} {_fmt(ok)}, hoặc đổi mục tiêu/cắt lỗ của chân này.",
                 p,
             ))
     return issues
