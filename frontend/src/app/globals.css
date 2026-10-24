@@ -374,6 +374,17 @@ svg text {
     0% { transform: translateX(0); }
     100% { transform: translateX(-50%); }
   }
+  /* Số liệu chính chạy dọc + dải Tin nóng (ReportDocument.tsx: PriceTicker, HotNewsStrip): mục mới trượt từ trên xuống. */
+  .report-ticker-down {
+    animation: report-ticker-down 0.45s ease-out both;
+  }
+  @keyframes report-ticker-down {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .report-ticker-down { animation: none; }
+  }
   /* Thanh trượt giá trong báo cáo (ReportDocument.tsx) chạy TỪ TRÁI SANG PHẢI:
      nội dung nhân đôi, bắt đầu lệch -50% rồi trượt về 0 → lặp liền mạch.
      Thời lượng đặt inline theo số hợp đồng để tốc độ đều, vừa phải. */

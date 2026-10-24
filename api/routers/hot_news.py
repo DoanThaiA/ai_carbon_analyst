@@ -1,7 +1,8 @@
 """Chuông thông báo Hot News trên header.
 
 - GET /hot: danh sách hot news gần nhất — dùng để nạp danh sách ban đầu khi FE
-  vừa mở trang (trước khi có event SSE nào tới).
+  vừa mở trang (trước khi có event SSE nào tới). `report_date=YYYY-MM-DD` (dải "Tin nóng" đầu trang báo cáo):
+  chỉ lấy tin crawl trong ngày báo cáo và ngày liền trước (giờ VN) — báo cáo cũ hiện đúng tin nóng của kỳ đó.
 - GET /hot/stream: SSE — chỉ nhận được event khi crawl pipeline THỰC SỰ phát
   hiện + lưu 1 bài is_hot_news=true (Postgres NOTIFY, xem
   services/hot_news_broadcast.py và pipeline/crawl_pipeline.py). KHÔNG polling
@@ -10,6 +11,8 @@
 """
 import asyncio
 import logging
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -28,6 +31,8 @@ router = APIRouter(prefix="/api/news", tags=["hot-news"])
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+REPORT_WINDOW_DAYS = 2  # ngày báo cáo + ngày liền trước
 KEEPALIVE_SECONDS = 15  # giữ kết nối SSE sống qua các proxy/load balancer có idle timeout
 
 
@@ -46,6 +51,7 @@ def _to_item(a: Article) -> HotNewsItem:
 @router.get("/hot", response_model=HotNewsResponse)
 async def get_hot_news(
     limit: int = DEFAULT_LIMIT,
+    report_date: date | None = None,
     session: AsyncSession = Depends(get_db),
     _payload: dict = Depends(get_current_user),
 ):
@@ -57,6 +63,9 @@ async def get_hot_news(
         .order_by(desc(Article.crawled_at))
         .limit(limit)
     )
+    if report_date is not None:
+        end = datetime.combine(report_date + timedelta(days=1), time.min, tzinfo=VN_TZ)
+        stmt = stmt.where(Article.crawled_at >= end - timedelta(days=REPORT_WINDOW_DAYS), Article.crawled_at < end)
     result = await session.execute(stmt)
     articles = result.scalars().all()
     return HotNewsResponse(items=[_to_item(a) for a in articles])

@@ -7,11 +7,12 @@ import {
   Clock, CalendarRange, TrendingUp, TrendingDown, Minus, Target, AlertTriangle,
   Sparkles, LineChart, BarChart3, Newspaper, Link2,
   Crosshair, ChevronDown, ChevronUp, Info, ShieldCheck, ExternalLink, Trash2,
-  Leaf, Calendar, RefreshCw, ArrowLeftRight, ArrowRight, CalendarClock, ClipboardCheck
+  Leaf, Calendar, RefreshCw, ArrowLeftRight, ArrowRight, CalendarClock, ClipboardCheck, ArrowDownUp, Flame
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { format as formatDateFns } from "date-fns";
-import type { CbamEstimate, ForecastReview, HedgeAction, OpenPosition, Report } from "@/lib/types";
+import type { CbamEstimate, ForecastReview, HedgeAction, HotNewsItem, OpenPosition, Report } from "@/lib/types";
+import { api } from "@/lib/api";
 import PriceIndexPanel from "@/components/PriceIndexPanel";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
@@ -1120,47 +1121,25 @@ function hedgeShares(est: CbamEstimate) {
 }
 
 // ── KHỐI MỞ ĐẦU (Tổng quan) ──────────────────────────────────────────────────────────────────────────────
+// Báo cáo rộng: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM · Dự báo trước —
+// 3 ô cao bằng nhau. Số liệu chính (giá CBAM ước tính, khí, than, điện, dầu) chạy dọc trên thanh menu (PriceTicker).
 
-// Đường giá đóng cửa 30 phiên + dải đáy–đỉnh 30 phiên (cùng biên với thang giá) + điểm phiên gần nhất. Vẽ theo %
-// (preserveAspectRatio="none" + nét không co giãn) để khớp mọi bề rộng; nhãn là HTML nên chữ không bị kéo méo.
-function EuaSparkline({ data, range }: { data: OhlcRow[]; range: [number, number] | null }) {
-  const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  const closes = data.map(d => d.close).filter((v): v is number => typeof v === "number");
-  if (closes.length < 2) return null;
-  const lo = range ? range[0] : Math.min(...closes);
-  const hi = range ? range[1] : Math.max(...closes);
-  const pad = (hi - lo) * 0.14 || 1;
-  const min = lo - pad, max = hi + pad;
-  const W = 300, H = 100;
-  const x = (i: number) => (i / (closes.length - 1)) * W;
-  const y = (v: number) => H - ((v - min) / (max - min)) * H;
-  const line = closes.map((c, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(c).toFixed(2)}`).join(" ");
-  const top = (v: number) => `${(y(v) / H) * 100}%`;
-  const last = closes[closes.length - 1];
+// Khung 1 ô của khối mở đầu: tiêu đề nhỏ in hoa (+ phần phụ bên phải) rồi nội dung.
+function HeroCard({ title, aside, tint, compact, className, children }: {
+  title: React.ReactNode; aside?: React.ReactNode; tint?: boolean; compact?: boolean; className?: string; children: React.ReactNode;
+}) {
   return (
-    <div className="mt-4 flex min-h-[124px] flex-1 flex-col">
-      <div className="relative mr-[64px] min-h-[92px] flex-1">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
-          <rect x="0" y={y(hi)} width={W} height={Math.max(0, y(lo) - y(hi))} fill="var(--color-primary)" fillOpacity="0.06" />
-          <line x1="0" x2={W} y1={y(hi)} y2={y(hi)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-          <line x1="0" x2={W} y1={y(lo)} y2={y(lo)} stroke="var(--color-border-soft)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-          <path d={`${line} L${W},${H} L0,${H} Z`} fill="var(--color-primary)" fillOpacity="0.1" />
-          <path d={line} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        </svg>
-        <span className="absolute left-full ml-2 -translate-y-1/2 text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(hi) }}>
-          {fmtPrice(hi, locale)} <span className="block">{t("hero.high")}</span>
-        </span>
-        <span className="absolute left-full ml-2 -translate-y-1/2 text-[11.5px] leading-tight text-muted-light tabular-nums whitespace-nowrap" style={{ top: top(lo) }}>
-          {fmtPrice(lo, locale)} <span className="block">{t("hero.low")}</span>
-        </span>
-        <span className="absolute left-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background" style={{ top: top(last) }} />
+    <div className={clsx(
+      "@container flex min-w-0 flex-col rounded-xl border print:break-inside-avoid print:p-3.5!",
+      compact ? "px-4 py-3.5" : "p-4 sm:p-5",
+      tint ? "border-primary/20 bg-tint" : "border-border bg-background",
+      className,
+    )}>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <h2 className="report-heading flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">{title}</h2>
+        {aside}
       </div>
-      <div className="mr-[64px] mt-1 flex justify-between text-[11.5px] text-muted-light tabular-nums">
-        <span>{formatShortDate(data[0].date)}</span>
-        <span>{t("hero.sessions", { n: data.length })}</span>
-        <span>{formatShortDate(data[data.length - 1].date)}</span>
-      </div>
+      {children}
     </div>
   );
 }
@@ -1169,7 +1148,7 @@ function MiniStat({ label, value, lines }: { label: string; value: string; lines
   return (
     <div className="min-w-0">
       <div className="text-[12px] font-semibold leading-tight text-muted-light">{label}</div>
-      <div className="mt-0.5 text-[16px] font-bold leading-tight tabular-nums text-label whitespace-nowrap">{value}</div>
+      <div className="mt-0.5 text-[15.5px] font-bold leading-tight tabular-nums text-label whitespace-nowrap">{value}</div>
       {lines.filter(Boolean).map((l, i) => (
         <div key={i} className="mt-0.5 text-[12px] leading-snug tabular-nums text-body [text-wrap:balance]">{l}</div>
       ))}
@@ -1177,9 +1156,48 @@ function MiniStat({ label, value, lines }: { label: string; value: string; lines
   );
 }
 
-// Giá EUA: số lớn nhất trang + Δ ngày/tuần (đúng chuỗi của Bảng giá nhanh) + đường 30 phiên + biên/ATR/khối lượng
-// (trước nằm ở hàng chỉ số của thẻ vị thế).
-function EuaSnapshot({ stats, euaRow, chartData, className }: { stats: EuaStats; euaRow?: any; chartData: OhlcRow[]; className?: string }) {
+// Tóm tắt điều hành (ô trái): mỗi ý = nhãn chủ đề (đủ chữ, không cắt) + nguyên văn, số liệu tô đậm. Prompt Mục 1 giữ cả
+// mục 60–90 chữ (report_generator._prompt_section1) để vừa ô; báo cáo cũ dài hơn thì ô tự cao theo.
+function HeroSummary({ bullets, className }: { bullets: any[]; className?: string }) {
+  const t = useTranslations("reportDoc");
+  return (
+    <HeroCard title={t("body.execSummary")} className={className}>
+      <ul className="mt-3 flex flex-1 list-none flex-col justify-around divide-y divide-border">
+        {bullets.map((bullet: any, i: number) => {
+          const b: string = typeof bullet === "string" ? bullet : bullet?.text || "";
+          const isMatch = b.includes(":");
+          const tag = stripMarkdown(isMatch ? b.split(":")[0] : "Note").trim();
+          const text = (isMatch ? b.split(":").slice(1).join(":") : b).trim();
+          const sourceName = typeof bullet === "object" ? bullet?.source_name : null;
+          const sourceUrl = typeof bullet === "object" ? bullet?.source_url : null;
+          return (
+            <li key={i} className="py-3 first:pt-0 last:pb-0 print:break-inside-avoid">
+              <span className={clsx("inline-block rounded-md border px-2 py-0.5 text-[12px] font-bold leading-snug", tagColorClass(tag))}>{tag}</span>
+              <p className="text-left mt-1.5 text-[16.5px] leading-[1.6] text-foreground">
+                <RichText text={text} nums />
+                {sourceName && <InlineSource name={sourceName} url={sourceUrl} />}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </HeroCard>
+  );
+}
+
+const SENTIMENT_CHIP: Record<EuaSentiment, string> = {
+  positive: "bg-up/10 text-up border-up/30",
+  neutral: "bg-warn-tint text-warn border-warn/35",
+  negative: "bg-down/10 text-down border-down/30",
+};
+
+// Nhận định tổng quan (ô giữa): giá EUA (số lớn nhất trang) + Δ ngày/tuần (đúng chuỗi của Bảng giá nhanh), thước đo
+// chiều kịch bản, câu "Tổng hợp" của Mục 3 (nguyên văn) và biên 30 phiên / ATR / khối lượng phiên.
+function HeroVerdict({ verdict, outlook, stats, euaRow, className }: {
+  verdict: { sentiment: EuaSentiment; text: string } | null;
+  outlook: { pos: number; key: string; tone: string } | null;
+  stats: EuaStats; euaRow?: any; className?: string;
+}) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
   const fp = (n: number) => fmtPrice(n, locale);
@@ -1194,176 +1212,157 @@ function EuaSnapshot({ stats, euaRow, chartData, className }: { stats: EuaStats;
     return { key, value, up };
   }).filter(d => d.value);
   return (
-    <div className={clsx("@container flex min-w-0 flex-col rounded-xl border border-border bg-background p-4 sm:p-5", className)}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">{t("hero.euaTitle")}</h3>
-        {stats.lastDate && <span className="text-[12px] text-muted-light tabular-nums">{t("dash.closeOf", { date: formatFullDate(stats.lastDate) })}</span>}
+    <HeroCard
+      tint
+      title={t("hero.verdictTitle")}
+      aside={verdict && (
+        <span className={clsx("rounded-full border px-2.5 py-0.5 text-[12px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[verdict.sentiment])}>
+          {t(`hero.sentiment.${verdict.sentiment}`)}
+        </span>
+      )}
+      className={className}
+    >
+      {/* Ô rộng (in A4: hết hàng; báo cáo vừa không có tóm tắt): giá + thước đo | câu nhận định cạnh nhau. */}
+      <div className="mt-3 grid flex-1 content-start gap-x-6 gap-y-3 @xl:grid-cols-2">
+        <div className="min-w-0">
+          {last !== undefined && (
+            <>
+              <div className="flex flex-wrap items-end gap-x-2.5 gap-y-1">
+                <span className="text-[42px] sm:text-[46px] font-bold leading-none tracking-[-0.02em] tabular-nums text-label">{fp(last)}</span>
+                <span className="mb-1 text-[13px] font-bold text-muted-light">EUR/tCO₂</span>
+              </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                {deltas.map(d => (
+                  <span key={d.key} className={clsx(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums",
+                    d.up ? "bg-up/10 text-up" : "bg-down/10 text-down",
+                  )}>
+                    {d.up ? "▲" : "▼"} {d.value}
+                    <span className="font-semibold opacity-80">{t(`hero.${d.key}`)}</span>
+                  </span>
+                ))}
+              </div>
+              <div className="mt-1.5 text-[12px] leading-snug text-muted-light">
+                {euaRow?.name && <span>{euaRow.name} · </span>}
+                {stats.lastDate && <span className="tabular-nums">{t("dash.closeOf", { date: formatFullDate(stats.lastDate) })}</span>}
+              </div>
+            </>
+          )}
+          {outlook && (
+            <div className={clsx(last !== undefined && "mt-4")}>
+              <div className="relative h-[6px] rounded-full bg-gradient-to-r from-down/55 via-border to-up/55 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                <span className="absolute top-[-5px] h-4 w-[3px] rounded-full bg-label" style={{ left: `${outlook.pos}%`, transform: "translateX(-50%)" }} />
+              </div>
+              <div className="mt-1.5 flex items-baseline justify-between gap-2 text-[11.5px] text-muted-light">
+                <span>{t("signal.gaugeDown")}</span>
+                <span className={clsx("text-center text-[13px] font-bold", outlook.tone)}>{t(`signal.outlookLabel.${outlook.key}`)}</span>
+                <span>{t("signal.gaugeUp")}</span>
+              </div>
+            </div>
+          )}
+        </div>
+        {verdict && (
+          <p className="text-left text-[15.5px] leading-[1.6] text-label">
+            <RichText text={verdict.text} nums />
+          </p>
+        )}
       </div>
-      {euaRow?.name && <div className="mt-0.5 text-[12.5px] text-muted-light">{euaRow.name}</div>}
-      <div className="mt-2.5 flex flex-wrap items-end gap-x-2.5 gap-y-1">
-        <span className="text-[46px] sm:text-[52px] font-bold leading-none tracking-[-0.02em] tabular-nums text-label">{last !== undefined ? fp(last) : "—"}</span>
-        <span className="mb-1 text-[13px] font-bold text-muted-light">EUR/tCO₂</span>
-      </div>
-      {deltas.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {deltas.map(d => (
-            <span key={d.key} className={clsx(
-              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums",
-              d.up ? "bg-up/10 text-up" : "bg-down/10 text-down",
-            )}>
-              {d.up ? "▲" : "▼"} {d.value}
-              <span className="font-semibold opacity-80">{t(`hero.${d.key}`)}</span>
-            </span>
-          ))}
+
+      {last !== undefined && (
+        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-primary/15 pt-3 @sm:grid-cols-3">
+          <MiniStat
+            label={t("signal.range30")}
+            value={range ? fmtRange(range, locale) : "—"}
+            lines={[
+              pos && t(`signal.rangePos.${pos.pos}`, { pct: fnum(pos.pct, 0, locale) }),
+              // Mục tiêu đo biên độ khi phá/thủng biên = report_generator._eua_technical_levels_summary
+              range && t("signal.measured", { down: fp(range[0] - (range[1] - range[0])), up: fp(range[1] + (range[1] - range[0])) }),
+            ]}
+          />
+          <MiniStat
+            label={t("signal.atr", { n: ATR_SESSIONS })}
+            value={atr !== undefined ? fp(atr) : "—"}
+            lines={[atr !== undefined && last ? t("signal.atrPct", { pct: fnum((atr / last) * 100, 1, locale) }) : null]}
+          />
+          <MiniStat
+            label={t("hero.volume")}
+            value={stats.vol > 0 ? stats.vol.toLocaleString(locale === "en" ? "en-US" : "vi-VN") : "—"}
+            lines={[stats.volPct !== undefined ? t("signal.volVsAvg", { pct: signed(stats.volPct, 1), n: stats.volN }) : null]}
+          />
         </div>
       )}
-      {chartData.length > 1 && <EuaSparkline data={chartData} range={range} />}
-      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-3 @sm:grid-cols-3">
-        <MiniStat
-          label={t("signal.range30")}
-          value={range ? fmtRange(range, locale) : "—"}
-          lines={[
-            pos && t(`signal.rangePos.${pos.pos}`, { pct: fnum(pos.pct, 0, locale) }),
-            // Mục tiêu đo biên độ khi phá/thủng biên = report_generator._eua_technical_levels_summary
-            range && t("signal.measured", { down: fp(range[0] - (range[1] - range[0])), up: fp(range[1] + (range[1] - range[0])) }),
-          ]}
-        />
-        <MiniStat
-          label={t("signal.atr", { n: ATR_SESSIONS })}
-          value={atr !== undefined ? fp(atr) : "—"}
-          lines={[atr !== undefined && last ? t("signal.atrPct", { pct: fnum((atr / last) * 100, 1, locale) }) : null]}
-        />
-        <MiniStat
-          label={t("hero.volume")}
-          value={stats.vol > 0 ? stats.vol.toLocaleString(locale === "en" ? "en-US" : "vi-VN") : "—"}
-          lines={[stats.volPct !== undefined ? t("signal.volVsAvg", { pct: signed(stats.volPct, 1), n: stats.volN }) : null]}
-        />
-      </div>
-    </div>
+    </HeroCard>
   );
 }
 
-const SENTIMENT_CHIP: Record<EuaSentiment, string> = {
-  positive: "bg-up/10 text-up border-up/30",
-  neutral: "bg-warn-tint text-warn border-warn/35",
-  negative: "bg-down/10 text-down border-down/30",
-};
-
-// Nhận định tổng quan (dòng "Tổng hợp" của Mục 3, nguyên văn) + thước đo chiều kịch bản + việc cần làm hôm nay:
-// lệnh ngắn hạn (cùng số với bảng lệnh) và quyết định phòng hộ CBAM (cùng nhãn với thẻ CBAM).
-function VerdictCard({ verdict, outlook, shortPlan, cbamEstimate, hedgeAction, className }: {
-  verdict: { sentiment: EuaSentiment; text: string } | null;
-  outlook: { pos: number; key: string; tone: string } | null;
-  shortPlan?: HorizonPlan;
-  cbamEstimate?: CbamEstimate | null;
-  hedgeAction?: HedgeAction | null;
-  className?: string;
-}) {
+// Lệnh ngắn hạn (cột phải, ô 1): đúng các chân lệnh của thẻ kịch bản ngắn hạn (cùng số với Khuyến nghị vị thế).
+function HeroOrders({ shortPlan, className }: { shortPlan: HorizonPlan; className?: string }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
   const enumLabel = useEnumLabel();
   const fp = (n: number) => fmtPrice(n, locale);
-  const trend = shortPlan ? TREND_META[shortPlan.dir] : undefined;
-  const legs = shortPlan?.legs ?? [];
-  const shares = cbamEstimate ? hedgeShares(cbamEstimate) : null;
-  const contract = cbamEstimate ? hedgeContract(cbamEstimate).contract : "";
-  const n1 = (x: number) => fnum(x, 1, locale);
+  const trend = TREND_META[shortPlan.dir];
   return (
-    <div className={clsx("min-w-0 rounded-xl border border-primary/20 bg-tint p-4 sm:p-5", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="report-heading text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">{t("hero.verdictTitle")}</h2>
-        {verdict && (
-          <span className={clsx("rounded-full border px-2.5 py-0.5 text-[12px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[verdict.sentiment])}>
-            {t(`hero.sentiment.${verdict.sentiment}`)}
-          </span>
-        )}
-      </div>
-
-      {outlook && (
-        <div className="mt-3">
-          <div className="relative h-[6px] rounded-full bg-gradient-to-r from-down/55 via-border to-up/55">
-            <span className="absolute top-[-5px] h-4 w-[3px] rounded-full bg-label" style={{ left: `${outlook.pos}%`, transform: "translateX(-50%)" }} />
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between gap-2 text-[11.5px] text-muted-light">
-            <span>{t("signal.gaugeDown")}</span>
-            <span className={clsx("text-center text-[13px] font-bold", outlook.tone)}>{t(`signal.outlookLabel.${outlook.key}`)}</span>
-            <span>{t("signal.gaugeUp")}</span>
-          </div>
-        </div>
-      )}
-
-      {verdict && (
-        <p className="text-left mt-3 text-[16px] leading-[1.6] text-label">
-          <RichText text={verdict.text} nums />
-        </p>
-      )}
-
-      {(legs.length > 0 || cbamEstimate || hedgeAction) && (
-        <div className="mt-4 space-y-3.5 border-t border-primary/15 pt-3.5">
-          {shortPlan && legs.length > 0 && (
-            <div>
-              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-bold uppercase tracking-[0.06em] text-label">
-                {t("hero.todayOrders")}
-                {trend && <span className={clsx("normal-case tracking-normal text-[13px]", trend.className)}>{trend.arrow} {capFirst(enumLabel(shortPlan.dir))}</span>}
+    <HeroCard
+      compact
+      title={t("hero.todayOrders")}
+      aside={trend && <span className={clsx("text-[13px] font-bold", trend.className)}>{trend.arrow} {capFirst(enumLabel(shortPlan.dir))}</span>}
+      className={className}
+    >
+      <ul className="mt-2.5 space-y-2.5">
+        {shortPlan.legs.map((leg, i) => (
+          <li key={i} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 tabular-nums">
+            <OrderPill leg={leg} />
+            <div className="min-w-0 leading-snug">
+              <b className="text-[15px] font-bold text-label">{legEntryText(leg, t, locale)}</b>
+              <div className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[13px] text-body">
+                {leg.target !== undefined && <span>{t("signal.col.target")} <b className="text-up">{fp(leg.target)}</b></span>}
+                {leg.stop !== undefined && <span>{t("signal.col.stop")} <b className="text-down">{fp(leg.stop)}</b></span>}
+                {leg.rr !== undefined && <span className="text-muted-light">R:R 1 : {fnum(leg.rr, 1, locale)}</span>}
               </div>
-              <ul className="space-y-2.5">
-                {legs.map((leg, i) => (
-                  <li key={i} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 tabular-nums">
-                    <OrderPill leg={leg} />
-                    <div className="min-w-0 leading-snug">
-                      <b className="text-[15px] font-bold text-label">{legEntryText(leg, t, locale)}</b>
-                      <div className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[13px] text-body">
-                        {leg.target !== undefined && <span>{t("signal.col.target")} <b className="text-up">{fp(leg.target)}</b></span>}
-                        {leg.stop !== undefined && <span>{t("signal.col.stop")} <b className="text-down">{fp(leg.stop)}</b></span>}
-                        {leg.rr !== undefined && <span className="text-muted-light">R:R 1 : {fnum(leg.rr, 1, locale)}</span>}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
             </div>
-          )}
-
-          {cbamEstimate && shares && (
-            <div>
-              <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[12px] font-bold uppercase tracking-[0.06em] text-label">
-                <ShieldCheck size={14} strokeWidth={2.5} className="text-primary-dark" aria-hidden="true" />
-                {t("hedge.title", { quarter: cbamEstimate.quarter })}
-                <span className="rounded border border-primary/30 bg-background px-1.5 py-px text-[11px] font-bold tracking-wide text-primary-dark">
-                  {t(`signal.hedgeAction.${cbamEstimate.signal}`)}
-                </span>
-              </div>
-              <ul className="space-y-1 text-[13.5px] leading-[1.45] text-body tabular-nums">
-                {shares.core > 0.05 && <li>{t("hedge.segCore", { pct: n1(shares.core), contract })}</li>}
-                {shares.tactical > 0.05 && <li>{t(`hedge.segTactical.${cbamEstimate.signal}`, { pct: n1(shares.tactical) })}</li>}
-                {shares.fixed > 0.05 && <li className="text-muted-light">{t("hedge.segFixed", { pct: n1(shares.fixed) })}</li>}
-              </ul>
-            </div>
-          )}
-
-          {!cbamEstimate && hedgeAction && (
-            <div className="flex flex-wrap items-center gap-2 text-[12px] font-bold uppercase tracking-[0.06em] text-label">
-              <ShieldCheck size={14} strokeWidth={2.5} className="text-primary-dark" aria-hidden="true" />
-              {t("signal.hedge")}
-              <span className="rounded border border-primary/30 bg-background px-1.5 py-px text-[11px] font-bold tracking-wide text-primary-dark">
-                {t(`signal.hedgeAction.${hedgeAction.action}`)}
-              </span>
-            </div>
-          )}
-
-          {(legs.length > 0 || cbamEstimate || hedgeAction) && (
-            <a href="#section-recommendation" className="inline-flex items-center gap-1 text-[13px] font-bold text-primary hover:underline print:hidden">
-              {t("hero.seeRecommendation")} <ArrowRight size={14} aria-hidden="true" />
-            </a>
-          )}
-        </div>
-      )}
-    </div>
+          </li>
+        ))}
+      </ul>
+      <a href="#section-recommendation" className="mt-auto inline-flex items-center gap-1 pt-3 text-[12.5px] font-bold text-primary hover:underline print:hidden">
+        {t("hero.seeRecommendation")} <ArrowRight size={14} aria-hidden="true" />
+      </a>
+    </HeroCard>
   );
 }
 
-// Mã dẫn dắt EUA hiện ở cột "Số liệu chính" (khí, than, điện Đức, dầu — cùng nhóm với biểu đồ chỉ số giá); thiếu mã
-// nào thì lấp bằng thứ tự Bảng giá nhanh. Đủ 10 mã vẫn nằm ở Bảng giá nhanh (Phần 1).
+// Phòng hộ CBAM (cột phải, ô 2): cùng nhãn với thẻ CBAM (cbam_estimate.signal) và tỷ trọng lõi/chiến thuật/đã chốt.
+function HeroHedge({ cbamEstimate, hedgeAction, className }: {
+  cbamEstimate?: CbamEstimate | null; hedgeAction?: HedgeAction | null; className?: string;
+}) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const n1 = (x: number) => fnum(x, 1, locale);
+  const shares = cbamEstimate ? hedgeShares(cbamEstimate) : null;
+  const contract = cbamEstimate ? hedgeContract(cbamEstimate).contract : "";
+  const label = cbamEstimate ? t(`signal.hedgeAction.${cbamEstimate.signal}`) : hedgeAction ? t(`signal.hedgeAction.${hedgeAction.action}`) : null;
+  return (
+    <HeroCard
+      compact
+      title={<><ShieldCheck size={14} strokeWidth={2.5} aria-hidden="true" /> {cbamEstimate ? t("hedge.title", { quarter: cbamEstimate.quarter }) : t("signal.hedge")}</>}
+      className={className}
+    >
+      {label && (
+        <span className="mt-2 self-start rounded border border-primary/30 bg-tint px-1.5 py-px text-[11px] font-bold uppercase tracking-wide text-primary-dark">{label}</span>
+      )}
+      {cbamEstimate && shares && (
+        <ul className="mt-2 space-y-1 text-[13.5px] leading-[1.45] text-body tabular-nums">
+          {shares.core > 0.05 && <li>{t("hedge.segCore", { pct: n1(shares.core), contract })}</li>}
+          {shares.tactical > 0.05 && <li>{t(`hedge.segTactical.${cbamEstimate.signal}`, { pct: n1(shares.tactical) })}</li>}
+          {shares.fixed > 0.05 && <li className="text-muted-light">{t("hedge.segFixed", { pct: n1(shares.fixed) })}</li>}
+        </ul>
+      )}
+    </HeroCard>
+  );
+}
+
+// Mã dẫn dắt EUA trong thanh số liệu chạy (khí, than, điện Đức, dầu — cùng nhóm với biểu đồ chỉ số giá); thiếu mã nào
+// thì lấp bằng thứ tự Bảng giá nhanh. Đủ 10 mã vẫn nằm ở Bảng giá nhanh (Phần 1).
 const DRIVER_CODES = ["TTF", "API2", "DEBY1", "BRENT"];
 function pickDrivers(rows: any[]): any[] {
   const picked: any[] = DRIVER_CODES.map(c => rows.find(r => r?.code === c)).filter(Boolean);
@@ -1388,13 +1387,13 @@ function ForecastStrip({ review }: { review: ForecastReview }) {
   const tf = useTranslations("forecastReview");
   const items = [...review.items].sort((a, b) => a.report_date.localeCompare(b.report_date));
   return (
-    <ol className="mt-2 flex gap-1.5">
+    <ol className="mt-2.5 flex gap-1.5">
       {items.map(it => {
         const m = VERDICT_MARK[it.verdict] ?? VERDICT_MARK.unclear;
         return (
           <li key={it.report_date} className="flex min-w-0 max-w-[46px] flex-1 flex-col items-center gap-1" title={`${formatShortDate(it.report_date)} · ${tf(`verdict.${it.verdict}`)}`}>
             <span className={clsx("grid h-7 w-full place-items-center rounded-md text-[13px] font-bold", m.cls)} aria-hidden="true">{m.icon}</span>
-            <span className="text-[11px] tabular-nums text-muted-light">{formatShortDate(it.report_date)}</span>
+            <span className="text-[10.5px] tabular-nums text-muted-light">{formatShortDate(it.report_date)}</span>
             <span className="sr-only">{tf(`verdict.${it.verdict}`)}</span>
           </li>
         );
@@ -1403,85 +1402,199 @@ function ForecastStrip({ review }: { review: ForecastReview }) {
   );
 }
 
-// Số liệu chính: giá CBAM quý ước tính + các mã dẫn dắt EUA + dải kết quả dự báo các báo cáo gần nhất.
-// Khi in chỉ giữ phần dự báo (giá CBAM và các mã đã đủ ở Bảng giá nhanh / thẻ CBAM). showTrack: báo cáo có kịch bản
-// giao dịch → luôn hiện ô "Dự báo trước" (kể cả "Chưa có dự báo để chấm").
-function KeyFigures({ cbamEstimate, rows, review, showTrack, className }: {
-  cbamEstimate?: CbamEstimate | null; rows: any[]; review?: ForecastReview | null; showTrack?: boolean; className?: string;
-}) {
+// Dự báo trước (cột phải, ô 3): dải kết quả chấm các báo cáo gần nhất — chỉ liệt kê ngày Sai / Đúng / Đang theo dõi,
+// không hiện tỷ lệ (Sai chốt ngay khi chạm cắt lỗ còn Đúng phải chờ chạm mục tiêu/hết khung, nên tỷ lệ giữa khung luôn
+// nghiêng về Sai, dễ hiểu nhầm). "direction_only" (đúng hướng, lệnh không khớp) xếp vào Đúng; còn lại = Đang theo dõi.
+function HeroForecast({ review, className }: { review?: ForecastReview | null; className?: string }) {
   const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  const n2 = (x: number) => fnum(x, 2, locale);
-  const drivers = pickDrivers(rows);
-  // Ô "Dự báo trước": chỉ liệt kê ngày Sai / Đúng / Đang theo dõi — không hiện tỷ lệ (Sai chốt ngay khi chạm cắt lỗ
-  // còn Đúng phải chờ chạm mục tiêu/hết khung, nên tỷ lệ giữa khung luôn nghiêng về Sai, dễ hiểu nhầm).
-  // "direction_only" (đúng hướng, lệnh không khớp) xếp vào Đúng; on_track/diverging/… = Đang theo dõi.
   const items = review?.items ?? [];
   const right = items.filter(i => i.verdict === "correct" || i.verdict === "direction_only").map(i => i.report_date);
   const wrong = items.filter(i => i.verdict === "wrong").map(i => i.report_date);
   const watching = items.filter(i => !right.includes(i.report_date) && !wrong.includes(i.report_date)).map(i => i.report_date);
   return (
-    <div className={clsx("@container min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5 print:p-3!", className)}>
-      <div className="grid gap-x-8 gap-y-5 @xl:grid-cols-2 @3xl:grid-cols-[3fr_2fr]">
-        {(cbamEstimate || drivers.length > 0) && (
-          <div className="min-w-0 print:hidden">
-            <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">{t("hero.keyFigures")}</h3>
-            <dl className="mt-1 divide-y divide-border">
-              {cbamEstimate && (
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 py-2.5">
-                  <dt className="text-[13px] leading-snug text-body">
-                    {t("hero.cbamEstimate", { quarter: cbamEstimate.quarter })}
-                    {cbamEstimate.ci_low !== null && cbamEstimate.ci_high !== null && (
-                      <span className="block text-[12px] text-muted-light tabular-nums">
-                        {t("hero.ci", { level: cbamEstimate.ci_level, low: n2(cbamEstimate.ci_low), high: n2(cbamEstimate.ci_high) })}
-                      </span>
-                    )}
-                  </dt>
-                  <dd className="text-right text-[17px] font-bold tabular-nums text-label">{n2(cbamEstimate.estimate)}</dd>
-                </div>
-              )}
-              {drivers.map(r => {
-                const [raw, ...unitParts] = String(r.price).split(" ");
-                const pct = deltaPct(r.day_change_pct, r.dday);
-                const up = (pct ?? 0) >= 0;
-                return (
-                  <div key={r.code ?? r.name} className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 py-2.5">
-                    <dt className="text-[13px] leading-snug text-body">
-                      {r.name}
-                      <span className="block text-[11.5px] text-muted-light">{subCO2(unitParts.join(" "))}</span>
-                    </dt>
-                    <dd className="text-right">
-                      <div className="text-[16px] font-bold tabular-nums text-label">{formatCompactPriceNumber(raw, locale)}</div>
-                      {pct !== undefined && (
-                        <div className={clsx("text-[12.5px] font-semibold tabular-nums", up ? "text-up" : "text-down")}>
-                          {up ? "▲" : "▼"} {`${pct > 0 ? "+" : pct < 0 ? "−" : ""}${n2(Math.abs(pct))}%`} <span className="font-normal opacity-80">{t("hero.day")}</span>
-                        </div>
-                      )}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </div>
-        )}
-        {(items.length > 0 || showTrack) && (
-          <div className="min-w-0 print:break-inside-avoid">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-              <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-primary-dark">{t("signal.track")}</h3>
-              {items.length > 0 && (
-                <a href="#section-forecast-review" className="text-[12px] font-bold text-primary hover:underline print:hidden">{t("hero.seeReview")}</a>
-              )}
-            </div>
-            {items.length > 0 && review && <ForecastStrip review={review} />}
-            <div className="mt-2 space-y-0.5 text-[12.5px] leading-snug tabular-nums">
-              {!items.length && <div className="text-muted-light">{t("signal.trackNone")}</div>}
-              {wrong.length > 0 && <div className="font-semibold text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
-              {right.length > 0 && <div className="font-semibold text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
-              {watching.length > 0 && <div className="text-muted-light">{t("signal.trackWatching", { dates: joinDayMonth(watching) })}</div>}
-            </div>
-          </div>
-        )}
+    <HeroCard
+      compact
+      title={t("signal.track")}
+      aside={items.length > 0 && (
+        <a href="#section-forecast-review" className="text-[12px] font-bold text-primary hover:underline print:hidden">{t("hero.seeReview")}</a>
+      )}
+      className={className}
+    >
+      {items.length > 0 && review && <ForecastStrip review={review} />}
+      <div className="mt-2 space-y-0.5 text-[12.5px] leading-snug tabular-nums">
+        {!items.length && <div className="text-muted-light">{t("signal.trackNone")}</div>}
+        {wrong.length > 0 && <div className="font-semibold text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
+        {right.length > 0 && <div className="font-semibold text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
+        {watching.length > 0 && <div className="text-muted-light">{t("signal.trackWatching", { dates: joinDayMonth(watching) })}</div>}
       </div>
+    </HeroCard>
+  );
+}
+
+// Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh/phòng hộ/dự báo).
+// grid: lưới ngoài; s/v/d: class của từng ô. A2 = khung 768–1023px và khi in A4 dọc (576–767px).
+const A2 = "@3xl/report:grid-cols-2 print:@xl/report:@max-3xl/report:grid-cols-2";
+const A2_FULL = "@3xl/report:col-span-2 print:@xl/report:@max-3xl/report:col-span-2";
+// In A4 dọc khi đủ 3 ô: Tóm tắt, Nhận định (giá | câu nhận định cạnh nhau) đều hết hàng, 3 ô lệnh/phòng hộ/dự báo thành
+// 1 hàng 3 cột — vừa trang 1, không cắt ô Nhận định sang trang sau.
+const PRINT_A2_FULL = "print:@xl/report:@max-3xl/report:col-span-2";
+const PRINT_A2_ROW = "print:@xl/report:@max-3xl/report:grid print:@xl/report:@max-3xl/report:grid-cols-3";
+const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
+  svd: {
+    grid: `${A2} @5xl/report:grid-cols-12`, s: `${A2_FULL} @5xl/report:col-span-5`,
+    v: `@5xl/report:col-span-4 ${PRINT_A2_FULL}`, d: `@5xl/report:col-span-3 ${PRINT_A2_FULL} ${PRINT_A2_ROW}`,
+  },
+  sv: { grid: A2, s: "", v: "" },
+  sd: { grid: `${A2} @5xl/report:grid-cols-12`, s: "@5xl/report:col-span-8", d: "@5xl/report:col-span-4" },
+  vd: { grid: `${A2} @5xl/report:grid-cols-12`, v: "@5xl/report:col-span-8", d: "@5xl/report:col-span-4" },
+  s: { grid: "", s: "" },
+  v: { grid: "", v: "" },
+  d: { grid: "", d: "" },
+};
+
+// Thanh số liệu chính chạy dọc (thay ô "giá EUA + nhãn nhận định" cũ trên thanh menu): giá CBAM quý ước tính rồi lần
+// lượt các mã dẫn dắt EUA — mỗi lần 1 mục, mục mới trượt từ trên xuống sau TICKER_MS; rê chuột để dừng. Không in.
+interface TickerItem { key: string; label: string; value: string; unit?: string; delta?: { text: string; up: boolean }; sub?: string }
+const TICKER_MS = 3500;
+
+function useTickerItems(cbamEstimate: CbamEstimate | null | undefined, rows: any[]): TickerItem[] {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const n2 = (x: number) => fnum(x, 2, locale);
+  const items: TickerItem[] = [];
+  if (cbamEstimate) {
+    items.push({
+      key: "CBAM",
+      label: t("hero.cbamEstimate", { quarter: cbamEstimate.quarter }),
+      value: n2(cbamEstimate.estimate),
+      unit: "EUR/tCO₂",
+      sub: cbamEstimate.ci_low !== null && cbamEstimate.ci_high !== null
+        ? t("hero.ci", { level: cbamEstimate.ci_level, low: n2(cbamEstimate.ci_low), high: n2(cbamEstimate.ci_high) })
+        : undefined,
+    });
+  }
+  for (const r of pickDrivers(rows)) {
+    const [raw, ...unitParts] = String(r.price).split(" ");
+    const pct = deltaPct(r.day_change_pct, r.dday);
+    items.push({
+      key: String(r.code ?? r.name),
+      label: r.name,
+      value: formatCompactPriceNumber(raw, locale),
+      unit: subCO2(unitParts.join(" ")),
+      delta: pct === undefined ? undefined : {
+        up: pct >= 0,
+        text: `${pct >= 0 ? "▲" : "▼"} ${pct > 0 ? "+" : pct < 0 ? "−" : ""}${n2(Math.abs(pct))}% ${t("hero.day")}`,
+      },
+    });
+  }
+  return items;
+}
+
+function PriceTicker({ items, label, className }: { items: TickerItem[]; label?: string; className?: string }) {
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (items.length < 2 || paused) return;
+    const id = window.setInterval(() => setIndex(i => (i + 1) % items.length), TICKER_MS);
+    return () => window.clearInterval(id);
+  }, [items.length, paused]);
+  if (!items.length) return null;
+  const cur = items[index % items.length];
+  return (
+    <div
+      className={clsx("flex w-full min-w-0 items-center gap-2.5", className)}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      {label && (
+        <span className="flex shrink-0 items-center gap-1 text-[11.5px] font-bold uppercase tracking-[0.08em] text-primary-dark">
+          <ArrowDownUp size={13} aria-hidden="true" /> <span className="hidden sm:inline">{label}</span>
+        </span>
+      )}
+      {/* Danh sách đầy đủ cho trình đọc màn hình; phần chạy chỉ là hình ảnh. */}
+      <ul className="sr-only">
+        {items.map(it => <li key={it.key}>{it.label}: {it.value} {it.unit} {it.delta?.text} {it.sub}</li>)}
+      </ul>
+      <div className="relative h-9 min-w-0 flex-1 overflow-hidden" aria-hidden="true">
+        <div key={`${cur.key}-${index}`} className="report-ticker-down absolute inset-0 flex items-center gap-x-2 whitespace-nowrap text-[13px] tabular-nums">
+          <span className="min-w-0 truncate font-semibold text-body">{cur.label}</span>
+          <b className="shrink-0 text-[14px] text-label">{cur.value}</b>
+          {cur.unit && <span className="shrink-0 text-[11.5px] text-muted-light">{cur.unit}</span>}
+          {cur.delta && <span className={clsx("shrink-0 font-semibold", cur.delta.up ? "text-up" : "text-down")}>{cur.delta.text}</span>}
+          {cur.sub && <span className="shrink-0 text-[11.5px] text-muted-light">{cur.sub}</span>}
+        </div>
+      </div>
+      {items.length > 1 && (
+        <span className="flex shrink-0 flex-col gap-[3px]" aria-hidden="true">
+          {items.map((it, i) => <span key={it.key} className={clsx("h-[5px] w-[5px] rounded-full", i === index % items.length ? "bg-primary" : "bg-border-soft")} />)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Dải "Tin nóng" (hết bề rộng, dưới thanh menu): tin is_hot_news trong ngày báo cáo + ngày liền trước (GET /api/news/hot
+// ?report_date=…); nhiều tin thì lần lượt đổi tin sau HOT_NEWS_MS (rê chuột để dừng), 1 tin thì đứng yên, không có tin
+// (hoặc lỗi/không đăng nhập) thì ẩn. Không in.
+const HOT_NEWS_MS = 6000;
+
+function HotNewsStrip({ reportDate }: { reportDate: string }) {
+  const t = useTranslations("reportDoc");
+  const locale = useLocale();
+  const [items, setItems] = useState<HotNewsItem[]>([]);
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api.get(`/api/news/hot?limit=10&report_date=${reportDate}`)
+      .then(res => { if (!cancelled) { setItems(res.data?.items ?? []); setIndex(0); } })
+      .catch(() => { if (!cancelled) setItems([]); });
+    return () => { cancelled = true; };
+  }, [reportDate]);
+  useEffect(() => {
+    if (items.length < 2 || paused) return;
+    const id = window.setInterval(() => setIndex(i => (i + 1) % items.length), HOT_NEWS_MS);
+    return () => window.clearInterval(id);
+  }, [items.length, paused]);
+  if (!items.length) return null;
+  const cur = items[index % items.length];
+  // hot_news_reason lưu kèm nhãn nhóm "[Cắt nguồn cung] …" (crawl_news/classification.py) → tách làm chip.
+  const category = cur.hot_news_reason?.match(/^\s*\[([^\]]+)\]/)?.[1];
+  const when = new Date(cur.published_at ?? cur.crawled_at).toLocaleString(locale === "en" ? "en-GB" : "vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+  return (
+    <div
+      className="flex min-w-0 items-stretch overflow-hidden rounded-xl border border-down/30 bg-down/[0.04] print:hidden"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div className="flex shrink-0 items-center gap-1.5 bg-down px-3 text-[12px] font-extrabold uppercase tracking-[0.1em] text-white">
+        <Flame size={15} aria-hidden="true" /> <span className="hidden sm:inline">{t("hotNews.label")}</span>
+      </div>
+      <div className="relative min-h-[48px] min-w-0 flex-1 overflow-hidden">
+        <div key={`${cur.id}-${index}`} className="report-ticker-down flex h-full min-w-0 flex-col justify-center gap-0.5 px-3.5 py-2 @3xl/report:flex-row @3xl/report:items-center @3xl/report:justify-start @3xl/report:gap-3">
+          <a
+            href={cur.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={cur.hot_news_reason ?? undefined}
+            className="min-w-0 text-[14.5px] font-bold leading-snug text-label hover:text-down hover:underline @3xl/report:truncate"
+          >
+            {cur.title || cur.url}
+          </a>
+          <span className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted-light">
+            {category && <span className="rounded border border-down/30 bg-background px-1.5 py-px font-bold text-down">{category}</span>}
+            <span>{cur.source}</span>
+            <span className="tabular-nums">{when}</span>
+          </span>
+        </div>
+      </div>
+      {items.length > 1 && (
+        <div className="flex shrink-0 items-center border-l border-down/20 px-3 text-[12px] font-bold tabular-nums text-down">
+          {index % items.length + 1}/{items.length}
+        </div>
+      )}
     </div>
   );
 }
@@ -2675,7 +2788,7 @@ interface BizReminder {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Thanh mục lục dính ngay dưới header của app (đo chiều cao header thật) — tô sáng phần đang đọc khi cuộn, bấm để
-// nhảy tới phần đó. Bên phải (báo cáo rộng): giá EUA + nhãn nhận định, luôn thấy kết luận khi đọc phần chi tiết.
+// nhảy tới phần đó. Bên phải (báo cáo rộng): số liệu chính chạy dọc (PriceTicker), luôn thấy khi đọc phần chi tiết.
 // Thay cho menu hamburger + thanh chạy giá cũ (đủ 10 mã nằm ở Bảng giá nhanh). Ẩn khi in.
 function SectionNav({ tabs, quote }: { tabs: { id: string; label: string }[]; quote?: React.ReactNode }) {
   const t = useTranslations("reportDoc");
@@ -2757,7 +2870,7 @@ function SectionNav({ tabs, quote }: { tabs: { id: string; label: string }[]; qu
                 // Báo cáo rộng (≥ 768px): các tab giãn ra lấp đầy thanh (không để trống giữa tab và ô giá EUA);
                 // hẹp hơn: giữ bề rộng tự nhiên + cuộn ngang.
                 className={clsx(
-                  "relative shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-3 text-center text-[13.5px] font-semibold transition-colors @3xl/report:flex-auto",
+                  "relative shrink-0 whitespace-nowrap px-2 sm:px-2.5 py-2.5 text-center text-[13px] font-semibold transition-colors @3xl/report:flex-auto",
                   on ? "text-primary-dark" : "text-muted-light hover:text-label",
                 )}
               >
@@ -2767,65 +2880,9 @@ function SectionNav({ tabs, quote }: { tabs: { id: string; label: string }[]; qu
             );
           })}
         </div>
-        {quote && <div className="hidden shrink-0 items-center border-l border-border pl-4 @4xl/report:flex">{quote}</div>}
+        {quote && <div className="hidden w-[460px] max-w-[45%] shrink-0 items-center border-l border-border pl-4 @5xl/report:flex">{quote}</div>}
       </div>
     </nav>
-  );
-}
-
-function NavQuote({ stats, sentiment }: { stats: EuaStats; sentiment?: EuaSentiment }) {
-  const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  if (stats.last === undefined) return null;
-  const up = (stats.dayPct ?? 0) >= 0;
-  return (
-    <div className="flex items-center gap-2 border-l border-border pl-3 text-[13.5px] tabular-nums">
-      <span className="font-bold text-primary-dark">EUA</span>
-      <span className="font-bold text-label">{fmtPrice(stats.last, locale)}</span>
-      {stats.dayPct !== undefined && (
-        <span className={clsx("font-semibold", up ? "text-up" : "text-down")}>
-          {up ? "▲" : "▼"} {`${stats.dayPct > 0 ? "+" : stats.dayPct < 0 ? "−" : ""}${fnum(Math.abs(stats.dayPct), 2, locale)}%`}
-        </span>
-      )}
-      {sentiment && (
-        <span className={clsx("rounded-full border px-2 py-0.5 text-[11.5px] font-bold uppercase tracking-wide", SENTIMENT_CHIP[sentiment])}>
-          {t(`hero.sentiment.${sentiment}`)}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// Tóm tắt điều hành: mỗi ý 1 thẻ — nhãn chủ đề (đủ chữ, không cắt) + nguyên văn, số liệu tô đậm. Báo cáo rộng: 2 cột
-// (ý lẻ cuối cùng trải hết hàng); in: 1 cột như cũ.
-function ExecSummary({ bullets }: { bullets: any[] }) {
-  const t = useTranslations("reportDoc");
-  return (
-    <div>
-      <SubHeading>{t("body.execSummary")}</SubHeading>
-      <ul className="grid list-none gap-3 @3xl/report:grid-cols-2 print:block print:space-y-3">
-        {bullets.map((bullet: any, i: number) => {
-          const b: string = typeof bullet === "string" ? bullet : bullet?.text || "";
-          const isMatch = b.includes(":");
-          const tag = stripMarkdown(isMatch ? b.split(":")[0] : "Note").trim();
-          const text = (isMatch ? b.split(":").slice(1).join(":") : b).trim();
-          const sourceName = typeof bullet === "object" ? bullet?.source_name : null;
-          const sourceUrl = typeof bullet === "object" ? bullet?.source_url : null;
-          return (
-            <li
-              key={i}
-              className="min-w-0 rounded-xl border border-border bg-background px-4 py-3.5 print:break-inside-avoid print:px-3.5 print:py-2.5 @3xl/report:[&:last-child:nth-child(odd)]:col-span-2"
-            >
-              <span className={clsx("inline-block rounded-md border px-2 py-0.5 text-[12px] font-bold leading-snug", tagColorClass(tag))}>{tag}</span>
-              <p className="text-left mt-2 text-[15px] leading-[1.6] text-foreground">
-                <RichText text={text} nums />
-                {sourceName && <InlineSource name={sourceName} url={sourceUrl} />}
-              </p>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }
 
@@ -3355,16 +3412,20 @@ export function ReportDocument({
     />
   ) : null;
 
-  // Khối mở đầu: giá EUA | nhận định & việc cần làm | số liệu chính — bỏ khối thiếu dữ liệu, các khối còn lại chia cột.
+  // Khối mở đầu: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM · Dự báo trước —
+  // bỏ ô thiếu dữ liệu, các ô còn lại chia cột (HERO_SPANS). Báo cáo vừa (768–1023px) và in A4 dọc (khung 576–767px): Tóm
+  // tắt hết hàng, 2 ô kia cạnh nhau bên dưới; khổ hẹp hơn 1 cột — xem trang export /reports/[date]/export.
   const showSnapshot = !noPriceData && stats.last !== undefined;
-  const showFigures = !noPriceData && (!!cbamEstimate || pickDrivers(priceRows).length > 0 || hasForecastReview);
-  // In A4: giá EUA | nhận định cạnh nhau; số liệu chính chỉ in phần "Dự báo trước" (giá đủ ở Bảng giá nhanh, thẻ CBAM).
-  // Chỉ ép 2 cột khi in ở khung 576–767px (A4 dọc): khổ hẹp (PDF cho điện thoại) để 1 cột, khổ rộng (ngang/TV) theo
-  // bố cục màn hình — xem trang export /reports/[date]/export.
-  const heroGrid = clsx(
-    showSnapshot && showFigures ? "@3xl/report:grid-cols-2 @5xl/report:grid-cols-12" : (showSnapshot || showFigures) && "@3xl/report:grid-cols-2",
-    showSnapshot && "print:@xl/report:@max-3xl/report:grid-cols-2",
-  );
+  const tickerItems = useTickerItems(noPriceData ? null : cbamEstimate, noPriceData ? [] : priceRows);
+  const showOrders = !!shortPlan && shortPlan.legs.length > 0;
+  const showHedge = !noPriceData && (!!cbamEstimate || !!hedgeAction);
+  const showTrack = !noPriceData && (plans.length > 0 || hasForecastReview);
+  const heroKey = [
+    execBullets.length > 0 && "s",
+    (showSnapshot || !!euaVerdict || !!outlook) && "v",
+    (showOrders || showHedge || showTrack) && "d",
+  ].filter(Boolean).join("") as keyof typeof HERO_SPANS | "";
+  const heroSpans = heroKey ? HERO_SPANS[heroKey] : null;
 
   const tabs = [
     { id: "section-highlights", label: t("tabs.overview") },
@@ -3437,35 +3498,36 @@ export function ReportDocument({
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#2f8749] via-[#3da85e] to-[#2f8749]" />
       </div>
 
-      <SectionNav tabs={tabs} quote={!noPriceData ? <NavQuote stats={stats} sentiment={euaVerdict?.sentiment} /> : undefined} />
+      <SectionNav tabs={tabs} quote={tickerItems.length > 0 ? <PriceTicker items={tickerItems} /> : undefined} />
 
       <div className="px-4 sm:px-8 pt-6 pb-10">
 
         {/* ═══ TỔNG QUAN — giá EUA, nhận định & việc cần làm hôm nay, số liệu chính, tóm tắt điều hành ═══ */}
-        <section id="section-highlights" className="report-section scroll-mt-32 space-y-6 pb-8">
-          <div className={clsx("grid gap-4", heroGrid)}>
-            {showSnapshot && (
-              <EuaSnapshot stats={stats} euaRow={euaRow} chartData={chartData} className={clsx("print:break-inside-avoid", showFigures && "@5xl/report:col-span-5")} />
-            )}
-            <VerdictCard
-              verdict={euaVerdict}
-              outlook={outlook}
-              shortPlan={shortPlan}
-              cbamEstimate={cbamEstimate}
-              hedgeAction={hedgeAction}
-              className={clsx("print:break-inside-avoid", showSnapshot && showFigures && "@5xl/report:col-span-4", !showSnapshot && !showFigures && "@3xl/report:col-span-2")}
+        <section id="section-highlights" className="report-section scroll-mt-32 space-y-4 pb-8">
+          {/* Báo cáo hẹp: số liệu chính chạy dọc ở đầu trang (báo cáo rộng nằm trên thanh menu). */}
+          {tickerItems.length > 0 && (
+            <PriceTicker
+              items={tickerItems}
+              label={t("hero.keyFigures")}
+              className="rounded-xl border border-border bg-surface/60 px-3.5 @5xl/report:hidden print:hidden"
             />
-            {showFigures && (
-              <KeyFigures
-                cbamEstimate={cbamEstimate}
-                rows={priceRows}
-                review={forecastReview}
-                showTrack={plans.length > 0}
-                className={clsx(showSnapshot && "@3xl/report:col-span-2 @5xl/report:col-span-3 print:@xl/report:@max-3xl/report:col-span-2", !plans.length && !hasForecastReview && "print:hidden")}
-              />
-            )}
-          </div>
-          {execBullets.length > 0 && <ExecSummary bullets={execBullets} />}
+          )}
+          <HotNewsStrip reportDate={report.report_date} />
+          {heroSpans && (
+            <div className={clsx("grid gap-4", heroSpans.grid)}>
+              {execBullets.length > 0 && <HeroSummary bullets={execBullets} className={heroSpans.s} />}
+              {heroSpans.v !== undefined && (
+                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} className={heroSpans.v} />
+              )}
+              {heroSpans.d !== undefined && (
+                <div className={clsx("flex min-w-0 flex-col gap-3", heroSpans.d)}>
+                  {showOrders && shortPlan && <HeroOrders shortPlan={shortPlan} className="flex-1" />}
+                  {showHedge && <HeroHedge cbamEstimate={cbamEstimate} hedgeAction={hedgeAction} className="flex-1" />}
+                  {showTrack && <HeroForecast review={forecastReview} className="flex-1" />}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* ═══ PHẦN 1 — DIỄN BIẾN THỊ TRƯỜNG ═══ */}

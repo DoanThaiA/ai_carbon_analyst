@@ -1103,6 +1103,9 @@
       "weekLabel": "Tuần",
       "note": "Lưu ý"
     },
+    "hotNews": {
+      "label": "Tin nóng"
+    },
     "keyDev": {
       "impact": {
         "up": "Hỗ trợ EUA",

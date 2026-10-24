@@ -181,7 +181,8 @@ export default function AdminReportReview() {
   }
 
   return (
-    <div>
+    // Màn rất rộng: giới hạn 1600px + căn giữa như trang báo cáo của user (app/reports/[date]/page.tsx).
+    <div className="mx-auto w-full max-w-[1600px]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 print:hidden">
         <Link href="/admin/reports" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />

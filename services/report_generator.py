@@ -1182,8 +1182,8 @@ def _exec_policy_block(dossiers: Dict[str, Dict[str, Any]]) -> str:
 
 CHÍNH SÁCH ETS/MSR ĐANG MỞ (admin xác nhận — rủi ro chi phối giá EUA 2026):
 {listing}
-BẮT BUỘC có 1 bullet "**Chính sách ETS:**" (source_index: null) nêu hồ sơ/sự kiện quan trọng nhất + trạng thái + chiều giá đúng
-như trên; tin chính sách khí (kho dự trữ khí...) gộp vào bullet "**Nhiên liệu:**" tối đa 1 câu, KHÔNG thành bullet riêng."""
+BẮT BUỘC có 1 bullet "**Chính sách ETS:**" (source_index: null) — 1 câu ngắn ~20–25 chữ — nêu hồ sơ/sự kiện quan trọng nhất +
+trạng thái + chiều giá đúng như trên (không liệt kê đủ mọi hồ sơ — đủ ở bảng theo dõi chính sách); tin chính sách khí (kho dự trữ khí...) gộp vào bullet "**Nhiên liệu:**" tối đa 1 câu, KHÔNG thành bullet riêng."""
 
 
 MARKET_VIEW_HEADING = "Quan điểm thị trường"
@@ -3241,8 +3241,9 @@ TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coa
 {news_text}
 
 YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
-- Tối đa 4 bullet, mỗi cái ≤2 câu, ưu tiên đúng 4 nhóm: **EUA:**, **Chính sách ETS:**, **Nhiên liệu:**, **CBAM/SIM:** (nhóm không có gì đáng nêu thì bỏ). Sắp xếp theo tác động EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
-- Bullet đầu: giá đóng cửa EUA + biên độ phiên (dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên; nếu "Không có dữ liệu" → bỏ qua biên độ) + xu hướng 30 ngày.
+- ĐỘ DÀI (BẮT BUỘC — mục này hiển thị trong 1 ô nhỏ ở đầu báo cáo): TỔNG CẢ MỤC chỉ 60–90 chữ. 3–4 bullet, mỗi bullet ĐÚNG 1 câu ngắn ~20–25 chữ (không tính tag): chỉ 1–2 số liệu then chốt + chiều tác động lên EUA; KHÔNG giải thích cơ chế, KHÔNG liệt kê chuỗi số, KHÔNG ngoặc chú thích dài — chi tiết đã có ở Diễn biến chính/Phần 2.
+- Ưu tiên đúng 4 nhóm: **EUA:**, **Chính sách ETS:**, **Nhiên liệu:**, **CBAM/SIM:** (nhóm không có gì đáng nêu thì bỏ). Sắp xếp theo tác động EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
+- Bullet đầu: giá đóng cửa EUA (%Δ ngày) + 1 cụm ngắn về xu hướng (vị trí trong biên 30 phiên HOẶC số phiên tăng/giảm liên tiếp). Nếu nêu biên độ phiên thì dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên (không bắt buộc nêu).
 - Mỗi bullet mở đầu bằng tag đậm (**EUA:**, **Chính sách:**...). Nêu tin chính sách/địa chính trị ảnh hưởng EUA.
 - CHUYỂN ĐỔI NHIÊN LIỆU (BẮT BUỘC thống nhất với Mục 2/3): khi khối "SPREAD THAN–KHÍ" có "KẾT LUẬN DÙNG CHUNG" → nhận định fuel switching PHẢI theo ĐÚNG kết luận đó (vd đã ghi "ĐÃ BÃO HÒA" thì TUYỆT ĐỐI KHÔNG viết "TTF tăng → nghiêng về chuyển sang than/cầu EUA tăng", và KHÔNG ghi "chưa tính spread" vì spread đã tính). Chỉ khi khối này báo thiếu dữ liệu mới dùng logic %Δ: than (API2) TĂNG so với khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → cầu EUA TĂNG, ghi rõ "theo %Δ, chưa tính spread". Than cho fuel switching EU là API2 (CIF ARA), KHÔNG dùng API4/NEWC. KHÔNG viết "giá than TĂNG hỗ trợ cầu EUA" (than đắt lên làm than kém cạnh tranh). NHƯNG khi than đang rẻ hơn khí rõ rệt thì ĐƯỢC (và nên) viết: điện than chạy gần tối đa, phát thải cao → HỖ TRỢ MỨC cầu EUA hiện tại (chỉ không tạo thêm lực tăng) — đây là nhánh đỡ giá, không phải nhánh giảm.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
@@ -3271,7 +3272,7 @@ TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coa
 {news_text}
 
 YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH, CHỈ từ tin tức ở trên.
-- Tối đa 5 bullet, mỗi cái ≤2 câu. Sắp xếp theo mức độ tác động tới cung/cầu EUA (cao→thấp).
+- ĐỘ DÀI (BẮT BUỘC — mục này hiển thị trong 1 ô nhỏ ở đầu báo cáo): TỔNG CẢ MỤC chỉ 60–90 chữ. 3–4 bullet, mỗi bullet ĐÚNG 1 câu ngắn ~20–25 chữ (không tính tag): sự kiện + chiều tác động lên EUA, KHÔNG giải thích cơ chế. Sắp xếp theo mức độ tác động tới cung/cầu EUA (cao→thấp).
 - Mỗi bullet mở đầu bằng tag đậm (**Chính sách:**, **Năng lượng:**, **Địa chính trị:**...). KHÔNG có bullet giá EUA.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm khi bullet dựa trên 1 tin cụ thể) — TUYỆT ĐỐI KHÔNG bịa số không có thật.

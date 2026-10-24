@@ -273,7 +273,7 @@ hàm thuần — test ở `tests/test_report_qc.py` (fixture `GOLDEN` = báo cá
 `parse_signal_levels` (nằm ở `services/strategy_levels.py`, `report_qc` re-export) là bản port 1-1 parser thẻ KHUYẾN NGHỊ VỊ THẾ (trước là TÍN HIỆU HÔM NAY) trong `ReportDocument.tsx` — sửa bên nào
 phải sửa cả bên kia (cả `is_breakout_entry` ↔ `isBreakoutEntry`). Chỉ số EUA (Δ lấy từ dòng EUA của bảng giá; biên 30 phiên/ATR 14
 phiên/vị trí trong biên tính lại từ `chart_data` đúng công thức `report_consistency` — `computeEuaStats`; track record từ
-`forecast_review.items`) nằm ở khối mở đầu (`EuaSnapshot`/`VerdictCard`/`KeyFigures`, kèm lệnh ngắn hạn + nhãn phòng hộ CBAM). Thẻ
+`forecast_review.items`) nằm ở khối mở đầu (bố cục 24/10/2026: thanh menu gọn + số liệu chính chạy dọc `PriceTicker` [giá CBAM ước tính, TTF, API2, điện Đức, Brent]; dải "Tin nóng" `HotNewsStrip` = `GET /api/news/hot?report_date=` [tin is_hot_news ngày báo cáo + ngày trước], lần lượt đổi tin, không có tin thì ẩn; rồi `HeroSummary` [Tóm tắt điều hành — prompt Mục 1 giữ CẢ MỤC 60–90 chữ] | `HeroVerdict` [Nhận định tổng quan + giá EUA + biên/ATR/KL] | cột `HeroOrders`/`HeroHedge`/`HeroForecast`; chia cột theo `HERO_SPANS`). Thẻ
 (`PositionCard`) gộp CẢ 3 kịch bản: thang giá, thẻ từng khung (`HorizonCards` — thay cả bảng lệnh lẫn bảng "Kịch bản hành động" cũ: chiều,
 xác suất, vùng giá, lệnh R:R tính từ điểm giữa vùng Entry / lệnh phá vỡ từ mức kích hoạt, chuẩn `rules.min_rr`, điều kiện, rủi ro, nguyên văn
 chiến lược) và thanh phòng hộ CBAM dựng từ `cbam_estimate` (không đọc câu `hedge_action.core`). Xem bản tiếng Anh: mức giá/loại lệnh vẫn

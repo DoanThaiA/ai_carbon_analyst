@@ -74,7 +74,9 @@ export default function ReportDetail() {
   const { report: shown, fallback } = localizeReport(report, locale);
 
   return (
-    <div>
+    // Màn rất rộng (1920px…): giới hạn bề rộng báo cáo 1600px và căn giữa — dòng chữ không quá dài, các ô không bị kéo
+    // giãn trống; bố cục cột vẫn theo container query của báo cáo (ReportDocument).
+    <div className="mx-auto w-full max-w-[1600px]">
       <div className="flex items-center justify-between mb-6 print:hidden">
         <Link href="/dashboard" className="flex items-center text-body hover:text-primary transition-colors duration-300 ease-in-out text-sm">
           <ArrowLeft size={16} className="mr-2" />
