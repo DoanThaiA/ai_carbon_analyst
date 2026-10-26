@@ -170,10 +170,11 @@ lỗi tạm thời được thử lại tới `SEEN_MAX_ATTEMPTS` lần. Lọc n
 `CRAWL_LOOKBACK_HOURS` (mặc định 36h) — việc chia bài vào báo cáo ngày nào dựa vào
 `crawled_at`, không dựa vào cửa sổ này.
 
-**Báo cáo Chủ Nhật/Thứ Hai = chỉ tin tức** (`report_generator.py::is_no_price_report`): ngày dữ liệu
-là Thứ Bảy/Chủ Nhật, không có phiên → KHÔNG lấy giá (kể cả CBAM), không gọi Mục "2" (market_drivers), Mục 1/3/dev/biz
-dùng prompt `news_only`, Mục 3 không có `instrument_notes`/`trading_scenarios`; `content["2"]` giữ khoá rỗng + cờ
-`no_price_data`/`no_price_notice` để frontend (`ReportDocument.tsx`/`ReportEditor.tsx`), Jenny và Jack QC ẩn/bỏ qua phần giá.
+**Báo cáo Chủ Nhật/Thứ Hai = dùng giá phiên trước** (từ 26/10/2026): ngày dữ liệu Thứ Bảy/Chủ Nhật không có phiên →
+`get_prices_for_report` tự lấy phiên gần nhất (Thứ Sáu) và báo cáo phân tích như thường (đủ Mục 2, kịch bản, CBAM...);
+`_stale_price_note` nối vào `prices_text` dặn LLM ghi Δ là của phiên Thứ Sáu, không phải của cuối tuần. Chế độ "chỉ tin
+tức" cũ (`is_no_price_report`, prompt `news_only`, cờ `no_price_data`/`no_price_notice`) vẫn giữ để hiển thị/QC báo cáo
+cũ — bật lại bằng `NO_PRICE_REPORT_WEEKDAYS = (6, 0)` trong `report_generator.py` (hiện là `()`).
 Lưu ý `AUTO_REPORT_DAYS` mặc định `tue-sat` — muốn tự sinh báo cáo CN/T2 phải đặt lại trong `.env`.
 
 **Bản tiếng Anh của báo cáo** (`services/report_translation.py`): dịch `reports.content` → `reports.content_en`.

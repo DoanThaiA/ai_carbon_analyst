@@ -631,10 +631,13 @@ def report_data_date(report_date_str: str) -> str:
     return (datetime.strptime(report_date_str, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
 
 
-# report_date Chủ Nhật / Thứ Hai = ngày dữ liệu Thứ Bảy / Chủ Nhật (xem report_data_date)
-# — không có phiên giao dịch nên báo cáo CHỈ phân tích tin tức: không bảng giá, biểu đồ,
-# động lực thị trường, ghi chú giá, kịch bản giao dịch; không đưa giá vào bất kỳ prompt nào.
-NO_PRICE_REPORT_WEEKDAYS = (6, 0)  # date.weekday(): 6 = Chủ Nhật, 0 = Thứ Hai
+# Các thứ (date.weekday() của report_date) sinh báo cáo CHỈ phân tích tin tức: không bảng giá,
+# biểu đồ, động lực thị trường, ghi chú giá, kịch bản giao dịch. Từ 26/10/2026 để RỖNG: báo cáo
+# Chủ Nhật/Thứ Hai (ngày dữ liệu Thứ Bảy/Chủ Nhật) dùng giá phiên gần nhất trước đó (Thứ Sáu —
+# get_prices_for_report lấy max(price_date) <= ngày dữ liệu) và phân tích như thường; prompt
+# được báo giá là của phiên trước (_stale_price_note). Nhánh news_only giữ lại để hiển thị
+# báo cáo cũ có cờ "no_price_data" và để bật lại khi cần (vd (6, 0)).
+NO_PRICE_REPORT_WEEKDAYS: tuple[int, ...] = ()
 NO_PRICE_NOTICE = (
     "Ngày dữ liệu {data_date} là cuối tuần, không có phiên giao dịch — báo cáo hôm nay "
     "chỉ phân tích tin tức, không phân tích giá."
@@ -642,8 +645,27 @@ NO_PRICE_NOTICE = (
 
 
 def is_no_price_report(report_date_str: str) -> bool:
-    """True nếu báo cáo `report_date_str` (ngày TẠO) rơi vào Chủ Nhật/Thứ Hai."""
+    """True nếu báo cáo `report_date_str` (ngày TẠO) rơi vào NO_PRICE_REPORT_WEEKDAYS."""
     return datetime.strptime(report_date_str, "%Y-%m-%d").weekday() in NO_PRICE_REPORT_WEEKDAYS
+
+
+_WEEKDAY_VN = ("Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật")
+
+
+def _stale_price_note(max_price_date: Optional[str], target_date: str) -> str:
+    """Ghi chú cho prompt khi phiên giá mới nhất cũ hơn ngày dữ liệu (báo cáo CN/T2: ngày dữ liệu
+    cuối tuần, giá là phiên Thứ Sáu) — để LLM không viết Δ ngày như biến động của ngày dữ liệu."""
+    if not max_price_date or max_price_date >= target_date:
+        return ""
+    def _label(d: str) -> str:
+        dt = date.fromisoformat(d)
+        return f"{_WEEKDAY_VN[dt.weekday()]} {dt.strftime('%d/%m/%Y')}"
+    return (
+        f"  ⚠ LƯU Ý: ngày dữ liệu {_label(target_date)} KHÔNG có phiên giao dịch — mọi giá trên là giá chốt "
+        f"phiên gần nhất ({_label(max_price_date)}). Δ ngày/Δ tuần là biến động CỦA PHIÊN ĐÓ: ghi rõ "
+        f"\"phiên {_label(max_price_date)}\", KHÔNG viết như biến động của ngày {_label(target_date)}/cuối tuần; "
+        f"tin tức sau phiên đó là yếu tố cho phiên mở cửa kế tiếp."
+    )
 
 
 async def get_prices_for_report(session: AsyncSession, target_date_str: str) -> tuple[List[Dict], str]:
@@ -4273,6 +4295,9 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
     news_by_topic, sources = await get_news_for_report(session, target_date)
 
     prices_text = _summarize_prices(prices)
+    stale_note = _stale_price_note(max_price_date, target_date)
+    if prices_text and stale_note:
+        prices_text = f"{prices_text}\n{stale_note}"
     eua_trend = _eua_trend_summary(chart_data)
     eua_session_range = _eua_session_range_summary(chart_data)
     eua_volume = _eua_volume_summary(chart_data)
@@ -4387,7 +4412,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             delta_pct = (delta / prev_close * 100) if prev_close else 0
             direction = "tăng" if delta > 0 else ("giảm" if delta < 0 else "đi ngang")
             eua_key_facts = (
-                f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2. "
+                f"Đóng cửa phiên liền trước ({max_price_date or target_date}): {latest_close:.2f} EUR/tCO2. "
                 f"Δ ngày: {direction} {abs(delta):.2f} ({delta_pct:+.1f}%) so với phiên trước đó ({prev_close:.2f}). "
                 f"Δ tuần: {week_change_str} so với 7 ngày trước. "
                 f"{eua_session_range} {eua_trend} {eua_volume}"
@@ -4395,7 +4420,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             )
         else:
             eua_key_facts = (
-                f"Đóng cửa phiên liền trước ({target_date}): {latest_close:.2f} EUR/tCO2. "
+                f"Đóng cửa phiên liền trước ({max_price_date or target_date}): {latest_close:.2f} EUR/tCO2. "
                 f"Δ tuần: {week_change_str} so với 7 ngày trước. "
                 f"{eua_session_range} {eua_trend} {eua_volume}"
             )

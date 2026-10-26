@@ -1,4 +1,5 @@
-"""Báo cáo Chủ Nhật/Thứ Hai (ngày dữ liệu cuối tuần, không có phiên giao dịch) — chỉ phân
+"""Chế độ báo cáo chỉ tin tức (NO_PRICE_REPORT_WEEKDAYS — từ 26/10/2026 tắt, CN/T2 dùng giá
+phiên gần nhất; báo cáo cũ có cờ no_price_data vẫn phải hiển thị/QC đúng) — chỉ phân
 tích tin tức: không prompt nào chứa dữ liệu giá, Jack QC không đòi bảng giá/kịch bản giao
 dịch và bắt được phần giá còn sót."""
 import copy
@@ -33,12 +34,24 @@ def g():
     return copy.deepcopy(NO_PRICE)
 
 
-def test_only_sunday_and_monday_reports_have_no_prices():
-    assert rg.is_no_price_report(SUNDAY_REPORT)
-    assert rg.is_no_price_report(MONDAY_REPORT)
-    for d in ("2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17"):  # Thứ Ba → Thứ Bảy
+def test_sunday_and_monday_reports_use_previous_session_prices():
+    # Từ 26/10/2026: CN/T2 phân tích như thường với giá phiên gần nhất (Thứ Sáu).
+    for d in (SUNDAY_REPORT, MONDAY_REPORT, "2026-10-13", "2026-10-17"):
         assert not rg.is_no_price_report(d), d
     assert rg.report_data_date(SUNDAY_REPORT) == "2026-10-10"
+
+
+def test_news_only_mode_still_switchable(monkeypatch):
+    monkeypatch.setattr(rg, "NO_PRICE_REPORT_WEEKDAYS", (6, 0))
+    assert rg.is_no_price_report(SUNDAY_REPORT) and rg.is_no_price_report(MONDAY_REPORT)
+    assert not rg.is_no_price_report("2026-10-13")
+
+
+def test_stale_price_note_when_data_date_is_weekend():
+    note = rg._stale_price_note("2026-10-09", "2026-10-10")  # giá Thứ Sáu, ngày dữ liệu Thứ Bảy
+    assert "Thứ Sáu 09/10/2026" in note and "Thứ Bảy 10/10/2026" in note
+    assert rg._stale_price_note("2026-10-09", "2026-10-09") == ""
+    assert rg._stale_price_note(None, "2026-10-10") == ""
 
 
 def test_news_only_prompts_have_no_price_inputs():
@@ -73,7 +86,8 @@ def test_qc_flags_price_leftovers_in_no_price_report():
     assert "bảng giá" in messages and "biểu đồ EUA" in messages and "kịch bản giao dịch" in messages
 
 
-def test_qc_warns_when_monday_report_still_shows_old_prices():
+def test_qc_warns_when_monday_report_still_shows_old_prices(monkeypatch):
+    monkeypatch.setattr(rg, "NO_PRICE_REPORT_WEEKDAYS", (6, 0))
     c = g()
     c["2"] = {"title": "Bảng giá nhanh", "price_timestamp": "Giá chốt phiên 2026-10-09 (nguồn: Barchart EOD)",
               "prices": [{"code": "EUA", "name": "EUA", "close": 79.2, "price": "79.2000 EUR/tCO2"}]}
