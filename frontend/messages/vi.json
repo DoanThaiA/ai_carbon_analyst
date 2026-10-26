@@ -1661,7 +1661,6 @@
     "sizeLabel": "Khổ trang",
     "orientationLabel": "Hướng",
     "device": {
-      "mobile": "Điện thoại",
       "pc": "Máy tính",
       "tv": "TV / trình chiếu"
     },
@@ -1675,7 +1674,6 @@
       "landscape": "Ngang"
     },
     "hint": {
-      "mobile": "Chữ to hơn, bố cục 1 cột — đọc vừa màn hình điện thoại không cần phóng to.",
       "pc": "Cỡ chữ chuẩn, phù hợp đọc trên máy tính hoặc in giấy.",
       "tv": "Trang ngang 16:9, bố cục nhiều cột — trình chiếu trên TV/màn hình lớn."
     },

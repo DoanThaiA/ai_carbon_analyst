@@ -8,24 +8,22 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useLocale, useTranslations } from "next-intl";
-import { Download, FileText, Loader2, Monitor, Smartphone, Tv, X } from "lucide-react";
+import { Download, FileText, Loader2, Monitor, Tv, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { PdfPagesPreview } from "@/components/PdfPagesPreview";
 
-type Device = "mobile" | "pc" | "tv";
+type Device = "pc" | "tv";
 type Size = "a4" | "square" | "wide";
 type Orientation = "portrait" | "landscape";
 
 // Khổ theo hướng DỌC (mm) — khớp services/report_pdf.py::PAGE_SIZES.
 const PAGE_MM: Record<Size, [number, number]> = { a4: [210, 297], square: [210, 210], wide: [167, 297] };
-// Gợi ý khi đổi thiết bị: điện thoại cuộn dọc màn hình 9:16, máy tính đọc A4 dọc, TV trình chiếu 16:9 ngang.
+// Gợi ý khi đổi thiết bị: máy tính đọc A4 dọc, TV trình chiếu 16:9 ngang.
 const DEVICE_DEFAULTS: Record<Device, { size: Size; orientation: Orientation }> = {
-  mobile: { size: "wide", orientation: "portrait" },
   pc: { size: "a4", orientation: "portrait" },
   tv: { size: "wide", orientation: "landscape" },
 };
 const DEVICES: { key: Device; icon: typeof Monitor }[] = [
-  { key: "mobile", icon: Smartphone },
   { key: "pc", icon: Monitor },
   { key: "tv", icon: Tv },
 ];

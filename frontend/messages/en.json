@@ -1661,7 +1661,6 @@
     "sizeLabel": "Page size",
     "orientationLabel": "Orientation",
     "device": {
-      "mobile": "Phone",
       "pc": "Computer",
       "tv": "TV / presentation"
     },
@@ -1675,7 +1674,6 @@
       "landscape": "Landscape"
     },
     "hint": {
-      "mobile": "Larger text, single-column layout — fits a phone screen without zooming.",
       "pc": "Standard text size, suited to reading on a computer or printing.",
       "tv": "16:9 landscape pages, multi-column layout — for TVs and large screens."
     },
