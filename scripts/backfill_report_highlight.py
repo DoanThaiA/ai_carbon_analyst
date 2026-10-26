@@ -1,8 +1,9 @@
 """
 Bổ sung khối "Điều đáng quan tâm nhất hôm nay" (`content["1"].highlight`) cho báo cáo ĐÃ SINH trước khi có tính năng này
-— báo cáo mới tự có (sinh cùng Mục 1, xem report_generator.HIGHLIGHT_RULE). Mỗi báo cáo 1 lượt gọi Claude ngắn, chỉ dựa
-trên nội dung báo cáo đã có (bảng giá, Tóm tắt, Diễn biến chính, Mục 4); KHÔNG đụng phần còn lại của báo cáo, không đổi
-trạng thái duyệt.
+(hoặc chọn lại bằng `--force` theo tiêu chí mới) — báo cáo mới tự có (chọn ở cuối generate_report_content, xem
+report_generator.HIGHLIGHT_RULE). Mỗi báo cáo 1 lượt gọi Claude ngắn, chỉ dựa trên nội dung báo cáo đã có (bảng giá, Tóm tắt,
+Diễn biến chính, kịch bản, phòng hộ CBAM, Mục 4, gợi ý kinh doanh) + tin nóng trong khung tin; KHÔNG đụng phần còn lại của
+báo cáo, không đổi trạng thái duyệt.
 
 Bản tiếng Anh: nếu đang khớp bản tiếng Việt thì chỉ dịch thêm câu mới rồi cập nhật hash (không dịch lại cả báo cáo); đang
 lệch sẵn thì để nguyên — chạy `python -m scripts.translate_reports --missing` nếu cần.
@@ -27,7 +28,9 @@ from sqlalchemy import select
 from core.config import Settings
 from db.models import Report
 from db.session import build_sessionmaker, create_engine
-from services.report_generator import generate_highlight_for_content
+from services.report_generator import (
+    _hot_news_for_highlight, generate_highlight_for_content, get_news_for_report, report_data_date,
+)
 from services.report_translation import build_translator, content_hash, fresh_content_en, translate_report_content
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -49,8 +52,9 @@ async def _backfill_one(session_factory, translator, report_date: str, args: arg
             return True
         content = report.content
         en_fresh = fresh_content_en(report) is not None
+        news_by_topic, _ = await get_news_for_report(session, report_data_date(report_date))
 
-    highlight = await generate_highlight_for_content(content, report_date)
+    highlight = await generate_highlight_for_content(content, report_date, _hot_news_for_highlight(news_by_topic))
     if not highlight:
         logger.warning("Báo cáo %s: không sinh được highlight hợp lệ (LLM lỗi hoặc không chọn được).", report_date)
         return False

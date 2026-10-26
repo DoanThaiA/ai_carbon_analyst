@@ -985,6 +985,9 @@ async def get_news_for_report(session: AsyncSession, target_date_str: str) -> tu
                 "topics": topic_labels,
                 # Ngày đăng bài (fallback ngày crawl) — dùng trích dẫn "(Nguồn, ngày)" ở "Diễn biến chính"
                 "published_date": (article.published_at or article.crawled_at).strftime("%d/%m/%Y"),
+                # Ứng viên "Điều đáng quan tâm nhất hôm nay" (_hot_news_for_highlight) — không đưa vào prompt các mục.
+                "is_hot_news": bool(article.is_hot_news),
+                "hot_news_reason": article.hot_news_reason,
             })
 
     return news_by_topic, list(sources)
@@ -3240,47 +3243,65 @@ def _extract_json(raw: str) -> Optional[dict]:
 # Section-specific prompt builders
 # ─────────────────────────────────────────────────────────────────────
 
-# "Điều đáng quan tâm nhất hôm nay" (content["1"].highlight) — khối nổi bật đầu báo cáo, thay dải "Tin nóng" cũ. Sinh cùng
-# lượt gọi Mục 1 (không thêm lượt LLM); `type` ∈ HIGHLIGHT_TYPES (khoá "type" không bị dịch — services/report_translation.py).
-HIGHLIGHT_TYPES = ("price", "news")
-HIGHLIGHT_RULE = """- "highlight" (BẮT BUỘC): ĐIỀU ĐÁNG QUAN TÂM NHẤT HÔM NAY — CHỌN ĐÚNG 1 điều nổi bật nhất từ dữ liệu giá + tin tức ở trên, thứ người đọc cần biết đầu tiên: biến động giá MẠNH (EUA hoặc mã dẫn dắt EUA: %Δ ngày lớn bất thường, phá/thủng biên 30 phiên, chuỗi phiên dài) HOẶC tin tác động TRỰC TIẾP tới cung/cầu/giá EUA. So sánh rồi chọn cái tác động lớn nhất — không chọn mặc định giá EUA nếu phiên đi ngang, biến động nhỏ.
-  {"type": "price" | "news", "text": "...", "source_index": N | null}: "text" 1–2 câu (tối đa ~40 chữ), mở đầu bằng điều đã xảy ra (số liệu then chốt), rồi VÌ SAO đáng lưu tâm (chiều tác động lên EUA); KHÔNG tag đậm, KHÔNG mở đầu bằng "Điều đáng quan tâm nhất". "type": "price" nếu là biến động giá (source_index: null hoặc số [N] của tin giải thích nó), "news" nếu là tin (source_index BẮT BUỘC = số [N] của bài đó). Số liệu PHẢI khớp bullet tương ứng ở trên."""
-HIGHLIGHT_RULE_NEWS_ONLY = """- "highlight" (BẮT BUỘC): ĐIỀU ĐÁNG QUAN TÂM NHẤT HÔM NAY — CHỌN ĐÚNG 1 tin tác động TRỰC TIẾP và lớn nhất tới cung/cầu/giá EUA trong các tin ở trên.
-  {"type": "news", "text": "...", "source_index": N}: "text" 1–2 câu (tối đa ~40 chữ): điều đã xảy ra rồi VÌ SAO đáng lưu tâm (chiều tác động lên EUA); KHÔNG tag đậm, KHÔNG nêu số giá. "source_index" BẮT BUỘC = số [N] của bài đó. Không có tin nào tác động trực tiếp → bỏ hẳn trường "highlight"."""
+# "Điều đáng quan tâm nhất hôm nay" (content["1"].highlight) — khối nổi bật đầu báo cáo, thay dải "Tin nóng" cũ. Chọn SAU
+# KHI ĐỦ CÁC MỤC (1 lượt LLM riêng ở cuối generate_report_content, quyết định 26/10/2026): 1 điều quan trọng nhất của CẢ báo
+# cáo — biến động giá, tin nóng/tin tác động trực tiếp, kịch bản xác suất Cao, tín hiệu phòng hộ CBAM, gợi ý kinh doanh đã
+# kích hoạt/có căn cứ rõ. `type` ∈ HIGHLIGHT_TYPES (khoá "type" không bị dịch — services/report_translation.py); frontend
+# chỉ hiện chữ, không nhãn loại.
+HIGHLIGHT_TYPES = ("price", "news", "scenario", "hedge", "biz")
+HIGHLIGHT_RULE = """- "highlight": ĐIỀU ĐÁNG QUAN TÂM NHẤT HÔM NAY — CHỌN ĐÚNG 1 điều QUAN TRỌNG NHẤT của CẢ báo cáo ở trên, thứ người đọc (bàn giao dịch carbon + doanh nghiệp chịu CBAM) cần biết đầu tiên. Ứng viên, so sánh rồi chọn cái tác động lớn nhất:
+  • "price": biến động giá MẠNH (EUA hoặc mã dẫn dắt EUA: %Δ ngày lớn bất thường, phá/thủng biên 30 phiên, chuỗi phiên dài). KHÔNG chọn giá EUA nếu phiên đi ngang, biến động nhỏ.
+  • "news": tin đánh dấu [TIN NÓNG] hoặc tin tác động TRỰC TIẾP tới cung/cầu/giá EUA (chính sách ETS/MSR, cắt nguồn cung năng lượng...). Tin nóng được ưu tiên nhưng KHÔNG mặc nhiên thắng — tin nóng về dầu/địa chính trị xa mà chiều lên EUA mơ hồ thì thua biến động giá EUA mạnh.
+  • "scenario": kịch bản giao dịch xác suất "Cao" (CHỈ khi có kịch bản xác suất Cao) — nêu chiều + vùng giá/mức kích hoạt then chốt.
+  • "hedge": tín hiệu phòng hộ CBAM khi là "increase" hoặc "reduce" (hành động cụ thể cho doanh nghiệp), không chọn khi "hold".
+  • "biz": gợi ý kinh doanh có độ tin cậy cao — gợi ý cũ ĐÃ KÍCH HOẠT hôm nay, hoặc gợi ý mới có ngưỡng giá/tin nguồn rõ và hành động cụ thể.
+  {"type": "price" | "news" | "scenario" | "hedge" | "biz", "text": "...", "source_index": N | null}: "text" 1–2 câu (tối đa ~40 chữ), mở đầu bằng điều đã xảy ra / hành động (số liệu then chốt), rồi VÌ SAO đáng lưu tâm (chiều tác động lên EUA hoặc lên chi phí CBAM); KHÔNG tag đậm, KHÔNG mở đầu bằng "Điều đáng quan tâm nhất". "source_index" = số [N] của tin làm căn cứ (BẮT BUỘC với "news"; các loại khác: số [N] của tin giải thích nó nếu có, không thì null). Số liệu PHẢI lấy nguyên văn từ nội dung báo cáo ở trên, không tự tính thêm, không đưa thông tin mới."""
+HIGHLIGHT_RULE_NEWS_ONLY = """- "highlight": ĐIỀU ĐÁNG QUAN TÂM NHẤT HÔM NAY — CHỌN ĐÚNG 1 điều QUAN TRỌNG NHẤT của CẢ báo cáo ở trên: tin [TIN NÓNG] hoặc tin tác động TRỰC TIẾP và lớn nhất tới cung/cầu/giá EUA ("news"), hoặc gợi ý kinh doanh cũ ĐÃ KÍCH HOẠT / gợi ý mới có tin nguồn rõ và hành động cụ thể ("biz").
+  {"type": "news" | "biz", "text": "...", "source_index": N | null}: "text" 1–2 câu (tối đa ~40 chữ): điều đã xảy ra / hành động rồi VÌ SAO đáng lưu tâm (chiều tác động lên EUA hoặc chi phí CBAM); KHÔNG tag đậm, KHÔNG nêu số giá. "source_index" = số [N] của tin làm căn cứ (BẮT BUỘC với "news"). Không có gì đáng nêu → bỏ hẳn trường "highlight"."""
 
 
 def _resolve_highlight(raw: Any, index_lookup: Dict[int, Dict], no_price: bool) -> Optional[Dict]:
     """content["1"].highlight: chuẩn hoá {type, text, source_name, source_url}; nguồn map từ số [N] như bullet. Thiếu chữ /
-    type lạ → bỏ (frontend ẩn khối); báo cáo không có giá thì chỉ nhận type "news"."""
+    type lạ / "news" không trích được nguồn → bỏ (frontend ẩn khối); báo cáo không có giá chỉ nhận "news"/"biz"."""
     if not isinstance(raw, dict) or not str(raw.get("text") or "").strip():
         return None
     kind = str(raw.get("type") or "").strip().lower()
-    if kind not in HIGHLIGHT_TYPES or (no_price and kind != "news"):
+    if kind not in HIGHLIGHT_TYPES or (no_price and kind not in ("news", "biz")):
         return None
     resolved = _resolve_bullet_sources([raw], index_lookup)[0]
+    if kind == "news" and not resolved.get("source_url"):
+        return None
     return {"type": kind, **resolved}
 
 
-def _highlight_backfill_prompt(content: Dict[str, Any], target_date: str) -> tuple[str, str, Dict[int, Dict]]:
-    """Prompt bổ sung `content["1"].highlight` cho báo cáo ĐÃ SINH (scripts/backfill_report_highlight.py) — chỉ dựa trên
-    nội dung báo cáo (bảng giá, biên 30 phiên, Tóm tắt, Diễn biến chính, Mục 4), không đọc lại tin crawl. Mọi câu có nguồn
-    được đánh số [N] theo URL (trả kèm index_lookup cho `_resolve_highlight`) để LLM trích như lúc sinh Mục 1."""
-    sec1, sec2, sec4 = (content.get(k) or {} for k in ("1", "2", "4"))
+def _highlight_prompt(
+    content: Dict[str, Any], target_date: str, hot_news: Optional[List[Dict[str, Any]]] = None,
+) -> tuple[str, str, Dict[int, Dict]]:
+    """Prompt chọn `content["1"].highlight` từ báo cáo ĐÃ SINH ĐỦ CÁC MỤC (cuối generate_report_content và
+    scripts/backfill_report_highlight.py): bảng giá + biên 30 phiên, Tóm tắt, Diễn biến chính, tin nóng, kịch bản Mục 3,
+    phòng hộ CBAM, Mục 4, gợi ý kinh doanh. Không đọc lại tin crawl; `hot_news` = [{title, source, url, reason}] các bài
+    is_hot_news trong khung tin. Mọi câu có nguồn được đánh số [N] theo URL (trả kèm index_lookup cho `_resolve_highlight`)."""
+    sec1, sec2, sec3, sec4, biz = (content.get(k) or {} for k in ("1", "2", "3", "4", "biz"))
     no_price = bool(sec2.get("no_price_data"))
+    hot_urls = {h["url"] for h in hot_news or [] if h.get("url")}
     index_lookup: Dict[int, Dict] = {}
     by_url: Dict[str, int] = {}
 
-    def cite(item: Any) -> str:
+    def num(url: str, source: str) -> int:
+        if url not in by_url:
+            by_url[url] = len(by_url) + 1
+            index_lookup[by_url[url]] = {"source": source or "", "url": url}
+        return by_url[url]
+
+    def cite(item: Any, text_key: str = "text") -> str:
         if not isinstance(item, dict):
             return str(item or "")
-        text = str(item.get("text") or "").strip()
+        text = str(item.get(text_key) or "").strip()
         url = item.get("source_url")
         if not url:
             return text
-        if url not in by_url:
-            by_url[url] = len(by_url) + 1
-            index_lookup[by_url[url]] = {"source": item.get("source_name") or "", "url": url}
-        return f"[{by_url[url]}] {text} (Nguồn: {item.get('source_name') or url})"
+        hot = " [TIN NÓNG]" if url in hot_urls else ""
+        return f"[{num(url, item.get('source_name') or '')}]{hot} {text} (Nguồn: {item.get('source_name') or url})"
 
     blocks = []
     if not no_price:
@@ -3302,9 +3323,39 @@ def _highlight_backfill_prompt(content: Dict[str, Any], target_date: str) -> tup
     ]
     if devs:
         blocks.append("DIỄN BIẾN CHÍNH (chiều ròng lên EUA trong ngoặc vuông đầu dòng):\n" + "\n".join(devs))
+    hot_lines = [
+        f"- [{num(h['url'], h.get('source') or '')}] {h.get('title') or ''} (Nguồn: {h.get('source') or h['url']})"
+        + (f" — lý do tin nóng: {h['reason']}" if h.get("reason") else "")
+        for h in hot_news or [] if h.get("url")
+    ]
+    if hot_lines:
+        blocks.append("TIN NÓNG TRONG KỲ (bộ phân loại đánh dấu):\n" + "\n".join(hot_lines))
+    if not no_price:
+        scenarios = [
+            f"- {sc.get('horizon') or '?'} | {sc.get('direction') or '?'} | xác suất {sc.get('probability') or '?'} | "
+            f"vùng giá {sc.get('price_zone') or '-'} | điều kiện: {sc.get('condition') or '-'} | chiến lược: {sc.get('trading_strategy') or '-'}"
+            for sc in sec3.get("trading_scenarios") or [] if isinstance(sc, dict)
+        ]
+        if scenarios:
+            blocks.append("KỊCH BẢN GIAO DỊCH (Mục 3):\n" + "\n".join(scenarios))
+        hedge = sec3.get("hedge_action") if isinstance(sec3.get("hedge_action"), dict) else {}
+        signal = (sec2.get("cbam_estimate") or {}).get("signal") if isinstance(sec2.get("cbam_estimate"), dict) else None
+        if hedge.get("text") or signal:
+            blocks.append(f"PHÒNG HỘ CBAM: tín hiệu {signal or hedge.get('action') or '?'} — {hedge.get('text') or ''}".rstrip(" —"))
     cbam = [f"- {cite(b)}" for b in sec4.get("bullets") or []]
     if cbam:
         blocks.append("TÍN CHỈ CARBON & CBAM:\n" + "\n".join(cbam))
+    triggered = [
+        f"- [ĐÃ KÍCH HOẠT, đề xuất {r.get('suggested_date') or '?'}] {r.get('trigger') or ''} → {r.get('action') or ''}"
+        + (f" | bằng chứng: {cite({**r, 'text': r.get('evidence') or ''})}" if r.get("evidence") or r.get("source_url") else "")
+        for r in biz.get("reminders") or [] if isinstance(r, dict) and r.get("outcome") == "triggered"
+    ]
+    short = [
+        "- " + cite({**it, "text": f"{it.get('trigger') or ''} → {it.get('action') or ''}"})
+        for it in biz.get("short_term") or [] if isinstance(it, dict)
+    ]
+    if triggered or short:
+        blocks.append("GỢI Ý KINH DOANH:\n" + "\n".join(triggered + short))
 
     rule = HIGHLIGHT_RULE_NEWS_ONLY if no_price else HIGHLIGHT_RULE
     example = ('{"highlight": {"type": "news", "text": "...", "source_index": 1}}' if no_price
@@ -3313,19 +3364,31 @@ def _highlight_backfill_prompt(content: Dict[str, Any], target_date: str) -> tup
     user = (
         f"Ngày báo cáo: {target_date}\n"
         + (_NO_PRICE_PROMPT_RULE + "\n" if no_price else "")
-        + "\nNỘI DUNG BÁO CÁO ĐÃ PHÁT HÀNH (chỉ dùng đúng số liệu ở đây; số [N] là nguồn có thật):\n\n"
+        + "\nNỘI DUNG BÁO CÁO ĐÃ VIẾT (chỉ dùng đúng số liệu ở đây; số [N] là nguồn có thật):\n\n"
         + "\n\n".join(blocks)
-        + "\n\nYÊU CẦU: Báo cáo đã có sẵn, chỉ viết thêm trường \"highlight\". Mọi số liệu PHẢI lấy nguyên văn từ nội dung "
-        "trên, không tự tính thêm, không đưa thông tin mới.\n"
-        + rule.replace("Số liệu PHẢI khớp bullet tương ứng ở trên.", "Số liệu PHẢI khớp nội dung báo cáo ở trên.")
+        + "\n\nYÊU CẦU: Báo cáo đã có sẵn, chỉ viết trường \"highlight\".\n"
+        + rule
         + f"\n\nCHỈ TRẢ VỀ JSON HỢP LỆ:\n{example}"
     )
     return system, user, index_lookup
 
 
-async def generate_highlight_for_content(content: Dict[str, Any], target_date: str) -> Optional[Dict]:
+def _hot_news_for_highlight(news_by_topic: Dict[str, List[Dict]]) -> List[Dict[str, Any]]:
+    """Bài is_hot_news trong khung tin của báo cáo (mỗi URL 1 lần) → dạng `hot_news` của `_highlight_prompt`."""
+    seen: Dict[str, Dict[str, Any]] = {}
+    for items in news_by_topic.values():
+        for a in items:
+            if a.get("is_hot_news") and a.get("url") and a["url"] not in seen:
+                seen[a["url"]] = {"title": a.get("title"), "source": a.get("source"), "url": a["url"],
+                                  "reason": a.get("hot_news_reason")}
+    return list(seen.values())
+
+
+async def generate_highlight_for_content(
+    content: Dict[str, Any], target_date: str, hot_news: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[Dict]:
     """1 lượt LLM (cùng model Mục 1) → highlight đã chuẩn hoá, hoặc None (LLM lỗi / không chọn được / không hợp lệ)."""
-    system, user, index_lookup = _highlight_backfill_prompt(content, target_date)
+    system, user, index_lookup = _highlight_prompt(content, target_date, hot_news)
     raw = await _call_llm(user, system=system, max_tokens=1024)
     data = _extract_json(raw) if raw else None
     if not isinstance(data, dict):
@@ -3364,9 +3427,8 @@ YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
 - CHUYỂN ĐỔI NHIÊN LIỆU (BẮT BUỘC thống nhất với Mục 2/3): khi khối "SPREAD THAN–KHÍ" có "KẾT LUẬN DÙNG CHUNG" → nhận định fuel switching PHẢI theo ĐÚNG kết luận đó (vd đã ghi "ĐÃ BÃO HÒA" thì TUYỆT ĐỐI KHÔNG viết "TTF tăng → nghiêng về chuyển sang than/cầu EUA tăng", và KHÔNG ghi "chưa tính spread" vì spread đã tính). Chỉ khi khối này báo thiếu dữ liệu mới dùng logic %Δ: than (API2) TĂNG so với khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → cầu EUA TĂNG, ghi rõ "theo %Δ, chưa tính spread". Than cho fuel switching EU là API2 (CIF ARA), KHÔNG dùng API4/NEWC. KHÔNG viết "giá than TĂNG hỗ trợ cầu EUA" (than đắt lên làm than kém cạnh tranh). NHƯNG khi than đang rẻ hơn khí rõ rệt thì ĐƯỢC (và nên) viết: điện than chạy gần tối đa, phát thải cao → HỖ TRỢ MỨC cầu EUA hiện tại (chỉ không tạo thêm lực tăng) — đây là nhánh đỡ giá, không phải nhánh giảm.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm nếu bullet dựa trên 1 tin cụ thể ở trên), hoặc null nếu bullet chỉ dựa trên DỮ LIỆU GIÁ hệ thống (không phải tin tức) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
-{HIGHLIGHT_RULE}
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": null}}], "highlight": {{"type": "price", "text": "...", "source_index": null}}}}}}"""
+{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": null}}]}}}}"""
     return system, user
 
 
@@ -3392,9 +3454,8 @@ YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH, CHỈ từ tin tức �
 - Mỗi bullet mở đầu bằng tag đậm (**Chính sách:**, **Năng lượng:**, **Địa chính trị:**...). KHÔNG có bullet giá EUA.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm khi bullet dựa trên 1 tin cụ thể) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
-{HIGHLIGHT_RULE_NEWS_ONLY}
 CHỈ TRẢ VỀ JSON HỢP LỆ:
-{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": 1}}], "highlight": {{"type": "news", "text": "...", "source_index": 1}}}}}}"""
+{{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": 1}}]}}}}"""
     return system, user
 
 
@@ -4694,11 +4755,7 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
             content["1"] = {**section_data, "bullets": _resolve_bullet_sources(
                 section_data.get("bullets"), section1_index_lookup, knowledge_lookups.get("1"),
             )[:EXEC_SUMMARY_MAX_BULLETS]}
-            highlight = _resolve_highlight(section_data.get("highlight"), section1_index_lookup, no_price)
-            if highlight:
-                content["1"]["highlight"] = highlight
-            else:
-                content["1"].pop("highlight", None)
+            content["1"].pop("highlight", None)  # chọn ở cuối, sau khi đủ các mục (_highlight_prompt)
         elif section_key == "4":
             content["4"] = {**section_data, "bullets": _resolve_bullet_sources(
                 section_data.get("bullets"), section4_index_lookup, knowledge_lookups.get("4"),
@@ -4894,6 +4951,18 @@ async def generate_report_content(session: AsyncSession, report_date: str) -> Di
         "reminders": reminders,
         "tracking": tracking,
     }
+
+    # "Điều đáng quan tâm nhất hôm nay": chọn khi ĐÃ ĐỦ các mục (giá, tin nóng, kịch bản, phòng hộ CBAM, gợi ý) — trước
+    # bước tự sửa số học để nhãn % trong câu cũng được sửa, trước Mục 9 để nguồn của nó được liệt kê.
+    try:
+        highlight = await generate_highlight_for_content(content, target_date, _hot_news_for_highlight(news_by_topic))
+    except Exception:
+        logger.exception("[REPORT] %s: lỗi chọn \"Điều đáng quan tâm nhất hôm nay\" — ẩn khối.", report_date)
+        highlight = None
+    if highlight and isinstance(content.get("1"), dict):
+        content["1"]["highlight"] = highlight
+    else:
+        logger.warning("[REPORT] %s: không chọn được \"Điều đáng quan tâm nhất hôm nay\" — ẩn khối.", report_date)
 
     # Nhãn % sai, mô tả vị trí trong biên độ sai, vùng giá độ rộng 0, số/ngày kiểu tiếng Anh — sửa bằng Python.
     for fix in apply_consistency_fixes(content):

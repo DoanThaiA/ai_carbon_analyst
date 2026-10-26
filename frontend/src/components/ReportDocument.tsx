@@ -1613,10 +1613,11 @@ function PriceTicker({ items, label, className }: { items: TickerItem[]; label?:
   );
 }
 
-// "Điều đáng quan tâm nhất hôm nay" (hết bề rộng, đầu phần Tổng quan; thay dải "Tin nóng" cũ, giữ tông đỏ của dải đó): 1–2 câu LLM chọn trong
-// lượt sinh Mục 1 — biến động giá mạnh HOẶC tin tác động trực tiếp lên EUA (content["1"].highlight,
-// report_generator._resolve_highlight). Chỉ hiện nội dung, không nhãn loại (giá/tin). Báo cáo cũ không có trường này → ẩn.
-interface ReportHighlight { type: "price" | "news"; text: string; source_name?: string | null; source_url?: string | null }
+// "Điều đáng quan tâm nhất hôm nay" (hết bề rộng, đầu phần Tổng quan; thay dải "Tin nóng" cũ, giữ tông đỏ của dải đó): 1–2 câu LLM chọn
+// SAU KHI đủ các mục — điều quan trọng nhất cả báo cáo: biến động giá, tin nóng/tin trực tiếp, kịch bản xác suất Cao, phòng hộ CBAM,
+// gợi ý kinh doanh (content["1"].highlight, report_generator.HIGHLIGHT_TYPES). Chỉ hiện nội dung, không nhãn loại. Báo cáo cũ không có → ẩn.
+const HIGHLIGHT_TYPES = ["price", "news", "scenario", "hedge", "biz"] as const;
+interface ReportHighlight { type: (typeof HIGHLIGHT_TYPES)[number]; text: string; source_name?: string | null; source_url?: string | null }
 
 function TodayHighlight({ highlight }: { highlight: ReportHighlight }) {
   const t = useTranslations("reportDoc");
@@ -3451,7 +3452,7 @@ export function ReportDocument({
   const execBullets: any[] = content["1"]?.bullets ?? [];
   const rawHighlight = content["1"]?.highlight;
   const highlight: ReportHighlight | null =
-    rawHighlight?.text && (rawHighlight.type === "price" || rawHighlight.type === "news") ? rawHighlight : null;
+    rawHighlight?.text && HIGHLIGHT_TYPES.includes(rawHighlight.type) ? rawHighlight : null;
   // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in. Có biểu đồ nến EUA
   // thì đặt cạnh biểu đồ nến (2 biểu đồ cao bằng nhau), không thì cạnh bảng giá.
   const indexPanel = !noPriceData && priceRows.length > 0 ? (
