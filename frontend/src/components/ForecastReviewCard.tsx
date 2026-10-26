@@ -52,6 +52,7 @@ export function ForecastReviewCard({
   const wrongStreak = review.wrong_in_row >= 2;
   const scale = Math.max(1, ...review.items.map((i) => Math.abs(i.change_pct)));
   const lastDate = review.items.reduce((d, i) => (i.last_date > d ? i.last_date : d), "");
+  const items = [...review.items].sort((a, b) => a.report_date.localeCompare(b.report_date));
 
   return (
     // Khi in: KHÔNG giữ nguyên khối (bảng dài → không vừa phần còn lại của trang thì bị đẩy
@@ -66,73 +67,80 @@ export function ForecastReviewCard({
         </div>
       )}
 
-      <ul className="divide-y divide-border">
-        {review.items.map((it) => {
-          const tr = it.trade;
-          const up = it.change_pct >= 0;
-          const barPct = Math.min(Math.abs(it.change_pct) / scale, 1) * 50;
-          return (
-            <li key={it.report_date} className="print:break-inside-avoid px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
-              {/* Cột trái rộng cố định để cột nội dung các dòng thẳng hàng: nhãn kết quả (nhãn dài "Đúng hướng, không
-                  khớp lệnh" xuống dòng TRONG nhãn) + thanh %Δ phân kỳ quanh 0, cùng 1 thang cho mọi dòng — thay biểu đồ
-                  cột riêng trước đây. */}
-              <div className="flex shrink-0 flex-col gap-1.5 w-full max-w-[13rem] sm:w-[9.5rem]">
-                <span className={clsx("text-center break-words font-mono text-[11px] leading-snug font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
-                  {t(`verdict.${it.verdict}`)}
-                </span>
-                <div className="flex items-center gap-1.5" aria-hidden="true">
-                  <div className="relative h-2 flex-1 rounded-sm bg-surface">
-                    <span className="absolute inset-y-[-2px] left-1/2 w-px bg-border" />
-                    <span
-                      className={clsx("absolute inset-y-0 min-w-[2px]", up ? "left-1/2 rounded-r-sm bg-up" : "right-1/2 rounded-l-sm bg-down")}
-                      style={{ width: `${barPct}%` }}
-                    />
-                  </div>
-                  <span className={clsx("w-[3.6rem] text-right text-[12px] font-bold tabular-nums", up ? "text-up" : "text-down")}>
-                    {num(it.change_pct, locale, true)}%
+      {/* Mỗi báo cáo 1 cột, cũ → mới từ trái sang phải. Khung báo cáo ≥ @7xl (tối đa REVIEW_MAX_ITEMS = 8 báo cáo):
+          tất cả trên 1 hàng; @3xl–@7xl và khi in: 4 cột/hàng; hẹp hơn: 2 cột. Mỗi cột chia 3 hàng con (subgrid) —
+          tiêu đề + nhãn | cột %Δ | chi tiết — để cột %Δ của các báo cáo cùng hàng thẳng nhau dù tiêu đề dài ngắn khác
+          nhau. Viền: mỗi ô kẻ trái + trên, lưới lùi -1px để viền ở mép bị khung cắt đi. */}
+      <div className="overflow-x-auto print:overflow-hidden">
+        <ul className="-ml-px -mt-px grid grid-cols-2 @3xl/report:grid-cols-4 not-print:@7xl/report:grid-flow-col not-print:@7xl/report:grid-cols-none not-print:@7xl/report:grid-rows-[auto_auto_1fr] not-print:@7xl/report:auto-cols-[minmax(9rem,1fr)]">
+          {items.map((it) => {
+            const tr = it.trade;
+            const up = it.change_pct >= 0;
+            const barPct = Math.min(Math.abs(it.change_pct) / scale, 1) * 50;
+            return (
+              <li key={it.report_date} className="row-span-3 grid min-w-0 grid-rows-subgrid gap-y-2 border-l border-t border-border px-3 py-2.5 print:break-inside-avoid">
+                <div className="flex flex-wrap content-start items-center gap-x-1.5 gap-y-1">
+                  <strong className="text-[13.5px] text-label tabular-nums">{t("column", { date: dm(it.report_date) })}</strong>
+                  <span className={clsx("break-words font-mono text-[10px] leading-snug font-bold uppercase tracking-wider px-1.5 py-px rounded border", VERDICT_TONE[it.verdict])}>
+                    {t(`verdict.${it.verdict}`)}
                   </span>
                 </div>
-              </div>
-              <div className="text-[13.5px] leading-[1.55] text-body min-w-0">
-                <div>
-                  <strong className="text-label">{t("report", { date: dm(it.report_date) })}</strong>{" "}
-                  {t("forecast", { direction: enumLabel(it.direction), probability: enumLabel(it.probability) })}
-                  {it.high_confidence_miss && <span className="ml-1 font-semibold text-down">{t("highConfidenceMiss")}</span>}
-                </div>
-                <div className="tabular-nums">
-                  {t("move", {
-                    from: num(it.ref_close, locale),
-                    to: num(it.last_close, locale),
-                    pct: num(it.change_pct, locale, true),
-                    sessions: it.sessions,
-                    date: dm(it.last_date),
-                  })}
-                  {it.max_excursion_pct !== undefined && Math.abs(it.max_excursion_pct - it.change_pct) >= 0.5 &&
-                    ` · ${t("maxExcursion", { pct: num(it.max_excursion_pct, locale, true) })}`}
-                  {it.graded_by && <span className="text-muted-light"> · {t(`gradedBy.${it.graded_by}`)}</span>}
-                </div>
-                {tr && (
-                  <div className="tabular-nums text-muted-light">
-                    {t(`trade.${tr.side}${tr.order_type === "stop" ? "Stop" : ""}`, { zone: zone(tr.entry_low, tr.entry_high, locale), stop: num(tr.stop, locale) })}
-                    {tr.target !== null && ` · ${t("trade.target", { target: num(tr.target, locale) })}`}
-                    {" → "}
-                    <span className={clsx("font-semibold", tr.status === "stopped" ? "text-down" : tr.status === "target_hit" || tr.status === "cancelled_target" ? "text-up" : "text-label")}>
-                      {t(`trade.status.${tr.status}`, { date: dm(tr.exit_date || tr.filled_date) })}
-                    </span>
+
+                <div className="flex items-center gap-2.5">
+                  <div className="relative h-14 w-3.5 shrink-0 rounded-sm bg-surface" aria-hidden="true">
+                    <span className="absolute inset-x-[-3px] top-1/2 h-px bg-border" />
+                    <span
+                      className={clsx("absolute inset-x-0 min-h-[2px]", up ? "bottom-1/2 rounded-t-sm bg-up" : "top-1/2 rounded-b-sm bg-down")}
+                      style={{ height: `${barPct}%` }}
+                    />
                   </div>
-                )}
-                {(it.design_flaws || []).map((f, fi) => (
-                  <div key={fi} className="tabular-nums text-[12.5px] font-semibold text-down">
-                    {f.kind === "low_rr"
-                      ? t("designFlaw.low_rr", { entry: num(f.entry, locale), rr: num(f.rr, locale), min: num(review.rules?.min_rr ?? 1.5, locale) })
-                      : t("designFlaw.tight_stop", { distance: num(f.distance, locale), mult: num(f.atr_multiple, locale), min: num(review.rules?.min_stop_atr ?? 0.5, locale) })}
+                  <div className="min-w-0 leading-tight">
+                    <div className={clsx("text-[16px] font-bold tabular-nums", up ? "text-up" : "text-down")}>
+                      {num(it.change_pct, locale, true)}%
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-muted-light">
+                      {t("forecastShort", { direction: enumLabel(it.direction), probability: enumLabel(it.probability) })}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+                </div>
+
+                <div className="text-[12.5px] leading-[1.5] text-body min-w-0">
+                  {it.high_confidence_miss && <div className="font-semibold text-down">{t("highConfidenceMiss")}</div>}
+                  <div className="tabular-nums">
+                    {t("move", {
+                      from: num(it.ref_close, locale),
+                      to: num(it.last_close, locale),
+                      pct: num(it.change_pct, locale, true),
+                      sessions: it.sessions,
+                      date: dm(it.last_date),
+                    })}
+                    {it.max_excursion_pct !== undefined && Math.abs(it.max_excursion_pct - it.change_pct) >= 0.5 &&
+                      ` · ${t("maxExcursion", { pct: num(it.max_excursion_pct, locale, true) })}`}
+                    {it.graded_by && <span className="text-muted-light"> · {t(`gradedBy.${it.graded_by}`)}</span>}
+                  </div>
+                  {tr && (
+                    <div className="tabular-nums text-muted-light">
+                      {t(`trade.${tr.side}${tr.order_type === "stop" ? "Stop" : ""}`, { zone: zone(tr.entry_low, tr.entry_high, locale), stop: num(tr.stop, locale) })}
+                      {tr.target !== null && ` · ${t("trade.target", { target: num(tr.target, locale) })}`}
+                      {" → "}
+                      <span className={clsx("font-semibold", tr.status === "stopped" ? "text-down" : tr.status === "target_hit" || tr.status === "cancelled_target" ? "text-up" : "text-label")}>
+                        {t(`trade.status.${tr.status}`, { date: dm(tr.exit_date || tr.filled_date) })}
+                      </span>
+                    </div>
+                  )}
+                  {(it.design_flaws || []).map((f, fi) => (
+                    <div key={fi} className="tabular-nums font-semibold text-down">
+                      {f.kind === "low_rr"
+                        ? t("designFlaw.low_rr", { entry: num(f.entry, locale), rr: num(f.rr, locale), min: num(review.rules?.min_rr ?? 1.5, locale) })
+                        : t("designFlaw.tight_stop", { distance: num(f.distance, locale), mult: num(f.atr_multiple, locale), min: num(review.rules?.min_stop_atr ?? 0.5, locale) })}
+                    </div>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       {lastDate && (
         <p className="px-3.5 py-2 border-t border-border text-[12px] leading-snug text-muted-light">
