@@ -3242,7 +3242,8 @@ function AnalysisBlocks({ blocks }: { blocks: any[] }) {
               <div className="space-y-5">
                 {groups.map((g, gi) => (
                   <section key={gi} className="min-w-0 space-y-2">
-                    <div className="min-w-0 print:break-after-avoid">
+                    {/* Khi in: nhãn nhóm + kết luận không tách nhau, không trơ cuối trang tách khỏi các ý bên dưới. */}
+                    <div className="min-w-0 print:break-inside-avoid print:break-after-avoid">
                       <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-primary">{g.prefix.replace(/:\s*$/, "")}</div>
                       <p className="text-left mt-0.5 text-[15.5px] font-bold leading-[1.45] text-primary-dark">
                         <RichText text={g.headline} nums />

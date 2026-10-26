@@ -1674,7 +1674,7 @@
       "landscape": "Landscape"
     },
     "hint": {
-      "pc": "Standard text size, suited to reading on a computer or printing.",
+      "pc": "Compact text (~9pt), two-column layout — fewer pages, suited to reading on a computer or printing.",
       "tv": "16:9 landscape pages, multi-column layout — for TVs and large screens."
     },
     "cancel": "Cancel",
