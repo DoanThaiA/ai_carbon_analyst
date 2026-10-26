@@ -687,6 +687,9 @@
     "calibrationItem": "{probability} {correct}/{total}",
     "rules": "Quy tắc chấm: kết luận Đúng/Sai khi lệnh chạm mục tiêu/cắt lỗ hoặc hết {horizon} phiên (khung 1–2 tuần); trước đó chỉ là Đang đúng hướng/Đang lệch. Chiều tính đúng khi |%Δ| ≥ {dir}%; \"đi ngang\" đúng khi |%Δ| < {side}% VÀ mọi giá đóng cửa trong khung lệch tham chiếu dưới {path}%. Lệnh chờ hiệu lực {valid} phiên, huỷ nếu giá chạm mục tiêu trước khi khớp; lệnh giới hạn mở gap qua vùng Entry khớp tại giá mở. Giá chạm mục tiêu trước khi khớp → \"Đúng hướng, không khớp lệnh\", không tính vào tỷ lệ đúng. Báo cáo Chủ Nhật/Thứ Hai chỉ có tin tức nên không có dự báo để chấm.",
     "lesson": "Nguyên nhân & điều chỉnh",
+    "barNote": "Mỗi cột 1 báo cáo (cũ → mới). Cột màu: %Δ EUA từ giá đóng cửa ngày báo cáo tới phiên {date} (xanh = tăng, đỏ = giảm; cùng 1 thang).",
+    "column": "Báo cáo {date}",
+    "forecastShort": "Dự báo {direction} · xác suất {probability}",
     "calibrationUnfilled": "(+{n} đúng hướng, không khớp lệnh — không tính)",
     "gradedBy": {
       "trade": "chấm theo lệnh",
@@ -1658,7 +1661,6 @@
     "sizeLabel": "Khổ trang",
     "orientationLabel": "Hướng",
     "device": {
-      "mobile": "Điện thoại",
       "pc": "Máy tính",
       "tv": "TV / trình chiếu"
     },
@@ -1672,7 +1674,6 @@
       "landscape": "Ngang"
     },
     "hint": {
-      "mobile": "Chữ to hơn, bố cục 1 cột — đọc vừa màn hình điện thoại không cần phóng to.",
       "pc": "Cỡ chữ chuẩn, phù hợp đọc trên máy tính hoặc in giấy.",
       "tv": "Trang ngang 16:9, bố cục nhiều cột — trình chiếu trên TV/màn hình lớn."
     },

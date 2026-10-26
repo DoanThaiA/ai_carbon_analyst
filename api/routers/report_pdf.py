@@ -3,7 +3,7 @@
 - GET /api/reports/{date}/pdf        — user/admin, CHỈ báo cáo published (như GET /api/reports/{date}).
 - GET /api/admin/reports/{date}/pdf  — admin, mọi trạng thái có nội dung (xuất được bản nháp để duyệt).
 
-Query: size (a4|square|wide), orientation (portrait|landscape), device (mobile|pc|tv), lang (vi|en). Dàn trang + xuất
+Query: size (a4|square|wide), orientation (portrait|landscape), device (pc|tv), lang (vi|en). Dàn trang + xuất
 bằng Chromium phía server (`services/report_pdf.py`), không dùng hộp thoại in của trình duyệt.
 """
 import logging

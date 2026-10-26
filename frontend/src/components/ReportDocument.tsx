@@ -1637,48 +1637,6 @@ function TodayHighlight({ highlight }: { highlight: ReportHighlight }) {
   );
 }
 
-// Biểu đồ "Dự báo trước: đúng hay sai" — mỗi báo cáo 1 cột: %Δ EUA từ giá báo cáo in (forecast_review.items[].change_pct)
-// + kết quả chấm. Cùng ký hiệu với dải ở khối mở đầu; bảng chi tiết từng báo cáo vẫn nằm ngay dưới.
-function ForecastChart({ review }: { review: ForecastReview }) {
-  const t = useTranslations("reportDoc");
-  const tf = useTranslations("forecastReview");
-  const locale = useLocale();
-  const enumLabel = useEnumLabel();
-  const items = [...review.items].sort((a, b) => a.report_date.localeCompare(b.report_date));
-  if (!items.length) return null;
-  const scale = Math.max(1, ...items.map(i => Math.abs(i.change_pct)));
-  const lastDate = items.reduce((d, i) => (i.last_date > d ? i.last_date : d), items[0].last_date);
-  return (
-    <div data-print-whole className="mb-3 rounded-xl border border-border bg-surface/50 px-3 sm:px-4 py-3.5 print:break-inside-avoid">
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-        {items.map(it => {
-          const up = it.change_pct >= 0;
-          const h = Math.min(Math.abs(it.change_pct) / scale, 1) * 50;
-          const m = VERDICT_MARK[it.verdict] ?? VERDICT_MARK.unclear;
-          return (
-            <div key={it.report_date} className="flex min-w-0 flex-col items-center gap-1 text-center">
-              <span className="text-[12px] font-semibold tabular-nums text-label">{formatShortDate(it.report_date)}</span>
-              <div className="relative h-16 w-full max-w-[48px]" aria-hidden="true">
-                <span className="absolute inset-x-0 top-1/2 h-px bg-border-soft" />
-                <span
-                  className={clsx("absolute inset-x-[24%] rounded-[3px]", up ? "bg-up" : "bg-down")}
-                  style={up ? { bottom: "50%", height: `${h}%` } : { top: "50%", height: `${h}%` }}
-                />
-              </div>
-              <span className={clsx("text-[12px] font-bold tabular-nums", up ? "text-up" : "text-down")}>
-                {`${it.change_pct > 0 ? "+" : it.change_pct < 0 ? "−" : ""}${fnum(Math.abs(it.change_pct), 2, locale)}%`}
-              </span>
-              <span className={clsx("grid h-6 w-6 place-items-center rounded-md text-[12.5px] font-bold", m.cls)} title={tf(`verdict.${it.verdict}`)}>{m.icon}</span>
-              <span className="text-[11.5px] leading-tight text-muted-light">{enumLabel(it.direction)}</span>
-            </div>
-          );
-        })}
-      </div>
-      <p className="text-left mt-2.5 text-[12px] leading-snug text-muted-light">{t("review.chartNote", { date: formatFullDate(lastDate) })}</p>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // KHUYẾN NGHỊ VỊ THẾ (đầu Phần 2) — thang giá chung 3 khung thời gian → thẻ kịch bản từng khung (Kịch bản hành
 // động) → phòng hộ CBAM → lệnh mô phỏng đang mở. Hàng chỉ số cũ (nhận định, giá, biên 30 phiên, ATR, dự báo trước)
@@ -3814,12 +3772,9 @@ export function ReportDocument({
                 <div>
                   <SubHeading>{t("body.reviewForecast")}</SubHeading>
                   {hasForecastReview && forecastReview ? (
-                    <>
-                      <ForecastChart review={forecastReview} />
-                      <ForecastReviewCard review={forecastReview} enumLabel={enumLabel} showTitle={false}>
-                        {content["3"]?.vs_previous && <RichText text={content["3"].vs_previous} nums />}
-                      </ForecastReviewCard>
-                    </>
+                    <ForecastReviewCard review={forecastReview} enumLabel={enumLabel} showTitle={false}>
+                      {content["3"]?.vs_previous && <RichText text={content["3"].vs_previous} nums />}
+                    </ForecastReviewCard>
                   ) : (
                     <div className="rounded-xl border border-border bg-surface px-4 py-3 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
                       <h3 className="mb-1 text-[12px] font-bold uppercase tracking-[0.15em] text-label">{t("body.vsPrevious")}</h3>

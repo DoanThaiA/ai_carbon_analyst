@@ -1,7 +1,7 @@
 """Render báo cáo ngày thành PDF theo bố cục người dùng chọn — mở trang dàn trang riêng của frontend
 (`/reports/<ngày>/export`, không phải hộp thoại in của trình duyệt) bằng Chromium (Playwright) rồi xuất PDF.
 
-Bố cục (`PdfLayout`): khổ (A4 / vuông / màn hình 16:9) × hướng (dọc / ngang) × thiết bị xem (điện thoại / máy tính /
+Bố cục (`PdfLayout`): khổ (A4 / vuông / màn hình 16:9) × hướng (dọc / ngang) × thiết bị xem (máy tính /
 TV). Backend là nơi DUY NHẤT tính kích thước trang, lề và tỉ lệ chữ rồi truyền qua query cho trang export — trang
 export chỉ áp dụng (đặt @page, bề rộng khung báo cáo, zoom), nên đổi preset chỉ cần sửa ở đây.
 
@@ -37,10 +37,10 @@ MM_TO_PX = 96 / 25.4
 PAGE_SIZES: Dict[str, Tuple[float, float]] = {"a4": (210, 297), "square": (210, 210), "wide": (167, 297)}
 PAGE_MARGINS: Dict[str, Tuple[float, float]] = {"a4": (12, 10), "square": (10, 10), "wide": (9, 9)}
 ORIENTATIONS = ("portrait", "landscape")
-# Tỉ lệ chữ/khối theo thiết bị xem: PDF trên điện thoại bị thu nhỏ vừa bề ngang màn hình (~0,7×) → chữ to hơn, bố cục
-# hẹp 1 cột như trên điện thoại. TV trình chiếu cả trang 16:9 phóng to ~1,8× nên giữ tỉ lệ 1 — bố cục rộng nhiều cột,
-# tận dụng trang ngang. Bề rộng bố cục = bề rộng vùng in / tỉ lệ (container query dàn lại số cột theo bề rộng này).
-DEVICE_SCALES: Dict[str, float] = {"mobile": 1.4, "pc": 1.0, "tv": 1.0}
+# Tỉ lệ chữ/khối theo thiết bị xem (bản xuất cho điện thoại đã bỏ — 26/10/2026). TV trình chiếu cả trang 16:9 phóng to
+# ~1,8× nên giữ tỉ lệ 1 — bố cục rộng nhiều cột, tận dụng trang ngang. Bề rộng bố cục = bề rộng vùng in / tỉ lệ (container
+# query dàn lại số cột theo bề rộng này).
+DEVICE_SCALES: Dict[str, float] = {"pc": 1.0, "tv": 1.0}
 
 
 @dataclass(frozen=True)

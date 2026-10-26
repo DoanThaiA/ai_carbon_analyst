@@ -282,7 +282,7 @@ chiến lược) và thanh phòng hộ CBAM dựng từ `cbam_estimate` (không 
 tách từ kịch bản tiếng Việt (`content_vi` do `lib/reportLocale.ts` giữ lại), câu chữ lấy bản Anh. Bố cục nhiều cột của trang báo cáo theo
 container query `@container/report` (bề rộng thật của báo cáo, không theo viewport); in A4 (~650px) tự về 1 cột — thêm khối mới thì giữ quy
 ước này và `print:` cho phần thu gọn. **Xuất PDF** (popup `PdfExportModal.tsx` ở nút "Tải PDF" trang user + admin; KHÔNG dùng hộp thoại in của trình duyệt): người dùng chọn thiết bị
-(mobile/pc/tv — tự gợi ý khổ) × khổ (A4/vuông/16:9) × hướng, popup tự render + hiện bản xem trước (`PdfPagesPreview.tsx`, pdf.js vẽ từng trang ra
+(pc/tv — tự gợi ý khổ; bản cho điện thoại đã bỏ 26/10/2026) × khổ (A4/vuông/16:9) × hướng, popup tự render + hiện bản xem trước (`PdfPagesPreview.tsx`, pdf.js vẽ từng trang ra
 canvas — không dùng iframe vì Chrome Android/Safari iOS không hiện PDF nhúng; cache theo tổ hợp, "Tải xuống" lưu đúng file đang xem) → `GET /api/reports/{date}/pdf` (published) hoặc
 `/api/admin/reports/{date}/pdf` (cả nháp) (`api/routers/report_pdf.py`) → `services/report_pdf.py::render_report_pdf` (Chromium,
 tối đa 2 bản cùng lúc) mở trang `/reports/[date]/export` với khổ/lề/zoom do backend tính (`PdfLayout`, `PAGE_SIZES`/`DEVICE_SCALES` —
