@@ -7,7 +7,8 @@ import type { ForecastReview, ForecastReviewItem } from "@/lib/types";
 
 // Khối "Dự báo trước: đúng hay sai" ở trang đầu — dữ liệu tính bằng Python (services/forecast_review.py,
 // content["2"].forecast_review): %Δ EUA luỹ kế + mô phỏng lệnh (khớp / chạm cắt lỗ / chạm mục tiêu) của
-// kịch bản ngắn hạn các báo cáo gần đây. `children` = đoạn "vs_previous" LLM viết (nguyên nhân, điều chỉnh).
+// kịch bản ngắn hạn các báo cáo gần đây. Mỗi dòng kèm thanh %Δ (gộp biểu đồ cột cũ vào cùng 1 khung).
+// `children` = đoạn "vs_previous" LLM viết (nguyên nhân, điều chỉnh).
 
 function num(n: number | null | undefined, locale: string, sign = false): string {
   if (n === null || n === undefined) return "—";
@@ -49,6 +50,8 @@ export function ForecastReviewCard({
   const t = useTranslations("forecastReview");
   const locale = useLocale();
   const wrongStreak = review.wrong_in_row >= 2;
+  const scale = Math.max(1, ...review.items.map((i) => Math.abs(i.change_pct)));
+  const lastDate = review.items.reduce((d, i) => (i.last_date > d ? i.last_date : d), "");
 
   return (
     // Khi in: KHÔNG giữ nguyên khối (bảng dài → không vừa phần còn lại của trang thì bị đẩy
@@ -66,13 +69,30 @@ export function ForecastReviewCard({
       <ul className="divide-y divide-border">
         {review.items.map((it) => {
           const tr = it.trade;
+          const up = it.change_pct >= 0;
+          const barPct = Math.min(Math.abs(it.change_pct) / scale, 1) * 50;
           return (
             <li key={it.report_date} className="print:break-inside-avoid px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
-              {/* Nhãn rộng cố định để cột nội dung các dòng thẳng hàng; nhãn dài ("Đúng hướng, không khớp lệnh")
-                  xuống dòng TRONG nhãn thay vì tràn ra ngoài. */}
-              <span className={clsx("self-start shrink-0 max-w-full sm:w-[9.5rem] text-center break-words font-mono text-[11px] leading-snug font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
-                {t(`verdict.${it.verdict}`)}
-              </span>
+              {/* Cột trái rộng cố định để cột nội dung các dòng thẳng hàng: nhãn kết quả (nhãn dài "Đúng hướng, không
+                  khớp lệnh" xuống dòng TRONG nhãn) + thanh %Δ phân kỳ quanh 0, cùng 1 thang cho mọi dòng — thay biểu đồ
+                  cột riêng trước đây. */}
+              <div className="flex shrink-0 flex-col gap-1.5 w-full max-w-[13rem] sm:w-[9.5rem]">
+                <span className={clsx("text-center break-words font-mono text-[11px] leading-snug font-bold uppercase tracking-wider px-2 py-0.5 rounded border", VERDICT_TONE[it.verdict])}>
+                  {t(`verdict.${it.verdict}`)}
+                </span>
+                <div className="flex items-center gap-1.5" aria-hidden="true">
+                  <div className="relative h-2 flex-1 rounded-sm bg-surface">
+                    <span className="absolute inset-y-[-2px] left-1/2 w-px bg-border" />
+                    <span
+                      className={clsx("absolute inset-y-0 min-w-[2px]", up ? "left-1/2 rounded-r-sm bg-up" : "right-1/2 rounded-l-sm bg-down")}
+                      style={{ width: `${barPct}%` }}
+                    />
+                  </div>
+                  <span className={clsx("w-[3.6rem] text-right text-[12px] font-bold tabular-nums", up ? "text-up" : "text-down")}>
+                    {num(it.change_pct, locale, true)}%
+                  </span>
+                </div>
+              </div>
               <div className="text-[13.5px] leading-[1.55] text-body min-w-0">
                 <div>
                   <strong className="text-label">{t("report", { date: dm(it.report_date) })}</strong>{" "}
@@ -113,6 +133,12 @@ export function ForecastReviewCard({
           );
         })}
       </ul>
+
+      {lastDate && (
+        <p className="px-3.5 py-2 border-t border-border text-[12px] leading-snug text-muted-light">
+          {t("barNote", { date: lastDate.split("-").reverse().join("/") })}
+        </p>
+      )}
 
       {children && (
         <div className="px-3.5 py-2.5 border-t border-border bg-surface/60">

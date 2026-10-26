@@ -687,6 +687,7 @@
     "calibrationItem": "{probability} {correct}/{total}",
     "rules": "Grading rules: Right/Wrong once the order hits its target/stop or after {horizon} sessions (1–2 week window); before that only On track/Diverging. Direction counts as right when |%Δ| ≥ {dir}%; \"sideways\" is right when |%Δ| < {side}% AND every close in the window stays within {path}% of the reference. Pending orders are valid for {valid} sessions and cancelled if the price hits the target before filling; a limit order gapped through at the open fills at the open. Target reached before filling → \"Right direction, not filled\", excluded from the hit rate. Sunday/Monday reports are news-only, so there is no forecast to grade.",
     "lesson": "Cause & adjustment",
+    "barNote": "Bars: EUA %Δ from the report-day close to the {date} session (green = up, red = down; same scale for every row).",
     "calibrationUnfilled": "(+{n} right direction, not filled — excluded)",
     "gradedBy": {
       "trade": "graded on the order",
