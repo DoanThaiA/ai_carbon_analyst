@@ -3335,7 +3335,15 @@ function NewsColumns({ section, heading }: { section: any; heading?: React.React
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[12.5px] font-bold tabular-nums text-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">{i + 1}</span>
             <div className="min-w-0">
-              <h4 className="text-[15px] font-bold leading-snug text-label">{art.title}</h4>
+              {/* Tag chủ đề nằm NGAY CẠNH tiêu đề (cùng dòng chữ), chỉ xuống dòng khi hết chỗ. */}
+              <div className="leading-snug">
+                <h4 className="inline text-[15px] font-bold text-label">{art.title}</h4>
+                {art.topics?.map((topic: string, ti: number) => (
+                  <span key={ti} className={clsx("ml-1.5 inline-block rounded-[4px] border px-1.5 py-px align-[2px] text-[11px] font-bold uppercase leading-normal tracking-wide whitespace-nowrap", tagColorClass(topic))}>
+                    {topic}
+                  </span>
+                ))}
+              </div>
               {/* Mọi tin đều có tóm tắt (bản chấm 17/10: chỉ còn tiêu đề thì Phần 3 mất giá trị). */}
               <p className="text-left mt-1.5 text-[14.5px] leading-[1.6] text-body">
                 <RichText text={art.summary} nums />{" "}
@@ -3343,16 +3351,6 @@ function NewsColumns({ section, heading }: { section: any; heading?: React.React
                   {t("body.source")} {art.source} <ExternalLink size={10} className="-mt-0.5 inline" aria-hidden="true" />
                 </a>
               </p>
-              {/* Tag chủ đề: 1 hàng ngang ở CUỐI tin (sau tóm tắt + nguồn), không chen giữa tiêu đề và tóm tắt. */}
-              {art.topics?.length > 0 && (
-                <div className="mt-2 flex flex-wrap items-center gap-1">
-                  {art.topics.map((topic: string, ti: number) => (
-                    <span key={ti} className={clsx("rounded-[4px] border px-1.5 py-px text-[11px] font-bold uppercase tracking-wide whitespace-nowrap", tagColorClass(topic))}>
-                      {topic}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </li>
         );
