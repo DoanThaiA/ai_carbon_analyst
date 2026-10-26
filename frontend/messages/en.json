@@ -636,7 +636,7 @@
     "emptyState": "Pick a session from history, highlight a passage in the report, or chat directly with Jenny.",
     "promptQuote": "Ask a question about the passage above, or pick a suggestion below.",
     "promptFree": "Ask Jenny anything about today's report and the market, or pick a suggestion below.",
-    "sourcesTitle": "Referenced news",
+    "sourcesTitle": "References",
     "ratedAs": "You rated this session as {rating}",
     "good": "Good",
     "bad": "Not good",

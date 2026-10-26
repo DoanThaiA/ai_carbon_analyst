@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import Settings
-from db.models import Article, BizSuggestion, EuaAuction, Report, Instrument
+from db.models import Article, BizSuggestion, EuaAuction, Report, Instrument, PriceCrawlSource
 from schemas.chat_models import MAX_ATTACHMENTS_PER_TURN, Attachment, ChatTurn
 from schemas.retrieval_models import RetrievedDocument
 from services import minio_service
@@ -22,7 +22,10 @@ from services.report_qc_review import qc_review_text
 from services.retrieval import RetrievalService
 from services import eua_causal_chains as chains
 from services import cbam_estimate, forecast_review, knowledge, report_lessons
+from crawl_prices.crawl_eex_auctions import CALENDAR_PAGE as EEX_AUCTION_PAGE_URL
 from services.report_generator import (
+    CBAM_PRICE_PAGE_URL,
+    _barchart_url,
     split_policy_mechanism,
     report_data_date,
     _compute_recurring_calendar_events,
@@ -2341,6 +2344,80 @@ class StatusEvent:
         self.message = message
 
 
+class PriceSourcesEvent:
+    """Link trang giá ứng viên (sau khi model gọi tool giá) đi cùng luồng text của `astream_quote_chat` —
+    router lọc theo mã được nhắc trong câu trả lời (`price_sources_for_answer`) rồi gộp vào khung nguồn
+    tham khảo dưới câu trả lời. Không phải nội dung, không lưu lịch sử."""
+
+    def __init__(self, sources: List[Dict[str, Any]]) -> None:
+        self.sources = sources
+
+
+# Tool trả số liệu giá → câu trả lời kèm link trang giá gốc. CBAM/đấu giá có trang riêng (không theo mã).
+PRICE_SOURCE_TOOLS = (
+    "get_market_prices", "get_eua_details", "get_eua_volume_history", "get_price_history", "calc_price_stats",
+)
+CBAM_SOURCE_TOOLS = ("get_cbam_estimate",)
+AUCTION_SOURCE_TOOLS = ("get_eua_auctions",)
+# Cách câu trả lời gọi tên mã ngoài chính `instrument_code` (khớp không phân biệt hoa thường).
+PRICE_CODE_ALIASES = {
+    "NG": ("Henry Hub",),
+    "GASOIL": ("gasoil", "gas oil"),
+    "API2": ("API 2",),
+    "API4": ("API 4",),
+}
+
+
+def _mention_pattern(code: str, aliases: Sequence[str] = ()) -> str:
+    """Regex nhận mã trong câu trả lời: mã viết HOA đúng như code (\\b theo unicode nên "NG" không khớp "TĂNG"),
+    alias không phân biệt hoa thường."""
+    parts = [rf"(?<!\w){re.escape(code)}(?!\w)"]
+    parts += [rf"(?i:(?<!\w){re.escape(a)}(?!\w))" for a in aliases]
+    return "|".join(parts)
+
+
+def _price_site_label(url: str) -> str:
+    return "ICE" if "ice.com" in url else "Barchart" if "barchart.com" in url else url.split("/")[2]
+
+
+async def price_source_candidates(session: AsyncSession, tool_names: Sequence[str]) -> List[Dict[str, Any]]:
+    """Link trang giá cho các tool giá vừa gọi: mỗi mã đang crawl 1 link (cùng `_barchart_url` mà bảng giá Mục 2
+    dùng), + trang giá CBAM của EC / lịch đấu giá EEX. Mỗi dòng kèm "match" (regex mã) để lọc theo câu trả lời."""
+    names = set(tool_names)
+    out: List[Dict[str, Any]] = []
+    if names & set(PRICE_SOURCE_TOOLS):
+        rows = (await session.execute(
+            select(PriceCrawlSource).where(PriceCrawlSource.is_active.is_(True)).order_by(PriceCrawlSource.id)
+        )).scalars().all()
+        for r in rows:
+            url = _barchart_url(r.symbol)
+            if url:
+                label = _price_site_label(url)
+                out.append({"url": url, "title": f"Giá {r.instrument_name} — {label}", "source_name": label,
+                            "published_at": None,
+                            "match": _mention_pattern(r.instrument_code, PRICE_CODE_ALIASES.get(r.instrument_code, ()))})
+    if names & set(CBAM_SOURCE_TOOLS):
+        out.append({"url": CBAM_PRICE_PAGE_URL, "title": "Giá chứng chỉ CBAM — Ủy ban châu Âu",
+                    "source_name": "European Commission", "published_at": None, "match": r"(?i:CBAM)"})
+    if names & set(AUCTION_SOURCE_TOOLS):
+        out.append({"url": EEX_AUCTION_PAGE_URL, "title": "Đấu giá sơ cấp EUA — EEX", "source_name": "EEX",
+                    "published_at": None, "match": r"(?i:đấu giá|auction|EEX)"})
+    return out
+
+
+def price_sources_for_answer(candidates: Sequence[Dict[str, Any]], answer: str) -> List[Dict[str, Any]]:
+    """Chỉ giữ link của mã/trang THẬT SỰ được nhắc trong câu trả lời (get_market_prices trả cả bảng giá — không
+    liệt kê 8 link khi người dùng chỉ hỏi EUA); bỏ trùng URL, bỏ khoá "match"."""
+    seen: set = set()
+    out = []
+    for c in candidates:
+        if c["url"] in seen or not re.search(c["match"], answer or ""):
+            continue
+        seen.add(c["url"])
+        out.append({k: v for k, v in c.items() if k != "match"})
+    return out
+
+
 _DATE_ANCHORED_TOOLS = ("get_market_prices", "get_eua_details", "get_eua_volume_history", "get_report_section", "get_price_history", "get_biz_suggestions", "browse_news", "calc_price_stats", "get_report_history", "review_past_forecast", "get_report_overview", "jack_qc", "get_qc_review", "get_forecast_scorecard", "get_cbam_estimate")
 
 
@@ -2827,6 +2904,9 @@ async def _stream_anthropic(
             )
             tool_results.append({"type": "tool_result", "tool_use_id": call.id, "content": result_text})
         anthropic_messages.append({"role": "user", "content": tool_results})
+        price_sources = await price_source_candidates(session, [call.name for call in client_tool_calls])
+        if price_sources:
+            yield PriceSourcesEvent(price_sources)
 
     # Hết MAX_TOOL_ITERATIONS mà vẫn chưa có lượt nào kết thúc bằng câu trả lời
     # thật (luôn `return` ngay khi stop_reason != "tool_use" ở trên) — nếu cứ

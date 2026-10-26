@@ -46,7 +46,9 @@ from services.embedding import CohereEmbedder
 from services.eua_framework_admin import get_overrides_map
 from services.quote_chat import (
     astream_quote_chat,
+    PriceSourcesEvent,
     StatusEvent,
+    price_sources_for_answer,
     retrieve_context_for_quote,
     suggest_questions,
 )
@@ -254,6 +256,7 @@ async def quote_chat_stream(
             yield _sse("meta", {"session_id": chat_session.id, "sources": sources})
 
             answer_parts: list[str] = []
+            price_candidates: list[dict] = []
             async for delta in astream_quote_chat(
                 quote=quote,
                 question=body.question,
@@ -274,8 +277,17 @@ async def quote_chat_stream(
                     # Trạng thái tạm (vd đang dùng trợ lý Sonic) — chỉ hiện trên UI, không vào câu trả lời/lịch sử.
                     yield _sse("status", {"message": delta.message})
                     continue
+                if isinstance(delta, PriceSourcesEvent):
+                    price_candidates.extend(delta.sources)
+                    continue
                 answer_parts.append(delta)
                 yield _sse("delta", delta)
+
+            # Câu trả lời dùng số giá → thêm link trang giá của đúng các mã được nhắc vào khung nguồn
+            # dưới câu trả lời (gửi lại "meta" với danh sách đã gộp — FE thay nguồn của tin nhắn cuối).
+            price_sources = price_sources_for_answer(price_candidates, "".join(answer_parts))
+            if price_sources:
+                yield _sse("meta", {"session_id": chat_session.id, "sources": sources + price_sources})
 
             await append_turn(
                 session,

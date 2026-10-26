@@ -3252,8 +3252,9 @@ function AnalysisLine({ text }: { text: string }) {
 }
 
 // Nội dung Mục 3 "Phân tích": block "Phân tích" chia theo nhóm — dòng đầu mỗi nhóm "Tên nhóm: <kết luận>"
-// (_prompt_section3::ĐỊNH DẠNG) thành đầu thẻ (nhãn nhóm + kết luận đậm), các ý của nhóm nằm trong thẻ; báo cáo rộng: các
-// thẻ đứng cạnh nhau, cao bằng nhau. Dòng đứng trước nhãn nhóm đầu tiên và block khác (không có nhãn nhóm) giữ dạng đoạn.
+// (_prompt_section3::ĐỊNH DẠNG). KHÔNG chia khối/cột (yêu cầu 26/10/2026): mỗi nhóm = nhãn nhóm + kết luận đậm rồi các ý
+// ngay bên dưới, tất cả trải hết bề rộng nội dung, các nhóm nối tiếp nhau. Dòng đứng trước nhãn nhóm đầu tiên và block khác
+// (không có nhãn nhóm) giữ dạng đoạn.
 function AnalysisBlocks({ blocks }: { blocks: any[] }) {
   const enumLabel = useEnumLabel();
   return (
@@ -3280,17 +3281,17 @@ function AnalysisBlocks({ blocks }: { blocks: any[] }) {
               </div>
             )}
             {groups.length > 0 && (
-              <div className={clsx("grid gap-3 print:block print:space-y-5", groups.length === 2 && "@3xl/report:grid-cols-2", groups.length > 2 && "@5xl/report:grid-cols-3")}>
+              <div className="space-y-5">
                 {groups.map((g, gi) => (
-                  <section key={gi} className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background print:overflow-visible print:rounded-none print:border-0">
-                    <div className="bg-tint px-3.5 py-2.5 print:break-after-avoid print:rounded-lg [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+                  <section key={gi} className="min-w-0 space-y-2">
+                    <div className="min-w-0 print:break-after-avoid">
                       <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-primary">{g.prefix.replace(/:\s*$/, "")}</div>
                       <p className="text-left mt-0.5 text-[15.5px] font-bold leading-[1.45] text-primary-dark">
                         <RichText text={g.headline} nums />
                       </p>
                     </div>
                     {g.lines.length > 0 && (
-                      <div className="space-y-2 p-3.5 print:px-0 print:pb-0">
+                      <div className="min-w-0 space-y-2">
                         {g.lines.map((line, j) => <AnalysisLine key={j} text={line} />)}
                       </div>
                     )}
@@ -3335,15 +3336,6 @@ function NewsColumns({ section, heading }: { section: any; heading?: React.React
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[12.5px] font-bold tabular-nums text-primary [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">{i + 1}</span>
             <div className="min-w-0">
               <h4 className="text-[15px] font-bold leading-snug text-label">{art.title}</h4>
-              {art.topics?.length > 0 && (
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {art.topics.map((topic: string, ti: number) => (
-                    <span key={ti} className={clsx("rounded-[4px] border px-1.5 py-px text-[11px] font-bold uppercase tracking-wide whitespace-nowrap", tagColorClass(topic))}>
-                      {topic}
-                    </span>
-                  ))}
-                </div>
-              )}
               {/* Mọi tin đều có tóm tắt (bản chấm 17/10: chỉ còn tiêu đề thì Phần 3 mất giá trị). */}
               <p className="text-left mt-1.5 text-[14.5px] leading-[1.6] text-body">
                 <RichText text={art.summary} nums />{" "}
@@ -3351,6 +3343,16 @@ function NewsColumns({ section, heading }: { section: any; heading?: React.React
                   {t("body.source")} {art.source} <ExternalLink size={10} className="-mt-0.5 inline" aria-hidden="true" />
                 </a>
               </p>
+              {/* Tag chủ đề: 1 hàng ngang ở CUỐI tin (sau tóm tắt + nguồn), không chen giữa tiêu đề và tóm tắt. */}
+              {art.topics?.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1">
+                  {art.topics.map((topic: string, ti: number) => (
+                    <span key={ti} className={clsx("rounded-[4px] border px-1.5 py-px text-[11px] font-bold uppercase tracking-wide whitespace-nowrap", tagColorClass(topic))}>
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </li>
         );
@@ -3664,7 +3666,7 @@ export function ReportDocument({
             <div id="section-analysis-detail" className="scroll-mt-32 space-y-8">
               {hasMarketDrivers && <DriversPanel drivers={content["2"].market_drivers} />}
 
-              {/* Phân tích (mỗi nhóm 1 thẻ, các thẻ đứng cạnh nhau) rồi Cần theo dõi (lưới thẻ) — mỗi hàng thẻ cao bằng nhau. */}
+              {/* Phân tích (không chia khối, trải hết bề rộng) rồi Cần theo dõi (lưới thẻ) — mỗi hàng thẻ cao bằng nhau. */}
               {content["3"] && (
                 <div>
                   <SubHeading
