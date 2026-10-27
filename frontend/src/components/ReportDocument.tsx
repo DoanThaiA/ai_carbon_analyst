@@ -2070,8 +2070,8 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
   return (
     <div>
       <SubHeading>{t("etsPolicy.title")}</SubHeading>
-      {/* Báo cáo hẹp + khi in: thẻ xếp dọc */}
-      <ul className="list-none space-y-3 @2xl/report:hidden print:block!">
+      {/* Báo cáo hẹp: thẻ xếp dọc (cả khi in) */}
+      <ul className="list-none space-y-3 @2xl/report:hidden">
         {items.map((it, i) => (
           <li key={i} className="rounded-xl border border-border bg-background p-3.5">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2096,8 +2096,8 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
           </li>
         ))}
       </ul>
-      {/* Báo cáo rộng: bảng (khi in dùng thẻ ở trên). */}
-      <div className="hidden overflow-x-auto rounded-xl border border-border @2xl/report:block print:hidden!">
+      {/* Báo cáo rộng: bảng — cả khi in (PDF bản máy tính đủ rộng), từng hàng không bị cắt ngang. */}
+      <div className="hidden overflow-x-auto rounded-xl border border-border @2xl/report:block">
         <table className="w-full table-fixed border-collapse text-[14px]">
           <thead>
             <tr className="bg-tint">
@@ -2667,9 +2667,9 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
 
   // Biểu đồ nến | 5 ô tóm tắt nằm ngang từ khung báo cáo ≥ 768px (@3xl), tỷ lệ 6,5 : 3,5 — ô tóm tắt xếp dọc, giãn đều
   // theo chiều cao biểu đồ, mỗi dòng 1 hàng (StatTile cắt "…" + title khi quá hẹp). Hẹp hơn: ô tóm tắt xuống dưới (2 cột).
-  // Bản in: 1 cột như cũ.
+  // Bản in theo cùng bố cục (PDF A4 dọc bản máy tính rộng ~875px ≥ @3xl → biểu đồ | ô tóm tắt như màn hình).
   return (
-    <div className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)] print:block print:space-y-3">
+    <div className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)]">
       <div data-print-whole className="flex min-w-0 flex-col print:break-inside-avoid">
         {printHeading && <div className="hidden print:block">{printHeading}</div>}
         <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
@@ -3562,9 +3562,10 @@ export function ReportDocument({
               </div>
             ) : priceRows.length > 0 && (
               // Bảng giá nhanh hẹp (5/12, dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá rộng (7/12) — ngang từ khung báo
-              // cáo ≥ 768px (@3xl). Khi in/PDF chỉ giữ bảng giá.
+              // cáo ≥ 768px (@3xl). Khi in/PDF chỉ giữ bảng giá → bảng trải hết bề rộng (đủ cột Δ ngày + Δ tuần), không
+              // bị bó trong 5/12 để trống phần còn lại.
               <div className="grid gap-5 @3xl/report:grid-cols-12">
-                <div className="min-w-0 @3xl/report:col-span-5">
+                <div className="min-w-0 not-print:@3xl/report:col-span-5 print:col-span-full">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
