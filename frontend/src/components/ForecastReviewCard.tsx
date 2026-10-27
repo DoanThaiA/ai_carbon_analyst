@@ -70,16 +70,19 @@ export function ForecastReviewCard({
       {/* Mỗi báo cáo 1 cột, cũ → mới từ trái sang phải. Khung báo cáo ≥ @7xl (tối đa REVIEW_MAX_ITEMS = 8 báo cáo):
           tất cả trên 1 hàng; @3xl–@7xl và khi in: 4 cột/hàng; hẹp hơn: 2 cột. Mỗi cột chia 3 hàng con (subgrid) —
           tiêu đề + nhãn | cột %Δ | chi tiết — để cột %Δ của các báo cáo cùng hàng thẳng nhau dù tiêu đề dài ngắn khác
-          nhau. Viền: mỗi ô kẻ trái + trên, lưới lùi -1px để viền ở mép bị khung cắt đi. */}
+          nhau. Viền: mỗi ô kẻ trái + trên, lưới lùi -1px để viền ở mép bị khung cắt đi.
+          Khi in: flex-wrap thay lưới (basis = bề rộng cột) — Chrome không ngắt trang giữa các hàng của lưới subgrid nên
+          cả khung bị đẩy nguyên sang trang sau; flex-wrap ngắt được giữa 2 hàng thẻ. Tiêu đề cao tối thiểu 2 dòng để cột
+          %Δ các thẻ cùng hàng vẫn thẳng nhau. */}
       <div className="overflow-x-auto print:overflow-hidden">
-        <ul className="-ml-px -mt-px grid grid-cols-2 @3xl/report:grid-cols-4 not-print:@7xl/report:grid-flow-col not-print:@7xl/report:grid-cols-none not-print:@7xl/report:grid-rows-[auto_auto_1fr] not-print:@7xl/report:auto-cols-[minmax(9rem,1fr)]">
+        <ul className="-ml-px -mt-px grid grid-cols-2 @3xl/report:grid-cols-4 print:flex print:flex-wrap not-print:@7xl/report:grid-flow-col not-print:@7xl/report:grid-cols-none not-print:@7xl/report:grid-rows-[auto_auto_1fr] not-print:@7xl/report:auto-cols-[minmax(9rem,1fr)]">
           {items.map((it) => {
             const tr = it.trade;
             const up = it.change_pct >= 0;
             const barPct = Math.min(Math.abs(it.change_pct) / scale, 1) * 50;
             return (
-              <li key={it.report_date} className="row-span-3 grid min-w-0 grid-rows-subgrid gap-y-2 border-l border-t border-border px-3 py-2.5 print:break-inside-avoid">
-                <div className="flex flex-wrap content-start items-center gap-x-1.5 gap-y-1">
+              <li key={it.report_date} className="row-span-3 grid min-w-0 basis-1/2 @3xl/report:basis-1/4 grid-rows-subgrid content-start gap-y-2 border-l border-t border-border px-3 py-2.5 print:break-inside-avoid">
+                <div className="flex flex-wrap content-start items-center gap-x-1.5 gap-y-1 print:min-h-[2.6rem]">
                   <strong className="text-[13.5px] text-label tabular-nums">{t("column", { date: dm(it.report_date) })}</strong>
                   <span className={clsx("break-words font-mono text-[10px] leading-snug font-bold uppercase tracking-wider px-1.5 py-px rounded border", VERDICT_TONE[it.verdict])}>
                     {t(`verdict.${it.verdict}`)}

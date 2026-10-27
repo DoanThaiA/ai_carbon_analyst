@@ -1519,11 +1519,12 @@ function HeroForecast({ review, className }: { review?: ForecastReview | null; c
 // Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh/phòng hộ/dự báo).
 // grid: lưới ngoài; s/v/d: class của từng ô. Màn hình: 3 ô cạnh nhau từ khung 1024px (WIDE), 768–1023px Tóm tắt hết
 // hàng + 2 ô bên dưới (A2). In (mọi khổ từ 576px — A4 dọc/ngang, 16:9): Tóm tắt và Nhận định (giá | câu nhận định cạnh
-// nhau) đều hết hàng, 3 ô lệnh/phòng hộ/dự báo thành 1 hàng 3 cột — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
+// nhau) đều hết hàng, các ô lệnh/phòng hộ/dự báo thành 1 hàng chia đều theo số ô có thật (báo cáo không có ô CBAM: 2 ô
+// mỗi ô 1/2, không để trống 1/3) — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
 const A2 = "@3xl/report:grid-cols-2 print:@xl/report:grid-cols-2";
 const A2_FULL = "@3xl/report:col-span-2 print:@xl/report:col-span-2";
 const PRINT_FULL = "print:@xl/report:col-span-2";
-const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-cols-3";
+const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-flow-col print:@xl/report:auto-cols-fr";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
     // Nhận định to nhất, Tóm tắt = cột phải: 3/4/3 (báo cáo 1024–1279px) → 3/6/3 (≥ 1280px).
@@ -3712,7 +3713,8 @@ export function ReportDocument({
                 làm mỗi ô chỉ còn 3–5 chữ/dòng). */}
             {content["biz"] && (
               <div id="section-biz" className="scroll-mt-32">
-                <SubHeading>{content["biz"].title}</SubHeading>
+                {/* Vài báo cáo (vd 25/10/2026) không có biz.title → tiêu đề mặc định, không để trơ vạch tiêu đề rỗng. */}
+                <SubHeading>{content["biz"].title || t("body.bizTitle")}</SubHeading>
                 <div className="space-y-6">
                   <BizRecommendationTable
                     heading={t("biz.shortTerm")}
@@ -3873,7 +3875,8 @@ export function ReportDocument({
                 // Không hiện tiêu đề nhóm: 1 danh sách liền, đánh số liên tục theo thứ tự Phần 3.
                 const entries = [...groups.flatMap((g) => g.entries), ...others];
                 return (
-                  <ol className="list-none space-y-1.5 @5xl/report:columns-2 @5xl/report:gap-x-10 print:space-y-1">
+                  // Khi in luôn 2 cột (như màn hình rộng): danh sách dài không tràn sang 1 trang cuối chỉ có vài dòng.
+                  <ol className="list-none space-y-1.5 @5xl/report:columns-2 @5xl/report:gap-x-10 print:columns-2 print:gap-x-8 print:space-y-1">
                     {entries.map((it: any, i: number) => (
                       <li key={it.url ?? `kb-${it.doc_id ?? i}`} className="break-inside-avoid text-[13px] leading-[1.55] text-muted-light">
                         <span className="tabular-nums">{i + 1}.</span> [{it.source}]{" "}
