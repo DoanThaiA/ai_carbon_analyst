@@ -3514,7 +3514,8 @@ export function ReportDocument({
 
       <SectionNav tabs={tabs} quote={tickerItems.length > 0 ? <PriceTicker items={tickerItems} /> : undefined} />
 
-      <div className="px-4 sm:px-8 pt-6 pb-10">
+      {/* Khi in/PDF: nội dung trải hết bề rộng vùng in, thẳng mép với banner (không thụt lề 2 bên như trên màn hình). */}
+      <div className="px-4 sm:px-8 pt-6 pb-10 print:px-0">
 
         {/* ═══ TỔNG QUAN — giá EUA, nhận định & việc cần làm hôm nay, số liệu chính, tóm tắt điều hành ═══ */}
         <section id="section-highlights" className="report-section scroll-mt-32 space-y-4 pb-8">
