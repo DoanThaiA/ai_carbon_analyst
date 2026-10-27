@@ -132,7 +132,7 @@
     "closePrice": "Giá đóng cửa",
     "close": "Đóng cửa",
     "compareTitle": "So sánh hiệu suất",
-    "compareSubtitle": "Quy về chỉ số 100 tại đầu kỳ — so sánh các mã khác đơn vị trên cùng 1 trục (chọn tối đa {max})",
+    "compareSubtitle": "Quy về chỉ số 100 tại phiên đầu tiên mọi mã đã chọn đều có dữ liệu — so sánh các mã khác đơn vị trên cùng 1 trục (chọn tối đa {max})",
     "compareAria": "Chọn mã so sánh",
     "compareEmpty": "Chọn ít nhất 1 mã có đủ dữ liệu để so sánh.",
     "vwapLabel": "VWAP đấu giá",
@@ -1535,7 +1535,7 @@
   },
   "priceIndex": {
     "title": "Biểu đồ chỉ số giá",
-    "subtitle": "Chỉ số 100 = phiên đầu kỳ · {n} ngày tới {date}",
+    "subtitle": "Chỉ số 100 = phiên {base} · tới phiên {date} · di chuột để xem giá từng phiên",
     "compare": "So sánh hiệu suất",
     "openCompare": "Mở So sánh hiệu suất",
     "until": "tới phiên {date}",

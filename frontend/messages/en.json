@@ -132,7 +132,7 @@
     "closePrice": "Closing price",
     "close": "Close",
     "compareTitle": "Performance comparison",
-    "compareSubtitle": "Rebased to 100 at start of period — compares contracts with different units on a single axis (select up to {max})",
+    "compareSubtitle": "Rebased to 100 at the first session where every selected contract has data — compares contracts with different units on a single axis (select up to {max})",
     "compareAria": "Select contracts to compare",
     "compareEmpty": "Select at least 1 contract with enough data to compare.",
     "vwapLabel": "Auction VWAP",
@@ -1535,7 +1535,7 @@
   },
   "priceIndex": {
     "title": "Price index chart",
-    "subtitle": "Index 100 = first session · {n} days to {date}",
+    "subtitle": "Index 100 = session {base} · to session {date} · hover for prices",
     "compare": "Performance comparison",
     "openCompare": "Open performance comparison",
     "until": "to session {date}",

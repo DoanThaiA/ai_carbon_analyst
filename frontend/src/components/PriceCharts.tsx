@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import type { CbamEstimate } from "@/lib/types";
 
 // Biểu đồ giá dùng chung: Dashboard giá của admin (app/admin/price-dashboard/page.tsx) và biểu đồ chỉ số giá /
@@ -40,6 +40,16 @@ export function fmtFull(iso: string) {
 export function fmtNum(v: number, digits = 2) {
   return v.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
+// Giá theo đúng kiểu của Bảng giá nhanh (ReportDocument.tsx::formatCompactPriceNumber): tiếng Việt dấu phẩy thập phân,
+// giá < 10 (Henry Hub) 3 chữ số thập phân.
+export function fmtPrice(v: number, locale: string) {
+  const digits = Math.abs(v) < 10 ? 3 : 2;
+  return v.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+export function fmtPct(v: number, locale: string, digits = 2) {
+  const s = `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
+  return locale === "en" ? s : s.replace(".", ",");
+}
 
 // Trần/sàn trục y "tròn" (bước 1-2-5 × 10^n) → 5 vạch lưới dễ đọc.
 export function niceScale(min: number, max: number, ticks = 4) {
@@ -60,6 +70,7 @@ export function niceScale(min: number, max: number, ticks = 4) {
 // bắt đầu đoạn mới (không nối với điểm trước — vd VWAP đặt lại khi sang quý).
 export type LineSeries = {
   key: string; label: string; color: string; points: (number | null)[]; dashed?: boolean; raw?: (number | null)[]; breakAt?: number[];
+  unit?: string | null;
 };
 // Mốc ước tính ở lề phải, SAU phiên cuối (thời điểm tương lai — vd giá CBAM cuối quý): chấm = giá trị ước tính,
 // vạch đứng = khoảng tin cậy, `anchor` = giá trị tại phiên cuối để nối nét chấm tới mốc. Cùng trục y với các đường.
@@ -70,9 +81,10 @@ export type ChartMarker = {
 
 const MARKER_GAP = 24;
 
-export function LineChart({ dates, series, area, formatY, formatTip, markers = [], height = 300 }: {
+// `baseAt`: chỉ số ngày gốc (chỉ số 100) khi không phải ngày đầu biểu đồ — vẽ vạch đứng đánh dấu.
+export function LineChart({ dates, series, area, formatY, formatTip, markers = [], height = 300, baseAt }: {
   dates: string[]; series: LineSeries[]; area?: boolean; height?: number; markers?: ChartMarker[];
-  formatY: (v: number) => string; formatTip: (v: number, s: LineSeries, i: number) => string;
+  formatY: (v: number) => string; formatTip: (v: number, s: LineSeries, i: number) => string; baseAt?: number;
 }) {
   const t = useTranslations("adminSrcDash");
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -125,6 +137,9 @@ export function LineChart({ dates, series, area, formatY, formatTip, markers = [
         {dates.map((d, i) => i % xTickEvery === 0 && (
           <text key={d} x={x(i)} y={H - 8} textAnchor="middle" fontSize={11} fill="var(--color-muted-light)">{fmtDay(d)}</text>
         ))}
+        {baseAt !== undefined && baseAt > 0 && (
+          <line x1={x(baseAt)} x2={x(baseAt)} y1={MT} y2={MT + ih} stroke="var(--color-muted-light)" strokeWidth={1} strokeDasharray="2 3" />
+        )}
         {series.map((s) => {
           const segs: string[] = [];
           let pen = false;
@@ -240,19 +255,41 @@ export function useColorOf(instruments: Instrument[] | undefined) {
   }, [instruments]);
 }
 
-// So sánh hiệu suất: mỗi mã quy về chỉ số 100 tại phiên đầu kỳ của chính nó.
+// Giá đóng cửa của mã tại ngày `date` (phiên gần nhất TRƯỚC hoặc ĐÚNG ngày đó — ngày nghỉ của riêng sàn đó).
+function closeOnOrBefore(i: Instrument, date: string): number | null {
+  let v: number | null = null;
+  for (const p of i.series) {
+    if (p.date > date) break;
+    v = p.close;
+  }
+  return v;
+}
+
+// Ngày gốc chung (chỉ số 100) của các mã đang so sánh = phiên đầu tiên MỌI mã đều đã có dữ liệu. Mã có lịch sử ngắn hơn
+// khung (vd API2 lấy từ ICE chỉ có từ 04/09/2026) không được quy gốc ở ngày riêng của nó — nếu không, các đường có gốc
+// khác ngày và "%" đọc trên trục không so được với nhau.
+export function compareBaseDate(instruments: Instrument[], codes: string[]): string | null {
+  const insts = instruments.filter((i) => codes.includes(i.code) && i.series.length > 1);
+  if (!insts.length) return null;
+  return insts.map((i) => i.series[0].date).sort().at(-1) as string;
+}
+
+// So sánh hiệu suất: mọi mã quy về chỉ số 100 tại CÙNG 1 phiên gốc (compareBaseDate). Các phiên trước gốc vẫn vẽ (cùng
+// công thức giá / giá gốc × 100). `raw` = giá thật để tooltip in đúng số của Bảng giá nhanh.
 export function compareSeries(instruments: Instrument[], codes: string[], colorOf: Record<string, string>) {
   const insts = instruments.filter((i) => codes.includes(i.code) && i.series.length > 1);
   const dates = Array.from(new Set(insts.flatMap((i) => i.series.map((p) => p.date)))).sort();
+  const baseDate = compareBaseDate(instruments, codes);
   const series: LineSeries[] = insts.map((i) => {
     const byDate = new Map(i.series.map((p) => [p.date, p.close]));
-    const base = i.series[0].close;
+    const base = closeOnOrBefore(i, baseDate as string) as number;
+    const raw = dates.map((d) => byDate.get(d) ?? null);
     return {
-      key: i.code, label: i.code, color: colorOf[i.code],
-      points: dates.map((d) => (byDate.has(d) ? ((byDate.get(d) as number) / base) * 100 : null)),
+      key: i.code, label: i.code, color: colorOf[i.code], unit: i.unit, raw,
+      points: raw.map((v) => (v === null ? null : (v / base) * 100)),
     };
   });
-  return { dates, series };
+  return { dates, series, baseDate, baseIndex: baseDate ? dates.indexOf(baseDate) : 0 };
 }
 
 export function CompareChips({ instruments, colorOf, selected, onToggle }: {
@@ -324,21 +361,20 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
   vwap?: AuctionVwapPoint[]; cbam?: CbamEstimate | null;
 }) {
   const t = useTranslations("adminSrcDash");
+  const locale = useLocale();
   const chart = useMemo(() => {
     const base = compareSeries(instruments, selected, colorOf);
     const eua = instruments.find((i) => i.code === "EUA" && selected.includes("EUA") && i.series.length > 1);
-    let series = [...base.series];
+    const series = [...base.series];
     const markers: ChartMarker[] = [];
     let vwapLast: number | null = null;
-    if (eua && base.dates.length > 1) {
-      const euaBase = eua.series[0].close;
+    if (eua && base.dates.length > 1 && base.baseDate) {
+      // VWAP + mốc CBAM quy theo CÙNG gốc với đường EUA (giá EUA tại phiên gốc chung).
+      const euaBase = closeOnOrBefore(eua, base.baseDate) as number;
       if (vwap?.length) {
         const v = vwapIndexSeries(base.dates, vwap, euaBase);
         if (v.raw.some((x) => x !== null)) {
-          // Tooltip EUA kèm giá EUR/t để đọc thẳng chênh lệch với VWAP.
-          const closes = new Map(eua.series.map((p) => [p.date, p.close]));
-          series = series.map((s) => (s.key === "EUA" ? { ...s, raw: base.dates.map((d) => closes.get(d) ?? null) } : s));
-          series.push({ key: "__vwap", label: t("vwapLabel"), color: VWAP_COLOR, dashed: true, ...v });
+          series.push({ key: "__vwap", label: t("vwapLabel"), color: VWAP_COLOR, dashed: true, unit: "EUR/t", ...v });
           vwapLast = v.points[v.points.length - 1];
         }
       }
@@ -358,17 +394,17 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
           axisLabel: fmtDay(quarterEndIso(cbam.quarter)),
           tip: [
             t("cbamTipTitle", { quarter: cbam.quarter }),
-            `${fmtNum(cbam.estimate)} EUR/t`,
-            ...(hasCi ? [t("cbamTipCi", { level: cbam.ci_level, low: fmtNum(cbam.ci_low as number), high: fmtNum(cbam.ci_high as number) })] : []),
+            `${fmtPrice(cbam.estimate, locale)} EUR/t`,
+            ...(hasCi ? [t("cbamTipCi", { level: cbam.ci_level, low: fmtPrice(cbam.ci_low as number, locale), high: fmtPrice(cbam.ci_high as number, locale) })] : []),
             t("cbamTipFixed", { done: cbam.auctions_done, total: cbam.auctions_total, pct: cbam.fixed_share_pct.toFixed(0) }),
-            ...(cbam.qtd_vwap !== null ? [t("cbamTipVwap", { v: fmtNum(cbam.qtd_vwap) })] : []),
+            ...(cbam.qtd_vwap !== null ? [t("cbamTipVwap", { v: fmtPrice(cbam.qtd_vwap, locale) })] : []),
             t("cbamTipMethod"),
           ],
         });
       }
     }
-    return { dates: base.dates, series, markers };
-  }, [instruments, selected, colorOf, vwap, cbam, t]);
+    return { dates: base.dates, series, markers, baseIndex: base.baseIndex };
+  }, [instruments, selected, colorOf, vwap, cbam, t, locale]);
 
   if (chart.series.length === 0) {
     return <div className="flex items-center justify-center text-sm text-muted-light" style={{ height }}>{t("compareEmpty")}</div>;
@@ -382,12 +418,14 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
         series={chart.series}
         markers={chart.markers}
         height={height}
+        baseAt={chart.baseIndex}
         formatY={(v) => v.toFixed(0)}
         formatTip={(v, s, i) => {
+          // Giá thật (đúng số + kiểu số của Bảng giá nhanh) kèm % so với phiên gốc. VWAP quy theo gốc EUA nên "%" so
+          // với 100 không có nghĩa riêng — chỉ in giá.
           const raw = s.raw?.[i];
-          const abs = raw !== undefined && raw !== null ? ` · ${fmtNum(raw)} EUR/t` : "";
-          // VWAP quy theo gốc EUA nên "%" so với 100 không có nghĩa riêng — chỉ in chỉ số + giá.
-          return s.key === "__vwap" ? `${v.toFixed(1)}${abs}` : `${v.toFixed(1)} (${v >= 100 ? "+" : ""}${(v - 100).toFixed(1)}%)${abs}`;
+          const price = raw !== undefined && raw !== null ? `${fmtPrice(raw, locale)}${s.unit ? ` ${s.unit.replace(/CO2/g, "CO\u2082")}` : ""}` : v.toFixed(1);
+          return s.key === "__vwap" ? price : `${price} (${fmtPct(v - 100, locale, 1)})`;
         }}
       />
       {(hasVwap || marker) && (
@@ -404,9 +442,9 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
                 <line x1="5" x2="5" y1="1" y2="11" stroke={CBAM_MARKER_COLOR} strokeWidth="3" strokeLinecap="round" opacity="0.35" />
                 <circle cx="5" cy="6" r="3" fill={CBAM_MARKER_COLOR} />
               </svg>
-              {t("cbamLegend", { quarter: cbam.quarter, value: fmtNum(cbam.estimate) })}
+              {t("cbamLegend", { quarter: cbam.quarter, value: fmtPrice(cbam.estimate, locale) })}
               {marker.low !== null && marker.high !== null &&
-                t("cbamLegendCi", { level: cbam.ci_level, low: fmtNum(cbam.ci_low as number), high: fmtNum(cbam.ci_high as number) })}
+                t("cbamLegendCi", { level: cbam.ci_level, low: fmtPrice(cbam.ci_low as number, locale), high: fmtPrice(cbam.ci_high as number, locale) })}
             </span>
           )}
         </div>

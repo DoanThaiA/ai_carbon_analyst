@@ -4,14 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, X } from "lucide-react";
 import clsx from "clsx";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { api } from "@/lib/api";
-import { CompareChart, CompareChips, Dashboard, MAX_COMPARE, fmtFull, useColorOf } from "@/components/PriceCharts";
+import { CompareChart, CompareChips, Dashboard, MAX_COMPARE, compareBaseDate, fmtFull, fmtPct, fmtPrice, useColorOf } from "@/components/PriceCharts";
 import type { CbamEstimate } from "@/lib/types";
 
 // Biểu đồ chỉ số giá cạnh Bảng giá nhanh trong báo cáo (admin + user — ReportDocument.tsx). Dữ liệu GET
 // /api/prices/history?before=<ngày báo cáo> (chỉ phiên trước ngày phát hành, như bảng giá). Bấm vào biểu đồ
 // mở popup "So sánh hiệu suất" (chọn mã, đổi khoảng thời gian) — cùng biểu đồ với Dashboard giá của admin.
+// Trục y là CHỈ SỐ (100 = phiên gốc chung của các mã), không phải giá — nên chú giải ghi kèm giá đóng cửa + Δ ngày của
+// phiên cuối (cùng bảng `prices`, cùng kiểu số với Bảng giá nhanh) và tooltip in giá thật từng phiên.
 
 const PANEL_DAYS = 90;
 const RANGES = [30, 90, 180, 365];
@@ -53,6 +55,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
   reportDate: string; tableCodes: string[]; cbamEstimate?: CbamEstimate | null;
 }) {
   const t = useTranslations("priceIndex");
+  const locale = useLocale();
   const { data, error } = useHistory(reportDate, PANEL_DAYS);
   const colorOf = useColorOf(data?.instruments);
   const [selected, setSelected] = useState<string[] | null>(null);
@@ -77,6 +80,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
 
   const available = (data?.instruments ?? []).filter((i) => i.series.length > 1).map((i) => i.code);
   const codes = selected ?? defaultSelection(available, tableCodes);
+  const baseDate = data ? compareBaseDate(data.instruments, codes) : null;
 
   if (error) {
     return (
@@ -97,9 +101,9 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="text-primary-dark font-bold text-[13px] uppercase tracking-[0.08em]">{t("title")}</div>
-            {data?.latest_date && (
+            {data?.latest_date && baseDate && (
               <div className="text-[12px] text-muted-light mt-0.5">
-                {t("subtitle", { n: PANEL_DAYS, date: fmtFull(data.latest_date) })}
+                {t("subtitle", { base: fmtFull(baseDate), date: fmtFull(data.latest_date) })}
               </div>
             )}
           </div>
@@ -107,14 +111,22 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
             <Maximize2 size={12} aria-hidden="true" /> {t("compare")}
           </span>
         </div>
-        {/* Chú giải tĩnh — đổi mã trong popup */}
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[12.5px] text-body">
-          {codes.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1.5 font-semibold">
-              <span className="w-2 h-2 rounded-full" style={{ background: colorOf[c] }} aria-hidden="true" />
-              {c}
-            </span>
-          ))}
+        {/* Chú giải tĩnh (đổi mã trong popup): mã + giá đóng cửa + Δ ngày phiên cuối — đúng số của Bảng giá nhanh. */}
+        <div className="flex flex-wrap gap-x-3.5 gap-y-1 mt-2 text-[12.5px] text-body">
+          {codes.map((c) => {
+            const latest = data?.instruments.find((i) => i.code === c)?.latest;
+            const pct = latest?.day_change_pct;
+            return (
+              <span key={c} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <span className="w-2 h-2 rounded-full" style={{ background: colorOf[c] }} aria-hidden="true" />
+                <span className="font-semibold">{c}</span>
+                {latest && <span className="tabular-nums">{fmtPrice(latest.close, locale)}</span>}
+                {pct !== null && pct !== undefined && (
+                  <span className={clsx("tabular-nums font-semibold", pct >= 0 ? "text-up" : "text-down")}>{fmtPct(pct, locale)}</span>
+                )}
+              </span>
+            );
+          })}
         </div>
         <div ref={areaRef} className="relative mt-1 flex-1 min-h-[310px]">
           <div ref={innerRef} className="absolute inset-x-0 top-0">
