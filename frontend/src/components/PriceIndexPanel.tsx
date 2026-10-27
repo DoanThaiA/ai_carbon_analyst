@@ -6,14 +6,14 @@ import { Maximize2, X } from "lucide-react";
 import clsx from "clsx";
 import { useLocale, useTranslations } from "next-intl";
 import { api } from "@/lib/api";
-import { CompareChart, CompareChips, Dashboard, MAX_COMPARE, compareBaseDate, fmtFull, fmtPct, fmtPrice, useColorOf } from "@/components/PriceCharts";
+import { CompareChart, CompareChips, Dashboard, MAX_COMPARE, closeOnOrBefore, compareBaseDate, fmtFull, fmtIndex, fmtPct, useColorOf } from "@/components/PriceCharts";
 import type { CbamEstimate } from "@/lib/types";
 
 // Biểu đồ chỉ số giá cạnh Bảng giá nhanh trong báo cáo (admin + user — ReportDocument.tsx). Dữ liệu GET
 // /api/prices/history?before=<ngày báo cáo> (chỉ phiên trước ngày phát hành, như bảng giá). Bấm vào biểu đồ
 // mở popup "So sánh hiệu suất" (chọn mã, đổi khoảng thời gian) — cùng biểu đồ với Dashboard giá của admin.
-// Trục y là CHỈ SỐ (100 = phiên gốc chung của các mã), không phải giá — nên chú giải ghi kèm giá đóng cửa + Δ ngày của
-// phiên cuối (cùng bảng `prices`, cùng kiểu số với Bảng giá nhanh) và tooltip in giá thật từng phiên.
+// Mọi số trên biểu đồ là CHỈ SỐ GIÁ (100 = phiên gốc chung của các mã), không phải giá: chú giải = chỉ số phiên cuối +
+// % so với phiên gốc, tooltip = chỉ số từng phiên. Giá thật xem ở Bảng giá nhanh.
 
 const PANEL_DAYS = 90;
 const RANGES = [30, 90, 180, 365];
@@ -111,18 +111,21 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
             <Maximize2 size={12} aria-hidden="true" /> {t("compare")}
           </span>
         </div>
-        {/* Chú giải tĩnh (đổi mã trong popup): mã + giá đóng cửa + Δ ngày phiên cuối — đúng số của Bảng giá nhanh. */}
+        {/* Chú giải tĩnh (đổi mã trong popup): mã + chỉ số phiên cuối + % so với phiên gốc. */}
         <div className="flex flex-wrap gap-x-3.5 gap-y-1 mt-2 text-[12.5px] text-body">
           {codes.map((c) => {
-            const latest = data?.instruments.find((i) => i.code === c)?.latest;
-            const pct = latest?.day_change_pct;
+            const inst = data?.instruments.find((i) => i.code === c);
+            const base = inst && baseDate ? closeOnOrBefore(inst, baseDate) : null;
+            const idx = inst?.latest && base ? (inst.latest.close / base) * 100 : null;
             return (
               <span key={c} className="inline-flex items-center gap-1.5 whitespace-nowrap">
                 <span className="w-2 h-2 rounded-full" style={{ background: colorOf[c] }} aria-hidden="true" />
                 <span className="font-semibold">{c}</span>
-                {latest && <span className="tabular-nums">{fmtPrice(latest.close, locale)}</span>}
-                {pct !== null && pct !== undefined && (
-                  <span className={clsx("tabular-nums font-semibold", pct >= 0 ? "text-up" : "text-down")}>{fmtPct(pct, locale)}</span>
+                {idx !== null && (
+                  <>
+                    <span className="tabular-nums">{fmtIndex(idx, locale)}</span>
+                    <span className={clsx("tabular-nums font-semibold", idx >= 100 ? "text-up" : "text-down")}>{fmtPct(idx - 100, locale, 1)}</span>
+                  </>
                 )}
               </span>
             );

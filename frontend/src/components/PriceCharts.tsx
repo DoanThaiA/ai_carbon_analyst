@@ -46,6 +46,10 @@ export function fmtPrice(v: number, locale: string) {
   const digits = Math.abs(v) < 10 ? 3 : 2;
   return v.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
+// Giá trị chỉ số (100 = phiên gốc) — 1 chữ số thập phân.
+export function fmtIndex(v: number, locale: string) {
+  return v.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
 export function fmtPct(v: number, locale: string, digits = 2) {
   const s = `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
   return locale === "en" ? s : s.replace(".", ",");
@@ -256,7 +260,7 @@ export function useColorOf(instruments: Instrument[] | undefined) {
 }
 
 // Giá đóng cửa của mã tại ngày `date` (phiên gần nhất TRƯỚC hoặc ĐÚNG ngày đó — ngày nghỉ của riêng sàn đó).
-function closeOnOrBefore(i: Instrument, date: string): number | null {
+export function closeOnOrBefore(i: Instrument, date: string): number | null {
   let v: number | null = null;
   for (const p of i.series) {
     if (p.date > date) break;
@@ -275,7 +279,7 @@ export function compareBaseDate(instruments: Instrument[], codes: string[]): str
 }
 
 // So sánh hiệu suất: mọi mã quy về chỉ số 100 tại CÙNG 1 phiên gốc (compareBaseDate). Các phiên trước gốc vẫn vẽ (cùng
-// công thức giá / giá gốc × 100). `raw` = giá thật để tooltip in đúng số của Bảng giá nhanh.
+// công thức giá / giá gốc × 100). `raw` = giá thật.
 export function compareSeries(instruments: Instrument[], codes: string[], colorOf: Record<string, string>) {
   const insts = instruments.filter((i) => codes.includes(i.code) && i.series.length > 1);
   const dates = Array.from(new Set(insts.flatMap((i) => i.series.map((p) => p.date)))).sort();
@@ -374,7 +378,7 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
       if (vwap?.length) {
         const v = vwapIndexSeries(base.dates, vwap, euaBase);
         if (v.raw.some((x) => x !== null)) {
-          series.push({ key: "__vwap", label: t("vwapLabel"), color: VWAP_COLOR, dashed: true, unit: "EUR/t", ...v });
+          series.push({ key: "__vwap", label: t("vwapLabel"), color: VWAP_COLOR, dashed: true, unit: "EUR/tCO2", ...v });
           vwapLast = v.points[v.points.length - 1];
         }
       }
@@ -394,7 +398,7 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
           axisLabel: fmtDay(quarterEndIso(cbam.quarter)),
           tip: [
             t("cbamTipTitle", { quarter: cbam.quarter }),
-            `${fmtPrice(cbam.estimate, locale)} EUR/t`,
+            t("cbamTipIndex", { index: fmtIndex((cbam.estimate / euaBase) * 100, locale), price: fmtPrice(cbam.estimate, locale) }),
             ...(hasCi ? [t("cbamTipCi", { level: cbam.ci_level, low: fmtPrice(cbam.ci_low as number, locale), high: fmtPrice(cbam.ci_high as number, locale) })] : []),
             t("cbamTipFixed", { done: cbam.auctions_done, total: cbam.auctions_total, pct: cbam.fixed_share_pct.toFixed(0) }),
             ...(cbam.qtd_vwap !== null ? [t("cbamTipVwap", { v: fmtPrice(cbam.qtd_vwap, locale) })] : []),
@@ -420,13 +424,8 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
         height={height}
         baseAt={chart.baseIndex}
         formatY={(v) => v.toFixed(0)}
-        formatTip={(v, s, i) => {
-          // Giá thật (đúng số + kiểu số của Bảng giá nhanh) kèm % so với phiên gốc. VWAP quy theo gốc EUA nên "%" so
-          // với 100 không có nghĩa riêng — chỉ in giá.
-          const raw = s.raw?.[i];
-          const price = raw !== undefined && raw !== null ? `${fmtPrice(raw, locale)}${s.unit ? ` ${s.unit.replace(/CO2/g, "CO\u2082")}` : ""}` : v.toFixed(1);
-          return s.key === "__vwap" ? price : `${price} (${fmtPct(v - 100, locale, 1)})`;
-        }}
+        // Chỉ số giá từng phiên + % so với phiên gốc (VWAP cùng gốc với EUA nên đọc thẳng được chênh với đường EUA).
+        formatTip={(v) => `${fmtIndex(v, locale)} (${fmtPct(v - 100, locale, 1)})`}
       />
       {(hasVwap || marker) && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 pl-14 text-[11px] text-muted-light">
@@ -442,9 +441,9 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
                 <line x1="5" x2="5" y1="1" y2="11" stroke={CBAM_MARKER_COLOR} strokeWidth="3" strokeLinecap="round" opacity="0.35" />
                 <circle cx="5" cy="6" r="3" fill={CBAM_MARKER_COLOR} />
               </svg>
-              {t("cbamLegend", { quarter: cbam.quarter, value: fmtPrice(cbam.estimate, locale) })}
+              {t("cbamLegend", { quarter: cbam.quarter, value: fmtIndex(marker.value, locale) })}
               {marker.low !== null && marker.high !== null &&
-                t("cbamLegendCi", { level: cbam.ci_level, low: fmtPrice(cbam.ci_low as number, locale), high: fmtPrice(cbam.ci_high as number, locale) })}
+                t("cbamLegendCi", { level: cbam.ci_level, low: fmtIndex(marker.low, locale), high: fmtIndex(marker.high, locale) })}
             </span>
           )}
         </div>
