@@ -2965,11 +2965,13 @@ function MarketBoard({ rows }: { rows: any[] }) {
       <table className="w-full border-collapse text-[14px]">
         <thead>
           <tr className="border-b-2 border-primary/25 bg-tint">
-            <th className={clsx(th, "w-[34%] @xl:w-[30%]")}>{t("body.contract")}</th>
-            <th className={clsx(th, "text-center!")}>{t("body.price")}</th>
-            <th className={clsx(th, "hidden w-[27%] text-center! @xl:table-cell")}>{t("market.dDay")}</th>
-            <th className={clsx(th, "hidden w-[27%] text-center! @xl:table-cell")}>{t("market.dWeek")}</th>
-            <th className={clsx(th, "text-center! @xl:hidden")}>{t("body.change")}</th>
+            {/* Cột giá và các cột Δ co vừa nội dung (w-[1%] + nowrap), phần còn lại dồn cho tên hợp đồng để tên không
+                phải xuống dòng. */}
+            <th className={th}>{t("body.contract")}</th>
+            <th className={clsx(th, "w-[1%] whitespace-nowrap text-center!")}>{t("body.price")}</th>
+            <th className={clsx(th, "hidden w-[1%] whitespace-nowrap px-2.5! text-center! @xl:table-cell")}>{t("market.dDay")}</th>
+            <th className={clsx(th, "hidden w-[1%] whitespace-nowrap px-2.5! text-center! @xl:table-cell")}>{t("market.dWeek")}</th>
+            <th className={clsx(th, "w-[1%] whitespace-nowrap px-2.5! text-center! @xl:hidden")}>{t("body.change")}</th>
           </tr>
         </thead>
         {rows.map((r: any, idx: number) => {
@@ -2998,9 +3000,9 @@ function MarketBoard({ rows }: { rows: any[] }) {
                   <div className="text-[16px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
                   {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
                 </td>
-                <td className="hidden px-3 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
-                <td className="hidden px-3 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
-                <td className="px-3 py-3 print:py-2 text-center @xl:hidden">
+                <td className="hidden px-2.5 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
+                <td className="hidden px-2.5 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
+                <td className="px-2.5 py-3 print:py-2 text-center @xl:hidden">
                   {r.dday === "-" && r.dweek === "-" ? <span className="text-muted-light">—</span> : (
                     <div className="space-y-1.5">
                       <DeltaCell text={r.dday} label={t("market.dayLabel")} />
