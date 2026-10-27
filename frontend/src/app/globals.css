@@ -360,6 +360,30 @@ svg text {
   .mb-10 {
     margin-bottom: 0 !important;
   }
+
+  /* ---- PDF gọn: các khối/thẻ sát nhau hơn màn hình (giãn cách space-y / gap / dưới tiêu đề mục) ----
+     space-y của Tailwind v4 đặt margin-block-end lên các con (trừ con cuối). */
+  .report-shell .space-y-10 > :not(:last-child) {
+    margin-block-end: 1.125rem !important;
+  }
+  .report-shell .space-y-8 > :not(:last-child),
+  .report-shell [class~="print:space-y-8"] > :not(:last-child) {
+    margin-block-end: 1rem !important;
+  }
+  .report-shell .space-y-6 > :not(:last-child) {
+    margin-block-end: 0.75rem !important;
+  }
+  .report-shell .space-y-5 > :not(:last-child),
+  .report-shell .space-y-4 > :not(:last-child) {
+    margin-block-end: 0.625rem !important;
+  }
+  .report-shell .gap-4,
+  .report-shell .gap-5 {
+    gap: 0.625rem !important;
+  }
+  .report-shell .report-heading.mb-6 {
+    margin-bottom: 0.75rem !important;
+  }
 }
 
 /* Custom Utilities based on user template */
