@@ -2989,16 +2989,17 @@ function MarketBoard({ rows }: { rows: any[] }) {
               )}
             >
               <tr className="align-middle">
-                <td className="px-3 py-3 text-[15px] font-semibold leading-snug text-label">
+                {/* Khi in: hàng thấp hơn (py-2) để cả bảng giá nằm gọn 1 trang, không tràn 1–2 hàng cuối sang trang sau. */}
+                <td className="px-3 py-3 print:py-2 text-[15px] font-semibold leading-snug text-label">
                   <ContractName row={r} notes={notes} />
                 </td>
-                <td className="px-3 py-3 text-center whitespace-nowrap">
+                <td className="px-3 py-3 print:py-2 text-center whitespace-nowrap">
                   <div className="text-[16px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
                   {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
                 </td>
-                <td className="hidden px-3 py-3 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
-                <td className="hidden px-3 py-3 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
-                <td className="px-3 py-3 text-center @xl:hidden">
+                <td className="hidden px-3 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
+                <td className="hidden px-3 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
+                <td className="px-3 py-3 print:py-2 text-center @xl:hidden">
                   {r.dday === "-" && r.dweek === "-" ? <span className="text-muted-light">—</span> : (
                     <div className="space-y-1.5">
                       <DeltaCell text={r.dday} label={t("market.dayLabel")} />
@@ -3199,12 +3200,12 @@ function AnalysisLine({ text }: { text: string }) {
   if (!dashMatch) {
     return <ConclusionAware text={text} className="text-left text-[15px] leading-[1.6] text-body" nums />;
   }
+  // Khối thường + chấm đặt tuyệt đối (không dùng hàng flex): khi in Chrome ngắt được đoạn văn giữa các dòng; hàng flex
+  // thì cả ý bị đẩy nguyên sang trang sau, kéo theo tiêu đề "Phân tích" (break-after: avoid) → trống cả mảng cuối trang.
   return (
-    <div className="flex gap-2.5">
-      <span className="mt-[10px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-left text-[15px] leading-[1.6] text-body" nums />
-      </div>
+    <div className="relative pl-4">
+      <span className="absolute left-0 top-[10px] h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+      <ConclusionAware text={trimmed.slice(dashMatch[0].length)} className="text-left text-[15px] leading-[1.6] text-body" nums />
     </div>
   );
 }
