@@ -1536,7 +1536,7 @@
   },
   "priceIndex": {
     "title": "Biểu đồ chỉ số giá",
-    "subtitle": "Chỉ số giá, 100 = phiên {base} · tới phiên {date} · % so với phiên gốc",
+    "subtitle": "Chỉ số giá, 100 = phiên {base} · tới phiên {date} · di chuột để xem chỉ số + giá từng phiên",
     "compare": "So sánh hiệu suất",
     "openCompare": "Mở So sánh hiệu suất",
     "until": "tới phiên {date}",

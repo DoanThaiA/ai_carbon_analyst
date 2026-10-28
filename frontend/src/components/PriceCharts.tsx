@@ -46,6 +46,10 @@ export function fmtPrice(v: number, locale: string) {
   const digits = Math.abs(v) < 10 ? 3 : 2;
   return v.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
+// Giá kèm đơn vị ("88,19 EUR/tCO₂").
+export function fmtPriceUnit(v: number, unit: string | null | undefined, locale: string) {
+  return `${fmtPrice(v, locale)}${unit ? ` ${unit.replace(/CO2/g, "CO₂")}` : ""}`;
+}
 // Giá trị chỉ số (100 = phiên gốc) — 1 chữ số thập phân.
 export function fmtIndex(v: number, locale: string) {
   return v.toLocaleString(locale === "en" ? "en-US" : "vi-VN", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -424,8 +428,13 @@ export function CompareChart({ instruments, colorOf, selected, vwap, cbam, heigh
         height={height}
         baseAt={chart.baseIndex}
         formatY={(v) => v.toFixed(0)}
-        // Chỉ số giá từng phiên + % so với phiên gốc (VWAP cùng gốc với EUA nên đọc thẳng được chênh với đường EUA).
-        formatTip={(v) => `${fmtIndex(v, locale)} (${fmtPct(v - 100, locale, 1)})`}
+        // Chỉ số giá từng phiên + % so với phiên gốc (VWAP cùng gốc với EUA nên đọc thẳng được chênh với đường EUA),
+        // kèm giá thật + đơn vị của chính phiên đó.
+        formatTip={(v, s, i) => {
+          const raw = s.raw?.[i];
+          const price = raw !== undefined && raw !== null ? ` · ${fmtPriceUnit(raw, s.unit, locale)}` : "";
+          return `${fmtIndex(v, locale)} (${fmtPct(v - 100, locale, 1)})${price}`;
+        }}
       />
       {(hasVwap || marker) && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 pl-14 text-[11px] text-muted-light">

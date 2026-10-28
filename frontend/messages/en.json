@@ -1536,7 +1536,7 @@
   },
   "priceIndex": {
     "title": "Price index chart",
-    "subtitle": "Price index, 100 = session {base} · to session {date} · % vs base session",
+    "subtitle": "Price index, 100 = session {base} · to session {date} · hover for index + price",
     "compare": "Performance comparison",
     "openCompare": "Open performance comparison",
     "until": "to session {date}",

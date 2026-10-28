@@ -6,14 +6,14 @@ import { Maximize2, X } from "lucide-react";
 import clsx from "clsx";
 import { useLocale, useTranslations } from "next-intl";
 import { api } from "@/lib/api";
-import { CompareChart, CompareChips, Dashboard, MAX_COMPARE, closeOnOrBefore, compareBaseDate, fmtFull, fmtIndex, fmtPct, useColorOf } from "@/components/PriceCharts";
+import { CompareChart, CompareChips, Dashboard, MAX_COMPARE, closeOnOrBefore, compareBaseDate, fmtFull, fmtIndex, fmtPct, fmtPriceUnit, useColorOf } from "@/components/PriceCharts";
 import type { CbamEstimate } from "@/lib/types";
 
 // Biểu đồ chỉ số giá cạnh Bảng giá nhanh trong báo cáo (admin + user — ReportDocument.tsx). Dữ liệu GET
 // /api/prices/history?before=<ngày báo cáo> (chỉ phiên trước ngày phát hành, như bảng giá). Bấm vào biểu đồ
 // mở popup "So sánh hiệu suất" (chọn mã, đổi khoảng thời gian) — cùng biểu đồ với Dashboard giá của admin.
 // Mọi số trên biểu đồ là CHỈ SỐ GIÁ (100 = phiên gốc chung của các mã), không phải giá: chú giải = chỉ số phiên cuối +
-// % so với phiên gốc, tooltip = chỉ số từng phiên. Giá thật xem ở Bảng giá nhanh.
+// % so với phiên gốc + giá đóng cửa kèm đơn vị; tooltip = chỉ số + giá thật từng phiên.
 
 const PANEL_DAYS = 90;
 const RANGES = [30, 90, 180, 365];
@@ -125,6 +125,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
                   <>
                     <span className="tabular-nums">{fmtIndex(idx, locale)}</span>
                     <span className={clsx("tabular-nums font-semibold", idx >= 100 ? "text-up" : "text-down")}>{fmtPct(idx - 100, locale, 1)}</span>
+                    <span className="tabular-nums text-muted-light">· {fmtPriceUnit(inst!.latest!.close, inst!.unit, locale)}</span>
                   </>
                 )}
               </span>
