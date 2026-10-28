@@ -23,6 +23,11 @@ const SETTLE_MS = 800;
 // Biểu đồ nến cao tối đa ~55% vùng in 1 trang (giữ tỉ lệ, thu vào giữa) — trang ngang 16:9 thấp vẫn đủ chỗ cho tiêu
 // đề khung + biểu đồ trên cùng 1 trang. A4 dọc không bị ảnh hưởng (biểu đồ thấp hơn mức này).
 const CHART_MAX_PAGE_RATIO = 0.55;
+// Bố cục ≥ 1024px (= @5xl/report, khổ NGANG) → `.pdf-wide`: dàn cột như màn hình (variant scr:/pn: trong globals.css) —
+// chỉ khi trang đủ cao (≥ 700px bố cục) cho các khối dàn cột (bảng giá | biểu đồ chỉ số...) nằm trọn 1 trang; trang thấp
+// hơn (16:9 bản TV, tỉ lệ 1) giữ bố cục in xếp chồng.
+const WIDE_LAYOUT_PX = 1024;
+const WIDE_MIN_PAGE_PX = 700;
 
 function num(value: string | null, fallback: number, min: number, max: number): number {
   const n = Number(value);
@@ -49,6 +54,7 @@ function ReportExport() {
   const fromAdmin = search.get("src") === "admin";
   const contentW = (w - 2 * mh) * MM_TO_PX;
   const contentH = (h - 2 * mv) * MM_TO_PX;
+  const wide = contentW / zoom >= WIDE_LAYOUT_PX && contentH / zoom >= WIDE_MIN_PAGE_PX;
 
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState("");
@@ -92,7 +98,7 @@ html, body { background: #fff !important; }
 .pdf-export .candle-chart { max-height: ${Math.round((contentH * CHART_MAX_PAGE_RATIO) / zoom)}px !important; }`}</style>
       <div
         ref={frameRef}
-        className="pdf-export"
+        className={wide ? "pdf-export pdf-wide" : "pdf-export"}
         data-pdf-ready={ready ? "" : undefined}
         style={{ width: `${contentW / zoom}px`, zoom }}
       >

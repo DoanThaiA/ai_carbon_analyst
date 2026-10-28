@@ -42,6 +42,10 @@ ORIENTATIONS = ("portrait", "landscape")
 # @3xl/report (768px) nên các khối dàn 2 cột như màn hình thay vì 1 cột, chữ thân ≈ 12,3px (~9pt) — báo cáo từ 19 còn
 # ~12–13 trang. TV trình chiếu cả trang 16:9 phóng to ~1,8× nên giữ tỉ lệ 1 — trang ngang đã đủ rộng cho nhiều cột.
 DEVICE_SCALES: Dict[str, float] = {"pc": 0.82, "tv": 1.0}
+# Khổ NGANG (A4/16:9) bản máy tính (28/10/2026): 0,75 — bố cục ~1400px (A4 ngang) ≥ 1024px nên trang export bật
+# `.pdf-wide` (dàn cột như màn hình: tổng quan 3 cột, bảng giá | biểu đồ chỉ số, Phân tích 2 cột...), chữ thân ≈ 11,3px
+# (~8,4pt). Báo cáo 28/10: A4 ngang 15 → 14 trang, 16:9 ngang 19 → 17 trang. TV giữ tỉ lệ thường (trình chiếu).
+LANDSCAPE_DEVICE_SCALES: Dict[str, float] = {"pc": 0.75}
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,11 @@ class PdfLayout:
     def margins_mm(self) -> Tuple[float, float]:
         return PAGE_MARGINS[self.size]
 
+    def scale(self) -> float:
+        if self.orientation == "landscape" and self.size != "square":
+            return LANDSCAPE_DEVICE_SCALES.get(self.device, DEVICE_SCALES[self.device])
+        return DEVICE_SCALES[self.device]
+
     def content_px(self) -> Tuple[int, int]:
         """Vùng in (trừ lề) tính bằng CSS px."""
         (w, h), (mv, mh) = self.page_mm(), self.margins_mm()
@@ -73,7 +82,7 @@ class PdfLayout:
     def query(self) -> Dict[str, str]:
         (w, h), (mv, mh) = self.page_mm(), self.margins_mm()
         return {"w": f"{w:g}", "h": f"{h:g}", "mv": f"{mv:g}", "mh": f"{mh:g}",
-                "zoom": f"{DEVICE_SCALES[self.device]:g}"}
+                "zoom": f"{self.scale():g}"}
 
     def filename_suffix(self) -> str:
         orient = "" if self.size == "square" else f"-{self.orientation}"

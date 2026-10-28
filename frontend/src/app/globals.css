@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/* Bố cục báo cáo khi in theo bề rộng khổ giấy: trang export (/reports/[date]/export) gắn `.pdf-wide` khi bố cục ≥ 1024px
+   (A4/16:9 NGANG) — khi đó báo cáo dàn cột như trên màn hình thay vì xếp chồng 1 cột kiểu A4 dọc.
+   `scr:` = bố cục màn hình: áp trên màn hình VÀ khi in khổ ngang (thay cho `not-print:`).
+   `pn:`  = ghi đè chỉ cho in khổ dọc/hẹp (thay cho `print:` ở các class ép xếp chồng/1 cột). */
+@custom-variant scr {
+  @media not print { @slot; }
+  @media print { .pdf-wide & { @slot; } }
+}
+@custom-variant pn {
+  @media print { &:not(.pdf-wide *) { @slot; } }
+}
+/* `pw:` = chỉ khi in khổ ngang (.pdf-wide) — khai báo SAU scr: nên cùng độ ưu tiên thì pw: thắng. */
+@custom-variant pw {
+  @media print { .pdf-wide & { @slot; } }
+}
+
 :root {
   /* Brand */
   --color-primary: #0d7870;
@@ -328,8 +344,14 @@ svg text {
   }
   /* Biểu đồ nến tự vẽ lại theo khổ in (CandlestickChart, beforeprint) với tỉ lệ
      riêng — max-height 200px ở trên sẽ ép co và để hở 2 bên. */
-  .candle-chart {
+  .candle-chart,
+  .price-index-panel svg {
     max-height: none !important;
+  }
+  /* In khổ ngang: Bảng giá nhanh | biểu đồ chỉ số giá nằm cạnh nhau — giữ chung 1 khối (biểu đồ không tách khỏi bảng,
+     không bị cắt ngang giữa 2 trang). */
+  .pdf-wide .price-overview {
+    break-inside: avoid !important;
   }
 
   /* ---- Layout: bỏ padding bọc ngoài để nội dung full-page ---- */
@@ -367,7 +389,7 @@ svg text {
     margin-block-end: 1.125rem !important;
   }
   .report-shell .space-y-8 > :not(:last-child),
-  .report-shell [class~="print:space-y-8"] > :not(:last-child) {
+  .report-shell [class~="pn:space-y-8"] > :not(:last-child) {
     margin-block-end: 1rem !important;
   }
   .report-shell .space-y-6 > :not(:last-child) {

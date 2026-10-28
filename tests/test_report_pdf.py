@@ -19,6 +19,20 @@ def test_layout_page_size_orientation_and_query():
     assert PdfLayout("square", "landscape", "pc").filename_suffix() == "square-pc"
 
 
+def test_landscape_pc_uses_wide_layout_scale():
+    # Khổ ngang bản máy tính: tỉ lệ riêng, bố cục ≥ 1024px rộng và ≥ 700px cao → trang export bật .pdf-wide
+    # (WIDE_LAYOUT_PX / WIDE_MIN_PAGE_PX trong frontend/src/app/reports/[date]/export/page.tsx).
+    for size in ("a4", "wide"):
+        layout = PdfLayout(size, "landscape", "pc")
+        assert float(layout.query()["zoom"]) == 0.75
+        w, h = layout.content_px()
+        assert w / layout.scale() >= 1024 and h / layout.scale() >= 700
+    # Dọc, vuông và TV giữ tỉ lệ theo thiết bị.
+    assert float(PdfLayout("a4", "portrait", "pc").query()["zoom"]) == 0.82
+    assert float(PdfLayout("square", "landscape", "pc").query()["zoom"]) == 0.82
+    assert float(PdfLayout("wide", "landscape", "tv").query()["zoom"]) == 1.0
+
+
 @pytest.mark.parametrize("kwargs", [{"size": "a3"}, {"orientation": "diagonal"}, {"device": "watch"}, {"device": "mobile"}])
 def test_layout_rejects_unknown_options(kwargs):
     with pytest.raises(ValueError):

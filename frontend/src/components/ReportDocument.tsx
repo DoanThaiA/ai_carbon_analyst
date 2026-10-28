@@ -551,8 +551,10 @@ function PriceLadder({ marks, range }: { marks: LadderMark[]; range: [number, nu
   const axisY = axisTop + LADDER_AXIS_H / 2;
   const zones = placed.filter(m => m.hi - m.lo > 0.005).sort((a, b) => Number(b.faded) - Number(a.faded));
   const points = placed.filter(m => m.hi - m.lo <= 0.005);
+  // data-print-whole: nhãn đặt tuyệt đối — khi in không được cắt ngang thang (nhãn hàng dưới rơi sang đầu trang sau).
   return (
     <div
+      data-print-whole
       className="relative hidden sm:block select-none [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
       style={{ height: axisTop + LADDER_AXIS_H + rowsBelow * LADDER_ROW_H }}
       aria-hidden="true"
@@ -1521,23 +1523,23 @@ function HeroForecast({ review, className }: { review?: ForecastReview | null; c
 // hàng + 2 ô bên dưới (A2). In (mọi khổ từ 576px — A4 dọc/ngang, 16:9): Tóm tắt và Nhận định (giá | câu nhận định cạnh
 // nhau) đều hết hàng, các ô lệnh/phòng hộ/dự báo thành 1 hàng chia đều theo số ô có thật (báo cáo không có ô CBAM: 2 ô
 // mỗi ô 1/2, không để trống 1/3) — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
-const A2 = "@3xl/report:grid-cols-2 print:@xl/report:grid-cols-2";
-const A2_FULL = "@3xl/report:col-span-2 print:@xl/report:col-span-2";
-const PRINT_FULL = "print:@xl/report:col-span-2";
-const PRINT_ROW = "print:@xl/report:grid print:@xl/report:grid-flow-col print:@xl/report:auto-cols-fr";
+const A2 = "@3xl/report:grid-cols-2 pn:@xl/report:grid-cols-2";
+const A2_FULL = "@3xl/report:col-span-2 pn:@xl/report:col-span-2";
+const PRINT_FULL = "pn:@xl/report:col-span-2";
+const PRINT_ROW = "pn:@xl/report:grid pn:@xl/report:grid-flow-col pn:@xl/report:auto-cols-fr";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
     // Nhận định to nhất, Tóm tắt = cột phải: 3/4/3 (báo cáo 1024–1279px) → 3/6/3 (≥ 1280px).
-    grid: `${A2} not-print:@5xl/report:grid-cols-10 not-print:@7xl/report:grid-cols-12`,
-    s: `${A2_FULL} not-print:@5xl/report:col-span-3`,
+    grid: `${A2} scr:@5xl/report:grid-cols-10 scr:@7xl/report:grid-cols-12`,
+    s: `${A2_FULL} scr:@5xl/report:col-span-3`,
     // In: Nhận định (giữ trọn ô) đứng TRƯỚC Tóm tắt (ngắt được giữa các ý) — Tóm tắt chảy tiếp lấp chỗ trống, không để ô
     // Nhận định bị đẩy nguyên sang trang 2 và bỏ trắng nửa trang 1.
-    v: `not-print:@5xl/report:col-span-4 not-print:@7xl/report:col-span-6 ${PRINT_FULL} print:order-first`,
-    d: `not-print:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
+    v: `scr:@5xl/report:col-span-4 scr:@7xl/report:col-span-6 ${PRINT_FULL} pn:order-first`,
+    d: `scr:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
   },
   sv: { grid: A2, s: "", v: "" },
-  sd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, s: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
-  vd: { grid: `${A2} not-print:@5xl/report:grid-cols-12`, v: "not-print:@5xl/report:col-span-8", d: "not-print:@5xl/report:col-span-4" },
+  sd: { grid: `${A2} scr:@5xl/report:grid-cols-12`, s: "scr:@5xl/report:col-span-8", d: "scr:@5xl/report:col-span-4" },
+  vd: { grid: `${A2} scr:@5xl/report:grid-cols-12`, v: "scr:@5xl/report:col-span-8", d: "scr:@5xl/report:col-span-4" },
   s: { grid: "", s: "" },
   v: { grid: "", v: "" },
   d: { grid: "", d: "" },
@@ -1879,7 +1881,7 @@ function isPositiveDelta(value: string) {
 
 // Khung của 2 khối chữ dài đứng cạnh nhau trong 1 Phần (Diễn biến chính | Lịch sự kiện): lưới để mặc định "stretch"
 // nên 2 khung luôn cao bằng nhau. Khi in (1 cột, khối dài chảy qua nhiều trang) bỏ khung.
-const PANEL = "min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5 print:rounded-none print:border-0 print:bg-transparent print:p-0";
+const PANEL = "min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5 pn:rounded-none pn:border-0 pn:bg-transparent pn:p-0";
 
 function PartHeading({ eyebrow, title, icon: Icon, className }: { eyebrow?: string; title: string; icon: typeof Sparkles; className?: string }) {
   return (
@@ -3150,7 +3152,7 @@ function DriversPanel({ drivers }: { drivers: any }) {
           {bear.length > 0 && <span className="bg-down" style={{ flexGrow: bear.length }} />}
         </div>
       )}
-      <div className="grid gap-3 @3xl/report:grid-cols-2 print:block print:space-y-3">
+      <div className="grid gap-3 @3xl/report:grid-cols-2 pn:block pn:space-y-3">
         {column(bull, "up")}
         {column(bear, "down")}
       </div>
@@ -3164,7 +3166,7 @@ function DriversPanel({ drivers }: { drivers: any }) {
 function WatchList({ text }: { text: string }) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   return (
-    <ol className="list-none grid gap-3 @3xl/report:grid-cols-2 print:block print:space-y-3">
+    <ol className="list-none grid gap-3 @3xl/report:grid-cols-2 pn:block pn:space-y-3">
       {lines.map((line, i) => {
         const m = line.match(/^(\d+)[.)]\s+/);
         const body = m ? line.slice(m[0].length) : line;
@@ -3217,55 +3219,78 @@ function AnalysisLine({ text }: { text: string }) {
 // (_prompt_section3::ĐỊNH DẠNG). KHÔNG chia khối/cột (yêu cầu 26/10/2026): mỗi nhóm = nhãn nhóm + kết luận đậm rồi các ý
 // ngay bên dưới, tất cả trải hết bề rộng nội dung, các nhóm nối tiếp nhau. Dòng đứng trước nhãn nhóm đầu tiên và block khác
 // (không có nhãn nhóm) giữ dạng đoạn.
+// In khổ ngang (.pdf-wide): 1 dòng trải cả trang ngang quá dài, khó đọc → 2 cột cạnh nhau. Các mảnh (đoạn mở đầu + nhóm,
+// block khác) chia sẵn làm 2 nửa theo độ dài chữ, giữ thứ tự đọc (cột trái rồi cột phải) — không dùng CSS columns vì
+// Chrome không cân 2 cột ở trang cuối của khối khi in (dồn hết vào cột trái). Trên màn hình 2 nửa nối tiếp nhau như cũ.
 function AnalysisBlocks({ blocks }: { blocks: any[] }) {
   const enumLabel = useEnumLabel();
+  const pieces: { key: string; len: number; node: React.ReactNode }[] = [];
+  blocks.forEach((block: any, i: number) => {
+    const lines: string[] = (block.content || "").split("\n").filter((line: string) => line.trim());
+    const lead: string[] = [];
+    const groups: { prefix: string; headline: string; lines: string[] }[] = [];
+    for (const line of lines) {
+      const prefix = block.heading === "Phân tích" ? GROUP_HEADLINE_PREFIXES.find((p) => line.trim().startsWith(p)) : undefined;
+      if (prefix) groups.push({ prefix, headline: line.trim().slice(prefix.length).trim(), lines: [] });
+      else if (groups.length > 0) groups[groups.length - 1].lines.push(line);
+      else lead.push(line);
+    }
+    // Block "Phân tích" trùng với SubHeading "Phân tích" ngay phía trên → ẩn nhãn
+    const label = block.heading !== "Phân tích" && (
+      <h4 className="mb-2 text-[12.5px] font-bold uppercase tracking-[0.12em] text-primary">{enumLabel(block.heading)}</h4>
+    );
+    const leadNode = lead.length > 0 && (
+      <div className={clsx("space-y-2", groups.length > 0 && "mb-4")}>
+        {lead.map((line, j) => <AnalysisLine key={j} text={line} />)}
+      </div>
+    );
+    const leadLen = lead.join("").length;
+    if (groups.length === 0) {
+      pieces.push({ key: `${i}`, len: leadLen, node: <>{label}{leadNode}</> });
+      return;
+    }
+    groups.forEach((g, gi) => pieces.push({
+      key: `${i}-${gi}`,
+      len: (gi === 0 ? leadLen : 0) + g.headline.length + g.lines.join("").length,
+      node: (
+        <>
+          {gi === 0 && label}
+          {gi === 0 && leadNode}
+          <section className="min-w-0 space-y-2">
+            {/* Khi in: nhãn nhóm + kết luận không tách nhau, không trơ cuối trang tách khỏi các ý bên dưới. */}
+            <div className="min-w-0 print:break-inside-avoid print:break-after-avoid">
+              <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-primary">{g.prefix.replace(/:\s*$/, "")}</div>
+              <p className="text-left mt-0.5 text-[15.5px] font-bold leading-[1.45] text-primary-dark">
+                <RichText text={g.headline} nums />
+              </p>
+            </div>
+            {g.lines.length > 0 && (
+              <div className="min-w-0 space-y-2">
+                {g.lines.map((line, j) => <AnalysisLine key={j} text={line} />)}
+              </div>
+            )}
+          </section>
+        </>
+      ),
+    }));
+  });
+  // Điểm cắt: nửa trái gần 1/2 tổng độ dài nhất (mỗi nửa ít nhất 1 mảnh).
+  const total = pieces.reduce((n, p) => n + p.len, 0);
+  let cut = pieces.length, acc = 0, best = Infinity;
+  for (let k = 1; k < pieces.length; k++) {
+    acc += pieces[k - 1].len;
+    if (Math.abs(total - 2 * acc) < best) { best = Math.abs(total - 2 * acc); cut = k; }
+  }
+  const half = (list: typeof pieces) => (
+    <div className="min-w-0 space-y-5">
+      {list.map((p) => <div key={p.key} className="min-w-0">{p.node}</div>)}
+    </div>
+  );
   return (
-    <>
-      {blocks.map((block: any, i: number) => {
-        const lines: string[] = (block.content || "").split("\n").filter((line: string) => line.trim());
-        const lead: string[] = [];
-        const groups: { prefix: string; headline: string; lines: string[] }[] = [];
-        for (const line of lines) {
-          const prefix = block.heading === "Phân tích" ? GROUP_HEADLINE_PREFIXES.find((p) => line.trim().startsWith(p)) : undefined;
-          if (prefix) groups.push({ prefix, headline: line.trim().slice(prefix.length).trim(), lines: [] });
-          else if (groups.length > 0) groups[groups.length - 1].lines.push(line);
-          else lead.push(line);
-        }
-        return (
-          <div key={i} className="mb-5 last:mb-0">
-            {/* Block "Phân tích" trùng với SubHeading "Phân tích" ngay phía trên → ẩn nhãn */}
-            {block.heading !== "Phân tích" && (
-              <h4 className="mb-2 text-[12.5px] font-bold uppercase tracking-[0.12em] text-primary">{enumLabel(block.heading)}</h4>
-            )}
-            {lead.length > 0 && (
-              <div className={clsx("space-y-2", groups.length > 0 && "mb-4")}>
-                {lead.map((line, j) => <AnalysisLine key={j} text={line} />)}
-              </div>
-            )}
-            {groups.length > 0 && (
-              <div className="space-y-5">
-                {groups.map((g, gi) => (
-                  <section key={gi} className="min-w-0 space-y-2">
-                    {/* Khi in: nhãn nhóm + kết luận không tách nhau, không trơ cuối trang tách khỏi các ý bên dưới. */}
-                    <div className="min-w-0 print:break-inside-avoid print:break-after-avoid">
-                      <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-primary">{g.prefix.replace(/:\s*$/, "")}</div>
-                      <p className="text-left mt-0.5 text-[15.5px] font-bold leading-[1.45] text-primary-dark">
-                        <RichText text={g.headline} nums />
-                      </p>
-                    </div>
-                    {g.lines.length > 0 && (
-                      <div className="min-w-0 space-y-2">
-                        {g.lines.map((line, j) => <AnalysisLine key={j} text={line} />)}
-                      </div>
-                    )}
-                  </section>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </>
+    <div className="space-y-5 pw:grid pw:grid-cols-2 pw:gap-x-8">
+      {half(pieces.slice(0, cut))}
+      {cut < pieces.length && half(pieces.slice(cut))}
+    </div>
   );
 }
 
@@ -3531,7 +3556,7 @@ export function ReportDocument({
           {heroSpans && (
             // In: ô không giãn theo ô cao nhất hàng (print:items-start) — Tóm tắt dài ngắt sang trang sau thì ô Nhận định
             // giãn theo sẽ cao hơn 1 trang và bị cắt đôi.
-            <div className={clsx("grid gap-4 print:items-start", heroSpans.grid)}>
+            <div className={clsx("grid gap-4 pn:items-start", heroSpans.grid)}>
               {execBullets.length > 0 && <HeroSummary bullets={execBullets} className={heroSpans.s} />}
               {heroSpans.v !== undefined && (
                 <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} chartData={chartData} className={heroSpans.v} />
@@ -3567,10 +3592,11 @@ export function ReportDocument({
               </div>
             ) : priceRows.length > 0 && (
               // Bảng giá nhanh hẹp (5/12, dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá rộng (7/12) — ngang từ khung báo
-              // cáo ≥ 768px (@3xl). Khi in/PDF chỉ giữ bảng giá → bảng trải hết bề rộng (đủ cột Δ ngày + Δ tuần), không
-              // bị bó trong 5/12 để trống phần còn lại.
-              <div className="grid gap-5 @3xl/report:grid-cols-12">
-                <div className="min-w-0 not-print:@3xl/report:col-span-5 print:col-span-full">
+              // cáo ≥ 768px (@3xl). In khổ dọc chỉ giữ bảng giá → bảng trải hết bề rộng (đủ cột Δ ngày + Δ tuần), không
+              // bị bó trong 5/12 để trống phần còn lại; in khổ ngang (.pdf-wide) giữ cả 2 như màn hình, chung 1 khối
+              // không ngắt (.price-overview — globals.css).
+              <div className="price-overview grid gap-5 @3xl/report:grid-cols-12">
+                <div className="min-w-0 scr:@3xl/report:col-span-5 pn:col-span-full pw:@3xl/report:col-span-6">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
@@ -3578,7 +3604,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 print:hidden">{indexPanel}</div>
+                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 pn:hidden pw:@3xl/report:col-span-6">{indexPanel}</div>
               </div>
             )}
 
@@ -3588,7 +3614,7 @@ export function ReportDocument({
             {/* Diễn biến chính (tin tức tác động cung/cầu EUA — content["2"].key_developments) | lịch sự kiện 7 ngày
                 tới (content["8"]): việc đã xảy ra cạnh việc sắp tới. */}
             {(keyDevelopmentItems.length > 0 || content["8"]) && (
-              <div className="grid gap-5 @5xl/report:grid-cols-12 print:block print:space-y-8">
+              <div className="grid gap-5 @5xl/report:grid-cols-12 pn:block pn:space-y-8">
                 {keyDevelopmentItems.length > 0 && (
                   <div className={clsx(PANEL, content["8"] ? "@5xl/report:col-span-7 @7xl/report:col-span-8" : "@5xl/report:col-span-12")}>
                     <SubHeading>{t("body.keyDev")}</SubHeading>
@@ -3857,7 +3883,9 @@ export function ReportDocument({
 
         {/* ═══ NGUỒN THAM KHẢO — đứng độc lập cuối báo cáo, không thuộc Phần nào ═══ */}
         {content["9"] && (
-          <section id="section-sources" className="report-section scroll-mt-32 pt-4 pb-6">
+          // print:break-inside-avoid: tiêu đề đi cùng danh sách — không trơ cuối trang còn danh sách sang trang sau
+          // (danh sách dài > 18% trang thì usePrintBreakTuning vẫn cho ngắt giữa các dòng).
+          <section id="section-sources" className="report-section scroll-mt-32 pt-4 pb-6 print:break-inside-avoid">
             <PartHeading title={content["9"].title || t("body.sourcesTitle")} icon={Link2} />
             {content["9"].items?.length > 0 ? (
               (() => {

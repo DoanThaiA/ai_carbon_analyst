@@ -84,7 +84,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
 
   if (error) {
     return (
-      <div className="border border-border rounded-lg p-4 text-[13px] text-muted-light print:hidden">{t("loadError")}</div>
+      <div className="border border-border rounded-lg p-4 text-[13px] text-muted-light pn:hidden">{t("loadError")}</div>
     );
   }
 
@@ -96,7 +96,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
         onClick={() => data && setOpen(true)}
         onKeyDown={(e) => { if (data && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpen(true); } }}
         aria-label={t("openCompare")}
-        className="group h-full flex flex-col rounded-xl border border-border bg-background p-3.5 sm:p-4 cursor-pointer transition-colors hover:border-primary/50 hover:bg-tint/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 print:hidden"
+        className="price-index-panel group h-full flex flex-col rounded-xl border border-border bg-background p-3.5 sm:p-4 cursor-pointer transition-colors hover:border-primary/50 hover:bg-tint/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 pn:hidden"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -107,7 +107,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
               </div>
             )}
           </div>
-          <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-primary-dark group-hover:underline">
+          <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-primary-dark group-hover:underline print:hidden">
             <Maximize2 size={12} aria-hidden="true" /> {t("compare")}
           </span>
         </div>
