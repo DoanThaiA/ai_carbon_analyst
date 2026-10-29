@@ -197,7 +197,7 @@
         "noNewsVn": "Không có tin tức việt nam trong kỳ này.",
         "sourcesTitle": "Nguồn tham khảo",
         "noSources": "Không có nguồn tin tức trong 48h qua.",
-        "footer": "Báo cáo nội bộ, tổng hợp tự động có kiểm duyệt. Không phải khuyến nghị đầu tư."
+        "footer": "Bản quyền thuộc Stavian Industrial Metal JSC. Báo cáo nội bộ. Không phải khuyến nghị đầu tư."
       }
     },
     "en": {
@@ -397,7 +397,7 @@
         "noNewsVn": "No Vietnam news this period.",
         "sourcesTitle": "References",
         "noSources": "No news sources in the past 48 hours.",
-        "footer": "Internal report, automatically compiled and reviewed. Not investment advice."
+        "footer": "Copyright © Stavian Industrial Metal JSC. Internal report. Not investment advice."
       }
     }
   }
