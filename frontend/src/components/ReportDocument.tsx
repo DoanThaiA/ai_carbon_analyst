@@ -16,7 +16,7 @@ import PriceIndexPanel from "@/components/PriceIndexPanel";
 import { CbamEstimateCard } from "@/components/CbamEstimateCard";
 import { ForecastReviewCard } from "@/components/ForecastReviewCard";
 import { dateFnsLocale } from "@/i18n/dateLocale";
-import { usePrintBreakTuning } from "@/lib/usePrintBreakTuning";
+import { CHART_FIT_EVENT, usePrintBreakTuning } from "@/lib/usePrintBreakTuning";
 
 // Hàm dịch của namespace "reportDoc" — truyền xuống các hàm thuần (không gọi được hook).
 type ReportT = ReturnType<typeof useTranslations>;
@@ -493,8 +493,9 @@ function buildLadderMarks(plans: HorizonPlan[], range: [number, number] | null, 
   return marks;
 }
 
-// Bề rộng giả định để xếp nhãn không chồng nhau: ≤ bề rộng thật của thẻ trên màn hình lẫn khổ A4 khi in — vị trí vẽ
-// theo %, khung thật rộng hơn chỉ làm nhãn thưa ra chứ không chồng thêm.
+// Bề rộng tối thiểu để xếp nhãn không chồng nhau (khung chưa đo được/hẹp hơn): vị trí vẽ theo %, khung thật rộng hơn chỉ
+// làm nhãn thưa ra. Khung đo được rộng hơn (màn rộng, PDF ~900px) thì xếp theo bề rộng thật — ít hàng nhãn hơn, thang thấp
+// hơn (PDF gọn 29/10/2026).
 const LADDER_W = 600;
 const LADDER_ROW_H = 30;
 const LADDER_AXIS_H = 26;
@@ -505,11 +506,11 @@ interface PlacedMark extends LadderMark {
   value: string; name: string; c: number; anchor: "center" | "left" | "right"; side: LadderSide; row: number;
 }
 
-function layoutLadder(marks: LadderMark[], fmt: (n: number) => string) {
+function layoutLadder(marks: LadderMark[], fmt: (n: number) => string, W = LADDER_W) {
   const lo = Math.min(...marks.map(m => m.lo)), hi = Math.max(...marks.map(m => m.hi));
   const pad = (hi - lo) * 0.03 || 1;
   const min = lo - pad, span = hi + pad - min;
-  const px = (v: number) => ((v - min) / span) * LADDER_W;
+  const px = (v: number) => ((v - min) / span) * W;
   // Mỗi hàng nhãn giữ các khoảng [trái, phải] đã chiếm — gồm cả đường dẫn của nhãn ở hàng xa trục hơn đi xuyên qua.
   const rows: Record<LadderSide, [number, number][][]> = { above: [], below: [] };
   const hits = (side: LadderSide, r: number, a: number, b: number) => (rows[side][r] ?? []).some(([x, y]) => a < y && b > x);
@@ -521,8 +522,8 @@ function layoutLadder(marks: LadderMark[], fmt: (n: number) => string) {
     // Ước lượng bề rộng chữ (11,5px đậm cho số, 10,5px cho tên) — dư một chút để an toàn.
     const width = Math.max(value.length * 6.6, name.length * 5.7) + 8;
     const c = (px(m.lo) + px(m.hi)) / 2;
-    const left = Math.min(Math.max(c - width / 2, 0), LADDER_W - width);
-    const anchor = c - width / 2 < 0 ? "left" : c + width / 2 > LADDER_W ? "right" : "center";
+    const left = Math.min(Math.max(c - width / 2, 0), W - width);
+    const anchor = c - width / 2 < 0 ? "left" : c + width / 2 > W ? "right" : "center";
     const own: LadderSide = m.below ? "below" : "above", other: LadderSide = m.below ? "above" : "below";
     const fits = ([side, r]: [LadderSide, number]) =>
       !hits(side, r, left - LADDER_GAP, left + width + LADDER_GAP)
@@ -544,7 +545,19 @@ function layoutLadder(marks: LadderMark[], fmt: (n: number) => string) {
 
 function PriceLadder({ marks, range }: { marks: LadderMark[]; range: [number, number] | null }) {
   const locale = useLocale();
-  const { placed, min, span, rowsAbove, rowsBelow } = layoutLadder(marks, n => fmtPrice(n, locale));
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(LADDER_W);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w > 0) setWidth(Math.max(LADDER_W, w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const { placed, min, span, rowsAbove, rowsBelow } = layoutLadder(marks, n => fmtPrice(n, locale), width);
   const pct = (v: number) => `${((v - min) / span) * 100}%`;
   const len = (d: number) => `${(d / span) * 100}%`;
   const axisTop = rowsAbove * LADDER_ROW_H;
@@ -554,6 +567,7 @@ function PriceLadder({ marks, range }: { marks: LadderMark[]; range: [number, nu
   // data-print-whole: nhãn đặt tuyệt đối — khi in không được cắt ngang thang (nhãn hàng dưới rơi sang đầu trang sau).
   return (
     <div
+      ref={ref}
       data-print-whole
       className="relative hidden sm:block select-none [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
       style={{ height: axisTop + LADDER_AXIS_H + rowsBelow * LADDER_ROW_H }}
@@ -586,7 +600,7 @@ function PriceLadder({ marks, range }: { marks: LadderMark[]; range: [number, nu
       {placed.map((m, i) => {
         const top = m.side === "above" ? (rowsAbove - 1 - m.row) * LADDER_ROW_H : axisTop + LADDER_AXIS_H + m.row * LADDER_ROW_H;
         const [lineTop, lineBottom] = m.side === "above" ? [top + LADDER_ROW_H - 3, axisY - 7] : [axisY + 7, top + 1];
-        const cx = `${(m.c / LADDER_W) * 100}%`;
+        const cx = `${(m.c / width) * 100}%`;
         const pos = m.anchor === "left" ? { left: 0 } : m.anchor === "right" ? { right: 0 } : { left: cx, transform: "translateX(-50%)" };
         return (
           <Fragment key={`l${i}`}>
@@ -733,13 +747,14 @@ const PROB_LEVEL: Record<string, number> = { "Thấp": 1, "Trung bình": 2, "Cao
 function LegBlock({ leg, ctx }: { leg: Leg; ctx: LegCtx }) {
   const n = legCells(leg, ctx);
   const { t } = ctx;
+  // In: 1 hàng gọn — [loại lệnh + R:R] | Entry | Mục tiêu | Cắt lỗ (lưới con print:contents thành ô của lưới ngoài).
   return (
-    <div className="rounded-lg border border-border bg-background px-3 py-2.5 print:break-inside-avoid">
-      <div className="flex items-start justify-between gap-2">
+    <div className="rounded-lg border border-border bg-background px-3 py-2.5 print:grid print:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] print:items-start print:gap-x-3 print:py-1.5! print:break-inside-avoid">
+      <div className="flex items-start justify-between gap-2 print:flex-col print:gap-1">
         <OrderPill leg={leg} />
-        <div className="flex flex-col items-end text-[13px]">{n.rr}</div>
+        <div className="flex flex-col items-end text-[13px] print:items-start">{n.rr}</div>
       </div>
-      <div className="mt-2 grid grid-cols-[1.4fr_1fr_1fr] gap-2 text-[13.5px]">
+      <div className="mt-2 grid grid-cols-[1.4fr_1fr_1fr] gap-2 text-[13.5px] print:contents">
         <div className="min-w-0"><div className="text-[11.5px] text-muted-light">{t("signal.col.entry")}</div>{n.entry}</div>
         <div className="min-w-0"><div className="text-[11.5px] text-muted-light">{t("signal.col.target")}</div>{n.target}</div>
         <div className="min-w-0"><div className="text-[11.5px] text-muted-light">{t("signal.col.stop")}</div>{n.stop}</div>
@@ -751,7 +766,7 @@ function LegBlock({ leg, ctx }: { leg: Leg; ctx: LegCtx }) {
 // KỊCH BẢN HÀNH ĐỘNG — mỗi khung thời gian 1 thẻ: chiều + xác suất → vùng giá → lệnh (Entry/Mục tiêu/Cắt lỗ/R:R tách từ
 // trading_strategy) → điều kiện kích hoạt, rủi ro → nguyên văn chiến lược bàn giao dịch. Gộp bảng lệnh của thẻ vị thế và
 // bảng "Kịch bản hành động" cũ (2 bảng trình bày cùng 3 kịch bản) — mọi trường của kịch bản vẫn hiện đủ. Báo cáo hẹp
-// (< 1024px): tab theo khung thời gian; in PDF: đủ 3 thẻ xếp dọc.
+// (< 1024px): tab theo khung thời gian; in PDF: đủ 3 thẻ (khổ dọc xếp dọc, khổ ngang cạnh nhau).
 function HorizonCards({ plans, last, minRr }: { plans: HorizonPlan[]; last?: number; minRr: number }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
@@ -813,14 +828,15 @@ function HorizonCards({ plans, last, minRr }: { plans: HorizonPlan[]; last?: num
               )}
             >
               {/* Thẻ rộng (tab trên tablet, bản in A4): 2 cột — mức giá & lệnh | điều kiện, rủi ro, nguyên văn chiến
-                  lược; thẻ hẹp (3 thẻ cạnh nhau, điện thoại): 1 cột. */}
-              <div className="grid gap-x-5 gap-y-3 @xl:grid-cols-2">
+                  lược; thẻ hẹp (3 thẻ cạnh nhau, điện thoại): 1 cột. In: cột chữ rộng hơn (5:7) — lệnh đã gọn 1 hàng. */}
+              <div className="grid gap-x-5 gap-y-3 @xl:grid-cols-2 print:@xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
                 <div className="min-w-0 space-y-3">
                   <div>
                     <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-                      <div className="min-w-0">
+                      {/* In: tên khung + thời hạn cùng 1 dòng. */}
+                      <div className="min-w-0 print:flex print:items-baseline print:gap-2">
                         <h4 className="text-[16.5px] font-bold leading-tight text-label">{capFirst(enumLabel(p.horizon))}</h4>
-                        <div className="mt-0.5 text-[12.5px] text-muted-light">{horizonPeriod(p, t)}</div>
+                        <div className="mt-0.5 print:mt-0 text-[12.5px] text-muted-light">{horizonPeriod(p, t)}</div>
                       </div>
                       {sc.direction && (
                         <span className={clsx(
@@ -833,7 +849,7 @@ function HorizonCards({ plans, last, minRr }: { plans: HorizonPlan[]; last?: num
                     </header>
 
                     {(sc.probability || alt) && (
-                      <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-body">
+                      <div className="mt-2 print:mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-body">
                         {sc.probability && (
                           <span className="inline-flex items-center gap-1.5">
                             {level !== undefined && (
@@ -1520,22 +1536,19 @@ function HeroForecast({ review, className }: { review?: ForecastReview | null; c
 
 // Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh/phòng hộ/dự báo).
 // grid: lưới ngoài; s/v/d: class của từng ô. Màn hình: 3 ô cạnh nhau từ khung 1024px (WIDE), 768–1023px Tóm tắt hết
-// hàng + 2 ô bên dưới (A2). In (mọi khổ từ 576px — A4 dọc/ngang, 16:9): Tóm tắt và Nhận định (giá | câu nhận định cạnh
-// nhau) đều hết hàng, các ô lệnh/phòng hộ/dự báo thành 1 hàng chia đều theo số ô có thật (báo cáo không có ô CBAM: 2 ô
-// mỗi ô 1/2, không để trống 1/3) — ô hẹp cạnh Tóm tắt dài sẽ cao hơn 1 trang và bị cắt.
+// hàng + 2 ô bên dưới (A2). In (PDF gọn 29/10/2026) — khối mở đầu thấp để biểu đồ nến Phần 1 lên được trang 1:
+//  - dọc/vuông (pn:, khung từ 576px): hàng 1 = Nhận định (7/12) | cột lệnh/phòng hộ/dự báo xếp dọc (5/12) — 2 ô cao gần
+//    bằng nhau; hàng 2 = Tóm tắt hết hàng (ngắt được giữa các ý, chảy tiếp lấp chỗ trống);
+//  - ngang (pw:, trang thấp): hàng 1 = Nhận định (7/12) | Tóm tắt (5/12); hàng 2 = 3 ô lệnh/phòng hộ/dự báo cạnh nhau.
+// Không để Tóm tắt dài cạnh ô hẹp (3 cột của màn hình rộng) — Tóm tắt hẹp cao gần cả trang ngang.
 const A2 = "@3xl/report:grid-cols-2 pn:@xl/report:grid-cols-2";
-const A2_FULL = "@3xl/report:col-span-2 pn:@xl/report:col-span-2";
-const PRINT_FULL = "pn:@xl/report:col-span-2";
-const PRINT_ROW = "pn:@xl/report:grid pn:@xl/report:grid-flow-col pn:@xl/report:auto-cols-fr";
 const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
   svd: {
     // Nhận định to nhất, Tóm tắt = cột phải: 3/4/3 (báo cáo 1024–1279px) → 3/6/3 (≥ 1280px).
-    grid: `${A2} scr:@5xl/report:grid-cols-10 scr:@7xl/report:grid-cols-12`,
-    s: `${A2_FULL} scr:@5xl/report:col-span-3`,
-    // In: Nhận định (giữ trọn ô) đứng TRƯỚC Tóm tắt (ngắt được giữa các ý) — Tóm tắt chảy tiếp lấp chỗ trống, không để ô
-    // Nhận định bị đẩy nguyên sang trang 2 và bỏ trắng nửa trang 1.
-    v: `scr:@5xl/report:col-span-4 scr:@7xl/report:col-span-6 ${PRINT_FULL} pn:order-first`,
-    d: `scr:@5xl/report:col-span-3 ${PRINT_FULL} ${PRINT_ROW}`,
+    grid: "@3xl/report:grid-cols-2 scr:@5xl/report:grid-cols-10 scr:@7xl/report:grid-cols-12 pn:@xl/report:grid-cols-12 pw:@xl/report:grid-cols-12",
+    s: "@3xl/report:col-span-2 scr:@5xl/report:col-span-3 pn:@xl/report:col-span-12 pn:order-last pw:@xl/report:col-span-5",
+    v: "scr:@5xl/report:col-span-4 scr:@7xl/report:col-span-6 pn:@xl/report:col-span-7 pw:@xl/report:col-span-7 print:order-first pn:self-stretch",
+    d: "scr:@5xl/report:col-span-3 pn:@xl/report:col-span-5 pn:self-stretch pw:@xl/report:col-span-12 pw:order-last pw:grid pw:grid-cols-3",
   },
   sv: { grid: A2, s: "", v: "" },
   sd: { grid: `${A2} scr:@5xl/report:grid-cols-12`, s: "scr:@5xl/report:col-span-8", d: "scr:@5xl/report:col-span-4" },
@@ -1886,15 +1899,16 @@ const PANEL = "min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5 
 function PartHeading({ eyebrow, title, icon: Icon, className }: { eyebrow?: string; title: string; icon: typeof Sparkles; className?: string }) {
   return (
     <div className={clsx(
-      "report-heading mb-6 flex items-center gap-3.5 rounded-xl bg-gradient-to-r from-[#1B4D3E] via-[#1a5c4a] to-[#0f5f5a] px-4 sm:px-5 py-3 text-white print:mb-4 print:break-after-avoid [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
+      "report-heading mb-6 flex items-center gap-3.5 rounded-xl bg-gradient-to-r from-[#1B4D3E] via-[#1a5c4a] to-[#0f5f5a] px-4 sm:px-5 py-3 text-white print:mb-4 print:py-1.5! print:break-after-avoid [print-color-adjust:exact] [-webkit-print-color-adjust:exact]",
       className,
     )}>
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+      {/* In: dải mỏng — icon nhỏ, nhãn "Phần n" cùng dòng với tiêu đề. */}
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25 print:h-7 print:w-7 print:rounded-lg">
         <Icon size={20} strokeWidth={2.25} aria-hidden="true" />
       </span>
-      <div className="min-w-0">
+      <div className="min-w-0 print:flex print:items-baseline print:gap-3">
         {eyebrow && <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-[#8fd9a8]">{eyebrow}</div>}
-        <h2 className="text-[20px] sm:text-[23px] font-bold leading-tight text-white [text-wrap:balance]">{title}</h2>
+        <h2 className="text-[20px] sm:text-[23px] print:text-[20px]! font-bold leading-tight text-white [text-wrap:balance]">{title}</h2>
       </div>
     </div>
   );
@@ -2101,32 +2115,35 @@ function EtsPolicyTable({ items }: { items: Record<string, any>[] }) {
       </ul>
       {/* Báo cáo rộng: bảng — cả khi in (PDF bản máy tính đủ rộng), từng hàng không bị cắt ngang. */}
       <div className="hidden overflow-x-auto rounded-xl border border-border @2xl/report:block">
-        <table className="w-full table-fixed border-collapse text-[14px]">
+        {/* In: cột "Lập trường / tiến độ" (chữ dài nhất) rộng hơn, chữ bảng nhỏ hơn 1 cỡ — hàng thấp hơn. */}
+        <table className="w-full table-fixed border-collapse text-[14px] print:text-[13px]">
           <thead>
             <tr className="bg-tint">
               {["item", "status", "nextStep", "impact"].map((k) => (
                 <th key={k} className={clsx(
                   "border-b-2 border-primary/30 px-3 py-2.5 text-left text-[11.5px] font-bold uppercase tracking-wider text-primary-dark",
-                  k === "impact" ? "w-[30%]" : k === "item" ? "w-[24%]" : k === "nextStep" ? "w-[19%]" : "",
+                  k === "impact" ? "w-[30%] print:w-[28%]" : k === "item" ? "w-[24%] print:w-[19%]" : k === "nextStep" ? "w-[19%] print:w-[16%]" : "",
                 )}>{t(`etsPolicy.${k}`)}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-border-soft">
             {items.map((it, i) => (
-              <tr key={i} className="align-top even:bg-surface/70 print:break-inside-avoid">
-                <td className="break-words px-3 py-3 font-semibold text-label">
+              // data-print-flow: hàng dài (đoạn tiến độ nhiều dòng) ngắt được giữa các dòng khi in — không đẩy cả hàng (kèm tiêu
+              // đề khối) sang trang sau để trống cuối trang.
+              <tr key={i} data-print-flow className="align-top even:bg-surface/70">
+                <td className="break-words px-3 py-3 print:py-2 font-semibold text-label">
                   {it.item}
                   {/* Nguồn liền sau tên hồ sơ, chỉ xuống dòng khi hết chỗ (inline-block). */}
                   {source(it) && <>{" "}{source(it)}</>}
                   {meta(it)}
                 </td>
-                <td className="break-words px-3 py-3 leading-[1.55] text-body">
+                <td className="break-words px-3 py-3 print:py-2 leading-[1.55] text-body">
                   <RichText text={it.status || ""} nums />
                   {cbam(it)}
                 </td>
-                <td className="break-words px-3 py-3 leading-[1.55] text-body"><RichText text={it.next_step || ""} nums /></td>
-                <td className="px-3 py-3">
+                <td className="break-words px-3 py-3 print:py-2 leading-[1.55] text-body"><RichText text={it.next_step || ""} nums /></td>
+                <td className="px-3 py-3 print:py-2">
                   {chip(it)}
                   {mechanism(it)}
                 </td>
@@ -2253,7 +2270,7 @@ function BizRecommendationTable({
           <div className="hidden overflow-x-auto rounded-xl border border-border @2xl/report:block print:block">
             {/* table-fixed + chia đều cột nội dung: mỗi trường trong prompt tối đa 1 câu ngắn (xem
                 _prompt_biz_recommendation) nên độ dài tương đương nhau. */}
-            <table className="w-full table-fixed border-collapse text-[14.5px]">
+            <table className="w-full table-fixed border-collapse text-[14.5px] print:text-[13.5px]">
               <thead>
                 <tr>
                   {/* Cột # rộng hơn khi có nút gỡ (admin) để số thứ tự + nút xếp dọc, căn giữa cân đối */}
@@ -2284,7 +2301,7 @@ function BizRecommendationTable({
                       {/* Chỉ dính với hàng chi tiết ngay sau khi có — hàng không có chi tiết mà vẫn "không ngắt sau" thì cả bảng
                           thành 1 khối liền (cùng tên cột) và bị đẩy nguyên sang trang sau. */}
                       <tr className={clsx("align-top even:bg-surface/50", has && "print:break-after-avoid")}>
-                        <td className="border-r border-border bg-surface px-1 py-3 text-[12.5px] text-muted-light">
+                        <td className="border-r border-border bg-surface px-1 py-3 print:py-2 text-[12.5px] text-muted-light">
                           <div className="flex flex-col items-center gap-2">
                             <span className="font-bold leading-6">{ri + 1}</span>
                             {onDismiss && typeof row.id === "number" && (
@@ -2295,18 +2312,20 @@ function BizRecommendationTable({
                         {columns.map((col, i) => {
                           const isLast = i === columns.length - 1;
                           return (
-                            <td key={col.key} className={clsx("break-words px-3 py-3 leading-[1.55] text-body", !isLast && "border-r border-border")}>
+                            <td key={col.key} className={clsx("break-words px-3 py-3 print:py-2 leading-[1.55] text-body", !isLast && "border-r border-border")}>
                               <RichText text={row[col.key] || ""} nums />
                               {isLast && has && <div>{toggle(ri)}</div>}
                             </td>
                           );
                         })}
                       </tr>
+                      {/* data-print-flow: khi in hàng chi tiết ngắt được giữa các dòng (Cơ sở / KPI / …) — không đẩy cả gợi ý
+                          sang trang sau để trống cuối trang (globals.css). */}
                       {has && (
-                        <tr className={clsx(isOpen ? "table-row" : "hidden print:table-row")}>
+                        <tr data-print-flow className={clsx(isOpen ? "table-row" : "hidden print:table-row")}>
                           <td className="border-r border-border bg-surface" />
-                          <td colSpan={columns.length} className="bg-tint/50 px-3 py-2.5 text-[14px] leading-[1.55] text-body">
-                            <div className="space-y-1">{detailBody(row, extraRows)}</div>
+                          <td colSpan={columns.length} className="bg-tint/50 px-3 py-2.5 text-[14px] print:text-[13px] leading-[1.55] text-body">
+                            <div className="space-y-1 print:space-y-0.5">{detailBody(row, extraRows)}</div>
                           </td>
                         </tr>
                       )}
@@ -2339,6 +2358,12 @@ function formatVolume(v: number) {
   return String(Math.round(v));
 }
 
+// Biểu đồ nến khi xuất PDF: cao = bề rộng × tỉ lệ (khổ dọc ~890px → ~270, khung 7/12 khổ ngang ~790px → ~240), kẹp trong
+// [MIN, MAX] (đơn vị px bố cục, trước zoom của trang export).
+const PRINT_CHART_RATIO = 0.3;
+const PRINT_CHART_MIN_H = 200;
+const PRINT_CHART_MAX_H = 300;
+
 function CandlestickChart({ report }: { report: Report }) {
   const locale = useLocale();
   const t = useTranslations("reportDoc");
@@ -2355,9 +2380,15 @@ function CandlestickChart({ report }: { report: Report }) {
   // biểu đồ to tướng, chữ phóng to. flushSync để render xong TRƯỚC khi trình duyệt
   // chụp layout in.
   const [printing, setPrinting] = useState(false);
+  // Trang xuất PDF (/reports/[date]/export, khung .pdf-export): khung đã đúng bề rộng bản in nên vẽ theo bề rộng đo được,
+  // cao theo tỉ lệ in (PRINT_CHART_RATIO); trang export có thể ép thấp hơn (sự kiện CHART_FIT_EVENT — fitChartToPage) để
+  // khối biểu đồ vừa phần còn lại của trang 1 thay vì bị đẩy sang trang 2 bỏ trắng cuối trang 1.
+  const [exportFrame, setExportFrame] = useState(false);
+  const [fitH, setFitH] = useState<number | null>(null);
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
+    setExportFrame(!!el.closest(".pdf-export"));
     const ro = new ResizeObserver(entries => {
       const w = Math.round(entries[0].contentRect.width);
       if (w > 0) setMeasuredW(w);
@@ -2365,15 +2396,24 @@ function CandlestickChart({ report }: { report: Report }) {
     ro.observe(el);
     const before = () => flushSync(() => setPrinting(true));
     const after = () => setPrinting(false);
+    // Trình render PDF (Chromium, emulate_media print) không bắn beforeprint — theo dõi cả media query.
+    const mql = window.matchMedia("print");
+    const onMedia = (e: MediaQueryListEvent) => flushSync(() => setPrinting(e.matches));
+    const onFit = (e: Event) => flushSync(() => setFitH((e as CustomEvent<number | null>).detail));
     window.addEventListener("beforeprint", before);
     window.addEventListener("afterprint", after);
+    mql.addEventListener("change", onMedia);
+    window.addEventListener(CHART_FIT_EVENT, onFit);
+    if (mql.matches) setPrinting(true);
     return () => {
       ro.disconnect();
       window.removeEventListener("beforeprint", before);
       window.removeEventListener("afterprint", after);
+      mql.removeEventListener("change", onMedia);
+      window.removeEventListener(CHART_FIT_EVENT, onFit);
     };
   }, []);
-  const W = printing ? 640 : measuredW;
+  const W = printing && !exportFrame ? 640 : measuredW;
 
   if (candles.length === 0) {
     return (
@@ -2384,11 +2424,12 @@ function CandlestickChart({ report }: { report: Report }) {
   }
 
   const compact = W < 480;
-  const H = printing ? 290 : compact ? 300 : 360;
+  const H = !printing ? (compact ? 300 : 360)
+    : exportFrame ? (fitH ?? Math.min(PRINT_CHART_MAX_H, Math.max(PRINT_CHART_MIN_H, Math.round(W * PRINT_CHART_RATIO)))) : 290;
   // Trục giá đặt bên PHẢI (kiểu terminal giao dịch) để nhãn giá hiện tại nằm sát nến cuối.
   const padL = 4, padR = compact ? 50 : 58, padT = 8, padB = 24;
-  const gap = 14;
-  const volH = compact ? 48 : 64;
+  const gap = printing ? 10 : 14;
+  const volH = printing ? 44 : compact ? 48 : 64;
   const plotH = H - padT - padB - gap - volH;
   const plotW = W - padL - padR;
   const volTop = padT + plotH + gap;
@@ -2670,15 +2711,17 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
 
   // Biểu đồ nến | 5 ô tóm tắt nằm ngang từ khung báo cáo ≥ 768px (@3xl), tỷ lệ 6,5 : 3,5 — ô tóm tắt xếp dọc, giãn đều
   // theo chiều cao biểu đồ, mỗi dòng 1 hàng (StatTile cắt "…" + title khi quá hẹp). Hẹp hơn: ô tóm tắt xuống dưới (2 cột).
-  // Bản in theo cùng bố cục (PDF A4 dọc bản máy tính rộng ~875px ≥ @3xl → biểu đồ | ô tóm tắt như màn hình).
+  // In (PDF gọn): khổ dọc biểu đồ trải hết bề rộng, 5 ô thành 1 hàng ngay dưới; khổ ngang (.pdf-wide) biểu đồ 7/12 | ô tóm
+  // tắt lưới 3 cột 5/12 (ô khối lượng trải 2 cột). Cả khối giữ trọn 1 trang (data-print-whole); trang export hạ chiều cao biểu đồ nếu khối vắt qua
+  // cuối trang 1 (data-chart-fit — fitChartToPage).
   return (
-    <div className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)]">
-      <div data-print-whole className="flex min-w-0 flex-col print:break-inside-avoid">
+    <div data-print-whole data-chart-fit className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)] pn:grid-cols-1! pw:@3xl/report:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] print:gap-2!">
+      <div className="flex min-w-0 flex-col">
         {printHeading && <div className="hidden print:block">{printHeading}</div>}
-        <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:p-4!">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4">
+        <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:px-3! print:py-2!">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4 print:mb-2 print:pb-2">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="shrink-0 rounded-xl bg-primary p-2 text-white">
+              <div className="shrink-0 rounded-xl bg-primary p-2 print:p-1 text-white">
                 <Leaf size={22} aria-hidden="true" />
               </div>
               <div className="min-w-0">
@@ -2688,7 +2731,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
                   <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
                   <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
                 </h3>
-                <p className="text-left mt-0.5 text-[13px] text-muted-light">{t("dash.marketDesc")}</p>
+                <p className="text-left mt-0.5 text-[13px] text-muted-light print:hidden">{t("dash.marketDesc")}</p>
               </div>
             </div>
             <div className="ml-auto flex flex-col items-end gap-1">
@@ -2699,7 +2742,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
                   {sign(dayChange)}{fnum(dayChange, 2, locale)} ({sign(dayChangePct)}{fnum(dayChangePct, 2, locale)}%)
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light">
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted-light print:hidden">
                 <Calendar size={13} aria-hidden="true" /> {t("dash.closeOf", { date: formatFullDate(lastDate) })}
               </div>
             </div>
@@ -2709,7 +2752,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-2 @2xl/report:grid-cols-2 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:@max-3xl/report:grid-cols-2 print:break-inside-avoid">
+      <div className="grid min-w-0 gap-2 @2xl/report:grid-cols-2 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:@max-3xl/report:grid-cols-2 pn:@xl/report:grid-cols-5! pw:@3xl/report:grid-cols-3">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
@@ -2754,7 +2797,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
               pct: `${sign(volChangePct)}${fnum(volChangePct, 1, locale)}`,
             })) : null,
           ]}
-          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:@xl/report:@max-3xl/report:col-span-2"
+          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:@xl/report:@max-3xl/report:col-span-2 pn:@xl/report:col-span-1! pw:@3xl/report:col-span-2"
         />
       </div>
     </div>
@@ -2998,9 +3041,10 @@ function MarketBoard({ rows }: { rows: any[] }) {
                 <td className="px-3 py-3 print:py-2 text-[15px] font-semibold leading-snug text-label">
                   <ContractName row={r} notes={notes} />
                 </td>
+                {/* In: đơn vị cùng dòng với giá — mỗi mã 1 dòng (bảng in trải đủ rộng). */}
                 <td className="px-3 py-3 print:py-2 text-center whitespace-nowrap">
-                  <div className="text-[16px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
-                  {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
+                  <div className="text-[16px] font-bold leading-tight tabular-nums text-label print:inline">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
+                  {priceUnit && <div className="text-[12px] text-muted-light print:ml-1 print:inline">{priceUnit}</div>}
                 </td>
                 <td className="hidden px-2.5 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
                 <td className="hidden px-2.5 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
@@ -3152,7 +3196,7 @@ function DriversPanel({ drivers }: { drivers: any }) {
           {bear.length > 0 && <span className="bg-down" style={{ flexGrow: bear.length }} />}
         </div>
       )}
-      <div className="grid gap-3 @3xl/report:grid-cols-2 pn:block pn:space-y-3">
+      <div className="grid gap-3 @3xl/report:grid-cols-2">
         {column(bull, "up")}
         {column(bear, "down")}
       </div>
@@ -3166,7 +3210,7 @@ function DriversPanel({ drivers }: { drivers: any }) {
 function WatchList({ text }: { text: string }) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   return (
-    <ol className="list-none grid gap-3 @3xl/report:grid-cols-2 pn:block pn:space-y-3">
+    <ol className="list-none grid gap-3 @3xl/report:grid-cols-2">
       {lines.map((line, i) => {
         const m = line.match(/^(\d+)[.)]\s+/);
         const body = m ? line.slice(m[0].length) : line;
@@ -3333,7 +3377,8 @@ function NewsColumns({ section, heading }: { section: any; heading?: React.React
                 ))}
               </div>
               {/* Mọi tin đều có tóm tắt (bản chấm 17/10: chỉ còn tiêu đề thì Phần 3 mất giá trị). */}
-              <p className="text-left mt-1.5 text-[14.5px] leading-[1.6] text-body">
+              {/* In: tóm tắt tin nhỏ hơn 1 cỡ (Phần 3 là phần chi tiết, dài theo số tin) — PDF ít trang khi nhiều tin. */}
+              <p className="text-left mt-1.5 print:mt-1 text-[14.5px] print:text-[13.5px] leading-[1.6] text-body">
                 <RichText text={art.summary} nums />{" "}
                 <a href={art.url} target="_blank" rel="noopener noreferrer" className="inline-block text-[12.5px] font-semibold text-primary hover:underline">
                   {t("body.source")} {art.source} <ExternalLink size={10} className="-mt-0.5 inline" aria-hidden="true" />
@@ -3503,18 +3548,18 @@ export function ReportDocument({
           <line x1="540" y1="0" x2="700" y2="300" stroke="rgba(255,255,255,0.045)" strokeWidth="1" />
         </svg>
 
-        <div className="relative z-10 flex flex-wrap items-center gap-x-5 gap-y-3 px-4 sm:px-8 py-4 sm:py-5">
+        <div className="relative z-10 flex flex-wrap items-center gap-x-5 gap-y-3 px-4 sm:px-8 py-4 sm:py-5 print:py-2.5!">
           <img
             src="/stavian_logo.png"
             alt="Stavian Industrial Metal"
-            className="h-10 sm:h-12 w-auto object-contain shrink-0"
+            className="h-10 sm:h-12 print:h-9! w-auto object-contain shrink-0"
           />
           <span className="hidden sm:block w-px self-stretch bg-white/20" aria-hidden="true" />
           <div className="min-w-0 flex-1 basis-[16rem]">
             <div className="text-[11px] sm:text-[12px] font-semibold tracking-[0.2em] uppercase text-[#8fd9a8]">
               Daily carbon market news
             </div>
-            <h1 className="mt-0.5 text-[19px] sm:text-[24px] font-bold tracking-[0.2px] leading-[1.2] [text-wrap:balance]">
+            <h1 className="mt-0.5 text-[19px] sm:text-[24px] print:text-[21px]! font-bold tracking-[0.2px] leading-[1.2] [text-wrap:balance]">
               {t("masthead.title")}
             </h1>
             {/* div (không phải p) — tránh rule căn đều chữ của .report-shell p khi in. */}
@@ -3554,8 +3599,8 @@ export function ReportDocument({
           )}
           {highlight && <TodayHighlight highlight={highlight} />}
           {heroSpans && (
-            // In: ô không giãn theo ô cao nhất hàng (print:items-start) — Tóm tắt dài ngắt sang trang sau thì ô Nhận định
-            // giãn theo sẽ cao hơn 1 trang và bị cắt đôi.
+            // In khổ dọc: mặc định ô không giãn theo ô cao nhất hàng (pn:items-start) — Tóm tắt dài cạnh ô khác thì ô đó
+            // giãn theo sẽ cao hơn 1 trang và bị cắt đôi; chỉ Nhận định | cột lệnh (HERO_SPANS, pn:self-stretch) giãn bằng nhau.
             <div className={clsx("grid gap-4 pn:items-start", heroSpans.grid)}>
               {execBullets.length > 0 && <HeroSummary bullets={execBullets} className={heroSpans.s} />}
               {heroSpans.v !== undefined && (

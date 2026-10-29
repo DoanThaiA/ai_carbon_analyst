@@ -14,6 +14,7 @@ const PRINT_WIDTH_PX = Math.round((190 * 96) / 25.4);
 const PRINT_PAGE_HEIGHT_PX = Math.round((273 * 96) / 25.4);
 // Khối cao hơn ngưỡng này (theo chiều cao 1 trang) được phép ngắt bên trong — khoảng trắng tối đa cuối trang do đẩy
 // khối ≈ ngưỡng này. 0,18 ≈ 1 ô số liệu/thẻ tin/hàng bảng; lưới ô, bảng, thẻ kịch bản lớn hơn thì ngắt giữa các phần con.
+// (Thử 0,1 khi làm PDF gọn 29/10/2026: không bớt trang mà thẻ nhỏ — ô "Dự báo trước" — bị cắt ngang khung.)
 const SPLIT_RATIO = 0.18;
 // Khối gắn data-print-whole chỉ được giữ trọn khi cao không quá tỉ lệ này của trang.
 const WHOLE_MAX_RATIO = 0.9;
@@ -48,10 +49,17 @@ export function tunePrintBreaks(shell: HTMLElement | null, pageHeightPx: number 
   // thì xét tiếp con của nó — để chỗ ngắt rơi vào khe giữa các phần con, không cắt ngang 1 ô/khung.
   // Nhóm hàng của bảng (thead/tbody/tfoot) không gắn giữ trọn — Chrome đẩy nguyên cả bảng sang trang sau thay vì
   // ngắt giữa các hàng; xét tiếp từng hàng (tr đã giữ trọn bằng CSS).
+  // Phần con lớn cũng được ngắt bên trong (data-print-split) — ô bảng (td) cao hơn ngưỡng (hàng chi tiết gợi ý kinh doanh)
+  // vốn bị CSS giữ trọn (tr, td: break-inside avoid) nên cả nhóm hàng bị đẩy sang trang sau.
   const keepSmallParts = (el: HTMLElement) => {
     for (const child of Array.from(el.children) as HTMLElement[]) {
-      if (child.getBoundingClientRect().height <= limit && !TABLE_GROUPS.has(child.tagName)) child.dataset.printKeep = "";
-      else keepSmallParts(child);
+      if (child.dataset.printWhole !== undefined) continue; // giữ trọn / đã xét ở bước data-print-whole
+      if (child.getBoundingClientRect().height <= limit && !TABLE_GROUPS.has(child.tagName)) {
+        child.dataset.printKeep = "";
+      } else {
+        if (!TABLE_GROUPS.has(child.tagName)) child.dataset.printSplit = "";
+        keepSmallParts(child);
+      }
     }
   };
   resetPrintBreaks(shell);
@@ -73,6 +81,50 @@ export function tunePrintBreaks(shell: HTMLElement | null, pageHeightPx: number 
       keepSmallParts(el);
     }
   });
+}
+
+// Biểu đồ nến khi xuất PDF (CandlestickChart, ReportDocument.tsx) nhận chiều cao ép (px bố cục) qua sự kiện này; null =
+// trả về chiều cao mặc định.
+export const CHART_FIT_EVENT = "report-chart-fit";
+// Hạ biểu đồ tối đa còn tỉ lệ này của chiều cao gốc — thấp hơn nữa thì thà sang trang sau.
+const CHART_FIT_MIN_RATIO = 0.65;
+
+// Khối biểu đồ nến (data-chart-fit, giữ trọn khi in) — hạ chiều cao biểu đồ khi:
+//  (1) khối cao hơn WHOLE_MAX_RATIO trang (trang ngang thấp) — không thì khối bị cho ngắt bên trong, biểu đồ (không cắt được)
+//      bị đẩy sang trang sau và vẽ đè lên khối phía sau;
+//  (2) khối vắt qua cuối TRANG 1 — cho vừa phần còn lại của trang 1 thay vì đẩy cả khối sang trang 2 và bỏ trắng cuối trang 1
+//      (khối mở đầu dài ngắn khác nhau theo báo cáo, có/không có ô "Điều đáng quan tâm nhất"). Đo theo dòng chảy liên tục:
+//      khối bắt đầu trong trang 1 thì mọi thứ phía trước nằm trọn trang 1 (không ngắt trang nào) nên vị trí đo = vị trí thật.
+// (2) hạ dần (ô tóm tắt cạnh biểu đồ co theo chậm hơn) tối đa còn CHART_FIT_MIN_RATIO chiều cao gốc; vẫn tràn → trả lại
+// chiều cao sau (1).
+export async function fitChartToPage(shell: HTMLElement | null, pageHeightPx: number, settle: () => Promise<unknown>) {
+  const block = shell?.querySelector<HTMLElement>("[data-chart-fit]");
+  const svg = block?.querySelector<SVGSVGElement>("svg.candle-chart");
+  if (!shell || !block || !svg) return;
+  const setHeight = async (h: number) => {
+    window.dispatchEvent(new CustomEvent(CHART_FIT_EVENT, { detail: h }));
+    await settle();
+  };
+  // Hạ biểu đồ để khối thấp đi `excessPx` (px hiển thị), không dưới `minH` (đơn vị viewBox = px bố cục).
+  const shrink = async (excessPx: number, minH: number) => {
+    const viewH = svg.viewBox.baseVal.height;
+    const pxPerUnit = svg.getBoundingClientRect().height / viewH;
+    if (!(pxPerUnit > 0) || viewH <= minH) return false;
+    await setHeight(Math.max(minH, Math.floor(viewH - (excessPx + 6) / pxPerUnit)));
+    return true;
+  };
+  const startH = svg.viewBox.baseVal.height;
+  const tooTall = block.getBoundingClientRect().height - pageHeightPx * (WHOLE_MAX_RATIO - 0.05);
+  if (tooTall > 0) await shrink(tooTall, Math.ceil(startH * 0.4));
+  const top = block.getBoundingClientRect().top - shell.getBoundingClientRect().top;
+  const overflow = () => top + block.getBoundingClientRect().height - pageHeightPx;
+  if (top >= pageHeightPx || overflow() <= 0) return;
+  const fittedH = svg.viewBox.baseVal.height;
+  const minH = Math.ceil(startH * CHART_FIT_MIN_RATIO);
+  for (let i = 0; i < 3 && overflow() > 0; i++) {
+    if (!(await shrink(overflow(), minH))) break;
+  }
+  if (overflow() > 0) await setHeight(fittedH);
 }
 
 // In bằng trình duyệt (Ctrl+P) — khổ A4 dọc mặc định. `enabled=false` khi trang export tự gọi tunePrintBreaks.

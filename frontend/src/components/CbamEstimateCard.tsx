@@ -49,13 +49,14 @@ function Kpi({ icon, iconClass, label, value, sub, subClass }: {
   );
 }
 
-// 1 dòng trong khối "Thông tin chi tiết": icon | nhãn đậm | nội dung (mobile: nội dung xuống dưới nhãn).
+// 1 dòng trong khối "Thông tin chi tiết": icon | nhãn đậm | nội dung (mobile: nội dung xuống dưới nhãn). In: bỏ icon
+// tròn (dòng thấp bằng chữ), cột nhãn hẹp hơn.
 function DetailRow({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
     <li className="flex items-start gap-3 py-2.5 border-t border-border first:border-t-0 first:pt-0 last:pb-0 print:break-inside-avoid">
-      <span className="flex items-center justify-center w-8 h-8 rounded-full shrink-0 bg-tint text-primary-dark" aria-hidden="true">{icon}</span>
-      <div className="min-w-0 flex-1 sm:flex sm:gap-4 sm:pt-[6px]">
-        <div className="text-[13px] font-bold leading-snug text-label sm:w-[9.5rem] sm:shrink-0 max-sm:mt-[7px]">{label}</div>
+      <span className="flex items-center justify-center w-8 h-8 rounded-full shrink-0 bg-tint text-primary-dark print:hidden" aria-hidden="true">{icon}</span>
+      <div className="min-w-0 flex-1 sm:flex sm:gap-4 sm:pt-[6px] print:pt-0!">
+        <div className="text-[13px] font-bold leading-snug text-label sm:w-[9.5rem] print:w-[8rem]! sm:shrink-0 max-sm:mt-[7px]">{label}</div>
         <div className="text-[13px] leading-[1.55] text-body tabular-nums">{children}</div>
       </div>
     </li>
@@ -68,6 +69,7 @@ export function CbamEstimateCard({ estimate: e }: { estimate: CbamEstimate }) {
   const gap = e.spot_vs_qtd_pct;
   const fixedPct = Math.min(100, Math.max(0, e.fixed_share_pct));
   const products = e.product_exposure ?? [];
+  const side = products.length > 0;
 
   return (
     <section className="mt-6 rounded-xl border border-border bg-background overflow-hidden shadow-[var(--shadow-soft)] print:shadow-none">
@@ -91,45 +93,47 @@ export function CbamEstimateCard({ estimate: e }: { estimate: CbamEstimate }) {
         </div>
       </div>
 
-      <div className="p-3 sm:p-4 space-y-3">
-        {/* ═══ 3 chỉ số chính ═══ */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          <Kpi
-            icon={<Leaf size={18} strokeWidth={2.25} />} iconClass="bg-primary-dark"
-            label={t("estimate")} value={num(e.estimate, locale)}
-            sub={e.ci_low !== null && e.ci_high !== null
-              ? t("ci", { level: e.ci_level, low: num(e.ci_low, locale), high: num(e.ci_high, locale) }) : undefined}
-          />
-          <Kpi
-            icon={<TrendingUp size={18} strokeWidth={2.25} />} iconClass="bg-[#3b8fd0]"
-            label={t("qtdVwap")} value={num(e.qtd_vwap, locale)}
-            sub={t("auctionsDone", { done: e.auctions_done, total: e.auctions_total })}
-          />
-          <Kpi
-            icon={<Coins size={18} strokeWidth={2.25} />} iconClass="bg-up"
-            label={t("spot")} value={num(e.spot, locale)}
-            sub={gap !== null ? t("spotVsQtd", { pct: `${gap > 0 ? "+" : ""}${num(gap, locale)}` }) : undefined}
-            subClass={gap !== null ? clsx("font-semibold", gap >= 0 ? "text-up" : "text-down") : undefined}
-          />
-        </div>
-
-        {/* ═══ Tỷ lệ khối lượng quý đã chốt giá ═══ */}
-        <div className="rounded-xl border border-border px-3.5 py-3 print:break-inside-avoid">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[12.5px] tabular-nums">
-            <span className="text-body">
-              {t.rich("fixedShare", { pct: num(e.fixed_share_pct, locale, 1), b: (chunks) => <b className="font-bold text-primary-dark">{chunks}</b> })}
-            </span>
-            <span className="text-muted-light">{t("volume", { done: num(e.volume_done_mt, locale), total: num(e.volume_total_mt, locale) })}</span>
+      {/* Có chi phí theo sản phẩm: tới lg (và khi in khổ dọc) xếp dọc — chia 2 cột ở bề rộng đó làm đoạn "Cách khóa" dài 8
+          dòng và công thức sản phẩm gãy dòng. Màn rộng (xl): 3 chỉ số + tỷ lệ đã chốt hết hàng, rồi chi tiết | sản phẩm
+          (cột trái dùng xl:contents để thành ô của lưới). In khổ ngang (pw:, trang thấp): cột trái = 3 chỉ số, tỷ lệ đã chốt,
+          thông tin chi tiết | cột phải = sản phẩm — 2 ô cùng 1 hàng lưới nên ngắt trang được song song (ô vắt nhiều hàng
+          lưới thì Chrome không ngắt được giữa các hàng đó, đẩy cả khối sang trang sau). */}
+      <div className={clsx("p-3 sm:p-4 space-y-3 print:break-before-avoid", side && "xl:grid xl:grid-cols-[1.3fr_1fr] xl:gap-3 xl:space-y-0 pw:grid pw:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] pw:items-start pw:gap-x-3 pw:space-y-0")}>
+        <div className={clsx("space-y-3 print:break-before-avoid", side && "xl:contents pw:block!")}>
+          {/* ═══ 3 chỉ số chính ═══ */}
+          <div className={clsx("grid grid-cols-1 sm:grid-cols-3 gap-2.5", side && "xl:col-span-2")}>
+            <Kpi
+              icon={<Leaf size={18} strokeWidth={2.25} />} iconClass="bg-primary-dark"
+              label={t("estimate")} value={num(e.estimate, locale)}
+              sub={e.ci_low !== null && e.ci_high !== null
+                ? t("ci", { level: e.ci_level, low: num(e.ci_low, locale), high: num(e.ci_high, locale) }) : undefined}
+            />
+            <Kpi
+              icon={<TrendingUp size={18} strokeWidth={2.25} />} iconClass="bg-[#3b8fd0]"
+              label={t("qtdVwap")} value={num(e.qtd_vwap, locale)}
+              sub={t("auctionsDone", { done: e.auctions_done, total: e.auctions_total })}
+            />
+            <Kpi
+              icon={<Coins size={18} strokeWidth={2.25} />} iconClass="bg-up"
+              label={t("spot")} value={num(e.spot, locale)}
+              sub={gap !== null ? t("spotVsQtd", { pct: `${gap > 0 ? "+" : ""}${num(gap, locale)}` }) : undefined}
+              subClass={gap !== null ? clsx("font-semibold", gap >= 0 ? "text-up" : "text-down") : undefined}
+            />
           </div>
-          <div className={clsx("mt-2 h-2.5 rounded-full bg-surface-alt overflow-hidden", PRINT_EXACT)}>
-            <div className="h-full rounded-full bg-gradient-to-r from-primary-dark to-primary" style={{ width: `${fixedPct}%` }} />
-          </div>
-        </div>
 
-        {/* Tới lg (và khi in khổ A4 ~700px): "Thông tin chi tiết" và chi phí sản phẩm xếp dọc — chia 2 cột ở bề rộng đó
-            làm đoạn "Cách khóa" dài 8 dòng và công thức sản phẩm gãy dòng. Màn rộng (xl, báo cáo trải hết bề ngang):
-            chi tiết | sản phẩm cạnh nhau, sản phẩm xếp 1 cột. */}
-        <div className={clsx("space-y-3", products.length > 0 && "xl:space-y-0 xl:grid xl:grid-cols-[1.3fr_1fr] xl:gap-3")}>
+          {/* ═══ Tỷ lệ khối lượng quý đã chốt giá ═══ */}
+          <div className={clsx("rounded-xl border border-border px-3.5 py-3 print:break-inside-avoid", side && "xl:col-span-2")}>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[12.5px] tabular-nums">
+              <span className="text-body">
+                {t.rich("fixedShare", { pct: num(e.fixed_share_pct, locale, 1), b: (chunks) => <b className="font-bold text-primary-dark">{chunks}</b> })}
+              </span>
+              <span className="text-muted-light">{t("volume", { done: num(e.volume_done_mt, locale), total: num(e.volume_total_mt, locale) })}</span>
+            </div>
+            <div className={clsx("mt-2 h-2.5 rounded-full bg-surface-alt overflow-hidden", PRINT_EXACT)}>
+              <div className="h-full rounded-full bg-gradient-to-r from-primary-dark to-primary" style={{ width: `${fixedPct}%` }} />
+            </div>
+          </div>
+
           {/* ═══ Thông tin chi tiết ═══ */}
           <div className="rounded-xl border border-border px-3.5 py-3">
             <h4 className="flex items-center gap-2 mb-2.5 text-[14.5px] font-extrabold text-primary-dark">
@@ -171,63 +175,64 @@ export function CbamEstimateCard({ estimate: e }: { estimate: CbamEstimate }) {
             </ul>
           </div>
 
-          {/* ═══ Chi phí CBAM / tấn sản phẩm (services/cbam_estimate.py::product_exposure — phát thải nộp là GIẢ ĐỊNH) ═══ */}
-          {products.length > 0 && (
-            <div>
-              <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
-                <h4 className="text-[14.5px] font-extrabold text-primary-dark">{t("productTitle")}</h4>
-                <span className="text-[11.5px] leading-snug text-muted-light">{t("productAssumed")}</span>
-              </div>
-              <div className={clsx("grid gap-2.5", products.length > 1 && "sm:grid-cols-2 xl:grid-cols-1")}>
-              {products.map((p) => {
-                const illustrative = (p.defaults ?? []).some((d) => !d.vn);
-                const name = t(`product.${p.key}`);
-                // Tên sản phẩm đã ghi công nghệ (vd "Thép lò cao (BF-BOF)") thì không lặp lại route trong ngoặc mã CN.
-                const route = p.route && !name.includes(p.route) ? `, ${p.route}` : "";
-                return (
-                  <div key={p.key} className="rounded-xl border border-primary/15 bg-tint/50 px-3 py-3 print:break-inside-avoid">
-                    <div className="flex items-center gap-2.5">
-                      <span className={clsx("flex items-center justify-center w-8 h-8 rounded-full shrink-0 bg-primary-dark text-white", PRINT_EXACT)} aria-hidden="true">
-                        <Factory size={15} strokeWidth={2.25} />
-                      </span>
-                      <div className="text-[13.5px] font-bold leading-snug text-primary-dark">
-                        {name}{" "}
-                        <span className="font-semibold text-muted-light whitespace-nowrap">(CN {p.cn}{route})</span>
-                      </div>
-                    </div>
-                    <div className="mt-2 rounded-lg border border-primary/20 bg-background px-3 py-2 tabular-nums">
-                      <div className="text-[14px] font-bold text-[#123c38]">
-                        {num(p.embedded, locale)} − {num(p.free_allocation_factor_pct, locale, 1)}% × CSCF {num(p.cscf_pct ?? 100, locale, 0)}% × {num(p.benchmark, locale, 3)}
-                      </div>
-                      <div className="mt-0.5 text-[13px] text-body">
-                        <span className="whitespace-nowrap">= <b>{num(p.net_tco2_per_t, locale, 3)} tCO₂/t</b></span>{" "}
-                        <span className="whitespace-nowrap">→ <b className="text-[15px] text-primary-dark">{t("productCost", { cost: num(p.cost_eur_per_t, locale) })}</b></span>
-                        {p.cost_low !== null && p.cost_high !== null && (
-                          <span className="ml-1 text-[11.5px] text-muted-light whitespace-nowrap">{t("productRange", { low: num(p.cost_low, locale), high: num(p.cost_high, locale) })}</span>
-                        )}
-                      </div>
-                      <div className="mt-0.5 text-[10.5px] text-muted-light">{t("formulaLegend")}</div>
-                    </div>
-                    {/* Kịch bản GIÁ TRỊ MẶC ĐỊNH (kèm markup) — so với số thực đã thẩm định. */}
-                    {p.defaults && p.defaults.length > 0 && (
-                      <p className="text-left mt-2 text-[12px] leading-[1.5] text-muted-light tabular-nums">
-                        {t("productDefaults", {
-                          markup: p.default_markup_pct ?? 10,
-                          list: p.defaults.map((d) => `${d.origin} ${num(d.with_markup, locale, 3)} → ${num(d.cost_eur_per_t, locale)}`).join(" · "),
-                        })}
-                        {illustrative && <span className="block italic">{t("productDefaultsIllustrative")}</span>}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-              </div>
-            </div>
-          )}
         </div>
 
+        {/* ═══ Chi phí CBAM / tấn sản phẩm (services/cbam_estimate.py::product_exposure — phát thải nộp là GIẢ ĐỊNH) ═══ */}
+        {side && (
+          <div>
+            <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+              <h4 className="text-[14.5px] font-extrabold text-primary-dark">{t("productTitle")}</h4>
+              <span className="text-[11.5px] leading-snug text-muted-light">{t("productAssumed")}</span>
+            </div>
+            <div className={clsx("grid gap-2.5", products.length > 1 && "sm:grid-cols-2 xl:grid-cols-1 pw:grid-cols-1")}>
+            {products.map((p) => {
+              const illustrative = (p.defaults ?? []).some((d) => !d.vn);
+              const name = t(`product.${p.key}`);
+              // Tên sản phẩm đã ghi công nghệ (vd "Thép lò cao (BF-BOF)") thì không lặp lại route trong ngoặc mã CN.
+              const route = p.route && !name.includes(p.route) ? `, ${p.route}` : "";
+              return (
+                <div key={p.key} className="rounded-xl border border-primary/15 bg-tint/50 px-3 py-3 print:break-inside-avoid">
+                  <div className="flex items-center gap-2.5">
+                    <span className={clsx("flex items-center justify-center w-8 h-8 rounded-full shrink-0 bg-primary-dark text-white", PRINT_EXACT)} aria-hidden="true">
+                      <Factory size={15} strokeWidth={2.25} />
+                    </span>
+                    <div className="text-[13.5px] font-bold leading-snug text-primary-dark">
+                      {name}{" "}
+                      <span className="font-semibold text-muted-light whitespace-nowrap">(CN {p.cn}{route})</span>
+                    </div>
+                  </div>
+                  <div className="mt-2 rounded-lg border border-primary/20 bg-background px-3 py-2 tabular-nums">
+                    <div className="text-[14px] font-bold text-[#123c38]">
+                      {num(p.embedded, locale)} − {num(p.free_allocation_factor_pct, locale, 1)}% × CSCF {num(p.cscf_pct ?? 100, locale, 0)}% × {num(p.benchmark, locale, 3)}
+                    </div>
+                    <div className="mt-0.5 text-[13px] text-body">
+                      <span className="whitespace-nowrap">= <b>{num(p.net_tco2_per_t, locale, 3)} tCO₂/t</b></span>{" "}
+                      <span className="whitespace-nowrap">→ <b className="text-[15px] text-primary-dark">{t("productCost", { cost: num(p.cost_eur_per_t, locale) })}</b></span>
+                      {p.cost_low !== null && p.cost_high !== null && (
+                        <span className="ml-1 text-[11.5px] text-muted-light whitespace-nowrap">{t("productRange", { low: num(p.cost_low, locale), high: num(p.cost_high, locale) })}</span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[10.5px] text-muted-light">{t("formulaLegend")}</div>
+                  </div>
+                  {/* Kịch bản GIÁ TRỊ MẶC ĐỊNH (kèm markup) — so với số thực đã thẩm định. */}
+                  {p.defaults && p.defaults.length > 0 && (
+                    <p className="text-left mt-2 text-[12px] leading-[1.5] text-muted-light tabular-nums">
+                      {t("productDefaults", {
+                        markup: p.default_markup_pct ?? 10,
+                        list: p.defaults.map((d) => `${d.origin} ${num(d.with_markup, locale, 3)} → ${num(d.cost_eur_per_t, locale)}`).join(" · "),
+                      })}
+                      {illustrative && <span className="block italic">{t("productDefaultsIllustrative")}</span>}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            </div>
+          </div>
+        )}
+
         {/* ═══ Ghi chú: phương pháp ước tính + nguồn/giả định của khối chi phí sản phẩm ═══ */}
-        <div className="rounded-xl border border-[#cfe3f2] bg-[#f3f8fc] px-3.5 py-3 print:break-inside-avoid">
+        <div className={clsx("rounded-xl border border-[#cfe3f2] bg-[#f3f8fc] px-3.5 py-3 print:break-inside-avoid", side && "xl:col-span-2 pw:col-span-2 pw:mt-2")}>
           <h4 className="flex items-center gap-2 mb-1.5 text-[13.5px] font-bold text-[#1d5a85]">
             <span className={clsx("flex items-center justify-center w-6 h-6 rounded-full bg-[#3b8fd0] text-white", PRINT_EXACT)} aria-hidden="true">
               <Lightbulb size={13} strokeWidth={2.25} />

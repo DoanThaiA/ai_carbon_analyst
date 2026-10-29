@@ -279,6 +279,13 @@ svg text {
     break-inside: avoid;
     page-break-inside: avoid;
   }
+  /* Hàng bảng nhiều dòng gắn data-print-flow (chi tiết gợi ý kinh doanh — Cơ sở / KPI / …, hàng bảng chính sách ETS/MSR)
+     ngắt được giữa các dòng dù ngắn — không đẩy cả hàng (kèm tiêu đề khối) sang trang sau. */
+  tr[data-print-flow],
+  tr[data-print-flow] > td {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
   /* Khung có viền/nền bị ngắt sang trang sau: mỗi mảnh tự có đủ viền, bo góc và padding (thay vì mảnh trên hở đáy,
      mảnh dưới hở đỉnh trông như bị cắt cụt). */
   .rounded-md.border, .rounded-lg.border, .rounded-xl.border, .rounded-2xl.border, [data-print-split] {
@@ -386,11 +393,11 @@ svg text {
   /* ---- PDF gọn: các khối/thẻ sát nhau hơn màn hình (giãn cách space-y / gap / dưới tiêu đề mục) ----
      space-y của Tailwind v4 đặt margin-block-end lên các con (trừ con cuối). */
   .report-shell .space-y-10 > :not(:last-child) {
-    margin-block-end: 1.125rem !important;
+    margin-block-end: 0.875rem !important;
   }
   .report-shell .space-y-8 > :not(:last-child),
   .report-shell [class~="pn:space-y-8"] > :not(:last-child) {
-    margin-block-end: 1rem !important;
+    margin-block-end: 0.75rem !important;
   }
   .report-shell .space-y-6 > :not(:last-child) {
     margin-block-end: 0.75rem !important;
@@ -405,6 +412,48 @@ svg text {
   }
   .report-shell .report-heading.mb-6 {
     margin-bottom: 0.75rem !important;
+  }
+
+  /* ---- PDF gọn (29/10/2026): mật độ như bản tin giấy — giãn dòng 1,38 thay vì 1,55–1,6 của màn hình, khung/thẻ đệm
+     mỏng hơn. Chọn theo tên class Tailwind (giá trị trong JSX) — đổi class đệm/giãn dòng của khối thì xem lại ở đây.
+     Bỏ qua phần tử đã có đệm riêng khi in (print:p-…, pn:p-0, print:px-…). ---- */
+  .report-shell [class*="leading-[1.5"],
+  .report-shell [class*="leading-[1.6"],
+  .report-shell .leading-relaxed {
+    line-height: 1.38 !important;
+  }
+  /* Chữ thân dài (ý phân tích, Diễn biến chính, Tóm tắt, động lực, Cần theo dõi…) nhỏ hơn 1 cỡ: 15 → 14px, 14,5 →
+     13,5px. Nhận diện = cỡ chữ + giãn dòng kiểu đoạn văn (leading-[1.5x/1.6]); số liệu/tiêu đề dùng leading-tight/snug
+     nên không bị đổi. */
+  .report-shell [class*="text-[15px]"]:is([class*="leading-[1.5"], [class*="leading-[1.6"]) {
+    font-size: 14px !important;
+  }
+  .report-shell [class*="text-[14.5px]"]:is([class*="leading-[1.5"], [class*="leading-[1.6"]) {
+    font-size: 13.5px !important;
+  }
+  .report-shell :is([class~="p-4"], [class~="sm:p-5"], [class~="sm:p-4"]):not([class*="print:p-"]):not([class*="pn:p-0"]) {
+    padding: 0.5rem 0.75rem !important;
+  }
+  .report-shell :is([class~="px-4"], [class~="sm:px-5"]):not([class*="print:px-"]) {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+  .report-shell :is([class~="py-4"], [class~="py-3.5"], [class~="py-3"]):not([class*="print:py-"]) {
+    padding-top: 0.4rem !important;
+    padding-bottom: 0.4rem !important;
+  }
+  .report-shell [class~="py-2.5"]:not([class*="print:py-"]) {
+    padding-top: 0.3rem !important;
+    padding-bottom: 0.3rem !important;
+  }
+  .report-shell .space-y-3 > :not(:last-child) {
+    margin-block-end: 0.5rem !important;
+  }
+  .report-shell .gap-3 {
+    gap: 0.5rem !important;
+  }
+  .report-shell .report-heading.mb-3 {
+    margin-bottom: 0.5rem !important;
   }
 }
 

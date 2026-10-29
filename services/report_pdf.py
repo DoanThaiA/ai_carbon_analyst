@@ -35,17 +35,16 @@ MM_TO_PX = 96 / 25.4
 
 # Khổ trang (mm, theo hướng DỌC) + lề (trên/dưới, trái/phải). Vuông không có hướng.
 PAGE_SIZES: Dict[str, Tuple[float, float]] = {"a4": (210, 297), "square": (210, 210), "wide": (167, 297)}
-PAGE_MARGINS: Dict[str, Tuple[float, float]] = {"a4": (12, 10), "square": (10, 10), "wide": (9, 9)}
+# Lề mỏng (PDF gọn 29/10/2026, A4 trước 12/10) — đầu/chân trang chữ 8pt vẫn vừa lề trên/dưới.
+PAGE_MARGINS: Dict[str, Tuple[float, float]] = {"a4": (9, 8), "square": (8, 8), "wide": (8, 8)}
 ORIENTATIONS = ("portrait", "landscape")
 # Tỉ lệ chữ/khối theo thiết bị xem (bản xuất cho điện thoại đã bỏ — 26/10/2026). Bề rộng bố cục = bề rộng vùng in / tỉ
-# lệ (container query dàn lại số cột theo bề rộng này). Máy tính 0,82 (26/10/2026): A4 dọc rộng 718px → bố cục ~875px ≥
-# @3xl/report (768px) nên các khối dàn 2 cột như màn hình thay vì 1 cột, chữ thân ≈ 12,3px (~9pt) — báo cáo từ 19 còn
-# ~12–13 trang. TV trình chiếu cả trang 16:9 phóng to ~1,8× nên giữ tỉ lệ 1 — trang ngang đã đủ rộng cho nhiều cột.
-DEVICE_SCALES: Dict[str, float] = {"pc": 0.82, "tv": 1.0}
-# Khổ NGANG (A4/16:9) bản máy tính (28/10/2026): 0,75 — bố cục ~1400px (A4 ngang) ≥ 1024px nên trang export bật
-# `.pdf-wide` (dàn cột như màn hình: tổng quan 3 cột, bảng giá | biểu đồ chỉ số, Phân tích 2 cột...), chữ thân ≈ 11,3px
-# (~8,4pt). Báo cáo 28/10: A4 ngang 15 → 14 trang, 16:9 ngang 19 → 17 trang. TV giữ tỉ lệ thường (trình chiếu).
-LANDSCAPE_DEVICE_SCALES: Dict[str, float] = {"pc": 0.75}
+# lệ (container query dàn lại số cột theo bề rộng này). Máy tính 0,76 (PDF gọn 29/10/2026, trước 0,82 dọc / 0,75 ngang):
+# A4 dọc rộng 733px → bố cục ~965px ≥ @3xl/report (768px), dàn 2 cột như màn hình; A4 ngang bố cục ~1380px ≥ 1024px → trang
+# export bật `.pdf-wide` (tổng quan 3 cột, bảng giá | biểu đồ chỉ số, Phân tích 2 cột...). Chữ thân in 14px (globals.css,
+# "PDF gọn") × 0,76 ≈ 8pt. Báo cáo 28/10 (5 tin): A4 dọc 12 → 8 trang; thêm tin (12 tin) 9 trang. TV trình chiếu cả
+# trang 16:9 phóng to ~1,8× nên chữ lớn hơn (0,8): bố cục ~1330 × 714px — vẫn đủ cao (≥ 700px) cho bố cục ngang `.pdf-wide`.
+DEVICE_SCALES: Dict[str, float] = {"pc": 0.76, "tv": 0.8}
 
 
 @dataclass(frozen=True)
@@ -70,8 +69,6 @@ class PdfLayout:
         return PAGE_MARGINS[self.size]
 
     def scale(self) -> float:
-        if self.orientation == "landscape" and self.size != "square":
-            return LANDSCAPE_DEVICE_SCALES.get(self.device, DEVICE_SCALES[self.device])
         return DEVICE_SCALES[self.device]
 
     def content_px(self) -> Tuple[int, int]:

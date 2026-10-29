@@ -72,8 +72,8 @@ export function ForecastReviewCard({
           tiêu đề + nhãn | cột %Δ | chi tiết — để cột %Δ của các báo cáo cùng hàng thẳng nhau dù tiêu đề dài ngắn khác
           nhau. Viền: mỗi ô kẻ trái + trên, lưới lùi -1px để viền ở mép bị khung cắt đi.
           Khi in: flex-wrap thay lưới (basis = bề rộng cột) — Chrome không ngắt trang giữa các hàng của lưới subgrid nên
-          cả khung bị đẩy nguyên sang trang sau; flex-wrap ngắt được giữa 2 hàng thẻ. Tiêu đề cao tối thiểu 2 dòng để cột
-          %Δ các thẻ cùng hàng vẫn thẳng nhau. */}
+          cả khung bị đẩy nguyên sang trang sau; flex-wrap ngắt được giữa 2 hàng thẻ. Tiêu đề cao tối thiểu 1 dòng để cột
+          %Δ các thẻ cùng hàng vẫn thẳng nhau. In khổ ngang (pw:): mọi báo cáo trên 1 hàng (chia đều, tối thiểu 9rem/thẻ). */}
       <div className="overflow-x-auto print:overflow-hidden">
         <ul className="-ml-px -mt-px grid grid-cols-2 @3xl/report:grid-cols-4 print:flex print:flex-wrap not-print:@7xl/report:grid-flow-col not-print:@7xl/report:grid-cols-none not-print:@7xl/report:grid-rows-[auto_auto_1fr] not-print:@7xl/report:auto-cols-[minmax(9rem,1fr)]">
           {items.map((it) => {
@@ -81,8 +81,8 @@ export function ForecastReviewCard({
             const up = it.change_pct >= 0;
             const barPct = Math.min(Math.abs(it.change_pct) / scale, 1) * 50;
             return (
-              <li key={it.report_date} className="row-span-3 grid min-w-0 basis-1/2 @3xl/report:basis-1/4 grid-rows-subgrid content-start gap-y-2 border-l border-t border-border px-3 py-2.5 print:break-inside-avoid">
-                <div className="flex flex-wrap content-start items-center gap-x-1.5 gap-y-1 print:min-h-[2.6rem]">
+              <li key={it.report_date} className="row-span-3 grid min-w-0 basis-1/2 @3xl/report:basis-1/4 pw:flex-1 pw:basis-0! pw:min-w-[9rem] grid-rows-subgrid content-start gap-y-2 print:gap-y-1 border-l border-t border-border px-3 py-2.5 print:py-1.5! print:break-inside-avoid">
+                <div className="flex flex-wrap content-start items-center gap-x-1.5 gap-y-1 print:min-h-[1.5rem]">
                   <strong className="text-[13.5px] text-label tabular-nums">{t("column", { date: dm(it.report_date) })}</strong>
                   <span className={clsx("break-words font-mono text-[10px] leading-snug font-bold uppercase tracking-wider px-1.5 py-px rounded border", VERDICT_TONE[it.verdict])}>
                     {t(`verdict.${it.verdict}`)}
@@ -90,7 +90,7 @@ export function ForecastReviewCard({
                 </div>
 
                 <div className="flex items-center gap-2.5">
-                  <div className="relative h-14 w-3.5 shrink-0 rounded-sm bg-surface" aria-hidden="true">
+                  <div className="relative h-14 print:h-9 w-3.5 shrink-0 rounded-sm bg-surface" aria-hidden="true">
                     <span className="absolute inset-x-[-3px] top-1/2 h-px bg-border" />
                     <span
                       className={clsx("absolute inset-x-0 min-h-[2px]", up ? "bottom-1/2 rounded-t-sm bg-up" : "top-1/2 rounded-b-sm bg-down")}

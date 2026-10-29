@@ -15,17 +15,19 @@ import { api } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { ReportDocument } from "@/components/ReportDocument";
 import { localizeReport } from "@/lib/reportLocale";
-import { tunePrintBreaks } from "@/lib/usePrintBreakTuning";
+import { fitChartToPage, tunePrintBreaks } from "@/lib/usePrintBreakTuning";
 
 const MM_TO_PX = 96 / 25.4;
 // Chờ biểu đồ (ResizeObserver, vẽ lại theo bề rộng thật) ổn định sau khi chuyển sang media print.
 const SETTLE_MS = 800;
+// Chờ biểu đồ nến vẽ lại sau khi đổi chiều cao (fitChartToPage).
+const FIT_SETTLE_MS = 250;
 // Biểu đồ nến cao tối đa ~55% vùng in 1 trang (giữ tỉ lệ, thu vào giữa) — trang ngang 16:9 thấp vẫn đủ chỗ cho tiêu
 // đề khung + biểu đồ trên cùng 1 trang. A4 dọc không bị ảnh hưởng (biểu đồ thấp hơn mức này).
 const CHART_MAX_PAGE_RATIO = 0.55;
 // Bố cục ≥ 1024px (= @5xl/report, khổ NGANG) → `.pdf-wide`: dàn cột như màn hình (variant scr:/pn: trong globals.css) —
 // chỉ khi trang đủ cao (≥ 700px bố cục) cho các khối dàn cột (bảng giá | biểu đồ chỉ số...) nằm trọn 1 trang; trang thấp
-// hơn (16:9 bản TV, tỉ lệ 1) giữ bố cục in xếp chồng.
+// hơn giữ bố cục in xếp chồng (16:9 ngang TV dùng tỉ lệ 0,8 — services/report_pdf.py — để vẫn ≥ 700px).
 const WIDE_LAYOUT_PX = 1024;
 const WIDE_MIN_PAGE_PX = 700;
 
@@ -78,7 +80,10 @@ function ReportExport() {
       await document.fonts.ready;
       await sleep(SETTLE_MS);
       if (cancelled) return;
-      tunePrintBreaks(frameRef.current?.querySelector<HTMLElement>(".report-shell") ?? null, contentH);
+      const shell = frameRef.current?.querySelector<HTMLElement>(".report-shell") ?? null;
+      await fitChartToPage(shell, contentH, () => sleep(FIT_SETTLE_MS));
+      if (cancelled) return;
+      tunePrintBreaks(shell, contentH);
       setReady(true);
     })();
     return () => { cancelled = true; };
