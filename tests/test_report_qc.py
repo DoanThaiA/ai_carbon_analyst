@@ -643,6 +643,47 @@ def test_facts_flag_self_reported_mismatch():
     assert any("chưa khớp" in i["message"] for i in issues)
 
 
+# ── Tóm tắt điều hành: cách viết mới (kết luận trước, mốc tiếp theo) ───
+
+
+def test_exec_summary_prompts_carry_principles():
+    from services import report_generator as rg
+
+    _, s1 = rg._prompt_section1("[1] tin", "giá", "xu hướng", "biên độ", "2026-10-15", fuel_spread="KẾT LUẬN DÙNG CHUNG: x")
+    _, s1_news = rg._prompt_section1_news_only("[1] tin", "2026-10-15")
+    for prompt in (s1, s1_news):
+        assert rg.EXEC_SUMMARY_PRINCIPLES in prompt and rg.EXEC_SUMMARY_SELF_CHECK in prompt
+    assert "60–90 chữ" in s1 and "**Chính sách ETS:**" in s1 and 'dấu ":" đầu tiên' in s1
+    # Bản có giá luôn có bullet EUA — không còn bullet "Không có sự kiện nổi bật." (không nhãn → giao diện hiện "Note").
+    assert "Không có sự kiện nổi bật" not in s1
+    block = rg._exec_policy_block(rg._dossier_lookup(rg._load_ets_dossiers()))
+    assert '"**Chính sách ETS:**"' in block and "Bước tiếp" in block
+
+
+def test_exec_summary_conclusion_first_bullets_pass_jack():
+    c = g()
+    c["1"]["bullets"] = [
+        {"text": "**EUA:** Chịu áp lực giảm nhẹ — đóng cửa 79,20 EUR/tCO2 (−0,5% trong ngày).",
+         "source_name": None, "source_url": None},
+        {"text": "**Chính sách ETS:** Rủi ro giảm giá EUA chưa tan — Hội đồng châu Âu chưa chốt sửa đổi ETS, dời sang "
+                 "tháng 12/2026.", "source_name": None, "source_url": None},
+        {"text": "**Nhiên liệu:** Chưa tạo thêm lực tăng cho EUA — TTF tăng 2,1% do nắng nóng đẩy cầu điện.",
+         "source_name": "Reuters", "source_url": A3},
+    ]
+    assert run_all(c) == []
+
+
+def test_exec_summary_spread_number_only_in_unsourced_bullet():
+    """Prompt Mục 1: số spread than–khí / số tự tính chỉ đặt ở bullet "source_index": null — Jack đối chiếu số của bullet
+    có nguồn với chính bài đó."""
+    c = g()
+    c["1"]["bullets"][1] = {"text": "**Nhiên liệu:** Chưa tạo thêm lực tăng cho EUA — chênh khí − than 14,6 EUR/MWh, "
+                                    "chuyển đổi khí→than đã bão hòa.", "source_name": "Reuters", "source_url": A3}
+    assert any("14,6" in i["message"] for i in report_qc.check_facts(c, ARTICLE_TEXTS))
+    c["1"]["bullets"][1].update(source_name=None, source_url=None)
+    assert report_qc.check_facts(c, ARTICLE_TEXTS) == []
+
+
 # ── Jack: nguồn của gợi ý kinh doanh (lỗi (e)) ───────────────────────
 
 

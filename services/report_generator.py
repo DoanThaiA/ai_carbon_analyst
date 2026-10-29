@@ -1207,8 +1207,10 @@ def _exec_policy_block(dossiers: Dict[str, Dict[str, Any]]) -> str:
 
 CHÍNH SÁCH ETS/MSR ĐANG MỞ (admin xác nhận — rủi ro chi phối giá EUA 2026):
 {listing}
-BẮT BUỘC có 1 bullet "**Chính sách ETS:**" (source_index: null) — 1 câu ngắn ~20–25 chữ — nêu hồ sơ/sự kiện quan trọng nhất +
-trạng thái + chiều giá đúng như trên (không liệt kê đủ mọi hồ sơ — đủ ở bảng theo dõi chính sách); tin chính sách khí (kho dự trữ khí...) gộp vào bullet "**Nhiên liệu:**" tối đa 1 câu, KHÔNG thành bullet riêng."""
+BẮT BUỘC có 1 bullet "**Chính sách ETS:**" (source_index: null) — 1 câu ngắn ~20–25 chữ, theo thứ tự: chiều giá EUA đúng như
+trên → hồ sơ/sự kiện quan trọng nhất + trạng thái → "Bước tiếp" kèm ngày nếu có (mốc người đọc cần canh). Không liệt kê đủ mọi
+hồ sơ (đủ ở bảng theo dõi chính sách); hồ sơ "sự kiện, chưa quyết định" thì ghi rõ chưa có chiều và mốc quyết định, KHÔNG tự gán
+chiều; tin chính sách khí (kho dự trữ khí...) gộp vào bullet "**Nhiên liệu:**" tối đa 1 câu, KHÔNG thành bullet riêng."""
 
 
 MARKET_VIEW_HEADING = "Quan điểm thị trường"
@@ -3397,6 +3399,28 @@ async def generate_highlight_for_content(
     return _resolve_highlight(raw_hl, index_lookup, bool((content.get("2") or {}).get("no_price_data")))
 
 
+# Cách viết Tóm tắt điều hành — rút từ hướng dẫn executive summary (prezent.ai, 29/10/2026): kết luận trước căn cứ, chỉ
+# những điều quyết định chiều EUA, cụ thể/đo được, nói kết quả không kể quá trình, kết bằng mốc tiếp theo, đứng độc lập
+# (nhiều người chỉ đọc ô này). Dùng chung 2 prompt Mục 1. Quy tắc số khớp Jack `report_qc.check_facts` (số trong bullet
+# có nguồn phải có trong chính bài đó, trừ số của bảng giá / số liệu EUA `key_facts`).
+EXEC_SUMMARY_PRINCIPLES = """CÁCH VIẾT TÓM TẮT ĐIỀU HÀNH (BẮT BUỘC):
+- NGƯỜI ĐỌC: trưởng bàn giao dịch carbon và ban điều hành SIM (chịu chi phí CBAM gián tiếp) — nhiều người CHỈ đọc ô này. Đọc xong phải trả lời được: hôm nay điều gì đang đẩy EUA đi chiều nào và vì sao; mốc nào sắp tới cần canh.
+- KẾT LUẬN TRƯỚC, CĂN CỨ SAU: ngay sau nhãn là Ý NGHĨA với EUA (hỗ trợ giá / gây áp lực giảm / chưa đổi cân bằng cung–cầu) hoặc với chi phí CBAM, rồi mới tới sự kiện + số liệu làm căn cứ — minh họa CẤU TRÚC (không chép chữ/số): "**Nhiên liệu:** Chưa tạo thêm lực tăng cho EUA — TTF tăng X% nhưng chuyển đổi khí→than đã bão hòa." KHÔNG mở đầu bằng bối cảnh/lịch sử ("Trong bối cảnh...", "Sau nhiều tuần...").
+- CHỌN LỌC, KHÔNG TÓM TẮT MỌI MỤC: chỉ những điều quyết định chiều EUA hôm nay; tin đã có ở "BÁO CÁO TRƯỚC" mà hôm nay không có diễn biến mới → bỏ (trừ bullet "Chính sách ETS" bắt buộc nếu có). Cơ chế, tin phụ, ghi chú từng mã để cho Diễn biến chính/Phần 2.
+- CỤ THỂ, ĐO ĐƯỢC: mỗi bullet có ít nhất 1 số liệu hoặc 1 mốc ngày then chốt. CẤM câu không nói tác động gì ("tâm lý thận trọng", "cần theo dõi thêm", "có thể ảnh hưởng tới thị trường").
+- KẾT QUẢ, KHÔNG KỂ QUÁ TRÌNH: KHÔNG viết "Báo cáo ghi nhận...", "Dữ liệu cho thấy...", "Đáng chú ý là..." — nói thẳng điều đã xảy ra và ý nghĩa của nó.
+- MỐC TIẾP THEO: bullet về việc còn đang chờ (hồ sơ chính sách, cuộc họp, số liệu sắp công bố) kết bằng mốc tiếp theo kèm ngày nếu dữ liệu có — đó là "bước tiếp" người đọc cần canh; KHÔNG tự đặt ngày.
+- KHÔNG KHUYẾN NGHỊ: KHÔNG nêu lệnh mua/bán, vùng vào lệnh, mục tiêu, cắt lỗ, dự báo giá hay hành động phòng hộ — nhận định tổng quan, lệnh và phòng hộ CBAM nằm ở các ô cạnh bên, do Mục 3 quyết định sau mục này; nêu ở đây dễ lệch.
+- ĐỨNG ĐỘC LẬP: mỗi bullet có chủ thể rõ (ai/cái gì) — KHÔNG "điều này", "động thái trên"; KHÔNG ghi "[N]", "xem Mục…"; chỉ dùng viết tắt người đọc đã quen (EUA, ETS, MSR, CBAM, TTF, API2).
+- SỐ LIỆU LẦN LẠI ĐƯỢC (hệ thống đối chiếu tự động với bài nguồn): bullet có "source_index" N → mọi con số trong câu PHẢI có nguyên văn trong chính bài [N], trừ giá/%Δ của các mã trong DỮ LIỆU GIÁ và số liệu EUA (biên độ phiên, xu hướng 30 ngày) cho sẵn ở trên. Số spread than–khí, số tự tính, số của bài khác → chỉ đặt ở bullet "source_index": null (số tự tính ghi phép tính ngay trong câu)."""
+
+EXEC_SUMMARY_SELF_CHECK = (
+    "TỰ KIỂM TRƯỚC KHI TRẢ (đọc lại như người chỉ đọc ô này): (1) mỗi bullet nói rõ chiều với EUA/chi phí CBAM ngay "
+    "sau nhãn? (2) mọi số lần lại được về DỮ LIỆU GIÁ hoặc chính bài [N] của bullet đó? (3) không có lệnh/dự báo/khuyến "
+    "nghị? (4) tổng 60–90 chữ, không còn câu bỏ đi mà người đọc không mất gì? Điểm nào sai thì sửa rồi mới trả."
+)
+
+
 def _prompt_section1(
     news_text: str, prices_text: str, eua_trend: str, eua_session_range: str, target_date: str,
     fuel_spread: str = "",
@@ -3420,13 +3444,15 @@ TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coa
 {news_text}
 
 YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH.
-- ĐỘ DÀI (BẮT BUỘC — mục này hiển thị trong 1 ô nhỏ ở đầu báo cáo): TỔNG CẢ MỤC chỉ 60–90 chữ. 3–4 bullet, mỗi bullet ĐÚNG 1 câu ngắn ~20–25 chữ (không tính tag): chỉ 1–2 số liệu then chốt + chiều tác động lên EUA; KHÔNG giải thích cơ chế, KHÔNG liệt kê chuỗi số, KHÔNG ngoặc chú thích dài — chi tiết đã có ở Diễn biến chính/Phần 2.
-- Ưu tiên đúng 4 nhóm: **EUA:**, **Chính sách ETS:**, **Nhiên liệu:**, **CBAM/SIM:** (nhóm không có gì đáng nêu thì bỏ). Sắp xếp theo tác động EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
-- Bullet đầu: giá đóng cửa EUA (%Δ ngày) + 1 cụm ngắn về xu hướng (vị trí trong biên 30 phiên HOẶC số phiên tăng/giảm liên tiếp). Nếu nêu biên độ phiên thì dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên (không bắt buộc nêu).
-- Mỗi bullet mở đầu bằng tag đậm (**EUA:**, **Chính sách:**...). Nêu tin chính sách/địa chính trị ảnh hưởng EUA.
+{EXEC_SUMMARY_PRINCIPLES}
+- ĐỘ DÀI (BẮT BUỘC — mục này hiển thị trong 1 ô nhỏ ở đầu báo cáo): TỔNG CẢ MỤC chỉ 60–90 chữ. 3–4 bullet, mỗi bullet ĐÚNG 1 câu ngắn ~20–25 chữ (không tính nhãn): chỉ 1–2 số liệu then chốt + chiều tác động lên EUA; KHÔNG giải thích cơ chế, KHÔNG liệt kê chuỗi số, KHÔNG ngoặc chú thích dài — chi tiết đã có ở Diễn biến chính/Phần 2.
+- NHÃN: mỗi bullet mở đầu bằng ĐÚNG 1 nhãn đậm thuộc 4 nhóm **EUA:**, **Chính sách ETS:**, **Nhiên liệu:**, **CBAM/SIM:** — mỗi nhóm tối đa 1 bullet, nhóm không có gì đáng nêu thì bỏ. Chỉ khi tin tác động TRỰC TIẾP tới EUA không thuộc 4 nhóm (vd địa chính trị cắt nguồn cung năng lượng EU) mới dùng nhãn ngắn khác (≤ 3 chữ, vd **Địa chính trị:**). Nhãn KHÔNG chứa dấu ":" bên trong (giao diện tách nhãn theo dấu ":" đầu tiên).
+- THỨ TỰ: bullet **EUA:** đứng đầu — thông điệp chính của ngày; các bullet sau xếp theo tác động lên EUA (cao→thấp). CHỈ đưa tin có cơ chế tác động tới EUA nêu rõ được trong bài; tin chỉ "có thể gián tiếp" hoặc không liên hệ trực tiếp (vd tin chính trị/kinh tế một nước không thuộc EU ETS) → KHÔNG đưa vào, không gắn nhãn "hỗ trợ nền giá EUA".
+- BULLET EUA: trạng thái/chiều của EUA trước (vị trí trong biên 30 phiên HOẶC số phiên tăng/giảm liên tiếp — dùng đúng cách gọi trong "XU HƯỚNG EUA 30 NGÀY") rồi giá đóng cửa (%Δ ngày) làm căn cứ — không chỉ chép lại bảng giá. Nêu nguyên nhân CHỈ khi 1 tin ở trên giải thích rõ và ra trước/trong phiên (gắn "source_index" của tin đó; không chắc thì viết "có thể góp phần"); không có thì KHÔNG đoán nguyên nhân. Nếu nêu biên độ phiên thì dùng ĐÚNG số "BIÊN ĐỘ PHIÊN" ở trên (không bắt buộc nêu).
 - CHUYỂN ĐỔI NHIÊN LIỆU (BẮT BUỘC thống nhất với Mục 2/3): khi khối "SPREAD THAN–KHÍ" có "KẾT LUẬN DÙNG CHUNG" → nhận định fuel switching PHẢI theo ĐÚNG kết luận đó (vd đã ghi "ĐÃ BÃO HÒA" thì TUYỆT ĐỐI KHÔNG viết "TTF tăng → nghiêng về chuyển sang than/cầu EUA tăng", và KHÔNG ghi "chưa tính spread" vì spread đã tính). Chỉ khi khối này báo thiếu dữ liệu mới dùng logic %Δ: than (API2) TĂNG so với khí → cầu EUA GIẢM; khí (TTF) TĂNG so với than → cầu EUA TĂNG, ghi rõ "theo %Δ, chưa tính spread". Than cho fuel switching EU là API2 (CIF ARA), KHÔNG dùng API4/NEWC. KHÔNG viết "giá than TĂNG hỗ trợ cầu EUA" (than đắt lên làm than kém cạnh tranh). NHƯNG khi than đang rẻ hơn khí rõ rệt thì ĐƯỢC (và nên) viết: điện than chạy gần tối đa, phát thải cao → HỖ TRỢ MỨC cầu EUA hiện tại (chỉ không tạo thêm lực tăng) — đây là nhánh đỡ giá, không phải nhánh giảm.
-- Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
+- Ngày ít tin: KHÔNG thêm bullet đệm hay kéo tin yếu vào cho đủ 4 — 3 bullet là đủ (bullet **Nhiên liệu:** có thể chỉ dựa trên DỮ LIỆU GIÁ/spread, "source_index": null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm nếu bullet dựa trên 1 tin cụ thể ở trên), hoặc null nếu bullet chỉ dựa trên DỮ LIỆU GIÁ hệ thống (không phải tin tức) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
+{EXEC_SUMMARY_SELF_CHECK}
 CHỈ TRẢ VỀ JSON HỢP LỆ:
 {{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": null}}]}}}}"""
     return system, user
@@ -3450,10 +3476,12 @@ TIN TỨC đã đánh số [N] (eua_ets, energy_gas, energy_power_eu, energy_coa
 {news_text}
 
 YÊU CẦU: Viết MỤC 1 — TÓM TẮT ĐIỀU HÀNH, CHỈ từ tin tức ở trên.
+{EXEC_SUMMARY_PRINCIPLES}
 - ĐỘ DÀI (BẮT BUỘC — mục này hiển thị trong 1 ô nhỏ ở đầu báo cáo): TỔNG CẢ MỤC chỉ 60–90 chữ. 3–4 bullet, mỗi bullet ĐÚNG 1 câu ngắn ~20–25 chữ (không tính tag): sự kiện + chiều tác động lên EUA, KHÔNG giải thích cơ chế. Sắp xếp theo mức độ tác động tới cung/cầu EUA (cao→thấp).
 - Mỗi bullet mở đầu bằng tag đậm (**Chính sách:**, **Năng lượng:**, **Địa chính trị:**...). KHÔNG có bullet giá EUA.
 - Không có tin nổi bật → 1 bullet duy nhất "Không có sự kiện nổi bật." (source_index: null).
 - Mỗi bullet là object {{"text": "...", "source_index": N | null}}: "source_index" là số [N] có thật của bài tin tức LÀM CĂN CỨ CHÍNH cho bullet đó (BẮT BUỘC kèm khi bullet dựa trên 1 tin cụ thể) — TUYỆT ĐỐI KHÔNG bịa số không có thật.
+{EXEC_SUMMARY_SELF_CHECK}
 CHỈ TRẢ VỀ JSON HỢP LỆ:
 {{"1": {{"title": "Tóm tắt điều hành", "bullets": [{{"text": "...", "source_index": 1}}]}}}}"""
     return system, user
