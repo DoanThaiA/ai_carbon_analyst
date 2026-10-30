@@ -186,6 +186,12 @@ svg text {
       font-size: 8pt;
       color: #707070;
     }
+    @bottom-left {
+      content: "Bản quyền thuộc Stavian Industrial Metal JSC. Báo cáo nội bộ. Không phải khuyến nghị đầu tư.";
+      font-family: Arial, Arimo, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #707070;
+    }
     @bottom-right {
       content: "Trang " counter(page) " / " counter(pages);
       font-family: Arial, Arimo, Helvetica, sans-serif;
@@ -198,6 +204,9 @@ svg text {
   @page report-en {
     @top-left {
       content: "Daily carbon market news";
+    }
+    @bottom-left {
+      content: "Copyright © Stavian Industrial Metal JSC. Internal report. Not investment advice.";
     }
     @bottom-right {
       content: "Page " counter(page) " / " counter(pages);

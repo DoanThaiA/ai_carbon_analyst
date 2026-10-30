@@ -189,7 +189,7 @@ def test_translation_skips_knowledge_subtrees():
     from services import report_translation as rt
 
     out: list = []
-    rt._collect({"knowledge_used": {"3": [{"title": "Tài liệu tiếng Việt"}]},
+    rt._collect_llm({"knowledge_used": {"3": [{"title": "Tài liệu tiếng Việt"}]},
                  "1": {"bullets": [{"text": "Nội dung tiếng Việt", "knowledge_ref": {"title": "Tên tài liệu có dấu"}}]}}, None, out)
     assert "Nội dung tiếng Việt" in " ".join(out)
     assert not any("tài liệu" in t.lower() for t in out)

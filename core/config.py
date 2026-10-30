@@ -113,12 +113,9 @@ class Settings:
     # Cần APP_BASE_URL (trang frontend để Chromium render PDF) + Resend đã cấu hình.
     report_pdf_email_enabled: bool = True
     # Bản tiếng Anh của báo cáo (services/report_translation.py). "claude" (mặc định) = dịch bằng
-    # Claude theo nguyên đoạn (`report_translation_model`); "libretranslate" = Argos tự host (không
-    # gọi LLM, chất lượng thấp hơn — cần LIBRETRANSLATE_URL); "off" = tắt, báo cáo chỉ có tiếng Việt.
+    # Claude (`report_translation_model`); "off" = tắt, báo cáo chỉ có tiếng Việt.
     report_translation_provider: str = "claude"
     report_translation_model: str = "claude-sonnet-5-5"
-    libretranslate_url: str = ""
-    libretranslate_api_key: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -188,6 +185,4 @@ class Settings:
             report_translation_model=(
                 os.environ.get("REPORT_TRANSLATION_MODEL", "claude-sonnet-5-5").strip() or "claude-sonnet-5-5"
             ),
-            libretranslate_url=os.environ.get("LIBRETRANSLATE_URL", "").strip().rstrip("/"),
-            libretranslate_api_key=os.environ.get("LIBRETRANSLATE_API_KEY", "").strip(),
         )

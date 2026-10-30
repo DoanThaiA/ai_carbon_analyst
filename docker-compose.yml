@@ -45,25 +45,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Máy dịch vi→en cho bản tiếng Anh của báo cáo (services/report_translation.py) —
-  # LibreTranslate/Argos chạy cục bộ, không gọi API ngoài. Lần khởi động đầu tải model
-  # vi/en (vài trăm MB) vào volume libretranslate_models, các lần sau dùng lại.
-  libretranslate:
-    image: libretranslate/libretranslate:latest
-    container_name: carbon_analyst_libretranslate
-    restart: unless-stopped
-    environment:
-      LT_LOAD_ONLY: vi,en
-    ports:
-      - "127.0.0.1:5000:5000"   # chỉ để thử tay từ host; backend gọi qua tên service
-    volumes:
-      - libretranslate_models:/home/libretranslate/.local
-    healthcheck:
-      test: ["CMD-SHELL", "./venv/bin/python scripts/healthcheck.py"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
   api:
     build:
       context: .
@@ -77,7 +58,6 @@ services:
     environment:
       # Ghi đè URL kết nối DB bằng tên của container 'postgres' thay vì localhost
       DATABASE_URL: postgresql+asyncpg://postgres:Doanthai288%40@postgres:5432/carbon_analyst
-      LIBRETRANSLATE_URL: http://libretranslate:5000
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,7 +75,6 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:Doanthai288%40@postgres:5432/carbon_analyst
-      LIBRETRANSLATE_URL: http://libretranslate:5000
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,4 +101,3 @@ volumes:
   pgdata:
   scheduler_logs:
   minio_data:
-  libretranslate_models:
