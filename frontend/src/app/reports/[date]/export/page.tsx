@@ -22,6 +22,9 @@ const MM_TO_PX = 96 / 25.4;
 const SETTLE_MS = 800;
 // Chờ biểu đồ nến vẽ lại sau khi đổi chiều cao (fitChartToPage).
 const FIT_SETTLE_MS = 250;
+// Khối tự gọi API sau khi báo cáo đã tải (biểu đồ chỉ số giá — PriceIndexPanel) gắn data-pdf-pending khi chưa có dữ
+// liệu — chờ tối đa chừng này rồi vẫn xuất (backend chờ cả trang tối đa 60s — PDF_PAGE_TIMEOUT_MS).
+const PENDING_MAX_MS = 15_000;
 // Biểu đồ nến cao tối đa ~55% vùng in 1 trang (giữ tỉ lệ, thu vào giữa) — trang ngang 16:9 thấp vẫn đủ chỗ cho tiêu
 // đề khung + biểu đồ trên cùng 1 trang. A4 dọc không bị ảnh hưởng (biểu đồ thấp hơn mức này).
 const CHART_MAX_PAGE_RATIO = 0.55;
@@ -78,6 +81,8 @@ function ReportExport() {
       const mql = window.matchMedia("print");
       while (!mql.matches && !cancelled) await sleep(100);
       await document.fonts.ready;
+      const pendingUntil = Date.now() + PENDING_MAX_MS;
+      while (!cancelled && Date.now() < pendingUntil && frameRef.current?.querySelector("[data-pdf-pending]")) await sleep(100);
       await sleep(SETTLE_MS);
       if (cancelled) return;
       const shell = frameRef.current?.querySelector<HTMLElement>(".report-shell") ?? null;

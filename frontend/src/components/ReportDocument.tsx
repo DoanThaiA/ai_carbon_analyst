@@ -3486,8 +3486,7 @@ export function ReportDocument({
   const rawHighlight = content["1"]?.highlight;
   const highlight: ReportHighlight | null =
     rawHighlight?.text && HIGHLIGHT_TYPES.includes(rawHighlight.type) ? rawHighlight : null;
-  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in. Có biểu đồ nến EUA
-  // thì đặt cạnh biểu đồ nến (2 biểu đồ cao bằng nhau), không thì cạnh bảng giá.
+  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất"; khi in là biểu đồ tĩnh) — đặt cạnh Bảng giá nhanh.
   const indexPanel = !noPriceData && priceRows.length > 0 ? (
     <PriceIndexPanel
       reportDate={report.report_date}
@@ -3637,9 +3636,9 @@ export function ReportDocument({
               </div>
             ) : priceRows.length > 0 && (
               // Bảng giá nhanh hẹp (5/12, dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá rộng (7/12) — ngang từ khung báo
-              // cáo ≥ 768px (@3xl). In khổ dọc chỉ giữ bảng giá → bảng trải hết bề rộng (đủ cột Δ ngày + Δ tuần), không
-              // bị bó trong 5/12 để trống phần còn lại; in khổ ngang (.pdf-wide) giữ cả 2 như màn hình, chung 1 khối
-              // không ngắt (.price-overview — globals.css).
+              // cáo ≥ 768px (@3xl). In khổ dọc thành 2 phần xếp chồng: (1) bảng giá trải hết bề rộng (đủ cột Δ ngày + Δ
+              // tuần), (2) biểu đồ chỉ số giá hết bề rộng ngay dưới (giữ trọn 1 trang — PriceIndexPanel); in khổ ngang
+              // (.pdf-wide) giữ cả 2 cạnh nhau như màn hình, chung 1 khối không ngắt (.price-overview — globals.css).
               <div className="price-overview grid gap-5 @3xl/report:grid-cols-12">
                 <div className="min-w-0 scr:@3xl/report:col-span-5 pn:col-span-full pw:@3xl/report:col-span-6">
                   <SubHeading aside={content["2"]?.price_timestamp && (
@@ -3649,7 +3648,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 pn:hidden pw:@3xl/report:col-span-6">{indexPanel}</div>
+                <div className="flex min-w-0 flex-col scr:@3xl/report:col-span-7 pn:col-span-full pw:@3xl/report:col-span-6">{indexPanel}</div>
               </div>
             )}
 

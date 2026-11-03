@@ -135,7 +135,9 @@ export function LineChart({ dates, series, area, formatY, formatTip, markers = [
 
   return (
     <div ref={wrapRef} className="relative w-full">
-      <svg width={width} height={H} role="img" aria-label={t("chartAria")}>
+      {/* viewBox = đúng kích thước vẽ: màn hình không đổi gì; khi in bằng hộp thoại của trình duyệt (bề rộng đo trên màn hình
+          có thể rộng hơn khổ giấy) CSS in co biểu đồ theo tỉ lệ thay vì cắt mép phải — .line-chart trong globals.css. */}
+      <svg className="line-chart" width={width} height={H} viewBox={`0 0 ${width} ${H}`} role="img" aria-label={t("chartAria")}>
         {sc.ticks.map((t) => (
           <g key={t}>
             <line x1={ML} x2={ML + iw} y1={y(t)} y2={y(t)} stroke="var(--color-border)" strokeWidth={1} />
