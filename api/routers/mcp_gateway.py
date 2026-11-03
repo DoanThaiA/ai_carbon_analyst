@@ -8,7 +8,11 @@ sửa tool ở server không cần cập nhật MCP client trên từng máy. M�
 
 Ngoại lệ: token `scope='qc_agent'` (admin tạo cho lịch Claude QC 07:30) thấy thêm tool `get_qc_assignment` /
 `submit_qc_review` + prompt `jack_qc_review`, được đọc cả báo cáo NHÁP (tool neo ngày + jack_qc) và là đường
-GHI duy nhất của gateway — chỉ ghi biên bản QC (services/report_qc_review.py), không sửa báo cáo.
+GHI của gateway cho biên bản QC (services/report_qc_review.py), không sửa báo cáo.
+
+Đường GHI còn lại: tool `crawl_user_source` (SONIC_CRAWL_DESKTOP_TOOL) — chỉ token role user (qc_agent không
+thấy), Sonic crawl 1 link người dùng đưa và lưu vào `articles` qua services/user_source_ingest.py; rate limit riêng
+vì mỗi lần tốn 1 lượt LLM phân loại + embed.
 """
 import logging
 import re
@@ -19,7 +23,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_api_token, get_db, settings
+from api.deps import async_session_maker, get_api_token, get_db, settings
 from api.routers.quote_chat import _get_embedder
 from db.models import ApiToken, Report
 from schemas.claude_models import (
@@ -37,6 +41,7 @@ from services.claude_connect import (
     DESKTOP_PROMPTS,
     DESKTOP_SERVER_INSTRUCTIONS,
     JACK_QC_DESKTOP_TOOL,
+    SONIC_CRAWL_DESKTOP_TOOL,
     RateLimiter,
     adapt_tools_for_desktop,
     build_desktop_prompt,
@@ -55,17 +60,19 @@ from services.report_qc_review import (
     submit_result_text,
 )
 from services.retrieval import RetrievalService
+from services.user_source_ingest import ingest_user_url
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mcp-gateway", tags=["mcp-gateway"])
 
-_TOOLS_BY_NAME = {t["name"]: t for t in [*CLIENT_TOOLS, JACK_QC_DESKTOP_TOOL]}
+_TOOLS_BY_NAME = {t["name"]: t for t in [*CLIENT_TOOLS, JACK_QC_DESKTOP_TOOL, SONIC_CRAWL_DESKTOP_TOOL]}
 # Mô tả đã chỉnh cho ngữ cảnh Claude Desktop — tính 1 lần (CLIENT_TOOLS là hằng số). Client >= 0.1.1
 # gửi header X-Carbon-MCP-Client và nhận ngữ cảnh chung qua GET /instructions, nên mô tả tool không cần
 # nối lặp ghi chú ngữ cảnh; client 0.1.0 (không gửi header) vẫn nhận bản có ghi chú như cũ.
 _DESKTOP_TOOLS = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=False), JACK_QC_DESKTOP_TOOL]
 _DESKTOP_TOOLS_LEGACY = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=True), JACK_QC_DESKTOP_TOOL]
+SONIC_CRAWL_TOOL_NAME = SONIC_CRAWL_DESKTOP_TOOL["name"]
 
 
 
@@ -74,9 +81,10 @@ def is_qc_agent(token: ApiToken) -> bool:
 
 
 def tools_for_token(token: ApiToken, *, legacy: bool = False) -> list:
-    """Bộ tool theo token: qc_agent thấy thêm tool QC (user thường không biết tool này tồn tại)."""
+    """Bộ tool theo token: qc_agent thấy thêm tool QC (user thường không biết tool này tồn tại); tool ghi
+    crawl_user_source chỉ cho token user (lịch QC không cần thêm bài vào kho tin)."""
     base = _DESKTOP_TOOLS_LEGACY if legacy else _DESKTOP_TOOLS
-    return [*base, *QC_AGENT_TOOLS] if is_qc_agent(token) else base
+    return [*base, *QC_AGENT_TOOLS] if is_qc_agent(token) else [*base, SONIC_CRAWL_DESKTOP_TOOL]
 
 
 def prompts_for_token(token: ApiToken) -> list:
@@ -91,6 +99,8 @@ def prompt_text_for_token(token: ApiToken, name: str, arguments: Optional[dict])
 
 # 60 tool call/phút/token — chặn vòng lặp tool lỡ tay (search_news còn tốn Cohere).
 _rate_limiter = RateLimiter(max_calls=60, window_seconds=60)
+# crawl_user_source: mỗi lần 1 lượt LLM phân loại + embed + có thể mở Chromium — giới hạn riêng theo giờ.
+_crawl_rate_limiter = RateLimiter(max_calls=20, window_seconds=3600)
 
 
 # Tool không neo theo ngày báo cáo (tìm/đọc tin, lịch, danh sách báo cáo, đọc URL, đấu giá EEX) — vẫn chạy
@@ -177,11 +187,26 @@ async def execute_gateway_tool(
     """Chạy 1 tool cho token — dùng chung cho gateway REST (client stdio) và MCP HTTP (api/mcp_http.py)."""
     qc_agent = is_qc_agent(token)
     is_qc_tool = name in QC_AGENT_TOOL_NAMES
-    if (is_qc_tool and not qc_agent) or (not is_qc_tool and name not in _TOOLS_BY_NAME):
-        # Token thường gọi tool QC: coi như tool không tồn tại.
+    if (
+        (is_qc_tool and not qc_agent)
+        or (not is_qc_tool and name not in _TOOLS_BY_NAME)
+        or (name == SONIC_CRAWL_TOOL_NAME and qc_agent)
+    ):
+        # Token thường gọi tool QC (hoặc qc_agent gọi tool crawl): coi như tool không tồn tại.
         raise HTTPException(status_code=404, detail=f"Tool không tồn tại: {name}")
     if not _rate_limiter.allow(token.id):
         raise HTTPException(status_code=429, detail="Gọi tool quá nhanh — thử lại sau ít giây.")
+
+    if name == SONIC_CRAWL_TOOL_NAME:
+        if not _crawl_rate_limiter.allow(token.id):
+            # Trả như kết quả để Claude báo lại cho người dùng thay vì lỗi HTTP.
+            return GatewayToolResult(
+                result=f"KHÔNG LƯU — đã crawl quá {_crawl_rate_limiter.max_calls} link trong 1 giờ qua; thử lại sau.",
+                report_date=None,
+            )
+        logger.info("[MCP-GATEWAY] user=%s tool=%s url=%s", token.user_email, name, tool_input.get("url"))
+        result = await ingest_user_url(async_session_maker, str(tool_input.get("url", "")), submitted_by=token.user_email)
+        return GatewayToolResult(result=result, report_date=None)
 
     if is_qc_tool:
         requested_date = _validate_report_date(report_date_arg or tool_input.get("report_date"))

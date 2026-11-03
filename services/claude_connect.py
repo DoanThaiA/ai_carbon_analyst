@@ -274,8 +274,9 @@ DESKTOP_ROLE_RULES = (
     "xem ĐỘI NGŨ bên dưới) đảm nhận, chọn theo LOẠI TÁC VỤ, KỂ CẢ KHI KHÔNG GỌI TOOL:\n"
     "- SONIC — tác vụ thu thập/tra cứu dữ liệu: tìm tin tức, chính sách, quy định, sự kiện ('có tin gì về...', "
     "'tìm bài về...'); đọc/tóm tắt nội dung 1 link hay nguồn người dùng đưa; lấy số liệu giá thô, lịch sử giá; kiểm "
-    "tra nguồn tin có đáng tin/còn truy cập được không. (Tool thường dùng: search_news, get_article, "
-    "fetch_user_source, get_market_prices, get_price_history.)\n"
+    "tra nguồn tin có đáng tin/còn truy cập được không; crawl và LƯU bài từ link người dùng đưa vào kho tin khi "
+    "được yêu cầu rõ. (Tool thường dùng: search_news, get_article, fetch_user_source, crawl_user_source, "
+    "get_market_prices, get_price_history.)\n"
     "- JENNY — tác vụ phân tích & đề xuất: giải thích, đánh giá xu hướng, nguyên nhân biến động giá, cơ hội/rủi ro, "
     "nhận định/dự báo, kịch bản giao dịch, gợi ý kinh doanh; hỏi về nội dung/lập luận của báo "
     "cáo; đánh giá dự báo trước đây (review_past_forecast). Jenny là tác giả báo cáo ngày (admin duyệt trước khi "
@@ -302,7 +303,8 @@ DESKTOP_ROLE_RULES = (
 
 DESKTOP_SERVER_INSTRUCTIONS = (
     "carbon-analyst: dữ liệu của bàn giao dịch phái sinh carbon (báo cáo ngày, giá EUA/TTF/Brent/WTI/than/điện "
-    "Đức, kho tin tức đã crawl, gợi ý kinh doanh). Mọi tool CHỈ ĐỌC.\n"
+    "Đức, kho tin tức đã crawl, gợi ý kinh doanh). Mọi tool CHỈ ĐỌC, trừ crawl_user_source (lưu 1 bài từ link "
+    "người dùng đưa vào kho tin — chỉ gọi khi người dùng yêu cầu rõ việc lưu).\n"
     "- \"Báo cáo đang xem\" = báo cáo của handoff hiện tại (gọi get_handoff khi người dùng đưa handoff_id); chưa "
     "có handoff thì là báo cáo published mới nhất. Mỗi kết quả tool ghi rõ ngày báo cáo đã dùng — truyền "
     "report_date nếu cần báo cáo khác.\n"
@@ -426,6 +428,31 @@ JACK_QC_DESKTOP_TOOL = {
         "properties": {"date": {"type": "string", "description": "TUỲ CHỌN — YYYY-MM-DD của báo cáo cần QC. Không truyền = báo cáo đang làm việc / published mới nhất."}},
     },
 }
+# Tool GHI chỉ có trên MCP (không nằm trong CLIENT_TOOLS → Jenny chat web không có): Sonic crawl 1 link người
+# dùng đưa và lưu vào kho tin — services/user_source_ingest.py, chạy ở mcp_gateway.execute_gateway_tool.
+SONIC_CRAWL_DESKTOP_TOOL = {
+    "name": "crawl_user_source",
+    "description": (
+        "SONIC — crawl 1 link BÀI VIẾT người dùng đưa và LƯU vào kho tin của hệ thống (bảng articles, dùng cho báo "
+        "cáo ngày, search_news, get_article). Chạy đúng pipeline crawl tự động: trích nội dung chính, lọc trùng "
+        "(đường dẫn/nội dung), phân loại tác động EUA bằng AI, lập chỉ mục tìm kiếm. CHỈ gọi khi người dùng yêu cầu "
+        "RÕ lưu/crawl/thêm bài vào hệ thống/kho tin/database ('lưu bài này', 'crawl link này vào hệ thống', 'thêm "
+        "tin này vào kho'); chỉ đọc/tóm tắt/kiểm tra 1 link → dùng fetch_user_source, KHÔNG dùng tool này. Mỗi lần "
+        "1 URL (nhiều link thì gọi lần lượt từng link); chỉ truyền URL người dùng đã đưa, KHÔNG tự bịa hay tự tìm "
+        "URL. Bài không tác động tới EUA/yếu tố dẫn dắt EUA sẽ KHÔNG được lưu (cùng tiêu chí với crawl tự động); "
+        "không lưu được trang danh mục/trang chủ, trang cần đăng nhập, file PDF. Có thể mất tới ~1 phút. HOÁ VAI "
+        "SONIC khi trả lời (vd 'Sonic đã lưu bài vào kho tin: ...'): nêu rõ kết quả (đã lưu / đã có sẵn / không "
+        "lưu + lý do), giữ nguyên ID bài, tiêu đề, chủ đề tool trả về, không tự thêm thông tin."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "Đường dẫn http/https đầy đủ của 1 bài viết người dùng đưa."},
+        },
+        "required": ["url"],
+    },
+}
+
 _DESKTOP_DESCRIPTION_OVERRIDES = {"search_news": _SEARCH_NEWS_DESKTOP_DESCRIPTION}
 
 # Mô tả gốc bảo lấy ngày từ "LỊCH THAM CHIẾU" — bảng ngày chỉ có trong system prompt của Jenny. Thay theo

@@ -1,5 +1,6 @@
 """Đọc 1 trang web do NGƯỜI DÙNG cung cấp (nguồn tin/nguồn giá) cho tool
-`fetch_user_source` của Quote Chat (services/quote_chat.py).
+`fetch_user_source` của Quote Chat (services/quote_chat.py) và tool MCP `crawl_user_source`
+(services/user_source_ingest.py — dùng chung `fetch_source_page`).
 
 Chiến lược 2 tầng (giống crawler của dự án — xem crawl_news/fetcher.py):
   1. curl_cffi giả lập TLS fingerprint Chrome — nhanh, qua được phần lớn site chặn bot cơ bản
@@ -15,6 +16,7 @@ import ipaddress
 import logging
 import re
 import socket
+from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urljoin, urlsplit
 
@@ -167,43 +169,69 @@ def _unreadable_message(why: str) -> str:
     )
 
 
-async def read_source(url: str) -> str:
-    """Đọc nguồn → text kèm nhãn + lưu ý cho model; luôn trả chuỗi (lỗi cũng là chuỗi hướng dẫn)."""
-    from services.quote_chat import _truncate  # tránh import vòng ở top-level
+class SourceUnreadable(Exception):
+    """Không lấy được nội dung nguồn — str(e) là thông báo đọc được cho model."""
 
+
+@dataclass
+class FetchedPage:
+    content: str  # HTML/văn bản thô (đã cắt MAX_BYTES)
+    ctype: str
+    final_url: str
+    text: str  # nội dung chính đã trích (trafilatura + bảng)
+    used: str  # "curl" | "playwright"
+
+
+async def fetch_source_page(url: str, *, playwright_timeout: float = PLAYWRIGHT_TOTAL_TIMEOUT) -> FetchedPage:
+    """Tải nguồn qua 2 tầng (curl_cffi → Playwright). Raise SourceUnreadable(thông báo) khi không đọc được.
+    Dùng chung cho `read_source` (fetch_user_source) và services/user_source_ingest.py (crawl_user_source)."""
     url = (url or "").strip()
     if not url:
-        return "Cần truyền url."
+        raise SourceUnreadable("Cần truyền url.")
     reason = await validate_public_url(url)
     if reason:
-        return f"Không truy cập được nguồn này: {reason}"
+        raise SourceUnreadable(f"Không truy cập được nguồn này: {reason}")
 
-    text, final_url, used = "", url, "curl"
     try:
         content, ctype, final_url = await _fetch_curl(url)
         text = _extract_text(content, ctype, final_url)
         if _looks_blocked(text):
             raise _Blocked("nội dung rỗng/trang chắn bot")
+        return FetchedPage(content, ctype, final_url, text, "curl")
     except _Blocked as e:
         logger.info("[SOURCE-READER] curl bị chặn (%s), thử Playwright: %s", e, url)
-        used = "playwright"
         try:
-            html, final_url = await asyncio.wait_for(_fetch_playwright(url), PLAYWRIGHT_TOTAL_TIMEOUT)
+            html, final_url = await asyncio.wait_for(_fetch_playwright(url), playwright_timeout)
             if await validate_public_url(final_url) is not None:
-                return "Không truy cập được nguồn này: trang chuyển hướng tới địa chỉ nội bộ."
+                raise SourceUnreadable("Không truy cập được nguồn này: trang chuyển hướng tới địa chỉ nội bộ.")
             text = _extract_text(html, "text/html", final_url)
+        except SourceUnreadable:
+            raise
         except Exception as pe:  # Playwright thiếu browser/timeout/lỗi mạng
             logger.warning("[SOURCE-READER] Playwright lỗi %s: %s", url, pe)
-            return _unreadable_message(f"trang chặn bot ({e}) và trình duyệt cũng không tải được")
+            raise SourceUnreadable(_unreadable_message(f"trang chặn bot ({e}) và trình duyệt cũng không tải được"))
         if _looks_blocked(text):
-            return _unreadable_message("trang chặn bot/cần đăng nhập/không có nội dung văn bản")
+            raise SourceUnreadable(_unreadable_message("trang chặn bot/cần đăng nhập/không có nội dung văn bản"))
+        return FetchedPage(html, "text/html", final_url, text, "playwright")
     except ValueError as e:
-        return str(e)
+        raise SourceUnreadable(str(e))
+    except SourceUnreadable:
+        raise
     except Exception as e:  # lỗi mạng/timeout của curl_cffi
         logger.warning("[SOURCE-READER] curl lỗi %s: %s", url, e)
-        return _unreadable_message("không kết nối được hoặc hết thời gian chờ")
+        raise SourceUnreadable(_unreadable_message("không kết nối được hoặc hết thời gian chờ"))
 
-    logger.info("[SOURCE-READER] OK (%s, %d ký tự): %s", used, len(text), final_url)
+
+async def read_source(url: str) -> str:
+    """Đọc nguồn → text kèm nhãn + lưu ý cho model; luôn trả chuỗi (lỗi cũng là chuỗi hướng dẫn)."""
+    from services.quote_chat import _truncate  # tránh import vòng ở top-level
+
+    try:
+        page = await fetch_source_page(url)
+    except SourceUnreadable as e:
+        return str(e)
+    text, final_url = page.text, page.final_url
+    logger.info("[SOURCE-READER] OK (%s, %d ký tự): %s", page.used, len(text), final_url)
     return _truncate(
         f"Nguồn do người dùng cung cấp: {final_url}\n\n{text}"
         "\n\nLƯU Ý: đây là nội dung từ nguồn NGƯỜI DÙNG cung cấp (chưa được hệ thống kiểm chứng) — chỉ nêu thông tin có "

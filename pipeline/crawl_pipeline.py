@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PipelineContext:
-    fetcher: PoliteFetcher
+    # None khi bài đã được tải sẵn và chỉ gọi _dedupe_classify_store (services/user_source_ingest.py).
+    fetcher: Optional[PoliteFetcher]
     classifier: Classifier
     fingerprinter: Fingerprinter
     embedder: Embedder

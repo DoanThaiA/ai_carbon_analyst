@@ -205,7 +205,13 @@ ngắn để dán vào Claude Desktop; Claude Desktop chạy MCP server cục b�
 cá nhân (`api_tokens`, bearer `cat_...`, chỉ lưu SHA-256). Gateway chỉ đọc và TÁI DÙNG
 `CLIENT_TOOLS`/`_execute_client_tool` của `services/quote_chat.py` — client lấy danh sách tool động qua
 `GET /tools` và ngữ cảnh chung (đưa vào `instructions` của MCP server) qua `GET /instructions` (`DESKTOP_SERVER_INSTRUCTIONS` trong `services/claude_connect.py`), nên thêm tool ở đó không cần cập nhật gói trên từng máy. Mô tả tool cho Desktop đi qua `adapt_tools_for_desktop` (thay cụm chỉ có ở prompt Jenny như "LỊCH THAM CHIẾU"); client 0.1.0 không gửi header `X-Carbon-MCP-Client` nên vẫn nhận mô tả kèm ghi chú ngữ cảnh lặp ở từng tool. Instructions có `DESKTOP_ROLE_RULES`: Desktop/mobile LUÔN trả lời dưới danh nghĩa 1 nhân viên trong `TEAM_INTRO` theo loại tác vụ, kể cả không gọi tool (Sonic: thu thập/tra cứu; Jenny: phân tích & đề xuất, mặc định; Jack: kiểm tra/QC + lên kế hoạch/action plan) — khối này CHỈ cho kênh MCP, Jenny chat web vẫn luôn là Jenny; MCP prompt `jenny` ("Trò chuyện với Jenny", `GET/POST /prompts`, `DESKTOP_PROMPTS` + `_JENNY_DESKTOP_PERSONA`) cho người dùng chủ động chọn để Claude đóng vai Jenny — persona là bản rút gọn khối GIAO TIẾP của `_build_static_instructions` (sửa bên đó thì xem lại bên này) và CỐ Ý không chứa khung phân tích EUA nội bộ (có test chặn). Chỉ role `user` (email+OTP),
-không phải admin. Kết quả Claude sinh ra KHÔNG lưu ngược về hệ thống. `mcp_client` ghim `mcp<2`
+không phải admin. Kết quả Claude sinh ra KHÔNG lưu ngược về hệ thống — ngoại lệ duy nhất: tool `crawl_user_source`
+(`SONIC_CRAWL_DESKTOP_TOOL`, CỐ Ý ngoài `CLIENT_TOOLS` → Jenny chat web không có; chỉ token scope `user`, qc_agent không
+thấy/gọi được; rate limit riêng 20 link/giờ/token): Sonic crawl 1 link bài viết người dùng đưa và lưu vào `articles`
+(`services/user_source_ingest.py::ingest_user_url` — fetch bằng `source_reader.fetch_source_page` [chặn SSRF, curl →
+Playwright 25s cho vừa timeout 60s của client stdio] → `extract_article` → `_dedupe_classify_store` của pipeline crawl:
+lọc trùng, phân loại EUA, embed; bài không liên quan EUA KHÔNG lưu; không lọc cửa sổ ngày; nguồn chưa có trong
+`news_crawl_sources` = hạng C, vùng đoán theo đuôi `.vn`). Test: `tests/test_user_source_ingest.py`. `mcp_client` ghim `mcp<2`
 (API decorator của `mcp` 1.x bị bỏ ở 2.x). Test: `python -m pytest tests` (pytest trần không thấy
 package top-level vì repo chưa cấu hình pythonpath).
 **MCP qua HTTP cho mobile** (`api/mcp_http.py`, mount tại `/mcp/{token}` trong `api/main.py`): MCP Streamable HTTP
