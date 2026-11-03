@@ -211,7 +211,15 @@ thấy/gọi được; rate limit riêng 20 link/giờ/token): Sonic crawl 1 lin
 (`services/user_source_ingest.py::ingest_user_url` — fetch bằng `source_reader.fetch_source_page` [chặn SSRF, curl →
 Playwright 25s cho vừa timeout 60s của client stdio] → `extract_article` → `_dedupe_classify_store` của pipeline crawl:
 lọc trùng, phân loại EUA, embed; bài không liên quan EUA KHÔNG lưu; không lọc cửa sổ ngày; nguồn chưa có trong
-`news_crawl_sources` = hạng C, vùng đoán theo đuôi `.vn`). Test: `tests/test_user_source_ingest.py`. `mcp_client` ghim `mcp<2`
+`news_crawl_sources` = hạng C, vùng đoán theo đuôi `.vn`). Test: `tests/test_user_source_ingest.py`.
+**Trò chuyện với đội ngũ** (03/11/2026, `services/team_tools.py`, CỐ Ý ngoài `CLIENT_TOOLS`, chỉ đọc, mọi token): `get_qc_review`
+(Jack — biên bản QC Claude; token thường CHỈ báo cáo đã phát hành, qc_agent cả nháp), `get_daily_status` (tiến độ báo cáo
+nháp → QC → sửa → xuất bản + số tin khung đang thu; báo cáo chưa phát hành chỉ lộ trạng thái/giờ, không lộ điểm QC hay
+`error_message`), `get_crawl_stats` (Sonic — thống kê khung tin ngày D: bài đã lưu theo vùng/chủ đề/nguồn, tin nóng,
+`crawl_seen_urls` theo status), `get_report_lessons` (Jenny — bài học còn hiệu lực, KHÔNG in `reported_by`). Chế độ HỌP NHÓM
+(`TEAM_MEETING_RULES`, nằm trong `DESKTOP_SERVER_INSTRUCTIONS` + MCP prompt `hop_nhom` "Họp nhóm Sonic – Jenny – Jack", tham
+số `chu_de`): 3 người nhắn qua lại như group chat (Sonic lấy dữ liệu → Jenny phân tích → Jack đối chiếu/chốt). Test:
+`tests/test_team_tools.py`. `mcp_client` ghim `mcp<2`
 (API decorator của `mcp` 1.x bị bỏ ở 2.x). Test: `python -m pytest tests` (pytest trần không thấy
 package top-level vì repo chưa cấu hình pythonpath).
 **MCP qua HTTP cho mobile** (`api/mcp_http.py`, mount tại `/mcp/{token}` trong `api/main.py`): MCP Streamable HTTP

@@ -60,18 +60,20 @@ from services.report_qc_review import (
     submit_result_text,
 )
 from services.retrieval import RetrievalService
+from services.team_tools import TEAM_TOOL_NAMES, TEAM_TOOLS, execute_team_tool
 from services.user_source_ingest import ingest_user_url
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mcp-gateway", tags=["mcp-gateway"])
 
-_TOOLS_BY_NAME = {t["name"]: t for t in [*CLIENT_TOOLS, JACK_QC_DESKTOP_TOOL, SONIC_CRAWL_DESKTOP_TOOL]}
+_TOOLS_BY_NAME = {t["name"]: t for t in [*CLIENT_TOOLS, JACK_QC_DESKTOP_TOOL, *TEAM_TOOLS, SONIC_CRAWL_DESKTOP_TOOL]}
 # Mô tả đã chỉnh cho ngữ cảnh Claude Desktop — tính 1 lần (CLIENT_TOOLS là hằng số). Client >= 0.1.1
 # gửi header X-Carbon-MCP-Client và nhận ngữ cảnh chung qua GET /instructions, nên mô tả tool không cần
 # nối lặp ghi chú ngữ cảnh; client 0.1.0 (không gửi header) vẫn nhận bản có ghi chú như cũ.
-_DESKTOP_TOOLS = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=False), JACK_QC_DESKTOP_TOOL]
-_DESKTOP_TOOLS_LEGACY = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=True), JACK_QC_DESKTOP_TOOL]
+# TEAM_TOOLS (services/team_tools.py) viết sẵn cho Desktop nên không đi qua adapt_tools_for_desktop.
+_DESKTOP_TOOLS = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=False), JACK_QC_DESKTOP_TOOL, *TEAM_TOOLS]
+_DESKTOP_TOOLS_LEGACY = [*adapt_tools_for_desktop(CLIENT_TOOLS, append_context_note=True), JACK_QC_DESKTOP_TOOL, *TEAM_TOOLS]
 SONIC_CRAWL_TOOL_NAME = SONIC_CRAWL_DESKTOP_TOOL["name"]
 
 
@@ -206,6 +208,13 @@ async def execute_gateway_tool(
             )
         logger.info("[MCP-GATEWAY] user=%s tool=%s url=%s", token.user_email, name, tool_input.get("url"))
         result = await ingest_user_url(async_session_maker, str(tool_input.get("url", "")), submitted_by=token.user_email)
+        return GatewayToolResult(result=result, report_date=None)
+
+    if name in TEAM_TOOL_NAMES:
+        # Tự xử lý ngày (báo cáo chưa phát hành trả câu giải thích thay vì 404); biên bản QC: token thường chỉ
+        # đọc báo cáo đã phát hành, qc_agent đọc cả nháp.
+        logger.info("[MCP-GATEWAY] user=%s tool=%s input=%s", token.user_email, name, tool_input)
+        result = await execute_team_tool(session, name, tool_input, published_only=not qc_agent, settings=settings)
         return GatewayToolResult(result=result, report_date=None)
 
     if is_qc_tool:

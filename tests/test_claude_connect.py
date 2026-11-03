@@ -256,7 +256,7 @@ def test_handoff_result_reminds_role():
 def test_jenny_prompt_with_and_without_handoff():
     from services.claude_connect import DESKTOP_PROMPTS, build_desktop_prompt
 
-    assert [p["name"] for p in DESKTOP_PROMPTS] == ["jenny"]
+    assert [p["name"] for p in DESKTOP_PROMPTS][0] == "jenny"
     now = datetime(2026, 10, 8, 20, 0, tzinfo=timezone.utc)
     with_id = build_desktop_prompt("jenny", {"handoff_id": " abc_123 "}, now=now)
     assert "bạn là JENNY" in with_id and 'handoff_id "abc_123"' in with_id and "09/10/2026" in with_id
