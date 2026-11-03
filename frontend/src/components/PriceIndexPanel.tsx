@@ -14,8 +14,9 @@ import type { CbamEstimate } from "@/lib/types";
 // mở popup "So sánh hiệu suất" (chọn mã, đổi khoảng thời gian) — cùng biểu đồ với Dashboard giá của admin.
 // Mọi số trên biểu đồ là CHỈ SỐ GIÁ (100 = phiên gốc chung của các mã), không phải giá: chú giải = chỉ số phiên cuối +
 // % so với phiên gốc + giá đóng cửa kèm đơn vị; tooltip = chỉ số + giá thật từng phiên.
-// In/PDF: khổ dọc là phần (2) ngay dưới Bảng giá nhanh, khổ ngang nằm cạnh bảng. Khung giữ trọn 1 trang (data-print-whole
-// — tiêu đề + chú giải không bị tách khỏi biểu đồ); đang tải dữ liệu thì gắn data-pdf-pending để trang export chờ.
+// In/PDF: nằm cạnh Bảng giá nhanh trong cùng 1 khối như màn hình (khung hẹp thì xếp dưới bảng). Khung giữ trọn 1 trang
+// (data-print-whole — tiêu đề + chú giải không bị tách khỏi biểu đồ); đang tải dữ liệu thì gắn data-pdf-pending để trang
+// export chờ.
 
 const PANEL_DAYS = 90;
 const RANGES = [30, 90, 180, 365];

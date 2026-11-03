@@ -370,11 +370,13 @@ svg text {
     max-width: 100%;
     height: auto;
   }
-  /* In khổ ngang: Bảng giá nhanh | biểu đồ chỉ số giá nằm cạnh nhau — giữ chung 1 khối (biểu đồ không tách khỏi bảng,
-     không bị cắt ngang giữa 2 trang). Khổ dọc: 2 phần xếp chồng (bảng giá rồi biểu đồ) — được ngắt giữa 2 phần, khung
-     biểu đồ tự giữ trọn (data-print-whole). */
-  .pdf-wide .price-overview {
-    break-inside: avoid !important;
+  /* Bảng giá nhanh | biểu đồ chỉ số giá nằm cạnh nhau (khung ≥ @3xl/report — cả khổ dọc lẫn ngang, như màn hình): giữ
+     chung 1 khối, biểu đồ không tách khỏi bảng. Khung hẹp hơn xếp chồng → được ngắt giữa 2 phần (khung biểu đồ tự giữ
+     trọn — data-print-whole trong PriceIndexPanel). */
+  @container report (min-width: 48rem) {
+    .price-overview {
+      break-inside: avoid !important;
+    }
   }
 
   /* ---- Layout: bỏ padding bọc ngoài để nội dung full-page ---- */
