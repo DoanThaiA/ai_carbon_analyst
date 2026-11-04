@@ -430,16 +430,6 @@ function rangePosition(price: number, low: number, high: number): { pct: number;
   return { pct, pos };
 }
 
-// ["2026-10-13", "2026-10-15", "2026-10-16"] → "13, 15, 16/10" (gộp theo tháng).
-function joinDayMonth(dates: string[]): string {
-  const byMonth = new Map<string, string[]>();
-  [...dates].sort().forEach(d => {
-    const [, m, day] = d.split("-");
-    byMonth.set(m, [...(byMonth.get(m) ?? []), day]);
-  });
-  return [...byMonth].map(([m, days]) => `${days.join(", ")}/${m}`).join(" · ");
-}
-
 // ── Thang giá ────────────────────────────────────────────────────────────────
 type MarkTone = "buy" | "sell" | "target" | "stop" | "ref" | "current";
 interface LadderMark {
@@ -1397,75 +1387,6 @@ function HeroVerdict({ verdict, outlook, stats, euaRow, chartData, className }: 
   );
 }
 
-// Lệnh ngắn hạn (cột phải, ô 1): đúng các chân lệnh của thẻ kịch bản ngắn hạn (cùng số với Khuyến nghị vị thế).
-function HeroOrders({ shortPlan, className }: { shortPlan: HorizonPlan; className?: string }) {
-  const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  const enumLabel = useEnumLabel();
-  const fp = (n: number) => fmtPrice(n, locale);
-  const trend = TREND_META[shortPlan.dir];
-  return (
-    <HeroCard
-      compact
-      title={t("hero.todayOrders")}
-      href="#section-analysis"
-      aside={trend && <span className={clsx("text-[13px] font-bold", trend.className)}>{trend.arrow} {capFirst(enumLabel(shortPlan.dir))}</span>}
-      className={className}
-    >
-      <ul className="mt-2.5 space-y-2.5">
-        {shortPlan.legs.map((leg, i) => (
-          <li key={i} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 tabular-nums">
-            <OrderPill leg={leg} />
-            <div className="min-w-0 leading-snug">
-              <b className="text-[15px] font-bold text-label">{legEntryText(leg, t, locale)}</b>
-              <div className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[13px] text-body">
-                {leg.target !== undefined && <span>{t("signal.col.target")} <b className="text-up">{fp(leg.target)}</b></span>}
-                {leg.stop !== undefined && <span>{t("signal.col.stop")} <b className="text-down">{fp(leg.stop)}</b></span>}
-                {leg.rr !== undefined && <span className="text-muted-light">R:R 1 : {fnum(leg.rr, 1, locale)}</span>}
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <a href="#section-recommendation" className="mt-auto inline-flex items-center gap-1 pt-3 text-[12.5px] font-bold text-primary hover:underline print:hidden">
-        {t("hero.seeRecommendation")} <ArrowRight size={14} aria-hidden="true" />
-      </a>
-    </HeroCard>
-  );
-}
-
-// Phòng hộ CBAM (cột phải, ô 2): cùng nhãn với thẻ CBAM (cbam_estimate.signal) và tỷ trọng lõi/chiến thuật/đã chốt.
-function HeroHedge({ cbamEstimate, hedgeAction, className }: {
-  cbamEstimate?: CbamEstimate | null; hedgeAction?: HedgeAction | null; className?: string;
-}) {
-  const t = useTranslations("reportDoc");
-  const locale = useLocale();
-  const n1 = (x: number) => fnum(x, 1, locale);
-  const shares = cbamEstimate ? hedgeShares(cbamEstimate) : null;
-  const contract = cbamEstimate ? hedgeContract(cbamEstimate).contract : "";
-  const label = cbamEstimate ? t(`signal.hedgeAction.${cbamEstimate.signal}`) : hedgeAction ? t(`signal.hedgeAction.${hedgeAction.action}`) : null;
-  return (
-    <HeroCard
-      compact
-      title={<><ShieldCheck size={14} strokeWidth={2.5} aria-hidden="true" /> {cbamEstimate ? t("hedge.title", { quarter: cbamEstimate.quarter }) : t("signal.hedge")}</>}
-      // Có ước tính → thẻ "Ước tính giá CBAM" ở Phần 1; báo cáo cũ không có thẻ đó → khuyến nghị vị thế (ô phòng hộ).
-      href={cbamEstimate ? "#section-cbam-estimate" : "#section-analysis"}
-      className={className}
-    >
-      {label && (
-        <span className="mt-2 self-start rounded border border-primary/30 bg-tint px-1.5 py-px text-[11px] font-bold uppercase tracking-wide text-primary-dark">{label}</span>
-      )}
-      {cbamEstimate && shares && (
-        <ul className="mt-2 space-y-1 text-[13.5px] leading-[1.45] text-body tabular-nums">
-          {shares.core > 0.05 && <li>{t("hedge.segCore", { pct: n1(shares.core), contract })}</li>}
-          {shares.tactical > 0.05 && <li>{t(`hedge.segTactical.${cbamEstimate.signal}`, { pct: n1(shares.tactical) })}</li>}
-          {shares.fixed > 0.05 && <li className="text-muted-light">{t("hedge.segFixed", { pct: n1(shares.fixed) })}</li>}
-        </ul>
-      )}
-    </HeroCard>
-  );
-}
-
 // Mã dẫn dắt EUA trong thanh số liệu chạy (khí, than, điện Đức, dầu — cùng nhóm với biểu đồ chỉ số giá); thiếu mã nào
 // thì lấp bằng thứ tự Bảng giá nhanh. Đủ 10 mã vẫn nằm ở Bảng giá nhanh (Phần 1).
 const DRIVER_CODES = ["TTF", "API2", "DEBY1", "BRENT"];
@@ -1477,86 +1398,6 @@ function pickDrivers(rows: any[]): any[] {
   }
   return picked;
 }
-
-// Kết quả chấm dự báo → ô màu: ✓ đúng/đúng hướng · ✕ sai · ! đang lệch · ? chưa rõ.
-const VERDICT_MARK: Record<string, { cls: string; icon: string }> = {
-  correct: { cls: "bg-up text-white", icon: "✓" },
-  on_track: { cls: "bg-up/10 text-up ring-1 ring-inset ring-up/50", icon: "✓" },
-  direction_only: { cls: "bg-up/10 text-up ring-1 ring-inset ring-up/50", icon: "✓" },
-  wrong: { cls: "bg-down text-white", icon: "✕" },
-  diverging: { cls: "bg-warn-tint text-warn ring-1 ring-inset ring-warn/50", icon: "!" },
-  unclear: { cls: "bg-surface text-muted-light ring-1 ring-inset ring-border-soft", icon: "?" },
-};
-
-function ForecastStrip({ review }: { review: ForecastReview }) {
-  const tf = useTranslations("forecastReview");
-  const items = [...review.items].sort((a, b) => a.report_date.localeCompare(b.report_date));
-  return (
-    <ol className="mt-2.5 flex gap-1.5">
-      {items.map(it => {
-        const m = VERDICT_MARK[it.verdict] ?? VERDICT_MARK.unclear;
-        return (
-          <li key={it.report_date} className="flex min-w-0 max-w-[46px] flex-1 flex-col items-center gap-1" title={`${formatShortDate(it.report_date)} · ${tf(`verdict.${it.verdict}`)}`}>
-            <span className={clsx("grid h-7 w-full place-items-center rounded-md text-[13px] font-bold", m.cls)} aria-hidden="true">{m.icon}</span>
-            <span className="text-[10.5px] tabular-nums text-muted-light">{formatShortDate(it.report_date)}</span>
-            <span className="sr-only">{tf(`verdict.${it.verdict}`)}</span>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-// Dự báo trước (cột phải, ô 3): dải kết quả chấm các báo cáo gần nhất — chỉ liệt kê ngày Sai / Đúng / Đang theo dõi,
-// không hiện tỷ lệ (Sai chốt ngay khi chạm cắt lỗ còn Đúng phải chờ chạm mục tiêu/hết khung, nên tỷ lệ giữa khung luôn
-// nghiêng về Sai, dễ hiểu nhầm). "direction_only" (đúng hướng, lệnh không khớp) xếp vào Đúng; còn lại = Đang theo dõi.
-function HeroForecast({ review, className }: { review?: ForecastReview | null; className?: string }) {
-  const t = useTranslations("reportDoc");
-  const items = review?.items ?? [];
-  const right = items.filter(i => i.verdict === "correct" || i.verdict === "direction_only").map(i => i.report_date);
-  const wrong = items.filter(i => i.verdict === "wrong").map(i => i.report_date);
-  const watching = items.filter(i => !right.includes(i.report_date) && !wrong.includes(i.report_date)).map(i => i.report_date);
-  return (
-    <HeroCard
-      compact
-      title={t("signal.track")}
-      href="#section-forecast-review"
-      className={className}
-    >
-      {items.length > 0 && review && <ForecastStrip review={review} />}
-      <div className="mt-2 space-y-0.5 text-[12.5px] leading-snug tabular-nums">
-        {!items.length && <div className="text-muted-light">{t("signal.trackNone")}</div>}
-        {wrong.length > 0 && <div className="font-semibold text-down">{t("signal.trackWrong", { dates: joinDayMonth(wrong) })}</div>}
-        {right.length > 0 && <div className="font-semibold text-up">{t("signal.trackRight", { dates: joinDayMonth(right) })}</div>}
-        {watching.length > 0 && <div className="text-muted-light">{t("signal.trackWatching", { dates: joinDayMonth(watching) })}</div>}
-      </div>
-    </HeroCard>
-  );
-}
-
-// Chia cột khối mở đầu theo các ô có dữ liệu (s = Tóm tắt, v = Nhận định + giá EUA, d = cột lệnh/phòng hộ/dự báo).
-// grid: lưới ngoài; s/v/d: class của từng ô. Màn hình: 3 ô cạnh nhau từ khung 1024px (WIDE), 768–1023px Tóm tắt hết
-// hàng + 2 ô bên dưới (A2). In (PDF gọn 29/10/2026) — khối mở đầu thấp để biểu đồ nến Phần 1 lên được trang 1:
-//  - dọc/vuông (pn:, khung từ 576px): hàng 1 = Nhận định (7/12) | cột lệnh/phòng hộ/dự báo xếp dọc (5/12) — 2 ô cao gần
-//    bằng nhau; hàng 2 = Tóm tắt hết hàng (ngắt được giữa các ý, chảy tiếp lấp chỗ trống);
-//  - ngang (pw:, trang thấp): hàng 1 = Nhận định (7/12) | Tóm tắt (5/12); hàng 2 = 3 ô lệnh/phòng hộ/dự báo cạnh nhau.
-// Không để Tóm tắt dài cạnh ô hẹp (3 cột của màn hình rộng) — Tóm tắt hẹp cao gần cả trang ngang.
-const A2 = "@3xl/report:grid-cols-2 pn:@xl/report:grid-cols-2";
-const HERO_SPANS: Record<string, { grid: string; s?: string; v?: string; d?: string }> = {
-  svd: {
-    // Nhận định to nhất, Tóm tắt = cột phải: 3/4/3 (báo cáo 1024–1279px) → 3/6/3 (≥ 1280px).
-    grid: "@3xl/report:grid-cols-2 scr:@5xl/report:grid-cols-10 scr:@7xl/report:grid-cols-12 pn:@xl/report:grid-cols-12 pw:@xl/report:grid-cols-12",
-    s: "@3xl/report:col-span-2 scr:@5xl/report:col-span-3 pn:@xl/report:col-span-12 pn:order-last pw:@xl/report:col-span-5",
-    v: "scr:@5xl/report:col-span-4 scr:@7xl/report:col-span-6 pn:@xl/report:col-span-7 pw:@xl/report:col-span-7 print:order-first pn:self-stretch",
-    d: "scr:@5xl/report:col-span-3 pn:@xl/report:col-span-5 pn:self-stretch pw:@xl/report:col-span-12 pw:order-last pw:grid pw:grid-cols-3",
-  },
-  sv: { grid: A2, s: "", v: "" },
-  sd: { grid: `${A2} scr:@5xl/report:grid-cols-12`, s: "scr:@5xl/report:col-span-8", d: "scr:@5xl/report:col-span-4" },
-  vd: { grid: `${A2} scr:@5xl/report:grid-cols-12`, v: "scr:@5xl/report:col-span-8", d: "scr:@5xl/report:col-span-4" },
-  s: { grid: "", s: "" },
-  v: { grid: "", v: "" },
-  d: { grid: "", d: "" },
-};
 
 // Thanh số liệu chính chạy dọc (thay ô "giá EUA + nhãn nhận định" cũ trên thanh menu): giá CBAM quý ước tính rồi lần
 // lượt các mã dẫn dắt EUA — mỗi lần 1 mục, mục mới trượt từ trên xuống sau TICKER_MS, chạy liên tục. Không in.
@@ -3207,11 +3048,12 @@ function DriversPanel({ drivers }: { drivers: any }) {
 
 // Cần theo dõi — mỗi điểm 1 thẻ đánh số (nguyên văn backend "1. …", "2. …"). Cụm đầu (tới dấu ":"/"." đầu tiên) là
 // ĐIỀU cần theo dõi → in đậm, phần sau là các nhánh "Nếu … →" (chỉ bọc **, không đổi chữ). Báo cáo rộng: lưới 2 cột,
-// thẻ cùng hàng cao bằng nhau, thẻ lẻ cuối trải hết hàng.
-function WatchList({ text }: { text: string }) {
+// thẻ cùng hàng cao bằng nhau, thẻ lẻ cuối trải hết hàng. beside: đang đứng cạnh Phân tích (cột hẹp — màn hình từ khung
+// 1024px, in dọc từ 576px) → thẻ xếp 1 cột.
+function WatchList({ text, beside = false }: { text: string; beside?: boolean }) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   return (
-    <ol className="list-none grid gap-3 @3xl/report:grid-cols-2">
+    <ol className={clsx("list-none grid gap-3 @3xl/report:grid-cols-2", beside && "@5xl/report:grid-cols-1 pn:@xl/report:grid-cols-1!")}>
       {lines.map((line, i) => {
         const m = line.match(/^(\d+)[.)]\s+/);
         const body = m ? line.slice(m[0].length) : line;
@@ -3223,6 +3065,7 @@ function WatchList({ text }: { text: string }) {
             className={clsx(
               "flex gap-3 rounded-xl border border-border bg-background p-3.5 print:break-inside-avoid",
               lines.length % 2 === 1 && i === lines.length - 1 && "@3xl/report:col-span-2",
+              beside && "@5xl/report:col-span-1 pn:@xl/report:col-span-1!",
             )}
           >
             {m && (
@@ -3267,7 +3110,8 @@ function AnalysisLine({ text }: { text: string }) {
 // In khổ ngang (.pdf-wide): 1 dòng trải cả trang ngang quá dài, khó đọc → 2 cột cạnh nhau. Các mảnh (đoạn mở đầu + nhóm,
 // block khác) chia sẵn làm 2 nửa theo độ dài chữ, giữ thứ tự đọc (cột trái rồi cột phải) — không dùng CSS columns vì
 // Chrome không cân 2 cột ở trang cuối của khối khi in (dồn hết vào cột trái). Trên màn hình 2 nửa nối tiếp nhau như cũ.
-function AnalysisBlocks({ blocks }: { blocks: any[] }) {
+// printSplit=false: Phân tích đang đứng cạnh "Cần theo dõi" (cột đã hẹp) → không chia 2 cột khi in ngang nữa.
+function AnalysisBlocks({ blocks, printSplit = true }: { blocks: any[]; printSplit?: boolean }) {
   const enumLabel = useEnumLabel();
   const pieces: { key: string; len: number; node: React.ReactNode }[] = [];
   blocks.forEach((block: any, i: number) => {
@@ -3332,7 +3176,7 @@ function AnalysisBlocks({ blocks }: { blocks: any[] }) {
     </div>
   );
   return (
-    <div className="space-y-5 pw:grid pw:grid-cols-2 pw:gap-x-8">
+    <div className={clsx("space-y-5", printSplit && "pw:grid pw:grid-cols-2 pw:gap-x-8")}>
       {half(pieces.slice(0, cut))}
       {cut < pieces.length && half(pieces.slice(cut))}
     </div>
@@ -3496,20 +3340,18 @@ export function ReportDocument({
     />
   ) : null;
 
-  // Khối mở đầu: Tóm tắt điều hành | Nhận định tổng quan + giá EUA | cột Lệnh ngắn hạn · Phòng hộ CBAM —
-  // bỏ ô thiếu dữ liệu, các ô còn lại chia cột (HERO_SPANS). Báo cáo vừa (768–1023px) và in A4 dọc (khung 576–767px): Tóm
-  // tắt hết hàng, 2 ô kia cạnh nhau bên dưới; khổ hẹp hơn 1 cột — xem trang export /reports/[date]/export.
+  // Khối mở đầu CHỈ còn 2 ô (04/11/2026 — bỏ Lệnh ngắn hạn / Phòng hộ CBAM / Dự báo trước, đã có ở Khuyến nghị vị thế,
+  // thẻ CBAM và mục Review dự báo): Nhận định tổng quan (trái) | Tóm tắt điều hành (phải), cao bằng nhau. Khung báo cáo
+  // 768–1023px (cả in A4 dọc ~965px) chia đôi; từ 1024px Nhận định 7/12 | Tóm tắt 5/12 (Nhận định có hàng giá + thước đo
+  // chiều cạnh nhau nên cần rộng hơn; Tóm tắt 60–90 chữ). Thiếu 1 ô thì ô còn lại trải hết hàng; hẹp hơn 768px xếp chồng.
   const showSnapshot = !noPriceData && stats.last !== undefined;
   const tickerItems = useTickerItems(noPriceData ? null : cbamEstimate, noPriceData ? [] : priceRows);
-  const showOrders = !!shortPlan && shortPlan.legs.length > 0;
-  const showHedge = !noPriceData && (!!cbamEstimate || !!hedgeAction);
-  const showTrack = !noPriceData && (plans.length > 0 || hasForecastReview);
-  const heroKey = [
-    execBullets.length > 0 && "s",
-    (showSnapshot || !!euaVerdict || !!outlook) && "v",
-    (showOrders || showHedge || showTrack) && "d",
-  ].filter(Boolean).join("") as keyof typeof HERO_SPANS | "";
-  const heroSpans = heroKey ? HERO_SPANS[heroKey] : null;
+  const showSummary = execBullets.length > 0;
+  const showVerdict = showSnapshot || !!euaVerdict || !!outlook;
+  const heroPair = showSummary && showVerdict;
+  // "Cần theo dõi" đứng cạnh "Phân tích" chỉ khi Phân tích đang mở và có nội dung (thu gọn thì cột trái gần trống).
+  const watchBeside = !!watchpoints && !!content["3"] && showAnalysis
+    && (analysisBlocks?.length > 0 || !!content["3"].correlation_analysis || !!content["3"].fuel_model_note);
 
   const tabs = [
     { id: "section-highlights", label: t("tabs.overview") },
@@ -3598,20 +3440,18 @@ export function ReportDocument({
             />
           )}
           {highlight && <TodayHighlight highlight={highlight} />}
-          {heroSpans && (
-            // In khổ dọc: mặc định ô không giãn theo ô cao nhất hàng (pn:items-start) — Tóm tắt dài cạnh ô khác thì ô đó
-            // giãn theo sẽ cao hơn 1 trang và bị cắt đôi; chỉ Nhận định | cột lệnh (HERO_SPANS, pn:self-stretch) giãn bằng nhau.
-            <div className={clsx("grid gap-4 pn:items-start", heroSpans.grid)}>
-              {execBullets.length > 0 && <HeroSummary bullets={execBullets} className={heroSpans.s} />}
-              {heroSpans.v !== undefined && (
-                <HeroVerdict verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }} euaRow={euaRow} chartData={chartData} className={heroSpans.v} />
+          {(showSummary || showVerdict) && (
+            // In giữ đúng khung 2 ô: khổ dọc từ khung 576px chia đôi (pn:), khổ ngang (≥ 1024px) theo bố cục màn hình.
+            <div className={clsx("grid gap-4", heroPair && "@3xl/report:grid-cols-12 pn:@xl/report:grid-cols-12")}>
+              {showVerdict && (
+                <HeroVerdict
+                  verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }}
+                  euaRow={euaRow} chartData={chartData}
+                  className={heroPair ? "@3xl/report:col-span-6 @5xl/report:col-span-7 pn:@xl/report:col-span-6" : undefined}
+                />
               )}
-              {heroSpans.d !== undefined && (
-                <div className={clsx("flex min-w-0 flex-col gap-3", heroSpans.d)}>
-                  {showOrders && shortPlan && <HeroOrders shortPlan={shortPlan} className="flex-1" />}
-                  {showHedge && <HeroHedge cbamEstimate={cbamEstimate} hedgeAction={hedgeAction} className="flex-1" />}
-                  {showTrack && <HeroForecast review={forecastReview} className="flex-1" />}
-                </div>
+              {showSummary && (
+                <HeroSummary bullets={execBullets} className={heroPair ? "@3xl/report:col-span-6 @5xl/report:col-span-5 pn:@xl/report:col-span-6" : undefined} />
               )}
             </div>
           )}
@@ -3700,9 +3540,14 @@ export function ReportDocument({
             <div id="section-analysis-detail" className="scroll-mt-32 space-y-8">
               {hasMarketDrivers && <DriversPanel drivers={content["2"].market_drivers} />}
 
-              {/* Phân tích (không chia khối, trải hết bề rộng) rồi Cần theo dõi (lưới thẻ) — mỗi hàng thẻ cao bằng nhau. */}
+              {/* Phân tích | Cần theo dõi đứng cạnh nhau (04/11/2026): màn hình từ khung 1024px Phân tích 7/12 | Cần theo dõi
+                  5/12 (≥ 1280px: 8/12 | 4/12 — Phân tích dài gấp ~3 nên cột rộng hơn để 2 cột cao gần bằng nhau); in giữ
+                  đúng khung này — khổ dọc từ khung 576px 7/12 | 5/12, khổ ngang theo bố cục màn hình (Phân tích khi đó không
+                  tự chia 2 cột nữa). Thu gọn Phân tích (nút ẩn) hoặc thiếu 1 bên → xếp chồng, Cần theo dõi lưới 2 cột như cũ. */}
+              {(content["3"] || watchpoints) && (
+              <div className={clsx(watchBeside ? "grid gap-x-8 gap-y-8 @5xl/report:grid-cols-12 pn:@xl/report:grid-cols-12" : "space-y-8")}>
               {content["3"] && (
-                <div>
+                <div className={clsx("min-w-0", watchBeside && "@5xl/report:col-span-7 @7xl/report:col-span-8 pn:@xl/report:col-span-7")}>
                   <SubHeading
                     aside={(analysisBlocks?.length > 0 || content["3"].correlation_analysis) ? (
                       <button
@@ -3724,7 +3569,7 @@ export function ReportDocument({
 
                   {showAnalysis && (
                     <>
-                      <AnalysisBlocks blocks={analysisBlocks ?? []} />
+                      <AnalysisBlocks blocks={analysisBlocks ?? []} printSplit={!watchBeside} />
 
                       {/* Giả định mô hình chuyển đổi nhiên liệu — để người đọc kiểm chứng giá EUA hòa vốn
                           (report_generator.fuel_model_note). Báo cáo cũ không có → ẩn. */}
@@ -3770,10 +3615,12 @@ export function ReportDocument({
 
               {/* Cần theo dõi — tách khỏi Mục 3 (điều kiện nào sẽ đổi nhận định). */}
               {watchpoints && (
-                <div>
+                <div className={clsx("min-w-0", watchBeside && "@5xl/report:col-span-5 @7xl/report:col-span-4 pn:@xl/report:col-span-5")}>
                   <SubHeading>{t("body.watch")}</SubHeading>
-                  <WatchList text={watchpoints} />
+                  <WatchList text={watchpoints} beside={watchBeside} />
                 </div>
+              )}
+              </div>
               )}
 
               {/* Theo dõi chính sách ETS/MSR — khối cố định (report_generator._resolve_ets_policy, tin chính sách
