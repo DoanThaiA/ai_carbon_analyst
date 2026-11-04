@@ -95,8 +95,8 @@ const CHART_FIT_MIN_RATIO = 0.65;
 //  (2) khối vắt qua cuối TRANG 1 — cho vừa phần còn lại của trang 1 thay vì đẩy cả khối sang trang 2 và bỏ trắng cuối trang 1
 //      (khối mở đầu dài ngắn khác nhau theo báo cáo, có/không có ô "Điều đáng quan tâm nhất"). Đo theo dòng chảy liên tục:
 //      khối bắt đầu trong trang 1 thì mọi thứ phía trước nằm trọn trang 1 (không ngắt trang nào) nên vị trí đo = vị trí thật.
-// (2) hạ dần (ô tóm tắt cạnh biểu đồ co theo chậm hơn) tối đa còn CHART_FIT_MIN_RATIO chiều cao gốc; vẫn tràn → trả lại
-// chiều cao sau (1).
+// (2) hạ dần tối đa còn CHART_FIT_MIN_RATIO chiều cao gốc; 5 ô tóm tắt xếp dọc bên cạnh không co theo nên vẫn tràn thì gắn
+// data-chart-tight (ô gọn 1 dòng nhãn + số) rồi hạ lại; vẫn tràn → bỏ gọn, trả lại chiều cao sau (1).
 export async function fitChartToPage(shell: HTMLElement | null, pageHeightPx: number, settle: () => Promise<unknown>) {
   const block = shell?.querySelector<HTMLElement>("[data-chart-fit]");
   const svg = block?.querySelector<SVGSVGElement>("svg.candle-chart");
@@ -121,10 +121,20 @@ export async function fitChartToPage(shell: HTMLElement | null, pageHeightPx: nu
   if (top >= pageHeightPx || overflow() <= 0) return;
   const fittedH = svg.viewBox.baseVal.height;
   const minH = Math.ceil(startH * CHART_FIT_MIN_RATIO);
-  for (let i = 0; i < 3 && overflow() > 0; i++) {
-    if (!(await shrink(overflow(), minH))) break;
-  }
-  if (overflow() > 0) await setHeight(fittedH);
+  const shrinkToFit = async () => {
+    for (let i = 0; i < 3 && overflow() > 0; i++) {
+      if (!(await shrink(overflow(), minH))) break;
+    }
+  };
+  await shrinkToFit();
+  if (overflow() <= 0) return;
+  // 5 ô tóm tắt xếp dọc cạnh biểu đồ không co theo biểu đồ — gọn ô lại (nhãn + số chính cùng 1 dòng, StatTile) rồi thử lại.
+  block.dataset.chartTight = "";
+  await setHeight(fittedH);
+  await shrinkToFit();
+  if (overflow() <= 0) return;
+  delete block.dataset.chartTight;
+  await setHeight(fittedH);
 }
 
 // In bằng trình duyệt (Ctrl+P) — khổ A4 dọc mặc định. `enabled=false` khi trang export tự gọi tunePrintBreaks.

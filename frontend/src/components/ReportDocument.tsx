@@ -2559,9 +2559,10 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
   // theo chiều cao biểu đồ, mỗi dòng 1 hàng (StatTile cắt "…" + title khi quá hẹp). Hẹp hơn: ô tóm tắt xuống dưới (2 cột).
   // In (cả khổ dọc lẫn ngang, khung ≥ @xl/report): giữ bố cục màn hình — biểu đồ | 5 ô xếp dọc, chia theo lưới 10 cột
   // 6 | 4 cùng gap với khối mở đầu (Nhận định | Tóm tắt) để 2 khối thẳng cột trên trang 1. Cả khối giữ trọn 1 trang
-  // (data-print-whole); trang export hạ chiều cao biểu đồ nếu khối vắt qua cuối trang 1 (data-chart-fit — fitChartToPage).
+  // (data-print-whole); trang export hạ chiều cao biểu đồ nếu khối vắt qua cuối trang 1 (data-chart-fit — fitChartToPage),
+  // vẫn tràn thì gắn data-chart-tight: ô tóm tắt đưa nhãn + số chính lên cùng 1 dòng (StatTile, group/chart).
   return (
-    <div data-print-whole data-chart-fit>
+    <div data-print-whole data-chart-fit className="group/chart">
       {printHeading && <div className="hidden print:block">{printHeading}</div>}
       <div className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)] print:@xl/report:grid-cols-10!">
       <div className="flex min-w-0 flex-col print:@xl/report:col-span-6">
@@ -2599,7 +2600,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-2 @2xl/report:grid-cols-2 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:col-span-4 print:@xl/report:grid-cols-1! print:@xl/report:auto-rows-fr">
+      <div className="grid min-w-0 gap-2 print:gap-1.5 @2xl/report:grid-cols-2 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:col-span-4 print:@xl/report:grid-cols-1! print:@xl/report:auto-rows-fr">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
@@ -2660,15 +2661,19 @@ function StatTile({ icon, label, value, unit, lines, valueClass, linesClass, cla
   linesClass?: string; className?: string;
 }) {
   return (
-    <div className={clsx("flex min-w-0 flex-col justify-center rounded-xl border border-border bg-background px-3 py-2", className)}>
+    <div className={clsx(
+      "flex min-w-0 flex-col justify-center rounded-xl border border-border bg-background px-3 py-2 print:py-1",
+      "group-data-[chart-tight]/chart:flex-row group-data-[chart-tight]/chart:justify-start group-data-[chart-tight]/chart:flex-wrap group-data-[chart-tight]/chart:items-baseline group-data-[chart-tight]/chart:content-center group-data-[chart-tight]/chart:gap-x-2",
+      className,
+    )}>
       <div className="flex min-w-0 items-center gap-1.5 text-[12px] font-bold text-primary-dark">
         <span className="shrink-0">{icon}</span><span className="truncate print:whitespace-normal" title={label}>{label}</span>
       </div>
-      <div className={clsx("mt-0.5 truncate text-[17px] print:whitespace-normal font-bold leading-tight tabular-nums", valueClass ?? "text-label")} title={value}>
+      <div className={clsx("mt-0.5 print:mt-0 truncate text-[17px] print:text-[15.5px] print:whitespace-normal font-bold leading-tight tabular-nums", valueClass ?? "text-label")} title={value}>
         {value}{unit && <span className="ml-1 text-[12px] font-semibold text-muted-light">{unit}</span>}
       </div>
       {lines.filter((l): l is string => !!l).map((l, i) => (
-        <div key={i} className={clsx("mt-0.5 truncate text-[12px] print:whitespace-normal leading-snug tabular-nums", linesClass ?? "text-body")} title={l}>{l}</div>
+        <div key={i} className={clsx("mt-0.5 print:mt-0 truncate text-[12px] print:whitespace-normal leading-snug tabular-nums group-data-[chart-tight]/chart:basis-full", linesClass ?? "text-body")} title={l}>{l}</div>
       ))}
     </div>
   );
@@ -3434,10 +3439,10 @@ export function ReportDocument({
       <SectionNav tabs={tabs} quote={tickerItems.length > 0 ? <PriceTicker items={tickerItems} /> : undefined} />
 
       {/* Khi in/PDF: nội dung trải hết bề rộng vùng in, thẳng mép với banner (không thụt lề 2 bên như trên màn hình). */}
-      <div className="px-4 sm:px-8 pt-6 pb-10 print:px-0">
+      <div className="px-4 sm:px-8 pt-6 pb-10 print:px-0 print:pt-2">
 
         {/* ═══ TỔNG QUAN — giá EUA, nhận định & việc cần làm hôm nay, số liệu chính, tóm tắt điều hành ═══ */}
-        <section id="section-highlights" className="report-section scroll-mt-32 space-y-4 pb-8">
+        <section id="section-highlights" className="report-section scroll-mt-32 space-y-4 pb-8 print:pt-0!">
           {/* Báo cáo hẹp: số liệu chính chạy dọc ở đầu trang (báo cáo rộng nằm trên thanh menu). */}
           {tickerItems.length > 0 && (
             <PriceTicker
