@@ -14,6 +14,9 @@ import type { CbamEstimate } from "@/lib/types";
 // mở popup "So sánh hiệu suất" (chọn mã, đổi khoảng thời gian) — cùng biểu đồ với Dashboard giá của admin.
 // Mọi số trên biểu đồ là CHỈ SỐ GIÁ (100 = phiên gốc chung của các mã), không phải giá: chú giải = chỉ số phiên cuối +
 // % so với phiên gốc + giá đóng cửa kèm đơn vị; tooltip = chỉ số + giá thật từng phiên.
+// In/PDF: nằm cạnh Bảng giá nhanh trong cùng 1 khối như màn hình (khung hẹp thì xếp dưới bảng). Khung giữ trọn 1 trang
+// (data-print-whole — tiêu đề + chú giải không bị tách khỏi biểu đồ); đang tải dữ liệu thì gắn data-pdf-pending để trang
+// export chờ.
 
 const PANEL_DAYS = 90;
 const RANGES = [30, 90, 180, 365];
@@ -84,7 +87,7 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
 
   if (error) {
     return (
-      <div className="border border-border rounded-lg p-4 text-[13px] text-muted-light pn:hidden">{t("loadError")}</div>
+      <div className="border border-border rounded-lg p-4 text-[13px] text-muted-light print:hidden">{t("loadError")}</div>
     );
   }
 
@@ -96,7 +99,9 @@ export default function PriceIndexPanel({ reportDate, tableCodes, cbamEstimate }
         onClick={() => data && setOpen(true)}
         onKeyDown={(e) => { if (data && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpen(true); } }}
         aria-label={t("openCompare")}
-        className="price-index-panel group h-full flex flex-col rounded-xl border border-border bg-background p-3.5 sm:p-4 cursor-pointer transition-colors hover:border-primary/50 hover:bg-tint/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 pn:hidden"
+        data-print-whole
+        data-pdf-pending={data ? undefined : ""}
+        className="price-index-panel group h-full flex flex-col rounded-xl border border-border bg-background p-3.5 sm:p-4 cursor-pointer transition-colors hover:border-primary/50 hover:bg-tint/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">

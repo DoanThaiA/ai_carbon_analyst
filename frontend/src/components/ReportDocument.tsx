@@ -2951,7 +2951,8 @@ function DeltaCell({ text, label }: { text?: string; label?: string }) {
 }
 
 // Ô tên hợp đồng: tên (link nguồn giá) + dấu "!" sát ngay bên phải khi mã có lưu ý (phiên không giao dịch, điều chỉnh
-// hồi tố, giá chốt CBAM) — BẤM mới hiện nội dung dưới tên, bấm lần nữa để ẩn; bản in luôn hiện nội dung.
+// hồi tố, giá chốt CBAM) — BẤM mới hiện nội dung dưới tên, bấm lần nữa để ẩn; bản in/PDF không in ghi chú (yêu cầu
+// 03/11/2026 — bảng giá in gọn, mỗi mã 1 dòng).
 function ContractName({ row, notes }: { row: any; notes: string[] }) {
   const t = useTranslations("reportDoc");
   const [open, setOpen] = useState(false);
@@ -2989,7 +2990,7 @@ function ContractName({ row, notes }: { row: any; notes: string[] }) {
         )}
       </div>
       {notes.length > 0 && (
-        <div className={clsx("mt-1 text-[12.5px] font-normal leading-[1.45] text-body", open ? "block" : "hidden print:block")}>
+        <div className={clsx("mt-1 text-[12.5px] font-normal leading-[1.45] text-body print:hidden", open ? "block" : "hidden")}>
           {notes.map((n, i) => <div key={i}>{n}</div>)}
         </div>
       )}
@@ -3011,12 +3012,12 @@ function MarketBoard({ rows }: { rows: any[] }) {
         <thead>
           <tr className="border-b-2 border-primary/25 bg-tint">
             {/* Cột giá và các cột Δ co vừa nội dung (w-[1%] + nowrap), phần còn lại dồn cho tên hợp đồng để tên không
-                phải xuống dòng. */}
+                phải xuống dòng. Khi in: cột giá/Δ đệm ngang mỏng hơn → cột hợp đồng rộng thêm. */}
             <th className={th}>{t("body.contract")}</th>
-            <th className={clsx(th, "w-[1%] whitespace-nowrap text-center!")}>{t("body.price")}</th>
-            <th className={clsx(th, "hidden w-[1%] whitespace-nowrap px-2.5! text-center! @xl:table-cell")}>{t("market.dDay")}</th>
-            <th className={clsx(th, "hidden w-[1%] whitespace-nowrap px-2.5! text-center! @xl:table-cell")}>{t("market.dWeek")}</th>
-            <th className={clsx(th, "w-[1%] whitespace-nowrap px-2.5! text-center! @xl:hidden")}>{t("body.change")}</th>
+            <th className={clsx(th, "w-[1%] whitespace-nowrap text-center! print:px-2")}>{t("body.price")}</th>
+            <th className={clsx(th, "hidden w-[1%] whitespace-nowrap px-2.5! print:px-1.5! text-center! @xl:table-cell")}>{t("market.dDay")}</th>
+            <th className={clsx(th, "hidden w-[1%] whitespace-nowrap px-2.5! print:px-1.5! text-center! @xl:table-cell")}>{t("market.dWeek")}</th>
+            <th className={clsx(th, "w-[1%] whitespace-nowrap px-2.5! print:px-1.5! text-center! @xl:hidden")}>{t("body.change")}</th>
           </tr>
         </thead>
         {rows.map((r: any, idx: number) => {
@@ -3041,14 +3042,14 @@ function MarketBoard({ rows }: { rows: any[] }) {
                 <td className="px-3 py-3 print:py-2 text-[15px] font-semibold leading-snug text-label">
                   <ContractName row={r} notes={notes} />
                 </td>
-                {/* In: đơn vị cùng dòng với giá — mỗi mã 1 dòng (bảng in trải đủ rộng). */}
-                <td className="px-3 py-3 print:py-2 text-center whitespace-nowrap">
-                  <div className="text-[16px] font-bold leading-tight tabular-nums text-label print:inline">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
-                  {priceUnit && <div className="text-[12px] text-muted-light print:ml-1 print:inline">{priceUnit}</div>}
+                {/* Đơn vị nằm dưới giá (cả khi in) — cột giá hẹp, nhường chỗ cho tên hợp đồng. */}
+                <td className="px-3 py-3 print:px-2 print:py-2 text-center whitespace-nowrap">
+                  <div className="text-[16px] font-bold leading-tight tabular-nums text-label">{formatCompactPriceNumber(rawPriceNumber, locale)}</div>
+                  {priceUnit && <div className="text-[12px] text-muted-light">{priceUnit}</div>}
                 </td>
-                <td className="hidden px-2.5 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
-                <td className="hidden px-2.5 py-3 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
-                <td className="px-2.5 py-3 print:py-2 text-center @xl:hidden">
+                <td className="hidden px-2.5 py-3 print:px-1.5 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dday} /></td>
+                <td className="hidden px-2.5 py-3 print:px-1.5 print:py-2 text-center @xl:table-cell"><DeltaCell text={r.dweek} /></td>
+                <td className="px-2.5 py-3 print:px-1.5 print:py-2 text-center @xl:hidden">
                   {r.dday === "-" && r.dweek === "-" ? <span className="text-muted-light">—</span> : (
                     <div className="space-y-1.5">
                       <DeltaCell text={r.dday} label={t("market.dayLabel")} />
@@ -3486,8 +3487,7 @@ export function ReportDocument({
   const rawHighlight = content["1"]?.highlight;
   const highlight: ReportHighlight | null =
     rawHighlight?.text && HIGHLIGHT_TYPES.includes(rawHighlight.type) ? rawHighlight : null;
-  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất") — cần gọi API + tương tác nên không in. Có biểu đồ nến EUA
-  // thì đặt cạnh biểu đồ nến (2 biểu đồ cao bằng nhau), không thì cạnh bảng giá.
+  // Biểu đồ chỉ số giá (bấm → popup "So sánh hiệu suất"; khi in là biểu đồ tĩnh) — đặt cạnh Bảng giá nhanh.
   const indexPanel = !noPriceData && priceRows.length > 0 ? (
     <PriceIndexPanel
       reportDate={report.report_date}
@@ -3637,11 +3637,11 @@ export function ReportDocument({
               </div>
             ) : priceRows.length > 0 && (
               // Bảng giá nhanh hẹp (5/12, dạng gọn: 1 cột Δ ngày/tuần) | biểu đồ chỉ số giá rộng (7/12) — ngang từ khung báo
-              // cáo ≥ 768px (@3xl). In khổ dọc chỉ giữ bảng giá → bảng trải hết bề rộng (đủ cột Δ ngày + Δ tuần), không
-              // bị bó trong 5/12 để trống phần còn lại; in khổ ngang (.pdf-wide) giữ cả 2 như màn hình, chung 1 khối
-              // không ngắt (.price-overview — globals.css).
+              // cáo ≥ 768px (@3xl). In/PDF là CÙNG 1 khối như màn hình (yêu cầu 03/11/2026): khổ dọc 5/12 | 7/12, khổ ngang
+              // (.pdf-wide) 6/12 | 6/12, chung 1 khối không ngắt (.price-overview — globals.css); khung hẹp hơn @3xl (Ctrl+P
+              // A4, 16:9 dọc) xếp chồng, được ngắt giữa bảng và biểu đồ.
               <div className="price-overview grid gap-5 @3xl/report:grid-cols-12">
-                <div className="min-w-0 scr:@3xl/report:col-span-5 pn:col-span-full pw:@3xl/report:col-span-6">
+                <div className="min-w-0 @3xl/report:col-span-5 pw:@3xl/report:col-span-6">
                   <SubHeading aside={content["2"]?.price_timestamp && (
                     <span className="text-[12px] text-muted-light">{content["2"].price_timestamp}</span>
                   )}>
@@ -3649,7 +3649,7 @@ export function ReportDocument({
                   </SubHeading>
                   <MarketBoard rows={priceRows} />
                 </div>
-                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 pn:hidden pw:@3xl/report:col-span-6">{indexPanel}</div>
+                <div className="flex min-w-0 flex-col @3xl/report:col-span-7 pw:@3xl/report:col-span-6">{indexPanel}</div>
               </div>
             )}
 
