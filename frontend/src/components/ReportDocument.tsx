@@ -3346,9 +3346,9 @@ export function ReportDocument({
   ) : null;
 
   // Khối mở đầu CHỈ còn 2 ô (04/11/2026 — bỏ Lệnh ngắn hạn / Phòng hộ CBAM / Dự báo trước, đã có ở Khuyến nghị vị thế,
-  // thẻ CBAM và mục Review dự báo): Nhận định tổng quan (trái) | Tóm tắt điều hành (phải), cao bằng nhau. Khung báo cáo
-  // 768–1023px (cả in A4 dọc ~965px) chia đôi; từ 1024px Nhận định 7/12 | Tóm tắt 5/12 (Nhận định có hàng giá + thước đo
-  // chiều cạnh nhau nên cần rộng hơn; Tóm tắt 60–90 chữ). Thiếu 1 ô thì ô còn lại trải hết hàng; hẹp hơn 768px xếp chồng.
+  // thẻ CBAM và mục Review dự báo): Nhận định tổng quan (trái) | Tóm tắt điều hành (phải), cao bằng nhau. Nhận định 6 phần
+  // | Tóm tắt 4 phần (lưới 10 cột) từ khung 768px trên màn hình và từ 576px khi in dọc; in ngang theo màn hình. Thiếu 1 ô
+  // thì ô còn lại trải hết hàng; hẹp hơn xếp chồng.
   const showSnapshot = !noPriceData && stats.last !== undefined;
   const tickerItems = useTickerItems(noPriceData ? null : cbamEstimate, noPriceData ? [] : priceRows);
   const showSummary = execBullets.length > 0;
@@ -3447,16 +3447,16 @@ export function ReportDocument({
           {highlight && <TodayHighlight highlight={highlight} />}
           {(showSummary || showVerdict) && (
             // In giữ đúng khung 2 ô: khổ dọc từ khung 576px chia đôi (pn:), khổ ngang (≥ 1024px) theo bố cục màn hình.
-            <div className={clsx("grid gap-4", heroPair && "@3xl/report:grid-cols-12 pn:@xl/report:grid-cols-12")}>
+            <div className={clsx("grid gap-4", heroPair && "@3xl/report:grid-cols-10 pn:@xl/report:grid-cols-10")}>
               {showVerdict && (
                 <HeroVerdict
                   verdict={euaVerdict} outlook={outlook} stats={showSnapshot ? stats : { ...stats, last: undefined }}
                   euaRow={euaRow} chartData={chartData}
-                  className={heroPair ? "@3xl/report:col-span-6 @5xl/report:col-span-7 pn:@xl/report:col-span-6" : undefined}
+                  className={heroPair ? "@3xl/report:col-span-6 pn:@xl/report:col-span-6" : undefined}
                 />
               )}
               {showSummary && (
-                <HeroSummary bullets={execBullets} className={heroPair ? "@3xl/report:col-span-6 @5xl/report:col-span-5 pn:@xl/report:col-span-6" : undefined} />
+                <HeroSummary bullets={execBullets} className={heroPair ? "@3xl/report:col-span-4 pn:@xl/report:col-span-4" : undefined} />
               )}
             </div>
           )}
