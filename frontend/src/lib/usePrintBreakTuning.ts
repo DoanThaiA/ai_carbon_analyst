@@ -118,7 +118,11 @@ export async function fitChartToPage(shell: HTMLElement | null, pageHeightPx: nu
   if (tooTall > 0) await shrink(tooTall, Math.ceil(startH * 0.4));
   const top = block.getBoundingClientRect().top - shell.getBoundingClientRect().top;
   const overflow = () => top + block.getBoundingClientRect().height - pageHeightPx;
-  if (top >= pageHeightPx || overflow() <= 0) return;
+  if (top >= pageHeightPx) return;
+  if (overflow() <= 0) {
+    await growIntoPageGap(block, svg, -overflow(), setHeight);
+    return;
+  }
   const fittedH = svg.viewBox.baseVal.height;
   const minH = Math.ceil(startH * CHART_FIT_MIN_RATIO);
   const shrinkToFit = async () => {
@@ -135,6 +139,29 @@ export async function fitChartToPage(shell: HTMLElement | null, pageHeightPx: nu
   if (overflow() <= 0) return;
   delete block.dataset.chartTight;
   await setHeight(fittedH);
+}
+
+// (3) Khối biểu đồ nằm trọn trang 1 nhưng khối NGAY SAU giữ trọn (Bảng giá nhanh | biểu đồ chỉ số giá — .price-overview,
+// hay data-print-whole) không vừa phần còn lại → khối đó sang trang 2, cuối trang 1 bỏ trắng. Kéo cao biểu đồ (5 ô tóm tắt
+// cạnh bên giãn theo) lấp chỗ trống, tối đa cao = GROW_MAX_ASPECT × bề rộng biểu đồ và không quá max-height CSS của trang
+// export. Khối sau ngắt được thì Chrome tự lấp trang — không kéo.
+const GROW_MAX_ASPECT = 0.9;
+const GROW_MIN_GAP_PX = 24;
+const GROW_SAFETY_PX = 8;
+async function growIntoPageGap(block: HTMLElement, svg: SVGSVGElement, gapPx: number, setHeight: (h: number) => Promise<void>) {
+  const next = block.nextElementSibling as HTMLElement | null;
+  if (!next || gapPx < GROW_MIN_GAP_PX) return;
+  const keepWhole = next.dataset.printWhole !== undefined || getComputedStyle(next).breakInside.startsWith("avoid");
+  const nextH = next.getBoundingClientRect().height;
+  const spacing = next.getBoundingClientRect().top - block.getBoundingClientRect().bottom;
+  if (!keepWhole || nextH + spacing <= gapPx) return;
+  const viewH = svg.viewBox.baseVal.height;
+  const pxPerUnit = svg.getBoundingClientRect().height / viewH;
+  if (!(pxPerUnit > 0)) return;
+  const cssMax = parseFloat(getComputedStyle(svg).maxHeight);
+  const maxH = Math.min(svg.viewBox.baseVal.width * GROW_MAX_ASPECT, Number.isFinite(cssMax) ? cssMax : Infinity);
+  const target = Math.min(maxH, Math.floor(viewH + (gapPx - GROW_SAFETY_PX) / pxPerUnit));
+  if (target > viewH) await setHeight(target);
 }
 
 // In bằng trình duyệt (Ctrl+P) — khổ A4 dọc mặc định. `enabled=false` khi trang export tự gọi tunePrintBreaks.
