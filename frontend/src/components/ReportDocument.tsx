@@ -2204,9 +2204,9 @@ function formatVolume(v: number) {
   return String(Math.round(v));
 }
 
-// Biểu đồ nến khi xuất PDF: cao = bề rộng × tỉ lệ (khổ dọc ~890px → ~270, khung 7/12 khổ ngang ~790px → ~240), kẹp trong
-// [MIN, MAX] (đơn vị px bố cục, trước zoom của trang export).
-const PRINT_CHART_RATIO = 0.3;
+// Biểu đồ nến khi xuất PDF (khung 6/10 cạnh 5 ô tóm tắt xếp dọc): cao = bề rộng × tỉ lệ (khổ dọc ~550px → ~275, khổ
+// ngang ~810px → kẹp 300), kẹp trong [MIN, MAX] (đơn vị px bố cục, trước zoom của trang export).
+const PRINT_CHART_RATIO = 0.5;
 const PRINT_CHART_MIN_H = 200;
 const PRINT_CHART_MAX_H = 300;
 
@@ -2557,13 +2557,14 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
 
   // Biểu đồ nến | 5 ô tóm tắt nằm ngang từ khung báo cáo ≥ 768px (@3xl), tỷ lệ 6,5 : 3,5 — ô tóm tắt xếp dọc, giãn đều
   // theo chiều cao biểu đồ, mỗi dòng 1 hàng (StatTile cắt "…" + title khi quá hẹp). Hẹp hơn: ô tóm tắt xuống dưới (2 cột).
-  // In (PDF gọn): khổ dọc biểu đồ trải hết bề rộng, 5 ô thành 1 hàng ngay dưới; khổ ngang (.pdf-wide) biểu đồ 7/12 | ô tóm
-  // tắt lưới 3 cột 5/12 (ô khối lượng trải 2 cột). Cả khối giữ trọn 1 trang (data-print-whole); trang export hạ chiều cao biểu đồ nếu khối vắt qua
-  // cuối trang 1 (data-chart-fit — fitChartToPage).
+  // In (cả khổ dọc lẫn ngang, khung ≥ @xl/report): giữ bố cục màn hình — biểu đồ | 5 ô xếp dọc, chia theo lưới 10 cột
+  // 6 | 4 cùng gap với khối mở đầu (Nhận định | Tóm tắt) để 2 khối thẳng cột trên trang 1. Cả khối giữ trọn 1 trang
+  // (data-print-whole); trang export hạ chiều cao biểu đồ nếu khối vắt qua cuối trang 1 (data-chart-fit — fitChartToPage).
   return (
-    <div data-print-whole data-chart-fit className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)] pn:grid-cols-1! pw:@3xl/report:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] print:gap-2!">
-      <div className="flex min-w-0 flex-col">
-        {printHeading && <div className="hidden print:block">{printHeading}</div>}
+    <div data-print-whole data-chart-fit>
+      {printHeading && <div className="hidden print:block">{printHeading}</div>}
+      <div className="grid gap-4 @3xl/report:grid-cols-[minmax(0,13fr)_minmax(0,7fr)] print:@xl/report:grid-cols-10!">
+      <div className="flex min-w-0 flex-col print:@xl/report:col-span-6">
         <div className="flex-1 rounded-xl border border-border bg-background p-3.5 sm:p-5 print:px-3! print:py-2!">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border pb-4 print:mb-2 print:pb-2">
             <div className="flex min-w-0 items-center gap-3">
@@ -2598,7 +2599,7 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-2 @2xl/report:grid-cols-2 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:@max-3xl/report:grid-cols-2 pn:@xl/report:grid-cols-5! pw:@3xl/report:grid-cols-3">
+      <div className="grid min-w-0 gap-2 @2xl/report:grid-cols-2 @3xl/report:grid-cols-1 @3xl/report:auto-rows-fr print:@xl/report:col-span-4 print:@xl/report:grid-cols-1! print:@xl/report:auto-rows-fr">
         <StatTile
           icon={<RefreshCw size={14} />}
           label={t("dash.lastRange")}
@@ -2643,8 +2644,9 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
               pct: `${sign(volChangePct)}${fnum(volChangePct, 1, locale)}`,
             })) : null,
           ]}
-          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:@xl/report:@max-3xl/report:col-span-2 pn:@xl/report:col-span-1! pw:@3xl/report:col-span-2"
+          className="@2xl/report:col-span-2 @3xl/report:col-span-1 print:@xl/report:col-span-1!"
         />
+      </div>
       </div>
     </div>
   );
