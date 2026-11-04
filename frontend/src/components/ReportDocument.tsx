@@ -737,15 +737,17 @@ const PROB_LEVEL: Record<string, number> = { "Thấp": 1, "Trung bình": 2, "Cao
 function LegBlock({ leg, ctx }: { leg: Leg; ctx: LegCtx }) {
   const n = legCells(leg, ctx);
   const { t } = ctx;
-  // In: 1 hàng gọn — [loại lệnh + R:R] | Entry | Mục tiêu | Cắt lỗ (lưới con print:contents thành ô của lưới ngoài).
+  // In thẻ rộng (≥ 448px — thẻ kịch bản là @container): 1 hàng gọn — [loại lệnh + R:R] | Entry | Mục tiêu | Cắt lỗ (lưới
+  // con print:contents thành ô của lưới ngoài). Thẻ hẹp (3 thẻ cạnh nhau, cả in A4 dọc): bố cục xếp dọc như màn hình; hẹp
+  // hơn 320px thì vùng Entry (không xuống dòng) chiếm 1 hàng riêng — không đè lên số Mục tiêu.
   return (
-    <div className="rounded-lg border border-border bg-background px-3 py-2.5 print:grid print:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] print:items-start print:gap-x-3 print:py-1.5! print:break-inside-avoid">
-      <div className="flex items-start justify-between gap-2 print:flex-col print:gap-1">
+    <div className="rounded-lg border border-border bg-background px-3 py-2.5 print:@md:grid print:@md:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] print:@md:items-start print:@md:gap-x-3 print:py-1.5! print:break-inside-avoid">
+      <div className="flex items-start justify-between gap-2 print:@md:flex-col print:@md:gap-1">
         <OrderPill leg={leg} />
-        <div className="flex flex-col items-end text-[13px] print:items-start">{n.rr}</div>
+        <div className="flex flex-col items-end text-[13px] print:@md:items-start">{n.rr}</div>
       </div>
-      <div className="mt-2 grid grid-cols-[1.4fr_1fr_1fr] gap-2 text-[13.5px] print:contents">
-        <div className="min-w-0"><div className="text-[11.5px] text-muted-light">{t("signal.col.entry")}</div>{n.entry}</div>
+      <div className="mt-2 print:mt-1.5 grid grid-cols-2 gap-2 @xs:grid-cols-[1.4fr_1fr_1fr] text-[13.5px] print:@md:contents">
+        <div className="min-w-0 col-span-2 @xs:col-span-1"><div className="text-[11.5px] text-muted-light">{t("signal.col.entry")}</div>{n.entry}</div>
         <div className="min-w-0"><div className="text-[11.5px] text-muted-light">{t("signal.col.target")}</div>{n.target}</div>
         <div className="min-w-0"><div className="text-[11.5px] text-muted-light">{t("signal.col.stop")}</div>{n.stop}</div>
       </div>
@@ -756,7 +758,8 @@ function LegBlock({ leg, ctx }: { leg: Leg; ctx: LegCtx }) {
 // KỊCH BẢN HÀNH ĐỘNG — mỗi khung thời gian 1 thẻ: chiều + xác suất → vùng giá → lệnh (Entry/Mục tiêu/Cắt lỗ/R:R tách từ
 // trading_strategy) → điều kiện kích hoạt, rủi ro → nguyên văn chiến lược bàn giao dịch. Gộp bảng lệnh của thẻ vị thế và
 // bảng "Kịch bản hành động" cũ (2 bảng trình bày cùng 3 kịch bản) — mọi trường của kịch bản vẫn hiện đủ. Báo cáo hẹp
-// (< 1024px): tab theo khung thời gian; in PDF: đủ 3 thẻ (khổ dọc xếp dọc, khổ ngang cạnh nhau).
+// (< 1024px): tab theo khung thời gian; in PDF: đủ 3 thẻ cạnh nhau (ngắn | trung | dài hạn, cả khổ dọc từ khung 576px —
+// 04/11/2026), mỗi thẻ hẹp nên nội dung xếp dọc 1 cột.
 function HorizonCards({ plans, last, minRr }: { plans: HorizonPlan[]; last?: number; minRr: number }) {
   const t = useTranslations("reportDoc");
   const locale = useLocale();
@@ -799,7 +802,7 @@ function HorizonCards({ plans, last, minRr }: { plans: HorizonPlan[]; last?: num
           })}
         </div>
       )}
-      <div className="grid gap-3 @5xl/report:grid-cols-3">
+      <div className={clsx("grid gap-3 @5xl/report:grid-cols-3", plans.length === 3 && "pn:@xl/report:grid-cols-3", plans.length === 2 && "pn:@xl/report:grid-cols-2")}>
         {plans.map(p => {
           const sc = p.sc;
           const dirMeta = DIRECTION_META[sc.direction ?? ""];
@@ -1734,8 +1737,10 @@ function isPositiveDelta(value: string) {
 // render PDF (services/report_pdf.py) cũng chờ class này xuất hiện mới in.
 
 // Khung của 2 khối chữ dài đứng cạnh nhau trong 1 Phần (Diễn biến chính | Lịch sự kiện): lưới để mặc định "stretch"
-// nên 2 khung luôn cao bằng nhau. Khi in (1 cột, khối dài chảy qua nhiều trang) bỏ khung.
-const PANEL = "min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5 pn:rounded-none pn:border-0 pn:bg-transparent pn:p-0";
+// nên 2 khung luôn cao bằng nhau. In khổ dọc cũng đứng cạnh nhau (04/11/2026) nên giữ khung; chỉ khổ in hẹp (< 576px,
+// xếp 1 cột, khối dài chảy qua nhiều trang) mới bỏ khung.
+const PANEL_NARROW_PRINT = "pn:@max-xl/report:rounded-none pn:@max-xl/report:border-0 pn:@max-xl/report:bg-transparent pn:@max-xl/report:p-0";
+const PANEL = `min-w-0 rounded-xl border border-border bg-background p-4 sm:p-5 ${PANEL_NARROW_PRINT}`;
 
 function PartHeading({ eyebrow, title, icon: Icon, className }: { eyebrow?: string; title: string; icon: typeof Sparkles; className?: string }) {
   return (
@@ -3497,17 +3502,18 @@ export function ReportDocument({
             {cbamEstimate && <div id="section-cbam-estimate" className="scroll-mt-32"><CbamEstimateCard estimate={cbamEstimate} /></div>}
 
             {/* Diễn biến chính (tin tức tác động cung/cầu EUA — content["2"].key_developments) | lịch sự kiện 7 ngày
-                tới (content["8"]): việc đã xảy ra cạnh việc sắp tới. */}
+                tới (content["8"]): việc đã xảy ra cạnh việc sắp tới. In khổ dọc cũng cạnh nhau trong 1 khối (04/11/2026):
+                từ khung 576px 7/12 | 5/12. */}
             {(keyDevelopmentItems.length > 0 || content["8"]) && (
-              <div className="grid gap-5 @5xl/report:grid-cols-12 pn:block pn:space-y-8">
+              <div className="grid gap-5 @5xl/report:grid-cols-12 pn:@xl/report:grid-cols-12 print:gap-4">
                 {keyDevelopmentItems.length > 0 && (
-                  <div className={clsx(PANEL, content["8"] ? "@5xl/report:col-span-7 @7xl/report:col-span-8" : "@5xl/report:col-span-12")}>
+                  <div className={clsx(PANEL, content["8"] ? "@5xl/report:col-span-7 @7xl/report:col-span-8 pn:@xl/report:col-span-7" : "@5xl/report:col-span-12 pn:@xl/report:col-span-12")}>
                     <SubHeading>{t("body.keyDev")}</SubHeading>
                     <KeyDevList items={keyDevelopmentItems} />
                   </div>
                 )}
                 {content["8"] && (
-                  <aside className={clsx(PANEL, "bg-surface/50", keyDevelopmentItems.length > 0 ? "@5xl/report:col-span-5 @7xl/report:col-span-4" : "@5xl/report:col-span-12")}>
+                  <aside className={clsx(PANEL, "bg-surface/50", keyDevelopmentItems.length > 0 ? "@5xl/report:col-span-5 @7xl/report:col-span-4 pn:@xl/report:col-span-5" : "@5xl/report:col-span-12 pn:@xl/report:col-span-12")}>
                     <SubHeading>{content["8"].title}</SubHeading>
                     <EventsPanel section={content["8"]} />
                   </aside>
