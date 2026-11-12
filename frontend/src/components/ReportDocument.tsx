@@ -2536,6 +2536,16 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
   const sevenDayChange = lastClose - sevenDaysAgo;
   const sevenDayChangePct = sevenDaysAgo ? (sevenDayChange / sevenDaysAgo) * 100 : 0;
 
+  // Link biểu đồ giá EUA ở nguồn: chart_data mang `source_url` = trang quote Barchart (`_barchart_url`, ".../overview")
+  // → đổi sang trang biểu đồ ".../interactive-chart"; nguồn khác (ICE) giữ nguyên link trang sản phẩm.
+  const euaSourceUrl: string | null =
+    chartData[chartData.length - 1].source_url
+    || (report.content["2"]?.prices || []).find((p: any) => p?.code === "EUA")?.source_url
+    || null;
+  const euaChartUrl = euaSourceUrl && euaSourceUrl.includes("barchart.com")
+    ? euaSourceUrl.replace(/\/overview\/?$/, "/interactive-chart")
+    : euaSourceUrl;
+
   const monthHigh = Math.max(...chartData.map((c: any) => c.high));
   const monthLow = Math.min(...chartData.map((c: any) => c.low));
   const firstClose = chartData[0].close;
@@ -2574,7 +2584,18 @@ function EuaDashboardWidget({ report, printHeading }: { report: Report; printHea
               </div>
               <div className="min-w-0">
                 <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-bold text-label">
-                  EUA Dec-26
+                  {euaChartUrl ? (
+                    <a
+                      href={euaChartUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={euaChartUrl}
+                      className="inline-flex items-center gap-1 hover:text-primary hover:underline underline-offset-2"
+                    >
+                      EUA Dec-26
+                      <ExternalLink size={13} className="text-muted-light print:hidden" aria-hidden="true" />
+                    </a>
+                  ) : "EUA Dec-26"}
                   {/* Chỉ có dữ liệu 1M (chart_data 30 phiên) — nhãn tĩnh, không phải nút chọn khung. */}
                   <span className="rounded-md bg-primary px-2 py-0.5 text-[11.5px] font-bold text-white">1M</span>
                   <span className="text-[13px] font-normal text-muted-light">{t("dash.candles")}</span>
